@@ -27,7 +27,11 @@ public class MongoConfig extends AbstractMongoClientConfiguration {
 
     @Override
     public MongoClient mongoClient() {
-        ConnectionString connectionString = new ConnectionString(mongoUri);
+        // TLS 강제 활성화
+        String connectionStringstr = "mongodb://dmillion:admin240401!@finance-docdb-cluster2.cluster-c1ue6aayyxjn.ap-northeast-2.docdb.amazonaws.com:27017/?tls=true&tlsAllowInvalidHostnames=true&authSource=admin&replicaSet=rs0&retryWrites=false";
+
+        //ConnectionString connectionString = new ConnectionString(mongoUri);
+        ConnectionString connectionString = new ConnectionString(connectionStringstr);
 
         MongoClientSettings settings = MongoClientSettings.builder()
                 .applyConnectionString(connectionString)

@@ -89,7 +89,6 @@ spring:
       uri: mongodb://dmillion:admin240401!@finance-docdb-cluster2.cluster-c1ue6aayyxjn.ap-northeast-2.docdb.amazonaws.com:27017/?tls=true&tlsAllowInvalidHostnames=true&authSource=admin&replicaSet=rs0&retryWrites=false&connectTimeoutMS=60000&socketTimeoutMS=60000&serverSelectionTimeoutMS=60000
       #uri: mongodb://dmillion:admin240401!@finance-docdb-cluster.cluster-c1ue6aayyxjn.ap-northeast-2.docdb.amazonaws.com:27017/?tls=true&tlsCAFile=/app/global-bundle.pem&authSource=admin&replicaSet=rs0&retryWrites=false&connectTimeoutMS=30000&socketTimeoutMS=30000&serverSelectionTimeoutMS=60000
       # 데이터베이스 이름 별도 설정
-
       database: finance
 
     redis:
