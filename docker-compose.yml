@@ -1,0 +1,29 @@
+version: '3.8'
+
+services:
+  mongodb:
+    image: mongo:7
+    container_name: local-mongodb
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongodb-data:/data/db
+    environment:
+      MONGO_INITDB_DATABASE: finance
+    networks:
+      - finance-network
+
+  redis:
+    image: redis:7-alpine
+    container_name: local-redis
+    ports:
+      - "6379:6379"
+    networks:
+      - finance-network
+
+volumes:
+  mongodb-data:
+
+networks:
+  finance-network:
+    driver: bridge
