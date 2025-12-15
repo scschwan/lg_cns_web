@@ -15,7 +15,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.LocalDateTime;
 
 @Slf4j
-@Service
+//@Service
 @RequiredArgsConstructor
 public class UploadService {
 
