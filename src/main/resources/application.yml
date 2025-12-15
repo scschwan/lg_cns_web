@@ -75,25 +75,6 @@ spring:
 
 ---
 
-# 로컬에서 DocumentDB 테스트용
-spring:
-  config:
-    activate:
-      on-profile: local-docdb
-
-  data:
-    mongodb:
-      uri: mongodb://dmillion:admin240401!@finance-docdb-cluster.cluster-c1ue6aayyxjn.ap-northeast-2.docdb.amazonaws.com:27017/?tls=true&tlsCAFile=C:\AWSServer\global-bundle.pem&authSource=admin&replicaSet=rs0&retryWrites=false
-      database: finance
-
-    redis:
-      host: localhost
-      port: 6379
-      ssl:
-        enabled: false
-
----
-
 
 # AWS 프로덕션 프로파일
 spring:
@@ -104,8 +85,8 @@ spring:
     mongodb:
       #uri: mongodb://admin:admin240401!@finance-docdb-cluster.cluster-c1ue6aayyxjn.ap-northeast-2.docdb.amazonaws.com:27017/finance?tls=false&replicaSet=rs0&retryWrites=false&connectTimeoutMS=60000&socketTimeoutMS=60000&serverSelectionTimeoutMS=60000
       # 데이터베이스 이름 제거 (/finance 삭제)
-      #uri: mongodb://dmillion:admin240401!@finance-docdb-cluster.cluster-c1ue6aayyxjn.ap-northeast-2.docdb.amazonaws.com:27017/?tls=false&authSource=admin&replicaSet=rs0&retryWrites=false&connectTimeoutMS=60000&socketTimeoutMS=60000&serverSelectionTimeoutMS=60000
-      uri: mongodb://dmillion:admin240401!@finance-docdb-cluster.cluster-c1ue6aayyxjn.ap-northeast-2.docdb.amazonaws.com:27017/?tls=true&tlsCAFile=/app/global-bundle.pem&authSource=admin&replicaSet=rs0&retryWrites=false&connectTimeoutMS=30000&socketTimeoutMS=30000&serverSelectionTimeoutMS=60000
+      uri: mongodb://dmillion:admin240401!@finance-docdb-cluster.cluster-c1ue6aayyxjn.ap-northeast-2.docdb.amazonaws.com:27017/?tls=false&authSource=admin&replicaSet=rs0&retryWrites=false&connectTimeoutMS=60000&socketTimeoutMS=60000&serverSelectionTimeoutMS=60000
+      #uri: mongodb://dmillion:admin240401!@finance-docdb-cluster.cluster-c1ue6aayyxjn.ap-northeast-2.docdb.amazonaws.com:27017/?tls=true&tlsCAFile=/app/global-bundle.pem&authSource=admin&replicaSet=rs0&retryWrites=false&connectTimeoutMS=30000&socketTimeoutMS=30000&serverSelectionTimeoutMS=60000
       # 데이터베이스 이름 별도 설정
 
       database: finance
