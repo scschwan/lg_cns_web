@@ -1,39 +1,54 @@
 spring:
-application:
-name: finance-backend
+  application:
+    name: finance-backend
 
 data:
-mongodb:
-uri: mongodb://admin:??@finance-docdb-cluster.cluster-xxxxx.ap-northeast-2.docdb.amazonaws.com:27017/finance?tls=true&replicaSet=rs0
+  mongodb:
+    uri: mongodb://admin:${MONGODB_PASSWORD}@finance-docdb-cluster.cluster-c1ue6aayyxjn.ap-northeast-2.docdb.amazonaws.com:27017/finance?tls=true&replicaSet=rs0&retryWrites=false
 
-redis:
-host: finance-redis-xxxxx.serverless.apn2.cache.amazonaws.com
-port: 6379
-ssl:
-enabled: true
+  redis:
+    host: finance-redis-1kdayr.serverless.apn2.cache.amazonaws.com
+    port: 6379
+    ssl:
+      enabled: true
+    timeout: 2000ms
+    lettuce:
+      pool:
+        max-active: 10
+        max-idle: 5
+        min-idle: 2
 
-servlet:
-multipart:
-max-file-size: 1GB
-max-request-size: 1GB
+  servlet:
+    multipart:
+    max-file-size: 1GB
+    max-request-size: 1GB
 
 aws:
-region: ap-northeast-2
-s3:
-bucket: finance-excel-uploads
-sqs:
-queue-url: https://sqs.ap-northeast-2.amazonaws.com/????/finance-xml-processing-queue
+  region: ap-northeast-2
+  s3:
+    excel-bucket: finance-excel-uploads
+    frontend-bucket: finance-frontend
+    sqs:
+      excel-queue-url: https://sqs.ap-northeast-2.amazonaws.com/${AWS_ACCOUNT_ID}/finance-excel-processing-queue
+      excel-dlq-url: https://sqs.ap-northeast-2.amazonaws.com/${AWS_ACCOUNT_ID}/finance-excel-processing-dlq
 
 logging:
-level:
-root: INFO
-com.example.finance: DEBUG
+  level:
+    root: INFO
+    com.example.finance: DEBUG
+    org.springframework.data.mongodb: DEBUG
+    org.springframework.data.redis: DEBUG
 
 management:
-endpoints:
-web:
-exposure:
-include: health,info
-endpoint:
-health:
-show-details: always
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      show-details: always
+  health:
+    mongo:
+      enabled: true
+    redis:
+      enabled: true
