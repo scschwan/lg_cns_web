@@ -45,6 +45,7 @@ dependencies {
     implementation platform('software.amazon.awssdk:bom:2.28.11')
     implementation 'software.amazon.awssdk:s3'
     implementation 'software.amazon.awssdk:sqs'
+    // AWS SDK v2
 
     // Excel 처리 (추가)
     implementation 'org.apache.poi:poi:5.2.5'
