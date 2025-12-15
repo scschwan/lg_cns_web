@@ -3,6 +3,7 @@ package com.example.finance.config;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.Lazy;
 import software.amazon.awssdk.auth.credentials.DefaultCredentialsProvider;
 import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.s3.S3Client;
@@ -15,6 +16,7 @@ public class S3Config {
     private String region;
 
     @Bean
+    @Lazy  // ← Lazy 추가: 실제 사용할 때만 초기화
     public S3Client s3Client() {
         return S3Client.builder()
                 .region(Region.of(region))
@@ -23,6 +25,7 @@ public class S3Config {
     }
 
     @Bean
+    @Lazy  // ← Lazy 추가: 실제 사용할 때만 초기화
     public S3Presigner s3Presigner() {
         return S3Presigner.builder()
                 .region(Region.of(region))
