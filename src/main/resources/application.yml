@@ -82,9 +82,7 @@ spring:
 
   data:
     mongodb:
-      #uri: mongodb://admin:admin240401!@finance-docdb-cluster.cluster-c1ue6aayyxjn.ap-northeast-2.docdb.amazonaws.com:27017/finance?tls=true&replicaSet=rs0&retryWrites=false
-      uri: mongodb://admin:admin240401!@finance-docdb-cluster.cluster-c1ue6aayyxjn.ap-northeast-2.docdb.amazonaws.com:27017/finance?tls=true&authSource=admin&replicaSet=rs0&retryWrites=false
-      #uri: mongodb://admin:admin240401!@finance-docdb-cluster.cluster-c1ue6aayyxjn.ap-northeast-2.docdb.amazonaws.com:27017/finance?tls=false&replicaSet=rs0&retryWrites=false
+      uri: mongodb://admin:admin240401!@finance-docdb-cluster.cluster-c1ue6aayyxjn.ap-northeast-2.docdb.amazonaws.com:27017/finance?tls=false&replicaSet=rs0&retryWrites=false
 
     redis:
       host: finance-redis-1kdayr.serverless.apn2.cache.amazonaws.com
