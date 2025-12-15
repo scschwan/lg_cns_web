@@ -1,0 +1,39 @@
+spring:
+application:
+name: finance-backend
+
+data:
+mongodb:
+uri: mongodb://admin:??@finance-docdb-cluster.cluster-xxxxx.ap-northeast-2.docdb.amazonaws.com:27017/finance?tls=true&replicaSet=rs0
+
+redis:
+host: finance-redis-xxxxx.serverless.apn2.cache.amazonaws.com
+port: 6379
+ssl:
+enabled: true
+
+servlet:
+multipart:
+max-file-size: 1GB
+max-request-size: 1GB
+
+aws:
+region: ap-northeast-2
+s3:
+bucket: finance-excel-uploads
+sqs:
+queue-url: https://sqs.ap-northeast-2.amazonaws.com/????/finance-xml-processing-queue
+
+logging:
+level:
+root: INFO
+com.example.finance: DEBUG
+
+management:
+endpoints:
+web:
+exposure:
+include: health,info
+endpoint:
+health:
+show-details: always
