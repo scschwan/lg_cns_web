@@ -27,21 +27,18 @@ public class S3Service {
     /**
      * Presigned URL 생성
      */
+    /**
+     * Presigned URL 생성 (메타데이터 제거 버전)
+     */
     public PresignedUrlResult generatePresignedUrl(String sessionId, String fileName, Long fileSize) {
         String uploadId = UUID.randomUUID().toString();
         String s3Key = String.format("uploads/%s/%s/%s", sessionId, uploadId, fileName);
 
-        // PutObjectRequest 생성
+        // PutObjectRequest 생성 (메타데이터 제거!)
         PutObjectRequest putObjectRequest = PutObjectRequest.builder()
                 .bucket(excelBucket)
                 .key(s3Key)
-                .contentType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-                .metadata(java.util.Map.of(
-                        "session-id", sessionId,
-                        "upload-id", uploadId,
-                        "original-filename", fileName,
-                        "file-size", String.valueOf(fileSize)
-                ))
+                // ✅ contentType도 제거 (가장 단순하게)
                 .build();
 
         // Presigned URL 생성 (1시간 유효)
