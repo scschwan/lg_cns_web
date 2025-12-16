@@ -106,4 +106,24 @@ public class UploadService {
                 .completedAt(session.getCompletedAt())
                 .build());
     }
+
+    /**
+     * S3 업로드 완료 처리
+     */
+    @Transactional
+    public void completeUpload(String uploadId) {
+        UploadSession session = uploadSessionRepository.findByUploadId(uploadId)
+                .orElseThrow(() -> new RuntimeException("Upload session not found: " + uploadId));
+
+        // 상태 업데이트: UPLOADED
+        session.setStatus(UploadSession.UploadStatus.UPLOADED);
+        session.setUpdatedAt(LocalDateTime.now());
+        uploadSessionRepository.save(session);
+
+        // Redis 진행률 업데이트
+        redisService.hSet("upload:progress:" + uploadId, "status", "UPLOADED");
+        redisService.hSet("upload:progress:" + uploadId, "updatedAt", System.currentTimeMillis());
+
+        log.info("Upload completed: uploadId={}", uploadId);
+    }
 }

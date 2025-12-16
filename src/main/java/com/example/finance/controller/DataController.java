@@ -11,9 +11,9 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.web.bind.annotation.*;
 
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
 
 @Slf4j
@@ -71,6 +71,17 @@ public class DataController {
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size
     ) {
+        // 캐시 확인
+        String cacheKey = String.format("session:%s:page:%d:size:%d", sessionId, page, size);
+        Object cached = redisService.get(cacheKey);
+
+        if (cached != null) {
+            log.debug("Cache HIT: {}", cacheKey);
+            return (Map<String, Object>) cached;
+        }
+
+        // 캐시 미스 - MongoDB 조회
+        log.debug("Cache MISS: {}", cacheKey);
         Pageable pageable = PageRequest.of(page, size, Sort.by("rowNumber").ascending());
         Page<RawDataDocument> result = rawDataRepository.findBySessionId(sessionId, pageable);
 
@@ -80,6 +91,9 @@ public class DataController {
         response.put("totalPages", result.getTotalPages());
         response.put("totalElements", result.getTotalElements());
         response.put("size", result.getSize());
+
+        // 캐시 저장 (TTL 30분)
+        redisService.set(cacheKey, response, Duration.ofMinutes(30));
 
         return response;
     }
