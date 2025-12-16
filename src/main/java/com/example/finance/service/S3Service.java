@@ -14,7 +14,7 @@ import java.time.Duration;
 import java.util.UUID;
 
 @Slf4j
-//@Service
+@Service
 @RequiredArgsConstructor
 public class S3Service {
 
