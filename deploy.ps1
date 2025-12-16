@@ -118,14 +118,20 @@ if (Test-Path "task-def-template.json") {
     $taskDef.PSObject.Properties.Remove('registeredAt')
     $taskDef.PSObject.Properties.Remove('registeredBy')
 
-    # 이미지를 latest 태그로 변경 (SHA256 제거)
-    $taskDef.containerDefinitions[0].image = "${ECR_REPO}:latest"
+    # 이미지를 버전 태그로 변경 (SHA256 제거)
+    $taskDef.containerDefinitions[0].image = "${ECR_REPO}:v${newVersion}"
 
-    $taskDefJson = $taskDef | ConvertTo-Json -Depth 10
+    $taskDefJson = $taskDef | ConvertTo-Json -Depth 10 -Compress
 }
 
+# ✅ 수정: UTF-8 BOM 없이 저장
+[System.IO.File]::WriteAllText(
+    (Join-Path $PWD "task-def-temp.json"),
+    $taskDefJson,
+    [System.Text.UTF8Encoding]::new($false)  # BOM 없음
+)
+
 # 새 Revision 등록
-$taskDefJson | Out-File -FilePath "task-def-temp.json" -Encoding UTF8
 aws ecs register-task-definition `
     --cli-input-json file://task-def-temp.json `
     --region $AWS_REGION `
@@ -133,6 +139,8 @@ aws ecs register-task-definition `
 
 if ($LASTEXITCODE -ne 0) {
     Write-Host "Task Definition insert Failed!!!" -ForegroundColor Red
+    Write-Host "Check task-def-temp.json content:" -ForegroundColor Red
+    Get-Content "task-def-temp.json" | Write-Host
     exit $LASTEXITCODE
 }
 
