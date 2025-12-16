@@ -14,6 +14,7 @@ $AWS_REGION = "ap-northeast-2"
 $IMAGE_NAME = "finance-backend"
 $CLUSTER = "finance-cluster"
 $SERVICE = "finance-api"
+$TASK_FAMILY = "finance-backend-task"
 
 # 버전 파일 경로
 $VERSION_FILE = "version.txt"
@@ -51,39 +52,39 @@ Write-Host "massage: $Message" -ForegroundColor Cyan
 Write-Host "========================================`n" -ForegroundColor Cyan
 
 # 1. Git Commit
-Write-Host "[1/8] Git Commit..." -ForegroundColor Yellow
+Write-Host "[1/9] Git Commit..." -ForegroundColor Yellow
 git add .
 git commit -m "deploy: v$newVersion - $Message"
 git push
 if ($LASTEXITCODE -ne 0) {
-    Write-Host "Git push 실패. 계속 진행합니다..." -ForegroundColor Yellow
+    Write-Host "Git push failed. continue logic..." -ForegroundColor Yellow
 }
 
 # 2. JAR 빌드
-Write-Host "`n[2/8] JAR Build..." -ForegroundColor Yellow
+Write-Host "`n[2/9] JAR Build..." -ForegroundColor Yellow
 .\gradlew clean bootJar
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 # 3. Docker 빌드
-Write-Host "`n[3/8] Docker Image Build..." -ForegroundColor Yellow
+Write-Host "`n[3/9] Docker Image Build..." -ForegroundColor Yellow
 docker build -t ${IMAGE_NAME}:latest .
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 # 4. ECR 로그인
-Write-Host "`n[4/8] ECR Login..." -ForegroundColor Yellow
+Write-Host "`n[4/9] ECR Login..." -ForegroundColor Yellow
 aws ecr get-login-password --region $AWS_REGION | docker login --username AWS --password-stdin "${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com"
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 # 5. 이미지 태그
-Write-Host "`n[5/8] Create Docker Image Tag..." -ForegroundColor Yellow
+Write-Host "`n[5/9] Create Docker Image Tag..." -ForegroundColor Yellow
 $ECR_REPO = "${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${IMAGE_NAME}"
 docker tag ${IMAGE_NAME}:latest ${ECR_REPO}:v${newVersion}
-docker tag ${IMAGE_NAME}:latest ${ECR_REPO}:latest
+#docker tag ${IMAGE_NAME}:latest ${ECR_REPO}:latest
 
 # 6. ECR 푸시
-Write-Host "`n[6/8] ECR Push..." -ForegroundColor Yellow
+Write-Host "`n[6/9] ECR Push..." -ForegroundColor Yellow
 docker push ${ECR_REPO}:v${newVersion}
-docker push ${ECR_REPO}:latest
+#docker push ${ECR_REPO}:latest
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 
@@ -157,3 +158,23 @@ Write-Host "========================================" -ForegroundColor Green
 
 Write-Host "`ndeploy status Check (5-7 min delay):" -ForegroundColor Cyan
 Write-Host "aws ecs describe-services --cluster $CLUSTER --service $SERVICE --query 'services[0].deployments' --region $AWS_REGION" -ForegroundColor Gray
+
+# 배포 상태 자동 확인 (선택사항)
+Write-Host "`nCheck Deploy Status..." -ForegroundColor Yellow
+for ($i = 1; $i -le 10; $i++) {
+    Start-Sleep -Seconds 30
+    $deployments = aws ecs describe-services `
+        --cluster $CLUSTER `
+        --service $SERVICE `
+        --query 'services[0].deployments' `
+        --region $AWS_REGION `
+        --output json | ConvertFrom-Json
+
+    $primary = $deployments | Where-Object { $_.status -eq "PRIMARY" }
+    if ($primary.runningCount -eq $primary.desiredCount) {
+        Write-Host "`n✅ deploy  Complete! (Running: $($primary.runningCount)/$($primary.desiredCount))" -ForegroundColor Green
+        break
+    } else {
+        Write-Host "Processing ... (Running: $($primary.runningCount)/$($primary.desiredCount)) - $($i * 30)second wait..." -ForegroundColor Yellow
+    }
+}
