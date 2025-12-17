@@ -17,6 +17,10 @@ bin/
 !**/src/main/**/bin/
 !**/src/test/**/bin/
 
+### sample ###
+*.xlsx
+large_dataset_*.xlsx
+
 ### IntelliJ IDEA ###
 .idea
 *.iws
@@ -43,3 +47,4 @@ application-secret.yml
 
 ### VS Code ###
 .vscode/
+/sample/

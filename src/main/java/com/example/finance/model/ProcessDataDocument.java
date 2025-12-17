@@ -13,25 +13,25 @@ import java.time.LocalDateTime;
 import java.util.Map;
 
 /**
- * 원본 데이터 Document
+ * 처리된 데이터 Document
  *
- * MongoDB 컬렉션: raw_data
+ * MongoDB 컬렉션: process_data
  *
- * Phase 1: 대용량 파일 업로드
+ * Phase 2에서 사용
  */
-@Document(collection = "raw_data")
+@Document(collection = "process_data")
 @Data
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
 @CompoundIndex(name = "project_session_idx", def = "{'project_id': 1, 'session_id': 1}")
-public class RawDataDocument {
+public class ProcessDataDocument {
 
     @Id
     private String id;
 
     /**
-     * 프로젝트 ID (Phase 0에서 추가)
+     * 프로젝트 ID
      */
     @Field("project_id")
     private String projectId;
@@ -43,34 +43,27 @@ public class RawDataDocument {
     private String sessionId;
 
     /**
-     * 업로드 ID
+     * 원본 데이터 ID (raw_data 참조)
      */
-    @Field("upload_id")
-    private String uploadId;
+    @Field("raw_data_id")
+    private String rawDataId;
 
     /**
-     * 행 번호
-     */
-    @Field("row_number")
-    private Integer rowNumber;
-
-    /**
-     * 데이터 (헤더 그대로 사용)
+     * 처리된 데이터
      */
     private Map<String, Object> data;
 
     /**
-     * 숨김 여부
+     * 클러스터 ID (Phase 2 Step 5에서 추가)
      */
-    @Field("is_hidden")
-    @Builder.Default
-    private Boolean isHidden = false;
+    @Field("cluster_id")
+    private Integer clusterId;
 
     /**
-     * 숨김 사유
+     * 클러스터 이름 (Phase 2 Step 5에서 추가)
      */
-    @Field("hidden_reason")
-    private String hiddenReason;
+    @Field("cluster_name")
+    private String clusterName;
 
     /**
      * 생성 시간
