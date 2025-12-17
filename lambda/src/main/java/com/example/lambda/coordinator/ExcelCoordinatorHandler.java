@@ -7,28 +7,18 @@ import com.amazonaws.services.lambda.runtime.events.models.s3.S3EventNotificatio
 import com.example.lambda.config.RedisConfig;
 import com.example.lambda.model.ProcessingMessage;
 import com.google.gson.Gson;
-import org.apache.poi.ss.usermodel.Sheet;
-import org.apache.poi.ss.usermodel.Workbook;
-import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import redis.clients.jedis.Jedis;
-import software.amazon.awssdk.core.ResponseInputStream;
 import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.s3.S3Client;
-import software.amazon.awssdk.services.s3.model.GetObjectRequest;
-import software.amazon.awssdk.services.s3.model.GetObjectResponse;
+import software.amazon.awssdk.services.s3.model.HeadObjectRequest;
+import software.amazon.awssdk.services.s3.model.HeadObjectResponse;
 import software.amazon.awssdk.services.sqs.SqsClient;
 import software.amazon.awssdk.services.sqs.model.SendMessageRequest;
-
-// ⭐ 이 부분 추가
-import org.apache.poi.util.IOUtils;
-
-
-import java.io.IOException;
 
 /**
  * Excel Coordinator Lambda Handler
  *
- * S3 Event → 메타데이터 분석 → SQS 메시지 발행
+ * S3 Event → 메타데이터 분석 (파일 크기 기반 추정) → SQS 메시지 발행
  */
 public class ExcelCoordinatorHandler implements RequestHandler<S3Event, String> {
 
@@ -64,7 +54,7 @@ public class ExcelCoordinatorHandler implements RequestHandler<S3Event, String> 
             // 2. S3 키에서 정보 추출
             // 예: projects/{projectId}/sessions/{sessionId}/uploads/{uploadId}/{fileName}
             String[] parts = key.split("/");
-            if (parts.length < 6) {
+            if (parts.length < 7) {
                 throw new RuntimeException("잘못된 S3 키 형식: " + key);
             }
 
@@ -76,10 +66,10 @@ public class ExcelCoordinatorHandler implements RequestHandler<S3Event, String> 
             context.getLogger().log("projectId=" + projectId + ", sessionId=" + sessionId +
                     ", uploadId=" + uploadId);
 
-            // 3. Excel 메타데이터 분석 (헤더만 읽기)
+            // 3. Excel 메타데이터 분석 (파일 크기 기반 추정)
             int totalRows = analyzeExcelMetadata(bucket, key, context);
 
-            context.getLogger().log("총 행 개수: " + totalRows + " (헤더 제외)");
+            context.getLogger().log("추정 행 개수: " + totalRows + " (헤더 제외)");
 
             // 4. Redis 초기화
             initializeRedisStatus(uploadId, totalRows);
@@ -123,28 +113,37 @@ public class ExcelCoordinatorHandler implements RequestHandler<S3Event, String> 
     }
 
     /**
-     * Excel 메타데이터 분석 (총 행 개수만 확인)
+     * Excel 메타데이터 분석 (파일 크기 기반 추정)
+     *
+     * ⭐ 전체 파일을 메모리에 로드하지 않음! (메모리 효율)
      */
-    private int analyzeExcelMetadata(String bucket, String key, Context context) throws IOException {
-        context.getLogger().log("Excel 메타데이터 분석 시작...");
+    private int analyzeExcelMetadata(String bucket, String key, Context context) {
+        context.getLogger().log("Excel 메타데이터 분석 시작 (파일 크기 기반)...");
 
-        // ⭐ Apache POI 메모리 제한 해제 (2GB까지 허용)
-        IOUtils.setByteArrayMaxOverride(2_000_000_000);
+        try {
+            // S3 HeadObject로 파일 크기만 조회
+            HeadObjectRequest headRequest = HeadObjectRequest.builder()
+                    .bucket(bucket)
+                    .key(key)
+                    .build();
 
-        GetObjectRequest getObjectRequest = GetObjectRequest.builder()
-                .bucket(bucket)
-                .key(key)
-                .build();
+            HeadObjectResponse headResponse = s3Client.headObject(headRequest);
+            long fileSize = headResponse.contentLength();
 
-        try (ResponseInputStream<GetObjectResponse> s3Object = s3Client.getObject(getObjectRequest);
-             Workbook workbook = new XSSFWorkbook(s3Object)) {
+            context.getLogger().log("파일 크기: " + fileSize + " bytes (" +
+                    (fileSize / 1024 / 1024) + " MB)");
 
-            Sheet sheet = workbook.getSheetAt(0);
-            int totalRows = sheet.getPhysicalNumberOfRows() - 1; // 헤더 제외
+            // 행 개수 추정: 1MB당 약 5,000~10,000행
+            // 보수적으로 200 bytes/row 가정
+            int estimatedRows = (int) (fileSize / 200);
 
-            context.getLogger().log("Excel 메타데이터 분석 완료: " + totalRows + "행");
+            context.getLogger().log("추정 행 개수: " + estimatedRows);
 
-            return totalRows;
+            return estimatedRows;
+
+        } catch (Exception e) {
+            context.getLogger().log("ERROR: 메타데이터 분석 실패: " + e.getMessage());
+            throw new RuntimeException(e);
         }
     }
 
