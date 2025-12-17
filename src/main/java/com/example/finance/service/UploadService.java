@@ -1,48 +1,63 @@
 package com.example.finance.service;
 
-import com.example.finance.dto.PresignedUrlRequest;
-import com.example.finance.dto.PresignedUrlResponse;
-import com.example.finance.dto.UploadStatusResponse;
 import com.example.finance.model.UploadSession;
 import com.example.finance.repository.UploadSessionRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.data.domain.Page;
-import org.springframework.data.domain.Pageable;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.UUID;
 
+/**
+ * 업로드 서비스
+ *
+ * Phase 1: 대용량 파일 업로드
+ */
 @Slf4j
 @Service
 @RequiredArgsConstructor
 public class UploadService {
 
-    private final S3Service s3Service;
     private final UploadSessionRepository uploadSessionRepository;
     private final RedisService redisService;
 
-    /**
-     * Presigned URL 생성
-     */
-    @Transactional
-    public PresignedUrlResponse generatePresignedUrl(PresignedUrlRequest request) {
-        // S3 Presigned URL 생성
-        S3Service.PresignedUrlResult s3Result = s3Service.generatePresignedUrl(
-                request.getSessionId(),
-                request.getFileName(),
-                request.getFileSize()
-        );
+    @Value("${aws.s3.excel-bucket}")
+    private String excelBucket;
 
-        // UploadSession 생성
+    /**
+     * 세션 생성
+     */
+    public String createSession(String projectId, String userId) {
+        String sessionId = "session-" + UUID.randomUUID().toString();
+        log.info("세션 생성: projectId={}, sessionId={}", projectId, sessionId);
+        return sessionId;
+    }
+
+    /**
+     * 업로드 ID 생성
+     */
+    public String createUploadId() {
+        return "upload-" + UUID.randomUUID().toString();
+    }
+
+    /**
+     * 업로드 세션 저장
+     */
+    public void saveUploadSession(String projectId, String sessionId, String uploadId,
+                                  String s3Key, String fileName, Long fileSize) {
+
         UploadSession session = UploadSession.builder()
-                .sessionId(request.getSessionId())
-                .uploadId(s3Result.getUploadId())
-                .fileName(request.getFileName())
-                .fileSize(request.getFileSize())
-                .s3Bucket(s3Result.getS3Bucket())
-                .s3Key(s3Result.getS3Key())
+                .projectId(projectId)
+                .sessionId(sessionId)
+                .uploadId(uploadId)
+                .s3Bucket(excelBucket)
+                .s3Key(s3Key)
+                .fileName(fileName)
+                .fileSize(fileSize)
                 .status(UploadSession.UploadStatus.PENDING)
                 .progress(0)
                 .createdAt(LocalDateTime.now())
@@ -51,79 +66,31 @@ public class UploadService {
 
         uploadSessionRepository.save(session);
 
-        // Redis에 초기 상태 저장
-        redisService.saveUploadProgress(s3Result.getUploadId(), 0);
+        // Redis 초기화
+        redisService.hSet("upload:status:" + uploadId, "status", "PENDING");
+        redisService.hSet("upload:status:" + uploadId, "progress", 0);
 
-        log.info("Created upload session: uploadId={}, fileName={}",
-                s3Result.getUploadId(), request.getFileName());
-
-        return PresignedUrlResponse.builder()
-                .uploadId(s3Result.getUploadId())
-                .presignedUrl(s3Result.getPresignedUrl())
-                .s3Bucket(s3Result.getS3Bucket())
-                .s3Key(s3Result.getS3Key())
-                .expiresIn(s3Result.getExpiresIn())
-                .build();
+        log.info("업로드 세션 저장 완료: uploadId={}", uploadId);
     }
 
     /**
      * 업로드 상태 조회
      */
-    public UploadStatusResponse getUploadStatus(String uploadId) {
-        UploadSession session = uploadSessionRepository.findByUploadId(uploadId)
-                .orElseThrow(() -> new RuntimeException("Upload session not found: " + uploadId));
+    public Map<String, Object> getUploadStatus(String uploadId) {
+        Map<String, Object> status = new HashMap<>();
 
-        return UploadStatusResponse.builder()
-                .uploadId(session.getUploadId())
-                .fileName(session.getFileName())
-                .status(session.getStatus())
-                .progress(session.getProgress())
-                .totalRows(session.getTotalRows())
-                .processedRows(session.getProcessedRows())
-                .errorMessage(session.getErrorMessage())
-                .createdAt(session.getCreatedAt())
-                .updatedAt(session.getUpdatedAt())
-                .completedAt(session.getCompletedAt())
-                .build();
-    }
+        // Redis에서 조회
+        Object statusValue = redisService.hGet("upload:status:" + uploadId, "status");
+        Object progressValue = redisService.hGet("upload:status:" + uploadId, "progress");
+        Object totalRowsValue = redisService.hGet("upload:status:" + uploadId, "totalRows");
+        Object processedRowsValue = redisService.hGet("upload:status:" + uploadId, "processedRows");
 
-    /**
-     * 업로드 이력 조회
-     */
-    public Page<UploadStatusResponse> getUploadHistory(String sessionId, Pageable pageable) {
-        Page<UploadSession> sessions = uploadSessionRepository.findBySessionId(sessionId, pageable);
+        status.put("uploadId", uploadId);
+        status.put("status", statusValue != null ? statusValue : "UNKNOWN");
+        status.put("progress", progressValue != null ? progressValue : 0);
+        status.put("totalRows", totalRowsValue);
+        status.put("processedRows", processedRowsValue);
 
-        return sessions.map(session -> UploadStatusResponse.builder()
-                .uploadId(session.getUploadId())
-                .fileName(session.getFileName())
-                .status(session.getStatus())
-                .progress(session.getProgress())
-                .totalRows(session.getTotalRows())
-                .processedRows(session.getProcessedRows())
-                .errorMessage(session.getErrorMessage())
-                .createdAt(session.getCreatedAt())
-                .updatedAt(session.getUpdatedAt())
-                .completedAt(session.getCompletedAt())
-                .build());
-    }
-
-    /**
-     * S3 업로드 완료 처리
-     */
-    @Transactional
-    public void completeUpload(String uploadId) {
-        UploadSession session = uploadSessionRepository.findByUploadId(uploadId)
-                .orElseThrow(() -> new RuntimeException("Upload session not found: " + uploadId));
-
-        // 상태 업데이트: UPLOADED
-        session.setStatus(UploadSession.UploadStatus.UPLOADED);
-        session.setUpdatedAt(LocalDateTime.now());
-        uploadSessionRepository.save(session);
-
-        // Redis 진행률 업데이트
-        redisService.hSet("upload:progress:" + uploadId, "status", "UPLOADED");
-        redisService.hSet("upload:progress:" + uploadId, "updatedAt", System.currentTimeMillis());
-
-        log.info("Upload completed: uploadId={}", uploadId);
+        return status;
     }
 }

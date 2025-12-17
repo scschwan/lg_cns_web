@@ -5,3 +5,5 @@ pluginManagement {
     }
 }
 rootProject.name = 'finance-backend'
+
+include 'lambda'

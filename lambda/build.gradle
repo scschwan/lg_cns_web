@@ -1,0 +1,60 @@
+plugins {
+    id 'java'
+}
+
+group = 'com.example'
+version = '1.0.0'
+
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(21)
+    }
+}
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    // AWS Lambda
+    implementation 'com.amazonaws:aws-lambda-java-core:1.2.3'
+    implementation 'com.amazonaws:aws-lambda-java-events:3.11.3'
+
+    // AWS SDK v2
+    implementation platform('software.amazon.awssdk:bom:2.28.11')
+    implementation 'software.amazon.awssdk:s3'
+    implementation 'software.amazon.awssdk:sqs'
+
+    // MongoDB Driver
+    implementation 'org.mongodb:mongodb-driver-sync:5.2.0'
+
+    // Jedis (Redis)
+    implementation 'redis.clients:jedis:5.1.0'
+
+    // Excel 처리
+    implementation 'org.apache.poi:poi:5.2.5'
+    implementation 'org.apache.poi:poi-ooxml:5.2.5'
+
+    // JSON 처리
+    implementation 'com.google.code.gson:gson:2.10.1'
+
+    // Lombok
+    compileOnly 'org.projectlombok:lombok:1.18.30'
+    annotationProcessor 'org.projectlombok:lombok:1.18.30'
+
+    // 로깅
+    implementation 'org.slf4j:slf4j-simple:2.0.9'
+}
+
+// Lambda 배포용 JAR 생성
+task buildLambdaZip(type: Zip) {
+    from compileJava
+    from processResources
+    into('lib') {
+        from configurations.runtimeClasspath
+    }
+    archiveFileName = 'finance-lambda.zip'
+    destinationDirectory = file("$buildDir/distributions")
+}
+
+build.dependsOn buildLambdaZip

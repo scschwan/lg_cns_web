@@ -11,62 +11,78 @@ import software.amazon.awssdk.services.s3.presigner.model.PresignedPutObjectRequ
 import software.amazon.awssdk.services.s3.presigner.model.PutObjectPresignRequest;
 
 import java.time.Duration;
-import java.util.UUID;
 
+/**
+ * S3 서비스
+ *
+ * Phase 1: 대용량 파일 업로드
+ */
 @Slf4j
 @Service
 @RequiredArgsConstructor
 public class S3Service {
 
     private final S3Client s3Client;
-    private final S3Presigner s3Presigner;
 
     @Value("${aws.s3.excel-bucket}")
     private String excelBucket;
 
+    @Value("${aws.region}")
+    private String region;
+
     /**
-     * Presigned URL 생성
+     * Presigned URL 생성 (projectId 포함)
+     *
+     * @param projectId 프로젝트 ID
+     * @param sessionId 세션 ID
+     * @param uploadId 업로드 ID
+     * @param fileName 파일명
+     * @return Presigned URL
      */
-    /**
-     * Presigned URL 생성 (메타데이터 제거 버전)
-     */
-    public PresignedUrlResult generatePresignedUrl(String sessionId, String fileName, Long fileSize) {
-        String uploadId = UUID.randomUUID().toString();
-        String s3Key = String.format("uploads/%s/%s/%s", sessionId, uploadId, fileName);
+    public String generatePresignedUrl(String projectId, String sessionId,
+                                       String uploadId, String fileName) {
 
-        // PutObjectRequest 생성 (메타데이터 제거!)
-        PutObjectRequest putObjectRequest = PutObjectRequest.builder()
-                .bucket(excelBucket)
-                .key(s3Key)
-                // ✅ contentType도 제거 (가장 단순하게)
-                .build();
+        // S3 키: projects/{projectId}/sessions/{sessionId}/uploads/{uploadId}/{fileName}
+        String s3Key = String.format("projects/%s/sessions/%s/uploads/%s/%s",
+                projectId, sessionId, uploadId, fileName);
 
-        // Presigned URL 생성 (1시간 유효)
-        PutObjectPresignRequest presignRequest = PutObjectPresignRequest.builder()
-                .putObjectRequest(putObjectRequest)
-                .signatureDuration(Duration.ofHours(1))
-                .build();
+        log.info("Presigned URL 생성: bucket={}, key={}", excelBucket, s3Key);
 
-        PresignedPutObjectRequest presignedRequest = s3Presigner.presignPutObject(presignRequest);
+        try (S3Presigner presigner = S3Presigner.builder()
+                .region(software.amazon.awssdk.regions.Region.of(region))
+                .build()) {
 
-        log.info("Generated presigned URL for uploadId: {}, s3Key: {}", uploadId, s3Key);
+            PutObjectRequest putObjectRequest = PutObjectRequest.builder()
+                    .bucket(excelBucket)
+                    .key(s3Key)
+                    .build();
 
-        return PresignedUrlResult.builder()
-                .uploadId(uploadId)
-                .presignedUrl(presignedRequest.url().toString())
-                .s3Bucket(excelBucket)
-                .s3Key(s3Key)
-                .expiresIn(3600L)
-                .build();
+            PutObjectPresignRequest presignRequest = PutObjectPresignRequest.builder()
+                    .signatureDuration(Duration.ofHours(1))
+                    .putObjectRequest(putObjectRequest)
+                    .build();
+
+            PresignedPutObjectRequest presignedRequest = presigner.presignPutObject(presignRequest);
+
+            String url = presignedRequest.url().toString();
+            log.info("Presigned URL 생성 완료: {}", url);
+
+            return url;
+        }
     }
 
-    @lombok.Data
-    @lombok.Builder
-    public static class PresignedUrlResult {
-        private String uploadId;
-        private String presignedUrl;
-        private String s3Bucket;
-        private String s3Key;
-        private Long expiresIn;
+    /**
+     * S3 키 생성
+     *
+     * @param projectId 프로젝트 ID
+     * @param sessionId 세션 ID
+     * @param uploadId 업로드 ID
+     * @param fileName 파일명
+     * @return S3 키
+     */
+    public String buildS3Key(String projectId, String sessionId,
+                             String uploadId, String fileName) {
+        return String.format("projects/%s/sessions/%s/uploads/%s/%s",
+                projectId, sessionId, uploadId, fileName);
     }
 }
