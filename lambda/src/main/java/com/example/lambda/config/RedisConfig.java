@@ -30,7 +30,7 @@ public class RedisConfig {
             poolConfig.setMaxIdle(5);
             poolConfig.setMinIdle(1);
 
-            jedisPool = new JedisPool(poolConfig, redisHost, port);
+            jedisPool = new JedisPool(poolConfig, redisHost, port , 30000 );
         }
         return jedisPool;
     }
