@@ -1,0 +1,1 @@
+ curl.exe --request PUT --upload-file $file --header "Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" "$url"
