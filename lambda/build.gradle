@@ -44,6 +44,9 @@ dependencies {
 
     // 로깅
     implementation 'org.slf4j:slf4j-simple:2.0.9'
+
+    //streaming
+    implementation 'com.monitorjbl:xlsx-streamer:2.1.0'
 }
 
 // Lambda 배포용 JAR 생성

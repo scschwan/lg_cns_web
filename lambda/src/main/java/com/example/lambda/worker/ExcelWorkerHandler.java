@@ -9,6 +9,7 @@ import com.example.lambda.model.ProcessingMessage;
 import com.google.gson.Gson;
 import com.mongodb.client.MongoCollection;
 import com.mongodb.client.MongoDatabase;
+import com.monitorjbl.xlsx.StreamingReader;
 import org.apache.poi.openxml4j.exceptions.InvalidFormatException;
 import org.apache.poi.ss.usermodel.*;
 import org.apache.poi.util.IOUtils;
@@ -141,69 +142,95 @@ public class ExcelWorkerHandler implements RequestHandler<SQSEvent, String> {
      * 청크 처리
      */
     private void processChunk(ProcessingMessage message, Context context) throws IOException {
-        // ⭐ 1. 임시 파일 경로만 생성 (파일은 아직 생성 안 함)
+        // 1. 임시 파일 경로 생성
         Path tempFile = Files.createTempFile("excel-", ".xlsx");
 
         try {
             context.getLogger().log("S3 다운로드: " + message.getS3Key());
-
+            // ... (S3 다운로드 로직은 기존과 동일) ...
             GetObjectRequest getObjectRequest = GetObjectRequest.builder()
                     .bucket(message.getS3Bucket())
                     .key(message.getS3Key())
                     .build();
 
-            // ⭐ 2. InputStream으로 받아서 수동 복사
             try (ResponseInputStream<GetObjectResponse> s3Object = s3Client.getObject(getObjectRequest)) {
-                // 파일에 복사 (파일이 이미 존재하므로 덮어쓰기)
                 Files.copy(s3Object, tempFile, StandardCopyOption.REPLACE_EXISTING);
-
-                long fileSize = Files.size(tempFile);
-                context.getLogger().log("파일 다운로드 완료: " + fileSize + " bytes");
+                context.getLogger().log("파일 다운로드 완료: " + Files.size(tempFile) + " bytes");
             }
 
-            // ⭐ 3. File로 Workbook 열기 (메모리 절약!)
-            try (Workbook workbook = new XSSFWorkbook(tempFile.toFile())) {
+            // ⭐ [수정] StreamingReader 사용 (메모리 절약)
+            // StreamingReader는 전체 파일을 로드하지 않고 스트리밍 방식으로 읽습니다.
+            try (Workbook workbook = StreamingReader.builder()
+                    .rowCacheSize(100)    // 메모리에 유지할 행의 수 (적을수록 메모리 절약)
+                    .bufferSize(4096)     // 버퍼 사이즈
+                    .open(tempFile.toFile())) { // 파일에서 읽기
+
                 Sheet sheet = workbook.getSheetAt(0);
 
-                // 2. 헤더 추출
-                Row headerRow = sheet.getRow(0);
-                List<String> headers = extractHeaders(headerRow);
-                context.getLogger().log("헤더: " + headers);
-
-                // 3. 데이터 파싱 및 MongoDB 삽입
+                // 2. 헤더 추출 및 데이터 파싱
                 MongoDatabase database = MongoDBConfig.getDatabase();
                 MongoCollection<Document> collection = database.getCollection("raw_data");
 
                 List<Document> batch = new ArrayList<>();
                 int processedCount = 0;
+                List<String> headers = null;
 
-                for (int rowIndex = message.getStartRow() - 1; rowIndex < message.getEndRow(); rowIndex++) {
-                    Row row = sheet.getRow(rowIndex);
-                    if (row == null) continue;
+                // ⭐ StreamingReader는 getRow(i)를 지원하지 않으므로 for-each 사용
+                int currentRowIndex = 0;
 
-                    Map<String, Object> rowData = extractRowData(headers, row);
+                for (Row row : sheet) {
+                    // 2-1. 헤더 추출 (0번째 행)
+                    if (currentRowIndex == 0) {
+                        headers = extractHeaders(row);
+                        context.getLogger().log("헤더 추출 완료: " + headers);
+                        currentRowIndex++;
+                        continue;
+                    }
 
-                    Document doc = new Document()
-                            .append("project_id", message.getProjectId())
-                            .append("session_id", message.getSessionId())
-                            .append("upload_id", message.getUploadId())
-                            .append("row_number", rowIndex)
-                            .append("data", rowData)
-                            .append("is_hidden", false)
-                            .append("created_at", LocalDateTime.now().format(dateTimeFormatter))
-                            .append("updated_at", LocalDateTime.now().format(dateTimeFormatter));
+                    // 2-2. 처리할 범위 이전의 행은 스킵 (Skip)
+                    // (스트리밍 방식이라 앞부분도 읽으면서 지나가야 합니다)
+                    if (currentRowIndex < message.getStartRow() - 1) { // startRow는 1-based, index는 0-based라 가정 시 조정 필요 (여기선 헤더 제외 후 데이터 기준인지 확인 필요. 보통 엑셀 행번호 기준이면 헤더가 0번)
+                        currentRowIndex++;
+                        continue;
+                    }
 
-                    batch.add(doc);
+                    // 2-3. 처리할 범위를 벗어나면 중단 (Break)
+                    if (currentRowIndex >= message.getEndRow()) {
+                        break;
+                    }
 
+                    // 2-4. 데이터 처리
+                    // (row가 null인 경우는 스트리밍에서 거의 없으나 체크)
+                    if (row != null) {
+                        Map<String, Object> rowData = extractRowData(headers, row);
+
+                        Document doc = new Document()
+                                .append("project_id", message.getProjectId())
+                                .append("session_id", message.getSessionId())
+                                .append("upload_id", message.getUploadId())
+                                .append("row_number", currentRowIndex) // 현재 행 번호
+                                .append("data", rowData)
+                                .append("is_hidden", false)
+                                .append("created_at", LocalDateTime.now().format(dateTimeFormatter))
+                                .append("updated_at", LocalDateTime.now().format(dateTimeFormatter));
+
+                        batch.add(doc);
+                    }
+
+                    // 배치 저장
                     if (batch.size() >= BATCH_SIZE) {
                         collection.insertMany(batch);
                         processedCount += batch.size();
                         batch.clear();
                         updateProgress(message.getUploadId(), processedCount, message.getTotalRows(), context);
-                        context.getLogger().log("중간 저장: " + processedCount + "건");
+                        // 로그 양이 너무 많으면 람다 비용 증가하므로 배수마다 로깅
+                        context.getLogger().log("중간 저장: " + processedCount + "건 (Row " + currentRowIndex + ")");
                     }
+
+                    currentRowIndex++;
                 }
 
+                // 남은 데이터 저장
                 if (!batch.isEmpty()) {
                     collection.insertMany(batch);
                     processedCount += batch.size();
@@ -211,12 +238,13 @@ public class ExcelWorkerHandler implements RequestHandler<SQSEvent, String> {
                 }
 
                 context.getLogger().log("MongoDB 삽입 완료: " + processedCount + "건");
-            } catch (InvalidFormatException e) {
-                throw new RuntimeException(e);
             }
 
+        } catch (Exception e) { // InvalidFormatException 등 포함
+            context.getLogger().log("ERROR processing chunk: " + e.getMessage());
+            throw new RuntimeException(e);
         } finally {
-            // ⭐ 4. 임시 파일 삭제
+            // 4. 임시 파일 삭제
             try {
                 Files.deleteIfExists(tempFile);
                 context.getLogger().log("임시 파일 삭제 완료");
