@@ -70,4 +70,9 @@ public class ProcessingMessage {
      * 총 청크 수
      */
     private int totalChunks;
+
+    /**
+     * ⭐ 첫 번째 청크 여부 (Redis 초기화용)
+     */
+    private boolean isFirstChunk;
 }

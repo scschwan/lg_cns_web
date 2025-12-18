@@ -30,7 +30,8 @@ public class RedisConfig {
             poolConfig.setMaxIdle(5);
             poolConfig.setMinIdle(1);
 
-            jedisPool = new JedisPool(poolConfig, redisHost, port , 30000 );
+            // ⭐ 타임아웃 60초로 증가 (Cold Start 대응)
+            jedisPool = new JedisPool(poolConfig, redisHost, port, 60000);
         }
         return jedisPool;
     }

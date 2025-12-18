@@ -32,7 +32,6 @@ import java.util.*;
 public class ExcelWorkerHandler implements RequestHandler<SQSEvent, String> {
 
     private static final int BATCH_SIZE = 20000; // MongoDB 배치 삽입 크기
-    //private static final String AWS_REGION = System.getenv("AWS_REGION");
     private static final String AWS_REGION = System.getenv("AWS_REGION") != null
             ? System.getenv("AWS_REGION")
             : "ap-northeast-2";
@@ -60,7 +59,17 @@ public class ExcelWorkerHandler implements RequestHandler<SQSEvent, String> {
                 context.getLogger().log("처리 시작: uploadId=" + processingMessage.getUploadId() +
                         ", chunk=" + processingMessage.getChunkNumber() +
                         ", rows=" + processingMessage.getStartRow() + "~" +
-                        processingMessage.getEndRow());
+                        processingMessage.getEndRow() +
+                        (processingMessage.isFirstChunk() ? " (첫 청크 - Redis 초기화)" : ""));
+
+                // ⭐ 첫 번째 청크인 경우 Redis 초기화
+                if (processingMessage.isFirstChunk()) {
+                    initializeRedisStatus(
+                            processingMessage.getUploadId(),
+                            processingMessage.getTotalRows(),
+                            context
+                    );
+                }
 
                 processChunk(processingMessage, context);
 
@@ -74,6 +83,47 @@ public class ExcelWorkerHandler implements RequestHandler<SQSEvent, String> {
             context.getLogger().log("ERROR: " + e.getMessage());
             e.printStackTrace();
             throw new RuntimeException(e);
+        }
+    }
+
+    /**
+     * ⭐ Redis 상태 초기화 (첫 번째 Worker만 실행)
+     */
+    private void initializeRedisStatus(String uploadId, int totalRows, Context context) {
+        int maxRetries = 3;
+        int retryDelayMs = 5000; // 5초
+
+        for (int attempt = 1; attempt <= maxRetries; attempt++) {
+            try {
+                context.getLogger().log("Redis 초기화 시도: " + attempt + "/" + maxRetries);
+
+                try (Jedis jedis = RedisConfig.getJedis()) {
+                    String key = "upload:status:" + uploadId;
+                    jedis.hset(key, "status", "PROCESSING");
+                    jedis.hset(key, "progress", "0");
+                    jedis.hset(key, "totalRows", String.valueOf(totalRows));
+                    jedis.hset(key, "processedRows", "0");
+                    jedis.expire(key, 86400); // 24시간 TTL
+
+                    context.getLogger().log("Redis 초기화 성공! (시도 " + attempt + ")");
+                    return; // 성공 시 즉시 반환
+                }
+
+            } catch (Exception e) {
+                context.getLogger().log("Redis 초기화 실패 (시도 " + attempt + "): " + e.getMessage());
+
+                if (attempt < maxRetries) {
+                    context.getLogger().log(retryDelayMs + "ms 후 재시도...");
+                    try {
+                        Thread.sleep(retryDelayMs);
+                    } catch (InterruptedException ie) {
+                        Thread.currentThread().interrupt();
+                    }
+                } else {
+                    // ⚠️ 3회 실패 시 경고만 기록 (처리는 계속)
+                    context.getLogger().log("WARNING: Redis 초기화 최종 실패 (진행률 추적 불가, 처리는 계속)");
+                }
+            }
         }
     }
 
@@ -244,6 +294,9 @@ public class ExcelWorkerHandler implements RequestHandler<SQSEvent, String> {
                 jedis.hset(key, "status", "COMPLETED");
                 context.getLogger().log("파싱 완료!");
             }
+        } catch (Exception e) {
+            // Redis 업데이트 실패 시 경고만 기록 (처리는 계속)
+            context.getLogger().log("WARNING: Redis 진행률 업데이트 실패: " + e.getMessage());
         }
     }
 }

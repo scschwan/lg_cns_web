@@ -4,10 +4,8 @@ import com.amazonaws.services.lambda.runtime.Context;
 import com.amazonaws.services.lambda.runtime.RequestHandler;
 import com.amazonaws.services.lambda.runtime.events.S3Event;
 import com.amazonaws.services.lambda.runtime.events.models.s3.S3EventNotification;
-import com.example.lambda.config.RedisConfig;
 import com.example.lambda.model.ProcessingMessage;
 import com.google.gson.Gson;
-import redis.clients.jedis.Jedis;
 import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.HeadObjectRequest;
@@ -71,10 +69,10 @@ public class ExcelCoordinatorHandler implements RequestHandler<S3Event, String> 
 
             context.getLogger().log("추정 행 개수: " + totalRows + " (헤더 제외)");
 
-            // 4. Redis 초기화
-            initializeRedisStatus(uploadId, totalRows);
+            // ❌ Redis 초기화 제거! (Worker #1이 처리)
+            // initializeRedisStatus(uploadId, totalRows);
 
-            // 5. 청크 분할 및 SQS 메시지 발행
+            // 4. 청크 분할 및 SQS 메시지 발행
             int totalChunks = (int) Math.ceil((double) totalRows / CHUNK_SIZE);
             context.getLogger().log("총 청크 개수: " + totalChunks);
 
@@ -94,15 +92,17 @@ public class ExcelCoordinatorHandler implements RequestHandler<S3Event, String> 
                         .totalRows(totalRows)
                         .chunkNumber(i + 1)
                         .totalChunks(totalChunks)
+                        .isFirstChunk(i == 0) // ⭐ 첫 번째 청크 표시
                         .build();
 
                 sendToSQS(message, context);
 
                 context.getLogger().log("청크 " + (i + 1) + "/" + totalChunks +
-                        " 발행: " + startRow + "~" + endRow);
+                        " 발행: " + startRow + "~" + endRow +
+                        (message.isFirstChunk() ? " (첫 청크 - Redis 초기화)" : ""));
             }
 
-            context.getLogger().log("=== Excel Coordinator 완료 ===");
+            context.getLogger().log("=== Excel Coordinator 완료 (즉시!) ===");
             return "SUCCESS: " + totalChunks + " chunks published";
 
         } catch (Exception e) {
@@ -144,20 +144,6 @@ public class ExcelCoordinatorHandler implements RequestHandler<S3Event, String> 
         } catch (Exception e) {
             context.getLogger().log("ERROR: 메타데이터 분석 실패: " + e.getMessage());
             throw new RuntimeException(e);
-        }
-    }
-
-    /**
-     * Redis 상태 초기화
-     */
-    private void initializeRedisStatus(String uploadId, int totalRows) {
-        try (Jedis jedis = RedisConfig.getJedis()) {
-            String key = "upload:status:" + uploadId;
-            jedis.hset(key, "status", "PROCESSING");
-            jedis.hset(key, "progress", "0");
-            jedis.hset(key, "totalRows", String.valueOf(totalRows));
-            jedis.hset(key, "processedRows", "0");
-            jedis.expire(key, 86400); // 24시간 TTL
         }
     }
 
