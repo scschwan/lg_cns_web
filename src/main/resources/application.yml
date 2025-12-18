@@ -97,5 +97,5 @@ spring:
       host: finance-redis-cluster.1kdayr.0001.apn2.cache.amazonaws.com
       port: 6379
       ssl:
-        enabled: true
+        enabled: false
       timeout: 5000ms
