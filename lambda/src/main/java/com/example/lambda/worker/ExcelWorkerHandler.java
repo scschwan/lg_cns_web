@@ -9,6 +9,7 @@ import com.example.lambda.model.ProcessingMessage;
 import com.google.gson.Gson;
 import com.mongodb.client.MongoCollection;
 import com.mongodb.client.MongoDatabase;
+import org.apache.poi.openxml4j.exceptions.InvalidFormatException;
 import org.apache.poi.ss.usermodel.*;
 import org.apache.poi.util.IOUtils;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
@@ -21,6 +22,8 @@ import software.amazon.awssdk.services.s3.model.GetObjectRequest;
 import software.amazon.awssdk.services.s3.model.GetObjectResponse;
 
 import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
@@ -137,76 +140,95 @@ public class ExcelWorkerHandler implements RequestHandler<SQSEvent, String> {
      * 청크 처리
      */
     private void processChunk(ProcessingMessage message, Context context) throws IOException {
-        // 1. S3에서 파일 다운로드
-        context.getLogger().log("S3 다운로드: " + message.getS3Key());
+        // ⭐ 1. /tmp에 임시 파일 생성
+        Path tempFile = Files.createTempFile("excel-", ".xlsx");
 
-        GetObjectRequest getObjectRequest = GetObjectRequest.builder()
-                .bucket(message.getS3Bucket())
-                .key(message.getS3Key())
-                .build();
+        try {
+            context.getLogger().log("S3 다운로드: " + message.getS3Key());
 
-        try (ResponseInputStream<GetObjectResponse> s3Object = s3Client.getObject(getObjectRequest);
-             Workbook workbook = new XSSFWorkbook(s3Object)) {
+            GetObjectRequest getObjectRequest = GetObjectRequest.builder()
+                    .bucket(message.getS3Bucket())
+                    .key(message.getS3Key())
+                    .build();
 
-            Sheet sheet = workbook.getSheetAt(0);
+            // ⭐ 2. S3 → /tmp 파일로 다운로드
+            s3Client.getObject(getObjectRequest, tempFile);
 
-            // 2. 헤더 추출 (첫 번째 행)
-            Row headerRow = sheet.getRow(0);
-            List<String> headers = extractHeaders(headerRow);
+            context.getLogger().log("파일 다운로드 완료: " + tempFile.toFile().length() + " bytes");
 
-            context.getLogger().log("헤더: " + headers);
+            // ⭐ 3. File로 Workbook 열기 (메모리 사용량 1/10!)
+            try (Workbook workbook = new XSSFWorkbook(tempFile.toFile())) {
+                Sheet sheet = workbook.getSheetAt(0);
 
-            // 3. 데이터 파싱 및 MongoDB 삽입
-            MongoDatabase database = MongoDBConfig.getDatabase();
-            MongoCollection<Document> collection = database.getCollection("raw_data");
+                // 2. 헤더 추출 (첫 번째 행)
+                Row headerRow = sheet.getRow(0);
+                List<String> headers = extractHeaders(headerRow);
 
-            List<Document> batch = new ArrayList<>();
-            int processedCount = 0;
+                context.getLogger().log("헤더: " + headers);
 
-            // startRow-1 because POI is 0-based, but we're using 1-based indexing
-            for (int rowIndex = message.getStartRow() - 1; rowIndex < message.getEndRow(); rowIndex++) {
-                Row row = sheet.getRow(rowIndex);
-                if (row == null) continue;
+                // 3. 데이터 파싱 및 MongoDB 삽입
+                MongoDatabase database = MongoDBConfig.getDatabase();
+                MongoCollection<Document> collection = database.getCollection("raw_data");
 
-                // 행 데이터 추출
-                Map<String, Object> rowData = extractRowData(headers, row);
+                List<Document> batch = new ArrayList<>();
+                int processedCount = 0;
 
-                // MongoDB Document 생성
-                Document doc = new Document()
-                        .append("project_id", message.getProjectId())
-                        .append("session_id", message.getSessionId())
-                        .append("upload_id", message.getUploadId())
-                        .append("row_number", rowIndex) // 0-based
-                        .append("data", rowData)
-                        .append("is_hidden", false)
-                        .append("created_at", LocalDateTime.now().format(dateTimeFormatter))
-                        .append("updated_at", LocalDateTime.now().format(dateTimeFormatter));
+                // startRow-1 because POI is 0-based, but we're using 1-based indexing
+                for (int rowIndex = message.getStartRow() - 1; rowIndex < message.getEndRow(); rowIndex++) {
+                    Row row = sheet.getRow(rowIndex);
+                    if (row == null) continue;
 
-                batch.add(doc);
+                    // 행 데이터 추출
+                    Map<String, Object> rowData = extractRowData(headers, row);
 
-                // 배치 삽입
-                if (batch.size() >= BATCH_SIZE) {
+                    // MongoDB Document 생성
+                    Document doc = new Document()
+                            .append("project_id", message.getProjectId())
+                            .append("session_id", message.getSessionId())
+                            .append("upload_id", message.getUploadId())
+                            .append("row_number", rowIndex) // 0-based
+                            .append("data", rowData)
+                            .append("is_hidden", false)
+                            .append("created_at", LocalDateTime.now().format(dateTimeFormatter))
+                            .append("updated_at", LocalDateTime.now().format(dateTimeFormatter));
+
+                    batch.add(doc);
+
+                    // 배치 삽입
+                    if (batch.size() >= BATCH_SIZE) {
+                        collection.insertMany(batch);
+                        processedCount += batch.size();
+                        batch.clear();
+
+                        // Redis 진행률 업데이트
+                        updateProgress(message.getUploadId(), processedCount, message.getTotalRows(), context);
+
+                        context.getLogger().log("중간 저장: " + processedCount + "건");
+                    }
+                }
+
+                // 남은 데이터 삽입
+                if (!batch.isEmpty()) {
                     collection.insertMany(batch);
                     processedCount += batch.size();
-                    batch.clear();
 
                     // Redis 진행률 업데이트
                     updateProgress(message.getUploadId(), processedCount, message.getTotalRows(), context);
-
-                    context.getLogger().log("중간 저장: " + processedCount + "건");
                 }
+
+                context.getLogger().log("MongoDB 삽입 완료: " + processedCount + "건");
+            } catch (InvalidFormatException e) {
+                throw new RuntimeException(e);
             }
 
-            // 남은 데이터 삽입
-            if (!batch.isEmpty()) {
-                collection.insertMany(batch);
-                processedCount += batch.size();
-
-                // Redis 진행률 업데이트
-                updateProgress(message.getUploadId(), processedCount, message.getTotalRows(), context);
+        } finally {
+            // ⭐ 4. 임시 파일 삭제
+            try {
+                Files.deleteIfExists(tempFile);
+                context.getLogger().log("임시 파일 삭제: " + tempFile);
+            } catch (IOException e) {
+                context.getLogger().log("WARNING: 임시 파일 삭제 실패: " + e.getMessage());
             }
-
-            context.getLogger().log("MongoDB 삽입 완료: " + processedCount + "건");
         }
     }
 
