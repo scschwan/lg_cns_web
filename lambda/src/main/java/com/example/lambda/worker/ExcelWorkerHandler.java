@@ -22,7 +22,9 @@ import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.GetObjectRequest;
 import software.amazon.awssdk.services.s3.model.GetObjectResponse;
 
+import java.io.FileInputStream;
 import java.io.IOException;
+import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
@@ -142,95 +144,97 @@ public class ExcelWorkerHandler implements RequestHandler<SQSEvent, String> {
      * 청크 처리
      */
     private void processChunk(ProcessingMessage message, Context context) throws IOException {
-        // 1. 임시 파일 경로 생성
+        // ⭐ 1. /tmp에 임시 파일 다운로드
         Path tempFile = Files.createTempFile("excel-", ".xlsx");
 
         try {
             context.getLogger().log("S3 다운로드: " + message.getS3Key());
-            // ... (S3 다운로드 로직은 기존과 동일) ...
+
             GetObjectRequest getObjectRequest = GetObjectRequest.builder()
                     .bucket(message.getS3Bucket())
                     .key(message.getS3Key())
                     .build();
 
+            // S3 → 파일 다운로드
             try (ResponseInputStream<GetObjectResponse> s3Object = s3Client.getObject(getObjectRequest)) {
                 Files.copy(s3Object, tempFile, StandardCopyOption.REPLACE_EXISTING);
                 context.getLogger().log("파일 다운로드 완료: " + Files.size(tempFile) + " bytes");
             }
 
-            // ⭐ [수정] StreamingReader 사용 (메모리 절약)
-            // StreamingReader는 전체 파일을 로드하지 않고 스트리밍 방식으로 읽습니다.
-            try (Workbook workbook = StreamingReader.builder()
-                    .rowCacheSize(100)    // 메모리에 유지할 행의 수 (적을수록 메모리 절약)
-                    .bufferSize(4096)     // 버퍼 사이즈
-                    .open(tempFile.toFile())) { // 파일에서 읽기
+            // ⭐ 2. Streaming Reader로 Excel 열기 (메모리 20MB 고정!)
+            try (InputStream inputStream = new FileInputStream(tempFile.toFile());
+                 Workbook workbook = StreamingReader.builder()
+                         .rowCacheSize(100)    // 메모리에 100행만 유지
+                         .bufferSize(4096)     // 버퍼 4KB
+                         .open(inputStream)) {
 
                 Sheet sheet = workbook.getSheetAt(0);
 
-                // 2. 헤더 추출 및 데이터 파싱
+                // 3. 헤더 추출 (첫 번째 행)
+                Iterator<Row> rowIterator = sheet.iterator();
+                if (!rowIterator.hasNext()) {
+                    context.getLogger().log("WARNING: 빈 시트");
+                    return;
+                }
+
+                Row headerRow = rowIterator.next();
+                List<String> headers = extractHeaders(headerRow);
+                context.getLogger().log("헤더: " + headers);
+
+                // 4. MongoDB 준비
                 MongoDatabase database = MongoDBConfig.getDatabase();
                 MongoCollection<Document> collection = database.getCollection("raw_data");
 
                 List<Document> batch = new ArrayList<>();
                 int processedCount = 0;
-                List<String> headers = null;
+                int currentRowIndex = 1; // 헤더 다음부터 (0-based에서 1부터 시작)
 
-                // ⭐ StreamingReader는 getRow(i)를 지원하지 않으므로 for-each 사용
-                int currentRowIndex = 0;
+                // ⭐ 5. 스트리밍 방식으로 행 읽기 (메모리 효율적!)
+                while (rowIterator.hasNext()) {
+                    Row row = rowIterator.next();
 
-                for (Row row : sheet) {
-                    // 2-1. 헤더 추출 (0번째 행)
-                    if (currentRowIndex == 0) {
-                        headers = extractHeaders(row);
-                        context.getLogger().log("헤더 추출 완료: " + headers);
+                    // startRow ~ endRow 범위만 처리
+                    if (currentRowIndex < message.getStartRow() - 1) {
                         currentRowIndex++;
-                        continue;
+                        continue; // 범위 전: 건너뛰기
                     }
 
-                    // 2-2. 처리할 범위 이전의 행은 스킵 (Skip)
-                    // (스트리밍 방식이라 앞부분도 읽으면서 지나가야 합니다)
-                    if (currentRowIndex < message.getStartRow() - 1) { // startRow는 1-based, index는 0-based라 가정 시 조정 필요 (여기선 헤더 제외 후 데이터 기준인지 확인 필요. 보통 엑셀 행번호 기준이면 헤더가 0번)
-                        currentRowIndex++;
-                        continue;
-                    }
-
-                    // 2-3. 처리할 범위를 벗어나면 중단 (Break)
                     if (currentRowIndex >= message.getEndRow()) {
-                        break;
+                        break; // 범위 후: 종료
                     }
 
-                    // 2-4. 데이터 처리
-                    // (row가 null인 경우는 스트리밍에서 거의 없으나 체크)
-                    if (row != null) {
-                        Map<String, Object> rowData = extractRowData(headers, row);
+                    // 행 데이터 추출
+                    Map<String, Object> rowData = extractRowDataStreaming(headers, row);
 
-                        Document doc = new Document()
-                                .append("project_id", message.getProjectId())
-                                .append("session_id", message.getSessionId())
-                                .append("upload_id", message.getUploadId())
-                                .append("row_number", currentRowIndex) // 현재 행 번호
-                                .append("data", rowData)
-                                .append("is_hidden", false)
-                                .append("created_at", LocalDateTime.now().format(dateTimeFormatter))
-                                .append("updated_at", LocalDateTime.now().format(dateTimeFormatter));
+                    // MongoDB Document 생성
+                    Document doc = new Document()
+                            .append("project_id", message.getProjectId())
+                            .append("session_id", message.getSessionId())
+                            .append("upload_id", message.getUploadId())
+                            .append("row_number", currentRowIndex)
+                            .append("data", rowData)
+                            .append("is_hidden", false)
+                            .append("created_at", LocalDateTime.now().format(dateTimeFormatter))
+                            .append("updated_at", LocalDateTime.now().format(dateTimeFormatter));
 
-                        batch.add(doc);
-                    }
+                    batch.add(doc);
 
-                    // 배치 저장
+                    // 배치 삽입
                     if (batch.size() >= BATCH_SIZE) {
                         collection.insertMany(batch);
                         processedCount += batch.size();
                         batch.clear();
+
+                        // Redis 진행률 업데이트
                         updateProgress(message.getUploadId(), processedCount, message.getTotalRows(), context);
-                        // 로그 양이 너무 많으면 람다 비용 증가하므로 배수마다 로깅
-                        context.getLogger().log("중간 저장: " + processedCount + "건 (Row " + currentRowIndex + ")");
+
+                        context.getLogger().log("중간 저장: " + processedCount + "건 (행: " + currentRowIndex + ")");
                     }
 
                     currentRowIndex++;
                 }
 
-                // 남은 데이터 저장
+                // 남은 데이터 삽입
                 if (!batch.isEmpty()) {
                     collection.insertMany(batch);
                     processedCount += batch.size();
@@ -240,11 +244,8 @@ public class ExcelWorkerHandler implements RequestHandler<SQSEvent, String> {
                 context.getLogger().log("MongoDB 삽입 완료: " + processedCount + "건");
             }
 
-        } catch (Exception e) { // InvalidFormatException 등 포함
-            context.getLogger().log("ERROR processing chunk: " + e.getMessage());
-            throw new RuntimeException(e);
         } finally {
-            // 4. 임시 파일 삭제
+            // 6. 임시 파일 삭제
             try {
                 Files.deleteIfExists(tempFile);
                 context.getLogger().log("임시 파일 삭제 완료");
@@ -255,16 +256,35 @@ public class ExcelWorkerHandler implements RequestHandler<SQSEvent, String> {
     }
 
     /**
-     * 헤더 추출 (그대로 사용)
+     * Streaming Reader용 행 데이터 추출
+     */
+    private Map<String, Object> extractRowDataStreaming(List<String> headers, Row row) {
+        Map<String, Object> data = new LinkedHashMap<>();
+
+        for (int i = 0; i < headers.size(); i++) {
+            Cell cell = row.getCell(i);
+            String header = headers.get(i);
+            Object value = getCellValue(cell);
+            data.put(header, value);
+        }
+
+        return data;
+    }
+
+    /**
+     * Streaming Reader용 헤더 추출
      */
     private List<String> extractHeaders(Row headerRow) {
         List<String> headers = new ArrayList<>();
+
         for (Cell cell : headerRow) {
             String header = getCellValueAsString(cell);
             headers.add(header != null ? header : "Column_" + cell.getColumnIndex());
         }
+
         return headers;
     }
+
 
     /**
      * 행 데이터 추출
