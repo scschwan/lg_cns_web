@@ -31,7 +31,8 @@ import java.util.zip.ZipInputStream;
  */
 public class ExcelCoordinatorHandler implements RequestHandler<S3Event, String> {
 
-    private static final int CHUNK_SIZE = 100000; // 10만 행씩 분할
+    //private static final int CHUNK_SIZE = 100000; // 10만 행씩 분할
+    private static final int CHUNK_SIZE = 2000; // 10만 행씩 분할
     private static final String SQS_QUEUE_URL = System.getenv("SQS_QUEUE_URL");
     private static final String AWS_REGION = System.getenv("AWS_REGION") != null
             ? System.getenv("AWS_REGION")
