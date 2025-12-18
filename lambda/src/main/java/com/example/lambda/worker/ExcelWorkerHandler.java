@@ -24,6 +24,7 @@ import software.amazon.awssdk.services.s3.model.GetObjectResponse;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
@@ -140,7 +141,7 @@ public class ExcelWorkerHandler implements RequestHandler<SQSEvent, String> {
      * 청크 처리
      */
     private void processChunk(ProcessingMessage message, Context context) throws IOException {
-        // ⭐ 1. /tmp에 임시 파일 생성
+        // ⭐ 1. 임시 파일 경로만 생성 (파일은 아직 생성 안 함)
         Path tempFile = Files.createTempFile("excel-", ".xlsx");
 
         try {
@@ -151,19 +152,22 @@ public class ExcelWorkerHandler implements RequestHandler<SQSEvent, String> {
                     .key(message.getS3Key())
                     .build();
 
-            // ⭐ 2. S3 → /tmp 파일로 다운로드
-            s3Client.getObject(getObjectRequest, tempFile);
+            // ⭐ 2. InputStream으로 받아서 수동 복사
+            try (ResponseInputStream<GetObjectResponse> s3Object = s3Client.getObject(getObjectRequest)) {
+                // 파일에 복사 (파일이 이미 존재하므로 덮어쓰기)
+                Files.copy(s3Object, tempFile, StandardCopyOption.REPLACE_EXISTING);
 
-            context.getLogger().log("파일 다운로드 완료: " + tempFile.toFile().length() + " bytes");
+                long fileSize = Files.size(tempFile);
+                context.getLogger().log("파일 다운로드 완료: " + fileSize + " bytes");
+            }
 
-            // ⭐ 3. File로 Workbook 열기 (메모리 사용량 1/10!)
+            // ⭐ 3. File로 Workbook 열기 (메모리 절약!)
             try (Workbook workbook = new XSSFWorkbook(tempFile.toFile())) {
                 Sheet sheet = workbook.getSheetAt(0);
 
-                // 2. 헤더 추출 (첫 번째 행)
+                // 2. 헤더 추출
                 Row headerRow = sheet.getRow(0);
                 List<String> headers = extractHeaders(headerRow);
-
                 context.getLogger().log("헤더: " + headers);
 
                 // 3. 데이터 파싱 및 MongoDB 삽입
@@ -173,20 +177,17 @@ public class ExcelWorkerHandler implements RequestHandler<SQSEvent, String> {
                 List<Document> batch = new ArrayList<>();
                 int processedCount = 0;
 
-                // startRow-1 because POI is 0-based, but we're using 1-based indexing
                 for (int rowIndex = message.getStartRow() - 1; rowIndex < message.getEndRow(); rowIndex++) {
                     Row row = sheet.getRow(rowIndex);
                     if (row == null) continue;
 
-                    // 행 데이터 추출
                     Map<String, Object> rowData = extractRowData(headers, row);
 
-                    // MongoDB Document 생성
                     Document doc = new Document()
                             .append("project_id", message.getProjectId())
                             .append("session_id", message.getSessionId())
                             .append("upload_id", message.getUploadId())
-                            .append("row_number", rowIndex) // 0-based
+                            .append("row_number", rowIndex)
                             .append("data", rowData)
                             .append("is_hidden", false)
                             .append("created_at", LocalDateTime.now().format(dateTimeFormatter))
@@ -194,25 +195,18 @@ public class ExcelWorkerHandler implements RequestHandler<SQSEvent, String> {
 
                     batch.add(doc);
 
-                    // 배치 삽입
                     if (batch.size() >= BATCH_SIZE) {
                         collection.insertMany(batch);
                         processedCount += batch.size();
                         batch.clear();
-
-                        // Redis 진행률 업데이트
                         updateProgress(message.getUploadId(), processedCount, message.getTotalRows(), context);
-
                         context.getLogger().log("중간 저장: " + processedCount + "건");
                     }
                 }
 
-                // 남은 데이터 삽입
                 if (!batch.isEmpty()) {
                     collection.insertMany(batch);
                     processedCount += batch.size();
-
-                    // Redis 진행률 업데이트
                     updateProgress(message.getUploadId(), processedCount, message.getTotalRows(), context);
                 }
 
@@ -225,7 +219,7 @@ public class ExcelWorkerHandler implements RequestHandler<SQSEvent, String> {
             // ⭐ 4. 임시 파일 삭제
             try {
                 Files.deleteIfExists(tempFile);
-                context.getLogger().log("임시 파일 삭제: " + tempFile);
+                context.getLogger().log("임시 파일 삭제 완료");
             } catch (IOException e) {
                 context.getLogger().log("WARNING: 임시 파일 삭제 실패: " + e.getMessage());
             }
