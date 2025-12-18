@@ -31,9 +31,8 @@ dependencies {
     // Jedis (Redis)
     implementation 'redis.clients:jedis:5.1.0'
 
-    // Excel 처리
-    implementation 'org.apache.poi:poi:5.2.5'
-    implementation 'org.apache.poi:poi-ooxml:5.2.5'
+    // ⭐ FastExcel (POI 대체, 메모리 효율적!)
+    implementation 'org.dhatim:fastexcel-reader:0.17.0'
 
     // JSON 처리
     implementation 'com.google.code.gson:gson:2.10.1'
@@ -46,7 +45,7 @@ dependencies {
     implementation 'org.slf4j:slf4j-simple:2.0.9'
 
     //streaming
-    implementation 'com.monitorjbl:xlsx-streamer:2.1.0'
+    implementation 'com.monitorjbl:xlsx-streamer:5.0.1'
 }
 
 // Lambda 배포용 JAR 생성

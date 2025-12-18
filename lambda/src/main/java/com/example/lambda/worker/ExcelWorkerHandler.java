@@ -9,11 +9,6 @@ import com.example.lambda.model.ProcessingMessage;
 import com.google.gson.Gson;
 import com.mongodb.client.MongoCollection;
 import com.mongodb.client.MongoDatabase;
-import com.monitorjbl.xlsx.StreamingReader;
-import org.apache.poi.openxml4j.exceptions.InvalidFormatException;
-import org.apache.poi.ss.usermodel.*;
-import org.apache.poi.util.IOUtils;
-import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.bson.Document;
 import redis.clients.jedis.Jedis;
 import software.amazon.awssdk.core.ResponseInputStream;
@@ -22,32 +17,27 @@ import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.GetObjectRequest;
 import software.amazon.awssdk.services.s3.model.GetObjectResponse;
 
-import java.io.FileInputStream;
+// ⭐ FastExcel import
+import org.dhatim.fastexcel.reader.ReadableWorkbook;
+import org.dhatim.fastexcel.reader.Row;
+import org.dhatim.fastexcel.reader.Sheet;
+import org.dhatim.fastexcel.reader.Cell;
+
 import java.io.IOException;
-import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
+import java.util.stream.Stream;
 
-/**
- * Excel Worker Lambda Handler
- *
- * SQS 메시지 수신 → Excel 파싱 → MongoDB 삽입
- */
 public class ExcelWorkerHandler implements RequestHandler<SQSEvent, String> {
 
-    private static final int BATCH_SIZE = 20000; // MongoDB 배치 삽입 크기
+    private static final int BATCH_SIZE = 20000;
     private static final String AWS_REGION = System.getenv("AWS_REGION") != null
             ? System.getenv("AWS_REGION")
             : "ap-northeast-2";
-
-    // ⭐ Apache POI 메모리 제한 해제 (static 초기화)
-    static {
-        IOUtils.setByteArrayMaxOverride(Integer.MAX_VALUE);
-    }
 
     private final S3Client s3Client;
     private final Gson gson;
@@ -75,7 +65,6 @@ public class ExcelWorkerHandler implements RequestHandler<SQSEvent, String> {
                         processingMessage.getEndRow() +
                         (processingMessage.isFirstChunk() ? " (첫 청크 - Redis 초기화)" : ""));
 
-                // ⭐ 첫 번째 청크인 경우 Redis 초기화
                 if (processingMessage.isFirstChunk()) {
                     initializeRedisStatus(
                             processingMessage.getUploadId(),
@@ -99,12 +88,9 @@ public class ExcelWorkerHandler implements RequestHandler<SQSEvent, String> {
         }
     }
 
-    /**
-     * ⭐ Redis 상태 초기화 (첫 번째 Worker만 실행)
-     */
     private void initializeRedisStatus(String uploadId, int totalRows, Context context) {
         int maxRetries = 3;
-        int retryDelayMs = 5000; // 5초
+        int retryDelayMs = 5000;
 
         for (int attempt = 1; attempt <= maxRetries; attempt++) {
             try {
@@ -116,10 +102,10 @@ public class ExcelWorkerHandler implements RequestHandler<SQSEvent, String> {
                     jedis.hset(key, "progress", "0");
                     jedis.hset(key, "totalRows", String.valueOf(totalRows));
                     jedis.hset(key, "processedRows", "0");
-                    jedis.expire(key, 86400); // 24시간 TTL
+                    jedis.expire(key, 86400);
 
                     context.getLogger().log("Redis 초기화 성공! (시도 " + attempt + ")");
-                    return; // 성공 시 즉시 반환
+                    return;
                 }
 
             } catch (Exception e) {
@@ -133,7 +119,6 @@ public class ExcelWorkerHandler implements RequestHandler<SQSEvent, String> {
                         Thread.currentThread().interrupt();
                     }
                 } else {
-                    // ⚠️ 3회 실패 시 경고만 기록 (처리는 계속)
                     context.getLogger().log("WARNING: Redis 초기화 최종 실패 (진행률 추적 불가, 처리는 계속)");
                 }
             }
@@ -141,10 +126,9 @@ public class ExcelWorkerHandler implements RequestHandler<SQSEvent, String> {
     }
 
     /**
-     * 청크 처리
+     * ⭐ FastExcel 기반 청크 처리 (메모리 효율적!)
      */
     private void processChunk(ProcessingMessage message, Context context) throws IOException {
-        // ⭐ 1. /tmp에 임시 파일 다운로드
         Path tempFile = Files.createTempFile("excel-", ".xlsx");
 
         try {
@@ -161,77 +145,74 @@ public class ExcelWorkerHandler implements RequestHandler<SQSEvent, String> {
                 context.getLogger().log("파일 다운로드 완료: " + Files.size(tempFile) + " bytes");
             }
 
-            // ⭐ 2. Streaming Reader로 Excel 열기 (메모리 20MB 고정!)
-            try (InputStream inputStream = new FileInputStream(tempFile.toFile());
-                 Workbook workbook = StreamingReader.builder()
-                         .rowCacheSize(100)    // 메모리에 100행만 유지
-                         .bufferSize(4096)     // 버퍼 4KB
-                         .open(inputStream)) {
+            // ⭐ FastExcel로 스트리밍 읽기 (메모리 20MB 고정!)
+            try (ReadableWorkbook workbook = new ReadableWorkbook(tempFile.toFile())) {
+                Sheet sheet = workbook.getFirstSheet();
 
-                Sheet sheet = workbook.getSheetAt(0);
-
-                // 3. 헤더 추출 (첫 번째 행)
-                Iterator<Row> rowIterator = sheet.iterator();
-                if (!rowIterator.hasNext()) {
+                // 헤더 추출
+                Optional<Row> headerRowOpt = sheet.openStream().findFirst();
+                if (!headerRowOpt.isPresent()) {
                     context.getLogger().log("WARNING: 빈 시트");
                     return;
                 }
 
-                Row headerRow = rowIterator.next();
-                List<String> headers = extractHeaders(headerRow);
+                List<String> headers = extractHeaders(headerRowOpt.get());
                 context.getLogger().log("헤더: " + headers);
 
-                // 4. MongoDB 준비
+                // MongoDB 준비
                 MongoDatabase database = MongoDBConfig.getDatabase();
                 MongoCollection<Document> collection = database.getCollection("raw_data");
 
                 List<Document> batch = new ArrayList<>();
                 int processedCount = 0;
-                int currentRowIndex = 1; // 헤더 다음부터 (0-based에서 1부터 시작)
 
-                // ⭐ 5. 스트리밍 방식으로 행 읽기 (메모리 효율적!)
-                while (rowIterator.hasNext()) {
-                    Row row = rowIterator.next();
+                // ⭐ 스트리밍 방식으로 행 읽기
+                try (Stream<Row> rows = sheet.openStream().skip(1)) { // 헤더 스킵
+                    Iterator<Row> rowIterator = rows.iterator();
 
-                    // startRow ~ endRow 범위만 처리
-                    if (currentRowIndex < message.getStartRow() - 1) {
+                    int currentRowIndex = 1; // 0-based (헤더 다음)
+
+                    while (rowIterator.hasNext()) {
+                        Row row = rowIterator.next();
+
+                        // 범위 체크
+                        if (currentRowIndex < message.getStartRow() - 1) {
+                            currentRowIndex++;
+                            continue;
+                        }
+
+                        if (currentRowIndex >= message.getEndRow()) {
+                            break;
+                        }
+
+                        // 행 데이터 추출
+                        Map<String, Object> rowData = extractRowData(headers, row);
+
+                        // MongoDB Document 생성
+                        Document doc = new Document()
+                                .append("project_id", message.getProjectId())
+                                .append("session_id", message.getSessionId())
+                                .append("upload_id", message.getUploadId())
+                                .append("row_number", currentRowIndex)
+                                .append("data", rowData)
+                                .append("is_hidden", false)
+                                .append("created_at", LocalDateTime.now().format(dateTimeFormatter))
+                                .append("updated_at", LocalDateTime.now().format(dateTimeFormatter));
+
+                        batch.add(doc);
+
+                        // 배치 삽입
+                        if (batch.size() >= BATCH_SIZE) {
+                            collection.insertMany(batch);
+                            processedCount += batch.size();
+                            batch.clear();
+
+                            updateProgress(message.getUploadId(), processedCount, message.getTotalRows(), context);
+                            context.getLogger().log("중간 저장: " + processedCount + "건 (행: " + currentRowIndex + ")");
+                        }
+
                         currentRowIndex++;
-                        continue; // 범위 전: 건너뛰기
                     }
-
-                    if (currentRowIndex >= message.getEndRow()) {
-                        break; // 범위 후: 종료
-                    }
-
-                    // 행 데이터 추출
-                    Map<String, Object> rowData = extractRowDataStreaming(headers, row);
-
-                    // MongoDB Document 생성
-                    Document doc = new Document()
-                            .append("project_id", message.getProjectId())
-                            .append("session_id", message.getSessionId())
-                            .append("upload_id", message.getUploadId())
-                            .append("row_number", currentRowIndex)
-                            .append("data", rowData)
-                            .append("is_hidden", false)
-                            .append("created_at", LocalDateTime.now().format(dateTimeFormatter))
-                            .append("updated_at", LocalDateTime.now().format(dateTimeFormatter));
-
-                    batch.add(doc);
-
-                    // 배치 삽입
-                    if (batch.size() >= BATCH_SIZE) {
-                        collection.insertMany(batch);
-                        processedCount += batch.size();
-                        batch.clear();
-
-                        // Redis 진행률 업데이트
-                        updateProgress(message.getUploadId(), processedCount, message.getTotalRows(), context);
-
-                        context.getLogger().log("중간 저장: " + processedCount + "건 (행: " + currentRowIndex + ")");
-                    }
-
-                    currentRowIndex++;
                 }
 
                 // 남은 데이터 삽입
@@ -245,7 +226,6 @@ public class ExcelWorkerHandler implements RequestHandler<SQSEvent, String> {
             }
 
         } finally {
-            // 6. 임시 파일 삭제
             try {
                 Files.deleteIfExists(tempFile);
                 context.getLogger().log("임시 파일 삭제 완료");
@@ -256,46 +236,35 @@ public class ExcelWorkerHandler implements RequestHandler<SQSEvent, String> {
     }
 
     /**
-     * Streaming Reader용 행 데이터 추출
-     */
-    private Map<String, Object> extractRowDataStreaming(List<String> headers, Row row) {
-        Map<String, Object> data = new LinkedHashMap<>();
-
-        for (int i = 0; i < headers.size(); i++) {
-            Cell cell = row.getCell(i);
-            String header = headers.get(i);
-            Object value = getCellValue(cell);
-            data.put(header, value);
-        }
-
-        return data;
-    }
-
-    /**
-     * Streaming Reader용 헤더 추출
+     * FastExcel 헤더 추출
      */
     private List<String> extractHeaders(Row headerRow) {
         List<String> headers = new ArrayList<>();
 
         for (Cell cell : headerRow) {
-            String header = getCellValueAsString(cell);
-            headers.add(header != null ? header : "Column_" + cell.getColumnIndex());
+            String value = cell.getText();
+            headers.add(value != null && !value.isEmpty() ? value : "Column_" + cell.getColumnIndex());
         }
 
         return headers;
     }
 
-
     /**
-     * 행 데이터 추출
+     * FastExcel 행 데이터 추출
      */
     private Map<String, Object> extractRowData(List<String> headers, Row row) {
         Map<String, Object> data = new LinkedHashMap<>();
 
         for (int i = 0; i < headers.size(); i++) {
-            Cell cell = row.getCell(i);
+            Optional<Cell> cellOpt = Optional.ofNullable(row.getCell(i));
             String header = headers.get(i);
-            Object value = getCellValue(cell);
+
+            Object value = null;
+            if (cellOpt.isPresent()) {
+                Cell cell = cellOpt.get();
+                value = getCellValue(cell);
+            }
+
             data.put(header, value);
         }
 
@@ -303,69 +272,48 @@ public class ExcelWorkerHandler implements RequestHandler<SQSEvent, String> {
     }
 
     /**
-     * 셀 값 추출 (타입별 처리)
+     * FastExcel 셀 값 추출
      */
     private Object getCellValue(Cell cell) {
         if (cell == null) {
             return null;
         }
 
-        switch (cell.getCellType()) {
-            case STRING:
-                return cell.getStringCellValue();
+        // FastExcel은 자동으로 타입 변환
+        String text = cell.getText();
 
-            case NUMERIC:
-                if (DateUtil.isCellDateFormatted(cell)) {
-                    return cell.getLocalDateTimeCellValue().format(dateTimeFormatter);
-                } else {
-                    return cell.getNumericCellValue();
-                }
+        if (text == null || text.isEmpty()) {
+            return null;
+        }
 
-            case BOOLEAN:
-                return cell.getBooleanCellValue();
-
-            case FORMULA:
-                return cell.getCellFormula();
-
-            case BLANK:
-                return null;
-
-            default:
-                return cell.toString();
+        // 숫자 시도
+        try {
+            if (text.contains(".")) {
+                return Double.parseDouble(text);
+            } else {
+                return Long.parseLong(text);
+            }
+        } catch (NumberFormatException e) {
+            // 문자열로 반환
+            return text;
         }
     }
 
-    /**
-     * 셀 값을 문자열로 추출
-     */
-    private String getCellValueAsString(Cell cell) {
-        Object value = getCellValue(cell);
-        return value != null ? value.toString() : null;
-    }
-
-    /**
-     * Redis 진행률 업데이트
-     */
     private void updateProgress(String uploadId, int processedRows, int totalRows, Context context) {
         try (Jedis jedis = RedisConfig.getJedis()) {
             String key = "upload:status:" + uploadId;
 
-            // 원자적 증가
             long currentProcessed = jedis.hincrBy(key, "processedRows", processedRows);
-
-            // 진행률 계산
             int progress = (int) ((currentProcessed * 100.0) / totalRows);
             jedis.hset(key, "progress", String.valueOf(progress));
 
             context.getLogger().log("진행률 업데이트: " + progress + "% (" + currentProcessed + "/" + totalRows + ")");
 
-            // 완료 확인
             if (currentProcessed >= totalRows) {
                 jedis.hset(key, "status", "COMPLETED");
                 context.getLogger().log("파싱 완료!");
             }
         } catch (Exception e) {
-            // Redis 업데이트 실패 시 경고만 기록 (처리는 계속)
             context.getLogger().log("WARNING: Redis 진행률 업데이트 실패: " + e.getMessage());
         }
     }
