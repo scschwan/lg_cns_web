@@ -256,7 +256,7 @@ public class ExcelWorkerHandler implements RequestHandler<SQSEvent, String> {
         Map<String, Object> data = new LinkedHashMap<>();
 
         for (int i = 0; i < headers.size(); i++) {
-            Optional<Cell> cellOpt = Optional.ofNullable(row.getCell(i));
+            Optional<Cell> cellOpt = row.getCell(i);
             String header = headers.get(i);
 
             Object value = null;
