@@ -6,17 +6,27 @@ import com.amazonaws.services.lambda.runtime.events.S3Event;
 import com.amazonaws.services.lambda.runtime.events.models.s3.S3EventNotification;
 import com.example.lambda.model.ProcessingMessage;
 import com.google.gson.Gson;
+import software.amazon.awssdk.core.ResponseInputStream;
 import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.s3.S3Client;
+import software.amazon.awssdk.services.s3.model.GetObjectRequest;
+import software.amazon.awssdk.services.s3.model.GetObjectResponse;
 import software.amazon.awssdk.services.s3.model.HeadObjectRequest;
 import software.amazon.awssdk.services.s3.model.HeadObjectResponse;
 import software.amazon.awssdk.services.sqs.SqsClient;
 import software.amazon.awssdk.services.sqs.model.SendMessageRequest;
 
+import java.io.BufferedReader;
+import java.io.InputStreamReader;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipInputStream;
+
 /**
  * Excel Coordinator Lambda Handler
  *
- * S3 Event → 메타데이터 분석 (파일 크기 기반 추정) → SQS 메시지 발행
+ * S3 Event → 메타데이터 분석 (Dimension 태그 우선, 실패 시 파일 크기 추정) → SQS 메시지 발행
  */
 public class ExcelCoordinatorHandler implements RequestHandler<S3Event, String> {
 
@@ -64,13 +74,10 @@ public class ExcelCoordinatorHandler implements RequestHandler<S3Event, String> 
             context.getLogger().log("projectId=" + projectId + ", sessionId=" + sessionId +
                     ", uploadId=" + uploadId);
 
-            // 3. Excel 메타데이터 분석 (파일 크기 기반 추정)
+            // 3. Excel 메타데이터 분석 (Dimension 방식 우선)
             int totalRows = analyzeExcelMetadata(bucket, key, context);
 
-            context.getLogger().log("추정 행 개수: " + totalRows + " (헤더 제외)");
-
-            // ❌ Redis 초기화 제거! (Worker #1이 처리)
-            // initializeRedisStatus(uploadId, totalRows);
+            context.getLogger().log("최종 분석된 행 개수: " + totalRows + " (헤더 제외)");
 
             // 4. 청크 분할 및 SQS 메시지 발행
             int totalChunks = (int) Math.ceil((double) totalRows / CHUNK_SIZE);
@@ -113,15 +120,68 @@ public class ExcelCoordinatorHandler implements RequestHandler<S3Event, String> 
     }
 
     /**
-     * Excel 메타데이터 분석 (파일 크기 기반 추정)
-     *
-     * ⭐ 전체 파일을 메모리에 로드하지 않음! (메모리 효율)
+     * Excel 메타데이터 분석
+     * 1순위: XML Dimension 태그 분석 (정확, 빠름)
+     * 2순위: 파일 크기 기반 추정 (Fallback)
      */
     private int analyzeExcelMetadata(String bucket, String key, Context context) {
-        context.getLogger().log("Excel 메타데이터 분석 시작 (파일 크기 기반)...");
+        context.getLogger().log("Excel 메타데이터 분석 시작 (Dimension 태그 방식)...");
 
+        try (ResponseInputStream<GetObjectResponse> s3Stream = s3Client.getObject(
+                GetObjectRequest.builder().bucket(bucket).key(key).build());
+             ZipInputStream zipIn = new ZipInputStream(s3Stream)) {
+
+            ZipEntry entry;
+            while ((entry = zipIn.getNextEntry()) != null) {
+                // 가장 첫 번째 시트(sheet1.xml)만 확인
+                if (entry.getName().endsWith("xl/worksheets/sheet1.xml")) {
+
+                    context.getLogger().log("시트 발견: " + entry.getName());
+
+                    BufferedReader reader = new BufferedReader(new InputStreamReader(zipIn));
+                    String line;
+                    int rowCount = 0;
+
+                    // 정규식: <dimension ref="A1:F12345"/> 형태 찾기
+                    Pattern pattern = Pattern.compile("<dimension\\s+ref=\"[A-Z]+[0-9]+:[A-Z]+([0-9]+)\"");
+
+                    // 파일의 상단(50줄 이내)에서 dimension 태그 찾기
+                    int lineLimit = 50;
+                    int currentLine = 0;
+
+                    while ((line = reader.readLine()) != null && currentLine < lineLimit) {
+                        Matcher matcher = pattern.matcher(line);
+                        if (matcher.find()) {
+                            String rowsStr = matcher.group(1); // 그룹 1: ([0-9]+)
+                            rowCount = Integer.parseInt(rowsStr);
+                            context.getLogger().log("Dimension 태그 발견! 행 개수: " + rowCount);
+
+                            // 헤더 제외 (비즈니스 로직에 따라 1 차감)
+                            return rowCount > 0 ? rowCount - 1 : 0;
+                        }
+                        currentLine++;
+                    }
+
+                    context.getLogger().log("WARNING: Dimension 태그를 찾을 수 없음. Fallback 실행.");
+                    break; // 루프 종료 후 Fallback으로 이동
+                }
+            }
+        } catch (Exception e) {
+            context.getLogger().log("ERROR: Dimension 분석 실패: " + e.getMessage());
+            // 에러 발생 시에도 Fallback으로 이동
+        }
+
+        // 실패 시 안전장치: 기존의 파일 크기 기반 추정
+        return fallbackEstimate(bucket, key, context);
+    }
+
+    /**
+     * Fallback: 파일 크기 기반 추정 (기존 로직)
+     * Dimension 태그를 못 찾았을 때 실행됨
+     */
+    private int fallbackEstimate(String bucket, String key, Context context) {
+        context.getLogger().log("⚠️ Dimension 분석 실패. 파일 크기 기반 추정(Fallback) 시작...");
         try {
-            // S3 HeadObject로 파일 크기만 조회
             HeadObjectRequest headRequest = HeadObjectRequest.builder()
                     .bucket(bucket)
                     .key(key)
@@ -130,20 +190,17 @@ public class ExcelCoordinatorHandler implements RequestHandler<S3Event, String> 
             HeadObjectResponse headResponse = s3Client.headObject(headRequest);
             long fileSize = headResponse.contentLength();
 
-            context.getLogger().log("파일 크기: " + fileSize + " bytes (" +
-                    (fileSize / 1024 / 1024) + " MB)");
+            context.getLogger().log("파일 크기: " + fileSize + " bytes");
 
-            // 행 개수 추정: 1MB당 약 5,000~10,000행
-            // 보수적으로 200 bytes/row 가정
+            // 200바이트당 1행으로 추정
             int estimatedRows = (int) (fileSize / 200);
-
-            context.getLogger().log("추정 행 개수: " + estimatedRows);
+            context.getLogger().log("추정 행 개수 (Fallback): " + estimatedRows);
 
             return estimatedRows;
 
         } catch (Exception e) {
-            context.getLogger().log("ERROR: 메타데이터 분석 실패: " + e.getMessage());
-            throw new RuntimeException(e);
+            context.getLogger().log("ERROR: Fallback 추정 실패: " + e.getMessage());
+            throw new RuntimeException("메타데이터 분석 및 추정 모두 실패", e);
         }
     }
 
