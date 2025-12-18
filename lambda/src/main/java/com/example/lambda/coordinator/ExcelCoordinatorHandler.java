@@ -18,6 +18,7 @@ import software.amazon.awssdk.services.sqs.model.SendMessageRequest;
 
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
+import java.nio.charset.StandardCharsets;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.zip.ZipEntry;
@@ -133,45 +134,46 @@ public class ExcelCoordinatorHandler implements RequestHandler<S3Event, String> 
 
             ZipEntry entry;
             while ((entry = zipIn.getNextEntry()) != null) {
-                // 가장 첫 번째 시트(sheet1.xml)만 확인
                 if (entry.getName().endsWith("xl/worksheets/sheet1.xml")) {
 
                     context.getLogger().log("시트 발견: " + entry.getName());
 
-                    BufferedReader reader = new BufferedReader(new InputStreamReader(zipIn));
-                    String line;
-                    int rowCount = 0;
+                    // ⭐ [수정] readLine() 제거!
+                    // 무조건 앞부분 2KB(2048 바이트)만 읽어서 String으로 변환
+                    byte[] buffer = new byte[2048];
+                    int bytesRead = 0;
 
-                    // 정규식: <dimension ref="A1:F12345"/> 형태 찾기
-                    Pattern pattern = Pattern.compile("<dimension\\s+ref=\"[A-Z]+[0-9]+:[A-Z]+([0-9]+)\"");
-
-                    // 파일의 상단(50줄 이내)에서 dimension 태그 찾기
-                    int lineLimit = 50;
-                    int currentLine = 0;
-
-                    while ((line = reader.readLine()) != null && currentLine < lineLimit) {
-                        Matcher matcher = pattern.matcher(line);
-                        if (matcher.find()) {
-                            String rowsStr = matcher.group(1); // 그룹 1: ([0-9]+)
-                            rowCount = Integer.parseInt(rowsStr);
-                            context.getLogger().log("Dimension 태그 발견! 행 개수: " + rowCount);
-
-                            // 헤더 제외 (비즈니스 로직에 따라 1 차감)
-                            return rowCount > 0 ? rowCount - 1 : 0;
-                        }
-                        currentLine++;
+                    // 루프를 돌며 버퍼가 찰 때까지 읽음 (네트워크 패킷 분할 고려)
+                    int len;
+                    while (bytesRead < buffer.length && (len = zipIn.read(buffer, bytesRead, buffer.length - bytesRead)) != -1) {
+                        bytesRead += len;
                     }
 
-                    context.getLogger().log("WARNING: Dimension 태그를 찾을 수 없음. Fallback 실행.");
-                    break; // 루프 종료 후 Fallback으로 이동
+                    if (bytesRead > 0) {
+                        String xmlHeader = new String(buffer, 0, bytesRead, StandardCharsets.UTF_8);
+
+                        // 정규식으로 태그 찾기
+                        Pattern pattern = Pattern.compile("<dimension\\s+ref=\"[A-Z]+[0-9]+:[A-Z]+([0-9]+)\"");
+                        Matcher matcher = pattern.matcher(xmlHeader);
+
+                        if (matcher.find()) {
+                            String rowsStr = matcher.group(1);
+                            int rowCount = Integer.parseInt(rowsStr);
+                            context.getLogger().log("Dimension 태그 발견! 행 개수: " + rowCount);
+
+                            return rowCount > 0 ? rowCount - 1 : 0;
+                        }
+                    }
+
+                    context.getLogger().log("WARNING: 앞부분 2KB에서 Dimension 태그를 찾지 못함. Fallback 실행.");
+                    break; // 못 찾으면 Fallback
                 }
             }
         } catch (Exception e) {
-            context.getLogger().log("ERROR: Dimension 분석 실패: " + e.getMessage());
-            // 에러 발생 시에도 Fallback으로 이동
+            context.getLogger().log("ERROR: Dimension 분석 실패 (" + e.getClass().getSimpleName() + "): " + e.getMessage());
         }
 
-        // 실패 시 안전장치: 기존의 파일 크기 기반 추정
+        // 실패 시 안전장치
         return fallbackEstimate(bucket, key, context);
     }
 
