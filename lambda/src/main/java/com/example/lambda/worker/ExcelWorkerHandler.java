@@ -10,6 +10,7 @@ import com.google.gson.Gson;
 import com.mongodb.client.MongoCollection;
 import com.mongodb.client.MongoDatabase;
 import org.apache.poi.ss.usermodel.*;
+import org.apache.poi.util.IOUtils;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.bson.Document;
 import redis.clients.jedis.Jedis;
@@ -35,6 +36,11 @@ public class ExcelWorkerHandler implements RequestHandler<SQSEvent, String> {
     private static final String AWS_REGION = System.getenv("AWS_REGION") != null
             ? System.getenv("AWS_REGION")
             : "ap-northeast-2";
+
+    // ⭐ Apache POI 메모리 제한 해제 (static 초기화)
+    static {
+        IOUtils.setByteArrayMaxOverride(Integer.MAX_VALUE);
+    }
 
     private final S3Client s3Client;
     private final Gson gson;
