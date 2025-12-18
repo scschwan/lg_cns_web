@@ -94,7 +94,7 @@ spring:
 
     redis:
       #host: finance-redis2-1kdayr.serverless.apn2.cache.amazonaws.com
-      host: finance-redis-cluster.1kdayr.0001.apn2.cache.amazonaws.com.6379
+      host: finance-redis-cluster.1kdayr.0001.apn2.cache.amazonaws.com
       port: 6379
       ssl:
         enabled: true
