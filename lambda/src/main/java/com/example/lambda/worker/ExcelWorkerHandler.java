@@ -316,7 +316,13 @@ public class ExcelWorkerHandler implements RequestHandler<SQSEvent, String> {
 
             case NUMERIC:
                 if (DateUtil.isCellDateFormatted(cell)) {
-                    return cell.getLocalDateTimeCellValue().format(dateTimeFormatter);
+                    //return cell.getLocalDateTimeCellValue().format(dateTimeFormatter);
+
+                    // [수정 후] 호환성 코드
+                    return cell.getDateCellValue().toInstant()
+                            .atZone(java.time.ZoneId.systemDefault())
+                            .toLocalDateTime()
+                            .format(dateTimeFormatter);
                 } else {
                     return cell.getNumericCellValue();
                 }
