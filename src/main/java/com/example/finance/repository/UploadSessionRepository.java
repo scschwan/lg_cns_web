@@ -15,7 +15,7 @@ public interface UploadSessionRepository extends MongoRepository<UploadSession, 
 
     Optional<UploadSession> findByUploadId(String uploadId);
 
-    Page<UploadSession> findBySessionId(String sessionId, Pageable pageable);
+    Optional<UploadSession> findBySessionId(String sessionId);
 
     List<UploadSession> findBySessionIdAndStatus(String sessionId, UploadSession.UploadStatus status);
 

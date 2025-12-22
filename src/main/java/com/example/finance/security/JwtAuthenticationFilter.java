@@ -14,7 +14,6 @@ import org.springframework.util.StringUtils;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
-import java.util.ArrayList;
 
 /**
  * JWT 인증 필터
@@ -41,18 +40,24 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
             // 2. 토큰 검증 및 인증 정보 설정
             if (StringUtils.hasText(token) && jwtTokenProvider.validateToken(token)) {
-                String userId = jwtTokenProvider.getUserIdFromToken(token);
+                // ⭐ UserPrincipal 객체 생성
+                UserPrincipal userPrincipal = jwtTokenProvider.getUserPrincipalFromToken(token);
 
                 // 3. Spring Security 인증 객체 생성
                 UsernamePasswordAuthenticationToken authentication =
-                        new UsernamePasswordAuthenticationToken(userId, null, new ArrayList<>());
+                        new UsernamePasswordAuthenticationToken(
+                                userPrincipal,
+                                null,
+                                userPrincipal.getAuthorities()
+                        );
 
                 authentication.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
 
                 // 4. SecurityContext에 인증 정보 설정
                 SecurityContextHolder.getContext().setAuthentication(authentication);
 
-                log.debug("JWT 인증 성공: userId={}", userId);
+                log.debug("JWT 인증 성공: userId={}, email={}",
+                        userPrincipal.getId(), userPrincipal.getEmail());
             }
         } catch (Exception e) {
             log.error("JWT 인증 필터 오류", e);

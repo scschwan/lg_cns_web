@@ -94,6 +94,28 @@ public class JwtTokenProvider {
         return claims.get("email", String.class);
     }
 
+    // ⭐⭐⭐ 신규 메서드 추가 ⭐⭐⭐
+    /**
+     * 토큰에서 UserPrincipal 객체 생성
+     */
+    public UserPrincipal getUserPrincipalFromToken(String token) {
+        Claims claims = Jwts.parser()
+                .verifyWith(getSigningKey())
+                .build()
+                .parseSignedClaims(token)
+                .getPayload();
+
+        String userId = claims.getSubject();
+        String email = claims.get("email", String.class);
+
+        UserPrincipal userPrincipal = new UserPrincipal();
+        userPrincipal.setId(userId);
+        userPrincipal.setEmail(email);
+        userPrincipal.setUsername(email); // username은 email과 동일
+
+        return userPrincipal;
+    }
+
     /**
      * 토큰 유효성 검증
      */
