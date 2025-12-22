@@ -1,42 +1,42 @@
-HELP.md
-.gradle
-build/
-!gradle/wrapper/gradle-wrapper.jar
-!**/src/main/**/build/
-!**/src/test/**/build/
+/backend/HELP.md
+/backend/.gradle
+/backend/build/
+!/backend/gradle/wrapper/gradle-wrapper.jar
+!/backend/**/src/main/**/build/
+!/backend/**/src/test/**/build/
 
 ### STS ###
-.apt_generated
-.classpath
-.factorypath
-.project
-.settings
-.springBeans
-.sts4-cache
-bin/
-!**/src/main/**/bin/
-!**/src/test/**/bin/
+/backend/apt_generated
+/backend/classpath
+/backend/factorypath
+/backend/project
+/backend/settings
+/backend/springBeans
+/backend/sts4-cache
+/backend/bin/
+!/backend/**/src/main/**/bin/
+!/backend/**/src/test/**/bin/
 
 ### sample ###
-*.xlsx
-large_dataset_*.xlsx
+/backend/*.xlsx
+/backend/large_dataset_*.xlsx
 
 ### IntelliJ IDEA ###
-.idea
-*.iws
-*.iml
-*.ipr
-out/
-!**/src/main/**/out/
-!**/src/test/**/out/
+/backend/.idea
+/backend/*.iws
+/backend/*.iml
+/backend/*.ipr
+/backend/out/
+!/backend/**/src/main/**/out/
+!/backend/**/src/test/**/out/
 
 # Log files
-*.log
+/backend/*.log
 
 # Environment
-.env
-application-local.yml
-application-secret.yml
+/backend/.env
+/backend/application-local.yml
+/backend/application-secret.yml
 
 ### NetBeans ###
 /nbproject/private/
@@ -46,5 +46,11 @@ application-secret.yml
 /.nb-gradle/
 
 ### VS Code ###
-.vscode/
-/sample/
+/backend/.vscode/
+/backend/sample/
+/history/
+/.idea/
+/Finance Tool AWS 인프라 정보.txt
+/(LG CNS) 계정원장 분류 Tool Web 전환 계획.pptx
+/backend/.gradle/
+/markdown/*
