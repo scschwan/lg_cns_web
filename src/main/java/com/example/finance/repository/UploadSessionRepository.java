@@ -21,5 +21,10 @@ public interface UploadSessionRepository extends MongoRepository<UploadSession, 
 
     List<UploadSession> findByStatusAndCreatedAtBefore(UploadSession.UploadStatus status, LocalDateTime dateTime);
 
+    /**
+     * 프로젝트의 업로드 파일 목록 조회
+     */
+    List<UploadSession> findByProjectIdOrderByCreatedAtDesc(String projectId);
+
     long countBySessionId(String sessionId);
 }

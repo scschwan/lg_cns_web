@@ -1,5 +1,7 @@
 package com.example.finance.service;
 
+import com.example.finance.model.UploadSession;
+import com.example.finance.repository.UploadSessionRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.core.HashOperations;
@@ -7,6 +9,7 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
@@ -16,6 +19,8 @@ import java.util.UUID;
 public class UploadService {
 
     private final StringRedisTemplate redisTemplate;
+    private final UploadSessionRepository uploadSessionRepository;
+
 
     // Lambda와 공유하는 Redis Key Prefix
     private static final String UPLOAD_STATUS_KEY_PREFIX = "upload:status:";
@@ -104,5 +109,12 @@ public class UploadService {
             log.error("Redis 조회 중 오류 발생: uploadId={}, error={}", uploadId, e.getMessage());
             throw new RuntimeException("업로드 상태 조회 실패: " + e.getMessage());
         }
+    }
+
+    /**
+     * 프로젝트의 업로드된 파일 목록 조회
+     */
+    public List<UploadSession> getProjectFiles(String projectId) {
+        return uploadSessionRepository.findByProjectIdOrderByCreatedAtDesc(projectId);
     }
 }

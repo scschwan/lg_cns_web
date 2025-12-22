@@ -1,5 +1,6 @@
 package com.example.finance.controller;
 
+import com.example.finance.model.UploadSession;
 import com.example.finance.service.ProjectService;
 import com.example.finance.service.S3Service;
 import com.example.finance.service.UploadService;
@@ -10,6 +11,7 @@ import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -44,7 +46,7 @@ public class UploadController {
                 projectId, fileName, fileSize);
 
         // 1. 프로젝트 멤버 권한 확인
-        projectService.getProject(projectId); // 프로젝트 존재 여부만 확인
+        projectService.getProject(projectId, userId);
 
         // 2. 세션 및 업로드 ID 생성
         String sessionId = uploadService.createSession(projectId, userId);
@@ -86,5 +88,28 @@ public class UploadController {
         Map<String, Object> status = uploadService.getUploadStatus(uploadId);
 
         return ResponseEntity.ok(status);
+    }
+
+    // ⭐⭐⭐ 신규 추가 ⭐⭐⭐
+    /**
+     * 프로젝트의 업로드된 파일 목록 조회
+     *
+     * GET /api/projects/{projectId}/upload/files
+     */
+    @GetMapping("/files")
+    public ResponseEntity<List<UploadSession>> getUploadedFiles(
+            @PathVariable String projectId,
+            Authentication authentication) {
+
+        String userId = authentication.getName();
+        log.info("업로드된 파일 목록 조회: projectId={}, userId={}", projectId, userId);
+
+        // 프로젝트 멤버 권한 확인
+        projectService.getProject(projectId, userId);
+
+        // 프로젝트의 모든 업로드 파일 조회
+        List<UploadSession> files = uploadService.getProjectFiles(projectId);
+
+        return ResponseEntity.ok(files);
     }
 }

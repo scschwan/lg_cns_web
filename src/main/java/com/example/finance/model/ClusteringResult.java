@@ -11,26 +11,25 @@ import org.springframework.data.mongodb.core.mapping.Document;
 import org.springframework.data.mongodb.core.mapping.Field;
 
 import java.time.LocalDateTime;
-import java.util.Map;
+import java.util.List;
 
 /**
- * Raw 데이터 문서
+ * 클러스터링 결과
  *
- * MongoDB 컬렉션: raw_data
+ * MongoDB 컬렉션: clustering_results
  */
-@Document(collection = "raw_data")
+@Document(collection = "clustering_results")
 @Data
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
 @CompoundIndex(name = "project_session_idx", def = "{'project_id': 1, 'session_id': 1}")
-@CompoundIndex(name = "session_row_idx", def = "{'session_id': 1, 'row_number': 1}")
-public class RawDataDocument {
+@CompoundIndex(name = "session_cluster_idx", def = "{'session_id': 1, 'cluster_id': 1}")
+public class ClusteringResult {
 
     @Id
     private String id;
 
-    // ⭐ 신규 추가
     /**
      * 프로젝트 ID
      */
@@ -46,25 +45,44 @@ public class RawDataDocument {
     private String sessionId;
 
     /**
-     * 원본 데이터 (가변 필드)
+     * 클러스터 ID
      */
-    private Map<String, Object> data;
+    @Field("cluster_id")
+    private Integer clusterId;
 
     /**
-     * 파일 ID
+     * 클러스터명
      */
-    @Field("file_id")
-    private String fileId;
+    @Field("cluster_name")
+    private String clusterName;
 
     /**
-     * 행 번호
+     * 클러스터 중심점 (K-Means)
      */
-    @Field("row_number")
-    private Integer rowNumber;
+    @Field("cluster_center")
+    private List<Double> clusterCenter;
+
+    /**
+     * 레코드 수
+     */
+    @Field("record_count")
+    private Long recordCount;
+
+    /**
+     * 합산 금액
+     */
+    @Field("total_amount")
+    private Long totalAmount;
 
     /**
      * 생성 시간
      */
     @Field("created_at")
     private LocalDateTime createdAt;
+
+    /**
+     * 수정 시간
+     */
+    @Field("updated_at")
+    private LocalDateTime updatedAt;
 }

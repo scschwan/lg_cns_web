@@ -5,12 +5,14 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 import org.springframework.data.annotation.Id;
+import org.springframework.data.mongodb.core.index.CompoundIndex;
 import org.springframework.data.mongodb.core.index.Indexed;
 import org.springframework.data.mongodb.core.mapping.Document;
 import org.springframework.data.mongodb.core.mapping.Field;
 
 import java.time.LocalDateTime;
-import java.util.Map;
+import java.util.ArrayList;
+import java.util.List;
 
 /**
  * 프로젝트 모델
@@ -24,6 +26,8 @@ import java.util.Map;
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
+@CompoundIndex(name = "created_by_created_at_idx", def = "{'created_by': 1, 'created_at': -1}")
+@CompoundIndex(name = "members_user_id_idx", def = "{'members.user_id': 1}")
 public class Project {
 
     @Id
@@ -39,7 +43,8 @@ public class Project {
     /**
      * 프로젝트 이름
      */
-    private String name;
+    @Field("project_name")
+    private String projectName;
 
     /**
      * 프로젝트 설명
@@ -47,10 +52,11 @@ public class Project {
     private String description;
 
     /**
-     * 소유자 ID
+     * 생성자 ID (User._id)
      */
-    @Field("owner_id")
-    private String ownerId;
+    @Indexed
+    @Field("created_by")
+    private String createdBy;
 
     /**
      * 생성 시간
@@ -64,15 +70,52 @@ public class Project {
     @Field("updated_at")
     private LocalDateTime updatedAt;
 
-    /**
-     * 활성화 여부
-     */
-    @Field("is_active")
-    @Builder.Default
-    private Boolean isActive = true;
+    // ⭐⭐⭐ 신규 추가 필드 ⭐⭐⭐
 
     /**
-     * 프로젝트 설정 (JSON 형태)
+     * 프로젝트 멤버 목록 (임베디드)
      */
-    private Map<String, Object> settings;
+    @Builder.Default
+    private List<ProjectMember> members = new ArrayList<>();
+
+    /**
+     * 총 세션 수 (캐싱용)
+     */
+    @Field("total_sessions")
+    @Builder.Default
+    private Integer totalSessions = 0;
+
+    /**
+     * 완료된 세션 수 (캐싱용)
+     */
+    @Field("completed_sessions")
+    @Builder.Default
+    private Integer completedSessions = 0;
+
+    /**
+     * 총 파일 수 (캐싱용)
+     */
+    @Field("total_files")
+    @Builder.Default
+    private Integer totalFiles = 0;
+
+    /**
+     * 삭제 여부
+     */
+    @Indexed
+    @Field("is_deleted")
+    @Builder.Default
+    private Boolean isDeleted = false;
+
+    /**
+     * 삭제 시간
+     */
+    @Field("deleted_at")
+    private LocalDateTime deletedAt;
+
+    /**
+     * 삭제한 사용자 ID
+     */
+    @Field("deleted_by")
+    private String deletedBy;
 }

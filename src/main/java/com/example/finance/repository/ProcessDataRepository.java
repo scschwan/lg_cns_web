@@ -1,27 +1,40 @@
 package com.example.finance.repository;
 
-import com.example.finance.model.RawDataDocument;
+import com.example.finance.model.ProcessDataDocument;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.mongodb.repository.MongoRepository;
 import org.springframework.stereotype.Repository;
 
+import java.util.List;
+
 /**
- * RawData Repository
+ * ProcessData Repository
  */
 @Repository
-public interface RawDataRepository extends MongoRepository<RawDataDocument, String> {
+public interface ProcessDataRepository extends MongoRepository<ProcessDataDocument, String> {
 
     /**
      * 세션 ID로 페이징 조회
      */
-    Page<RawDataDocument> findBySessionId(String sessionId, Pageable pageable);
+    Page<ProcessDataDocument> findBySessionId(String sessionId, Pageable pageable);
 
     /**
      * 프로젝트 ID + 세션 ID로 페이징 조회
      */
-    Page<RawDataDocument> findByProjectIdAndSessionId(
+    Page<ProcessDataDocument> findByProjectIdAndSessionId(
             String projectId, String sessionId, Pageable pageable);
+
+    /**
+     * 세션 ID + 클러스터 ID로 조회
+     */
+    List<ProcessDataDocument> findBySessionIdAndClusterId(String sessionId, Integer clusterId);
+
+    /**
+     * 세션 ID + 숨김 여부로 조회
+     */
+    Page<ProcessDataDocument> findBySessionIdAndIsHidden(
+            String sessionId, Boolean isHidden, Pageable pageable);
 
     /**
      * 세션의 총 개수 조회
