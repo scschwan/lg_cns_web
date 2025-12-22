@@ -9,6 +9,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
+import com.example.finance.security.CurrentUser;  // ⭐ 추가
+import com.example.finance.security.UserPrincipal;  // ⭐ 추가
 
 import java.util.HashMap;
 import java.util.List;
@@ -39,11 +41,12 @@ public class UploadController {
             @PathVariable String projectId,
             @RequestParam String fileName,
             @RequestParam Long fileSize,
-            Authentication authentication) {
+            @CurrentUser UserPrincipal userPrincipal) {  // ⭐ 수정
 
-        String userId = authentication.getName();
-        log.info("Presigned URL 생성 요청: projectId={}, fileName={}, fileSize={}",
-                projectId, fileName, fileSize);
+
+        String userId = userPrincipal.getId();  // ⭐ ObjectId 사용
+        log.info("Presigned URL 생성 요청: projectId={}, fileName={}, fileSize={}, userId={}",
+                projectId, fileName, fileSize, userId);
 
         // 1. 프로젝트 멤버 권한 확인
         projectService.getProject(projectId, userId);
@@ -99,10 +102,11 @@ public class UploadController {
     @GetMapping("/files")
     public ResponseEntity<List<UploadSession>> getUploadedFiles(
             @PathVariable String projectId,
-            Authentication authentication) {
+            @CurrentUser UserPrincipal userPrincipal) {  // ⭐ 수정
 
-        String userId = authentication.getName();
+        String userId = userPrincipal.getId();  // ⭐ ObjectId 사용
         log.info("업로드된 파일 목록 조회: projectId={}, userId={}", projectId, userId);
+
 
         // 프로젝트 멤버 권한 확인
         projectService.getProject(projectId, userId);
