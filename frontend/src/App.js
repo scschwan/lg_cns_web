@@ -6,6 +6,7 @@ import PrivateRoute from './components/PrivateRoute';
 import LoginPage from './pages/LoginPage';
 import RegisterPage from './pages/RegisterPage';
 import ProjectDashboard from './pages/ProjectDashboard';
+import ProjectDetail from './pages/ProjectDetail';  // ⭐ 신규 추가
 
 function App() {
     return (
@@ -15,15 +16,27 @@ function App() {
                 <Routes>
                     <Route path="/login" element={<LoginPage />} />
                     <Route path="/register" element={<RegisterPage />} />
+
+                    {/* Private Routes */}
                     <Route
-                        path="/dashboard"
+                        path="/projects"
                         element={
                             <PrivateRoute>
                                 <ProjectDashboard />
                             </PrivateRoute>
                         }
                     />
-                    <Route path="/" element={<Navigate to="/dashboard" />} />
+                    {/* ⭐ 신규 라우트 */}
+                    <Route
+                        path="/projects/:projectId"
+                        element={
+                            <PrivateRoute>
+                                <ProjectDetail />
+                            </PrivateRoute>
+                        }
+                    />
+
+                    {/* Default Redirect */}
                 </Routes>
             </Router>
         </AuthProvider>

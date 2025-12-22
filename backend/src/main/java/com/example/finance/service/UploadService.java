@@ -8,6 +8,7 @@ import org.springframework.data.redis.core.HashOperations;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 
+import java.time.LocalDateTime;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -66,6 +67,31 @@ public class UploadService {
         } catch (Exception e) {
             log.error("Redis 저장 중 오류 발생: {}", e.getMessage(), e);
             throw new RuntimeException("업로드 세션 생성 실패");
+        }
+
+        // ⭐ 2. MongoDB 저장 (파일 목록 표시용)
+        UploadSession uploadSession = UploadSession.builder()
+                .projectId(projectId)
+                .sessionId(sessionId)
+                .uploadId(uploadId)
+                .s3Bucket("finance-excel-uploads")  // ⭐ 하드코딩 또는 환경변수
+                .s3Key(s3Key)
+                .fileName(fileName)
+                .fileSize(fileSize)
+                .status(UploadSession.UploadStatus.PENDING)
+                .progress(0)
+                .totalRows(0)
+                .processedRows(0)
+                .createdAt(LocalDateTime.now())
+                .updatedAt(LocalDateTime.now())
+                .build();
+
+        try {
+            uploadSessionRepository.save(uploadSession);
+            log.info("MongoDB 업로드 세션 저장 완료: uploadId={}", uploadId);
+        } catch (Exception e) {
+            log.error("MongoDB 저장 중 오류 발생: {}", e.getMessage(), e);
+            throw new RuntimeException("업로드 세션 저장 실패");
         }
     }
 

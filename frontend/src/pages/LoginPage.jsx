@@ -27,7 +27,8 @@ function LoginPage() {
 
         try {
             await login({ email, password });
-            navigate('/dashboard');
+            //navigate('/dashboard');
+            navigate('/projects');
         } catch (err) {
             setError(err.response?.data?.message || '로그인에 실패했습니다.');
         } finally {

@@ -24,7 +24,15 @@ export const AuthProvider = ({ children }) => {
 
     const login = async (credentials) => {
         const data = await authService.login(credentials);
-        setUser(data.user);
+
+        // ⭐ 백엔드 응답 구조에 맞게 수정
+        const user = {
+            userId: data.userId,
+            email: data.email,
+            name: data.name
+        };
+
+        setUser(user);
         return data;
     };
 

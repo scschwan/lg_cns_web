@@ -1,6 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import projectService from '../services/projectService';
+
+import { useNavigate } from 'react-router-dom';  // ⭐ 추가
+
 import {
     Container,
     Box,
@@ -19,6 +22,7 @@ import {
 } from '@mui/material';
 import AddIcon from '@mui/icons-material/Add';
 import FolderIcon from '@mui/icons-material/Folder';
+import CreateProjectDialog from "../components/CreateProjectDialog";
 
 function ProjectDashboard() {
     const [projects, setProjects] = useState([]);
@@ -26,6 +30,7 @@ function ProjectDashboard() {
     const [error, setError] = useState('');
     const [openDialog, setOpenDialog] = useState(false);
     const [newProject, setNewProject] = useState({ name: '', description: '' });
+    const navigate = useNavigate();  // ⭐ 추가
 
     const { user } = useAuth();
 
@@ -95,7 +100,7 @@ function ProjectDashboard() {
                 ) : (
                     <Grid container spacing={3}>
                         {projects.map((project) => (
-                            <Grid item xs={12} sm={6} md={4} key={project.id}>
+                            <Grid item xs={12} sm={6} md={4} key={project.projectId}>  {/* ⭐ id → projectId */}
                                 <Card>
                                     <CardContent>
                                         <Typography variant="h6" component="h2" gutterBottom>
@@ -107,12 +112,28 @@ function ProjectDashboard() {
                                         <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block' }}>
                                             생성일: {new Date(project.createdAt).toLocaleDateString()}
                                         </Typography>
+                                        {/* ⭐ 추가 정보 표시 */}
+                                        <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
+                                            세션: {project.completedSessions}/{project.totalSessions}
+                                        </Typography>
+                                        <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
+                                            멤버: {project.memberCount}명
+                                        </Typography>
                                     </CardContent>
                                     <CardActions>
-                                        <Button size="small" color="primary">
+                                        <Button
+                                            size="small"
+                                            color="primary"
+                                            onClick={() => navigate(`/projects/${project.projectId}/upload`)}
+                                        >
                                             열기
                                         </Button>
-                                        <Button size="small">
+
+                                        {/* ⭐ 새 "설정" 버튼 추가 */}
+                                        <Button
+                                            size="small"
+                                            onClick={() => navigate(`/projects/${project.projectId}/settings`)}
+                                        >
                                             설정
                                         </Button>
                                     </CardActions>
@@ -120,6 +141,8 @@ function ProjectDashboard() {
                             </Grid>
                         ))}
                     </Grid>
+
+
                 )}
             </Box>
 
@@ -153,6 +176,17 @@ function ProjectDashboard() {
                     </Button>
                 </DialogActions>
             </Dialog>
+
+            {/* ⭐ CreateProjectDialog에 onCreate prop 전달 */}
+            <CreateProjectDialog
+                open={openDialog}
+                onClose={() => setOpenDialog(false)}
+                onCreate={async (projectData) => {
+                    const createdProject = await projectService.createProject(projectData);
+                    loadProjects(); // 목록 새로고침
+                    return createdProject; // ⭐ 생성된 프로젝트 반환 (파일 업로드에 사용)
+                }}
+            />
         </Container>
     );
 }

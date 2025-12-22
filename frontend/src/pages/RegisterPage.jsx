@@ -13,7 +13,7 @@ import {
 
 function RegisterPage() {
     const [formData, setFormData] = useState({
-        username: '',
+        name: '',              // ⭐ username → name
         email: '',
         password: '',
         confirmPassword: ''
@@ -40,11 +40,17 @@ function RegisterPage() {
             return;
         }
 
+        // 비밀번호 길이 검증
+        if (formData.password.length < 8) {
+            setError('비밀번호는 최소 8자 이상이어야 합니다.');
+            return;
+        }
+
         setLoading(true);
 
         try {
             await authService.register({
-                username: formData.username,
+                name: formData.name,        // ⭐ username → name
                 email: formData.email,
                 password: formData.password
             });
@@ -80,12 +86,12 @@ function RegisterPage() {
                             margin="normal"
                             required
                             fullWidth
-                            id="username"
-                            label="사용자 이름"
-                            name="username"
+                            id="name"                    // ⭐ username → name
+                            label="이름"                  // ⭐ "사용자 이름" → "이름"
+                            name="name"                  // ⭐ username → name
                             autoComplete="name"
                             autoFocus
-                            value={formData.username}
+                            value={formData.name}        // ⭐ username → name
                             onChange={handleChange}
                         />
                         <TextField
@@ -104,7 +110,7 @@ function RegisterPage() {
                             required
                             fullWidth
                             name="password"
-                            label="비밀번호"
+                            label="비밀번호 (8자 이상)"    // ⭐ 힌트 추가
                             type="password"
                             id="password"
                             autoComplete="new-password"
