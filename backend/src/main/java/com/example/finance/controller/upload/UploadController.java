@@ -18,7 +18,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
-import org.springframework.security.core.userdetails.UserDetails;
+import com.example.finance.security.UserPrincipal;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -53,10 +53,10 @@ public class UploadController {
     @PostMapping("/presigned-url")
     public ResponseEntity<PresignedUrlResponse> createPresignedUrl(
             @PathVariable String projectId,
-            @AuthenticationPrincipal UserDetails userDetails,
+            @AuthenticationPrincipal UserPrincipal userPrincipal,
             @Valid @RequestBody PresignedUrlRequest request) {
 
-        String userId = userDetails.getUsername();
+        String userId = userPrincipal.getUsername();
         log.info("Presigned URL 생성 요청: projectId={}, userId={}, fileName={}",
                 projectId, userId, request.getFileName());
 
@@ -111,9 +111,9 @@ public class UploadController {
     public ResponseEntity<Map<String, Object>> getUploadStatus(
             @PathVariable String projectId,
             @PathVariable String uploadId,
-            @AuthenticationPrincipal UserDetails userDetails) {
+            @AuthenticationPrincipal UserPrincipal userPrincipal) {
 
-        String userId = userDetails.getUsername();
+        String userId = userPrincipal.getUsername();
         log.info("업로드 상태 조회: projectId={}, uploadId={}", projectId, uploadId);
 
         // 프로젝트 권한 확인
@@ -134,9 +134,9 @@ public class UploadController {
     @GetMapping("/files")
     public ResponseEntity<List<UploadedFileInfo>> getProjectFiles(
             @PathVariable String projectId,
-            @AuthenticationPrincipal UserDetails userDetails) {
+            @AuthenticationPrincipal UserPrincipal userPrincipal) {
 
-        String userId = userDetails.getUsername();
+        String userId = userPrincipal.getUsername();
         log.info("프로젝트 파일 목록 조회: projectId={}", projectId);
 
         // 프로젝트 권한 확인
@@ -161,10 +161,10 @@ public class UploadController {
     @PostMapping("/files")
     public ResponseEntity<UploadFileResponse> completeFileUpload(
             @PathVariable String projectId,
-            @AuthenticationPrincipal UserDetails userDetails,
+            @AuthenticationPrincipal UserPrincipal userPrincipal,
             @Valid @RequestBody UploadFileRequest request) {
 
-        String userId = userDetails.getUsername();
+        String userId = userPrincipal.getUsername();
         log.info("파일 업로드 완료: projectId={}, fileName={}", projectId, request.getFileName());
 
         // 프로젝트 권한 확인
@@ -187,10 +187,10 @@ public class UploadController {
     @PostMapping("/analyze")
     public ResponseEntity<List<AccountPartitionResponse>> analyzeFiles(
             @PathVariable String projectId,
-            @AuthenticationPrincipal UserDetails userDetails,
+            @AuthenticationPrincipal UserPrincipal userPrincipal,
             @RequestBody Map<String, List<String>> request) {
 
-        String userId = userDetails.getUsername();
+        String userId = userPrincipal.getUsername();
         List<String> fileIds = request.get("fileIds");
 
         log.info("파일 분석 요청: projectId={}, fileIds={}", projectId, fileIds);
@@ -219,10 +219,10 @@ public class UploadController {
     public ResponseEntity<UploadedFileInfo> setFileColumns(
             @PathVariable String projectId,
             @PathVariable String fileId,
-            @AuthenticationPrincipal UserDetails userDetails,
+            @AuthenticationPrincipal UserPrincipal userPrincipal,
             @Valid @RequestBody SetFileColumnsRequest request) {
 
-        String userId = userDetails.getUsername();
+        String userId = userPrincipal.getUsername();
         log.info("파일 컬럼 설정: projectId={}, fileId={}", projectId, fileId);
 
         // 프로젝트 권한 확인
@@ -241,10 +241,10 @@ public class UploadController {
     public ResponseEntity<Map<String, List<String>>> extractAccountValues(
             @PathVariable String projectId,
             @PathVariable String fileId,
-            @AuthenticationPrincipal UserDetails userDetails,
+            @AuthenticationPrincipal UserPrincipal userPrincipal,
             @RequestBody Map<String, String> request) {
 
-        String userId = userDetails.getUsername();
+        String userId = userPrincipal.getUsername();
         String columnName = request.get("columnName");
 
         log.info("계정명 추출: fileId={}, columnName={}", fileId, columnName);
@@ -265,10 +265,10 @@ public class UploadController {
     public ResponseEntity<Map<String, Double>> calculateTotalAmount(
             @PathVariable String projectId,
             @PathVariable String fileId,
-            @AuthenticationPrincipal UserDetails userDetails,
+            @AuthenticationPrincipal UserPrincipal userPrincipal,
             @RequestBody Map<String, String> request) {
 
-        String userId = userDetails.getUsername();
+        String userId = userPrincipal.getUsername();
         String columnName = request.get("columnName");
 
         log.info("금액 합산: fileId={}, columnName={}", fileId, columnName);
@@ -289,9 +289,9 @@ public class UploadController {
     public ResponseEntity<Void> deleteFile(
             @PathVariable String projectId,
             @PathVariable String fileId,
-            @AuthenticationPrincipal UserDetails userDetails) {
+            @AuthenticationPrincipal UserPrincipal userPrincipal) {
 
-        String userId = userDetails.getUsername();
+        String userId = userPrincipal.getUsername();
         log.info("파일 삭제: fileId={}", fileId);
 
         // 프로젝트 권한 확인
