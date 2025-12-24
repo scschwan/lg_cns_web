@@ -1,12 +1,14 @@
 import React from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider } from './context/AuthContext';
-import Navbar from './components/Navbar';
+import Navbar from './components/layout/Navbar';
 import PrivateRoute from './components/PrivateRoute';
-import LoginPage from './pages/LoginPage';
-import RegisterPage from './pages/RegisterPage';
+import LoginPage from './pages/auth/LoginPage';
+import RegisterPage from './pages/auth/RegisterPage';
 import ProjectDashboard from './pages/ProjectDashboard';
-import ProjectDetail from './pages/ProjectDetail';  // ⭐ 신규 추가
+import ProjectDetail from './pages/project/ProjectDetail';  // ⭐ 신규 추가
+import MultiFileUploadPage from './pages/MultiFileUploadPage';  // ⭐ 추가
+import ProjectSettingsPage from './pages/ProjectSettingsPage';  // ⭐ 추가
 
 function App() {
     return (
@@ -26,12 +28,21 @@ function App() {
                             </PrivateRoute>
                         }
                     />
-                    {/* ⭐ 신규 라우트 */}
+                    {/* ⭐ 신규 라우트 추가 */}
                     <Route
-                        path="/projects/:projectId"
+                        path="/projects/:projectId/upload"
                         element={
                             <PrivateRoute>
-                                <ProjectDetail />
+                                <MultiFileUploadPage />
+                            </PrivateRoute>
+                        }
+                    />
+
+                    <Route
+                        path="/projects/:projectId/settings"
+                        element={
+                            <PrivateRoute>
+                                <ProjectSettingsPage />
                             </PrivateRoute>
                         }
                     />
