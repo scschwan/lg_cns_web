@@ -23,7 +23,7 @@ import {
 } from '@mui/material';
 import DeleteIcon from '@mui/icons-material/Delete';
 import AddIcon from '@mui/icons-material/Add';
-import projectService from '../services/projectService';
+import projectService from '../../services/projectService';
 
 function ProjectSettingsPage() {
     const { projectId } = useParams();

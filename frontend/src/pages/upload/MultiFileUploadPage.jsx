@@ -22,10 +22,10 @@ import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import AddIcon from '@mui/icons-material/Add';
 import * as XLSX from 'xlsx';
 
-import projectService from '../services/projectService';
-import multiFileUploadService from '../services/multiFileUploadService';
-import SessionPartitionDialog from '../components/upload/SessionPartitionDialog';
-import ProgressDialog from '../components/common/ProgressDialog';
+import projectService from '../../services/projectService';
+import multiFileUploadService from '../../services/multiFileUploadService';
+import SessionPartitionDialog from '../../components/upload/SessionPartitionDialog';
+import ProgressDialog from '../../components/common/ProgressDialog';
 
 function MultiFileUploadPage() {
     const { projectId } = useParams();

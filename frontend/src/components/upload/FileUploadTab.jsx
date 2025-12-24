@@ -19,7 +19,7 @@ import UploadFileIcon from '@mui/icons-material/UploadFile';
 import DeleteIcon from '@mui/icons-material/Delete';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import ErrorIcon from '@mui/icons-material/Error';
-import uploadService from '../services/uploadService';
+import uploadService from '../../services/uploadService';
 
 function FileUploadTab({ projectId }) {
     const [files, setFiles] = useState([]);

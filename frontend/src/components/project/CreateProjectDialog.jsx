@@ -21,7 +21,7 @@ import {
 import AddIcon from '@mui/icons-material/Add';
 import DeleteIcon from '@mui/icons-material/Delete';
 import AttachFileIcon from '@mui/icons-material/AttachFile';
-import uploadService from '../services/uploadService';
+import uploadService from '../../services/uploadService';
 
 function CreateProjectDialog({ open, onClose, onCreate }) {
     const [formData, setFormData] = useState({

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { useAuth } from '../context/AuthContext';
-import projectService from '../services/projectService';
+import { useAuth } from '../../context/AuthContext';
+import projectService from '../../services/projectService';
 
 import { useNavigate } from 'react-router-dom';  // ⭐ 추가
 
@@ -22,7 +22,7 @@ import {
 } from '@mui/material';
 import AddIcon from '@mui/icons-material/Add';
 import FolderIcon from '@mui/icons-material/Folder';
-import CreateProjectDialog from "../components/CreateProjectDialog";
+import CreateProjectDialog from "../../components/project/CreateProjectDialog";
 
 function ProjectDashboard() {
     const [projects, setProjects] = useState([]);

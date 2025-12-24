@@ -19,7 +19,7 @@ import FolderIcon from '@mui/icons-material/Folder';
 import DashboardIcon from '@mui/icons-material/Dashboard';
 import UploadFileIcon from '@mui/icons-material/UploadFile';
 import projectService from '../../services/projectService';
-import FileUploadTab from '../../components/FileUploadTab';
+import FileUploadTab from '../../components/upload/FileUploadTab';
 
 function ProjectDetail() {
     const { projectId } = useParams();
