@@ -56,7 +56,7 @@ public class UploadController {
             @AuthenticationPrincipal UserPrincipal userPrincipal,
             @Valid @RequestBody PresignedUrlRequest request) {
 
-        String userId = userPrincipal.getUsername();
+        String userId = userPrincipal.getId();
         log.info("Presigned URL 생성 요청: projectId={}, userId={}, fileName={}",
                 projectId, userId, request.getFileName());
 
@@ -113,7 +113,7 @@ public class UploadController {
             @PathVariable String uploadId,
             @AuthenticationPrincipal UserPrincipal userPrincipal) {
 
-        String userId = userPrincipal.getUsername();
+        String userId = userPrincipal.getId();
         log.info("업로드 상태 조회: projectId={}, uploadId={}", projectId, uploadId);
 
         // 프로젝트 권한 확인
@@ -136,7 +136,7 @@ public class UploadController {
             @PathVariable String projectId,
             @AuthenticationPrincipal UserPrincipal userPrincipal) {
 
-        String userId = userPrincipal.getUsername();
+        String userId = userPrincipal.getId();
         log.info("프로젝트 파일 목록 조회: projectId={}", projectId);
 
         // 프로젝트 권한 확인
@@ -164,7 +164,7 @@ public class UploadController {
             @AuthenticationPrincipal UserPrincipal userPrincipal,
             @Valid @RequestBody UploadFileRequest request) {
 
-        String userId = userPrincipal.getUsername();
+        String userId = userPrincipal.getId();
         log.info("파일 업로드 완료: projectId={}, fileName={}", projectId, request.getFileName());
 
         // 프로젝트 권한 확인
@@ -190,7 +190,7 @@ public class UploadController {
             @AuthenticationPrincipal UserPrincipal userPrincipal,
             @RequestBody Map<String, List<String>> request) {
 
-        String userId = userPrincipal.getUsername();
+        String userId = userPrincipal.getId();
         List<String> fileIds = request.get("fileIds");
 
         log.info("파일 분석 요청: projectId={}, fileIds={}", projectId, fileIds);
@@ -222,7 +222,7 @@ public class UploadController {
             @AuthenticationPrincipal UserPrincipal userPrincipal,
             @Valid @RequestBody SetFileColumnsRequest request) {
 
-        String userId = userPrincipal.getUsername();
+        String userId = userPrincipal.getId();
         log.info("파일 컬럼 설정: projectId={}, fileId={}", projectId, fileId);
 
         // 프로젝트 권한 확인
@@ -244,7 +244,7 @@ public class UploadController {
             @AuthenticationPrincipal UserPrincipal userPrincipal,
             @RequestBody Map<String, String> request) {
 
-        String userId = userPrincipal.getUsername();
+        String userId = userPrincipal.getId();
         String columnName = request.get("columnName");
 
         log.info("계정명 추출: fileId={}, columnName={}", fileId, columnName);
@@ -268,7 +268,7 @@ public class UploadController {
             @AuthenticationPrincipal UserPrincipal userPrincipal,
             @RequestBody Map<String, String> request) {
 
-        String userId = userPrincipal.getUsername();
+        String userId = userPrincipal.getId();
         String columnName = request.get("columnName");
 
         log.info("금액 합산: fileId={}, columnName={}", fileId, columnName);
@@ -291,7 +291,7 @@ public class UploadController {
             @PathVariable String fileId,
             @AuthenticationPrincipal UserPrincipal userPrincipal) {
 
-        String userId = userPrincipal.getUsername();
+        String userId = userPrincipal.getId();
         log.info("파일 삭제: fileId={}", fileId);
 
         // 프로젝트 권한 확인
