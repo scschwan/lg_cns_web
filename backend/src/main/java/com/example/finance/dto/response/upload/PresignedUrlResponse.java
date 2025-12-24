@@ -11,6 +11,7 @@ import lombok.NoArgsConstructor;
 @AllArgsConstructor
 public class PresignedUrlResponse {
     private String uploadId;
+    private String sessionId;      // ⭐ 추가!
     private String presignedUrl;
     private String s3Bucket;
     private String s3Key;

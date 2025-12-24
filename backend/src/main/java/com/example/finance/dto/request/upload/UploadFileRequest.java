@@ -7,6 +7,8 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
+import java.util.List;
+
 /**
  * 파일 업로드 완료 요청
  *
@@ -23,6 +25,8 @@ public class UploadFileRequest {
      */
     @NotBlank(message = "uploadId는 필수입니다")
     private String uploadId;
+
+
 
     /**
      * 파일명
@@ -47,4 +51,8 @@ public class UploadFileRequest {
      */
     @NotBlank(message = "sessionId는 필수입니다")
     private String sessionId;
+
+    // ⭐ 옵션: Excel 메타데이터
+    private List<String> detectedColumns;
+    private Integer rowCount;
 }

@@ -92,6 +92,7 @@ public class UploadController {
         PresignedUrlResponse response = PresignedUrlResponse.builder()
                 .presignedUrl(presignedUrl)
                 .uploadId(uploadId)
+                .sessionId(sessionId)  // ⭐ 추가!
                 .s3Key(s3Key)
                 .expiresIn(3600L)
                 .build();
