@@ -1,0 +1,116 @@
+/* frontend/src/pages/upload/MultiFileUploadPage.module.css */
+
+/* 컨테이너 */
+.container {
+    max-width: 1920px;
+}
+
+.contentWrapper {
+    margin-top: 2rem;
+    margin-bottom: 2rem;
+}
+
+/* Breadcrumb */
+.breadcrumbs {
+    margin-bottom: 1rem;
+}
+
+.breadcrumbLink {
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+}
+
+.breadcrumbIcon {
+    margin-right: 0.25rem;
+}
+
+/* 헤더 */
+.headerPaper {
+    padding: 1.5rem;
+    margin-bottom: 1.5rem;
+    background-color: #f5f5f5;
+}
+
+.headerTitle {
+    font-weight: bold;
+    color: darkslategray;
+    margin-bottom: 0.5rem;
+}
+
+.headerDescription {
+    color: #666;
+    margin-bottom: 1rem;
+}
+
+.uploadButtonGroup {
+    display: flex;
+    gap: 0.5rem;
+    margin-top: 1rem;
+}
+
+.uploadButton {
+    background-color: dodgerblue !important;
+}
+
+.createSessionButton {
+    background-color: orange !important;
+}
+
+.addToSessionButton {
+    background-color: indianred !important;
+}
+
+.sessionButtonGroup {
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.5rem;
+    margin-top: 3rem;
+}
+
+.mergeButton {
+    background-color: orange !important;
+}
+
+.completeButton {
+    background-color: limegreen !important;
+}
+
+/* 테이블 */
+.tableWrapper {
+    height: 700px;
+}
+
+.tableHeader {
+    background-color: steelblue;
+    color: white;
+    padding: 0.75rem 1rem;
+    text-align: center;
+}
+
+.tableTitle {
+    font-weight: bold;
+}
+
+.dataGrid :global(.MuiDataGrid-columnHeaders) {
+    background-color: lightsteelblue;
+    font-weight: bold;
+}
+
+.dataGrid :global(.MuiDataGrid-row:nth-of-type(even)) {
+    background-color: aliceblue;
+}
+
+/* 컬럼 셀렉트 */
+.columnSelect {
+    width: 100%;
+    padding: 4px;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    font-size: 0.875rem;
+}
+
+.columnSelect:focus {
+    outline: 2px solid #1976d2;
+    outline-offset: 2px;
+}

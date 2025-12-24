@@ -25,7 +25,7 @@ import UploadFileIcon from '@mui/icons-material/UploadFile';
 import DeleteIcon from '@mui/icons-material/Delete';
 import AnalyticsIcon from '@mui/icons-material/Analytics';
 
-import multiFileUploadService from '../../services/multiFileUploadService';
+import uploadService from '../../services/uploadService'; // ⭐ 변경
 import PartitionDialog from './PartitionDialog';
 import styles from './FileUploadSection.module.css';
 
@@ -44,7 +44,7 @@ function FileUploadSection({ projectId, refreshTrigger, onRefresh }) {
 
     const loadFiles = async () => {
         try {
-            const data = await multiFileUploadService.getProjectFiles(projectId);
+            const data = await uploadService.getProjectFiles(projectId); // ⭐ 변경
             setFiles(data);
         } catch (error) {
             console.error('파일 목록 로드 실패:', error);
@@ -73,7 +73,7 @@ function FileUploadSection({ projectId, refreshTrigger, onRefresh }) {
                 const file = excelFiles[i];
                 setUploadProgress(Math.round(((i + 1) / excelFiles.length) * 100));
 
-                await multiFileUploadService.uploadFile(
+                await uploadService.uploadFile( // ⭐ 변경
                     projectId,
                     file,
                     null,
@@ -120,14 +120,14 @@ function FileUploadSection({ projectId, refreshTrigger, onRefresh }) {
     const handleColumnChange = async (fileId, columnType, columnName) => {
         try {
             if (columnType === 'account') {
-                await multiFileUploadService.setFileColumns(
+                await uploadService.setFileColumns( // ⭐ 변경
                     projectId,
                     fileId,
                     columnName,
                     null
                 );
             } else {
-                await multiFileUploadService.setFileColumns(
+                await uploadService.setFileColumns( // ⭐ 변경
                     projectId,
                     fileId,
                     null,
@@ -162,7 +162,7 @@ function FileUploadSection({ projectId, refreshTrigger, onRefresh }) {
         setError(null);
 
         try {
-            const result = await multiFileUploadService.analyzeFiles(
+            const result = await uploadService.analyzeFiles( // ⭐ 변경
                 projectId,
                 selectedFileIds
             );
@@ -182,7 +182,7 @@ function FileUploadSection({ projectId, refreshTrigger, onRefresh }) {
 
         try {
             for (const partition of approvedPartitions) {
-                await multiFileUploadService.createSession(
+                await uploadService.createSession( // ⭐ 변경
                     projectId,
                     partition.sessionName,
                     partition.workerName || '',

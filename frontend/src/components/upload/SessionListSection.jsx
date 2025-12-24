@@ -28,7 +28,7 @@ import DeleteIcon from '@mui/icons-material/Delete';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import EditIcon from '@mui/icons-material/Edit';
 
-import multiFileUploadService from '../../services/multiFileUploadService';
+import uploadService from '../../services/uploadService';
 import styles from './SessionListSection.module.css';
 
 function SessionListSection({ projectId, refreshTrigger, onRefresh }) {
@@ -47,7 +47,7 @@ function SessionListSection({ projectId, refreshTrigger, onRefresh }) {
 
     const loadSessions = async () => {
         try {
-            const data = await multiFileUploadService.getSessions(projectId);
+            const data = await uploadService.getSessions(projectId);
             setSessions(data);
         } catch (error) {
             console.error('세션 목록 로드 실패:', error);
@@ -81,7 +81,7 @@ function SessionListSection({ projectId, refreshTrigger, onRefresh }) {
 
         try {
             const sessionId = selectedSessionIds[0];
-            await multiFileUploadService.startSession(projectId, sessionId);
+            await uploadService.startSession(projectId, sessionId);
 
             alert('세션이 시작되었습니다. Step 2: File Load로 이동합니다.');
 
@@ -104,7 +104,7 @@ function SessionListSection({ projectId, refreshTrigger, onRefresh }) {
         const workerName = prompt('작업자명을 입력하세요 (선택):') || '';
 
         try {
-            await multiFileUploadService.mergeSessions(
+            await uploadService.mergeSessions(
                 projectId,
                 selectedSessionIds,
                 newSessionName,
@@ -137,7 +137,7 @@ function SessionListSection({ projectId, refreshTrigger, onRefresh }) {
 
         try {
             for (const sessionId of selectedSessionIds) {
-                await multiFileUploadService.deleteSession(projectId, sessionId);
+                await uploadService.deleteSession(projectId, sessionId);
             }
 
             setSelectedSessionIds([]);
@@ -164,7 +164,7 @@ function SessionListSection({ projectId, refreshTrigger, onRefresh }) {
     // 세션 수정 저장
     const handleSaveEdit = async () => {
         try {
-            await multiFileUploadService.updateSession(
+            await uploadService.updateSession(
                 projectId,
                 editingSession.sessionId,
                 editValues.sessionName,

@@ -1,4 +1,4 @@
-// frontend/src/pages/MultiFileUploadPage.jsx
+// frontend/src/pages/upload/MultiFileUploadPage.jsx
 
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
@@ -23,9 +23,10 @@ import AddIcon from '@mui/icons-material/Add';
 import * as XLSX from 'xlsx';
 
 import projectService from '../../services/projectService';
-import multiFileUploadService from '../../services/multiFileUploadService';
-import SessionPartitionDialog from '../../components/upload/SessionPartitionDialog';
+import uploadService from '../../services/uploadService';
+import PartitionDialog from '../../components/upload/PartitionDialog'; // ⭐ 변경
 import ProgressDialog from '../../components/common/ProgressDialog';
+import styles from './MultiFileUploadPage.module.css'; // ⭐ 추가
 
 function MultiFileUploadPage() {
     const { projectId } = useParams();
@@ -62,7 +63,7 @@ function MultiFileUploadPage() {
 
     const loadFiles = async () => {
         try {
-            const data = await multiFileUploadService.getFiles(projectId);
+            const data = await uploadService.getFiles(projectId);
             setFiles(data);
         } catch (error) {
             console.error('파일 로드 실패:', error);
@@ -71,7 +72,7 @@ function MultiFileUploadPage() {
 
     const loadSessions = async () => {
         try {
-            const data = await multiFileUploadService.getSessions(projectId);
+            const data = await uploadService.getSessions(projectId);
             setSessions(data);
         } catch (error) {
             console.error('세션 로드 실패:', error);
@@ -79,44 +80,49 @@ function MultiFileUploadPage() {
     };
 
     // 파일 업로드
-    const handleFileUpload = async (event) => {
-        const uploadedFiles = Array.from(event.target.files);
-        const excelFiles = uploadedFiles.filter(f =>
-            f.name.endsWith('.xlsx') || f.name.endsWith('.xls')
-        );
-
-        setProgressDialogOpen(true);
-        setProgressValue(0);
-        setProgressMessage('파일 업로드 시작...');
-
+    const handleFileUpload = async (file) => {
         try {
-            for (let i = 0; i < excelFiles.length; i++) {
-                const file = excelFiles[i];
-                setProgressValue(((i + 1) / excelFiles.length) * 90);
-                setProgressMessage(`파일 처리 중... (${i + 1}/${excelFiles.length})`);
+            // 1. Excel 분석 (로컬에서만)
+            const excelData = await analyzeExcelColumns(file);
+            // excelData = { columns: [...], rowCount: 6270 }
 
-                // Excel 컬럼 분석
-                const columns = await analyzeExcelColumns(file);
+            // 2. Presigned URL 요청
+            const { presignedUrl, uploadId, sessionId, s3Key } =
+                await uploadService.getPresignedUrl(projectId, file.name, file.size);
+            // ⭐ sessionId를 받음! (백엔드 수정 후)
 
-                // S3 업로드
-                const uploadedFile = await multiFileUploadService.uploadFile(
-                    projectId,
-                    file,
-                    columns
-                );
+            console.log('Presigned URL 응답:', {
+                uploadId,
+                sessionId,  // ← String이어야 함!
+                s3Key
+            });
 
-                setFiles(prev => [...prev, uploadedFile]);
-            }
+            // 3. S3 업로드
+            await uploadService.uploadToS3(presignedUrl, file);
 
-            setProgressValue(100);
-            setProgressMessage('완료');
-            setTimeout(() => setProgressDialogOpen(false), 500);
+            // 4. 파일 업로드 완료 처리
+            const response = await uploadService.completeFileUpload(projectId, {
+                uploadId: uploadId,
+                sessionId: sessionId,  // ✅ String (Presigned URL 응답에서 받음)
+                fileName: file.name,
+                fileSize: file.size,
+                s3Key: s3Key
+                // ❌ excelData는 여기에 안 넣음!
+            });
 
-            alert(`${excelFiles.length}개의 파일이 성공적으로 업로드되었습니다.`);
+            console.log('업로드 완료:', response);
+
+            // 5. Excel 메타데이터는 별도로 저장 (옵션)
+            // 파일 목록에 추가할 때 excelData를 함께 저장
+            return {
+                ...response,
+                detectedColumns: excelData.columns,
+                rowCount: excelData.rowCount
+            };
+
         } catch (error) {
             console.error('파일 업로드 실패:', error);
-            alert('파일 업로드 중 오류가 발생했습니다.');
-            setProgressDialogOpen(false);
+            throw error;
         }
     };
 
@@ -151,7 +157,7 @@ function MultiFileUploadPage() {
     // 계정명/금액 컬럼 선택
     const handleColumnSelect = async (fileId, columnType, columnName) => {
         try {
-            await multiFileUploadService.updateFileColumns(projectId, fileId, {
+            await uploadService.updateFileColumns(projectId, fileId, {
                 [columnType]: columnName
             });
 
@@ -176,7 +182,7 @@ function MultiFileUploadPage() {
     // 계정명 추출
     const extractAccountValues = async (fileId, columnName) => {
         try {
-            const accounts = await multiFileUploadService.extractAccountValues(
+            const accounts = await uploadService.extractAccountValues(
                 projectId,
                 fileId,
                 columnName
@@ -195,7 +201,7 @@ function MultiFileUploadPage() {
     // 금액 합산
     const calculateTotalAmount = async (fileId, columnName) => {
         try {
-            const totalAmount = await multiFileUploadService.calculateTotalAmount(
+            const totalAmount = await uploadService.calculateTotalAmount(
                 projectId,
                 fileId,
                 columnName
@@ -234,7 +240,7 @@ function MultiFileUploadPage() {
 
         try {
             // 계정명별 파티션 분석
-            const result = await multiFileUploadService.analyzePartitions(
+            const result = await uploadService.analyzePartitions(
                 projectId,
                 selectedFiles
             );
@@ -256,7 +262,7 @@ function MultiFileUploadPage() {
         setProgressMessage('세션 생성 중...');
 
         try {
-            const createdSessions = await multiFileUploadService.createSessions(
+            const createdSessions = await uploadService.createSessions(
                 projectId,
                 approvedPartitions
             );
@@ -288,7 +294,7 @@ function MultiFileUploadPage() {
         const targetSessionId = selectedSessions[0];
 
         try {
-            await multiFileUploadService.addFilesToSession(
+            await uploadService.addFilesToSession(
                 projectId,
                 targetSessionId,
                 selectedFiles
@@ -321,7 +327,7 @@ function MultiFileUploadPage() {
         setProgressMessage('세션 병합 중...');
 
         try {
-            await multiFileUploadService.mergeSessions(
+            await uploadService.mergeSessions(
                 projectId,
                 selectedSessions
             );
@@ -351,7 +357,7 @@ function MultiFileUploadPage() {
         if (!confirmed) return;
 
         try {
-            await multiFileUploadService.deleteSessions(projectId, selectedSessions);
+            await uploadService.deleteSessions(projectId, selectedSessions);
             loadSessions();
             setSelectedSessions([]);
             alert('세션이 삭제되었습니다.');
@@ -384,7 +390,7 @@ function MultiFileUploadPage() {
 
         try {
             const sessionId = selectedSessions[0];
-            await multiFileUploadService.completeSession(projectId, sessionId);
+            await uploadService.completeSession(projectId, sessionId);
 
             setProgressDialogOpen(false);
             alert('계정 분석이 시작되었습니다. 파일 로드 화면으로 이동합니다.');
@@ -401,7 +407,7 @@ function MultiFileUploadPage() {
     // 세션명 편집
     const handleSessionNameEdit = async (sessionId, newName) => {
         try {
-            await multiFileUploadService.updateSession(projectId, sessionId, {
+            await uploadService.updateSession(projectId, sessionId, {
                 sessionName: newName
             });
 
@@ -437,7 +443,7 @@ function MultiFileUploadPage() {
                 <select
                     value={params.value || ''}
                     onChange={(e) => handleColumnSelect(params.row.id, 'accountColumn', e.target.value)}
-                    style={{ width: '100%', padding: '4px' }}
+                    className={styles.columnSelect}
                 >
                     <option value="">선택...</option>
                     {params.row.detectedColumns?.map(col => (
@@ -454,7 +460,7 @@ function MultiFileUploadPage() {
                 <select
                     value={params.value || ''}
                     onChange={(e) => handleColumnSelect(params.row.id, 'amountColumn', e.target.value)}
-                    style={{ width: '100%', padding: '4px' }}
+                    className={styles.columnSelect}
                 >
                     <option value="">선택...</option>
                     {params.row.detectedColumns?.map(col => (
@@ -561,7 +567,7 @@ function MultiFileUploadPage() {
         if (!confirmed) return;
 
         try {
-            await multiFileUploadService.deleteFile(projectId, fileId);
+            await uploadService.deleteFile(projectId, fileId);
             setFiles(prev => prev.filter(f => f.id !== fileId));
         } catch (error) {
             console.error('파일 삭제 실패:', error);
@@ -571,7 +577,7 @@ function MultiFileUploadPage() {
 
     const handleDownload = async (sessionId) => {
         try {
-            const url = await multiFileUploadService.downloadResult(projectId, sessionId);
+            const url = await uploadService.downloadResult(projectId, sessionId);
             window.open(url, '_blank');
         } catch (error) {
             console.error('다운로드 실패:', error);
@@ -580,17 +586,17 @@ function MultiFileUploadPage() {
     };
 
     return (
-        <Container maxWidth={false} sx={{ maxWidth: '1920px' }}>
-            <Box sx={{ mt: 4, mb: 4 }}>
+        <Container maxWidth={false} className={styles.container}>
+            <Box className={styles.contentWrapper}>
                 {/* Breadcrumb */}
-                <Breadcrumbs sx={{ mb: 2 }}>
+                <Breadcrumbs className={styles.breadcrumbs}>
                     <Link
                         underline="hover"
                         color="inherit"
                         onClick={() => navigate('/projects')}
-                        sx={{ cursor: 'pointer', display: 'flex', alignItems: 'center' }}
+                        className={styles.breadcrumbLink}
                     >
-                        <FolderIcon sx={{ mr: 0.5 }} fontSize="small" />
+                        <FolderIcon className={styles.breadcrumbIcon} fontSize="small" />
                         내 프로젝트
                     </Link>
                     <Typography color="text.primary">{project?.projectName}</Typography>
@@ -598,22 +604,22 @@ function MultiFileUploadPage() {
                 </Breadcrumbs>
 
                 {/* 헤더 */}
-                <Paper sx={{ p: 3, mb: 3, bgcolor: '#f5f5f5' }}>
+                <Paper className={styles.headerPaper}>
                     <Grid container spacing={2}>
                         {/* 좌측: 제목 + 버튼 */}
                         <Grid item xs={12} md={7}>
-                            <Typography variant="h5" fontWeight="bold" color="darkslategray" gutterBottom>
+                            <Typography variant="h5" className={styles.headerTitle}>
                                 다중 파일 업로드
                             </Typography>
-                            <Typography variant="body2" color="text.secondary" gutterBottom>
+                            <Typography variant="body2" className={styles.headerDescription}>
                                 여러 Excel 파일을 업로드하고 계정명/금액 컬럼을 선택한 후, 동일한 컬럼명끼리 세션을 생성하세요.
                             </Typography>
-                            <Box sx={{ display: 'flex', gap: 1, mt: 2 }}>
+                            <Box className={styles.uploadButtonGroup}>
                                 <Button
                                     variant="contained"
                                     component="label"
                                     startIcon={<UploadFileIcon />}
-                                    sx={{ bgcolor: 'dodgerblue' }}
+                                    className={styles.uploadButton}
                                 >
                                     Excel 파일 업로드
                                     <input
@@ -627,7 +633,7 @@ function MultiFileUploadPage() {
                                 <Button
                                     variant="contained"
                                     onClick={handleCreateSessions}
-                                    sx={{ bgcolor: 'orange' }}
+                                    className={styles.createSessionButton}
                                 >
                                     세션 생성
                                 </Button>
@@ -635,7 +641,8 @@ function MultiFileUploadPage() {
                                     variant="contained"
                                     startIcon={<AddIcon />}
                                     onClick={handleAddToSession}
-                                    sx={{ bgcolor: 'indianred', display: 'none' }}
+                                    className={styles.addToSessionButton}
+                                    style={{ display: 'none' }}
                                 >
                                     기존 세션 추가
                                 </Button>
@@ -644,12 +651,12 @@ function MultiFileUploadPage() {
 
                         {/* 우측: 세션 관리 버튼 */}
                         <Grid item xs={12} md={5}>
-                            <Box sx={{ display: 'flex', justifyContent: 'flex-end', gap: 1, mt: 6 }}>
+                            <Box className={styles.sessionButtonGroup}>
                                 <Button
                                     variant="contained"
                                     startIcon={<MergeIcon />}
                                     onClick={handleMergeSessions}
-                                    sx={{ bgcolor: 'orange' }}
+                                    className={styles.mergeButton}
                                 >
                                     세션 병합
                                 </Button>
@@ -665,7 +672,7 @@ function MultiFileUploadPage() {
                                     variant="contained"
                                     startIcon={<PlayArrowIcon />}
                                     onClick={handleComplete}
-                                    sx={{ bgcolor: 'limegreen' }}
+                                    className={styles.completeButton}
                                 >
                                     계정 분석 시작
                                 </Button>
@@ -678,9 +685,9 @@ function MultiFileUploadPage() {
                 <Grid container spacing={2}>
                     {/* 좌측: 파일 목록 (60%) */}
                     <Grid item xs={12} md={7}>
-                        <Paper sx={{ height: 700 }}>
-                            <Box sx={{ bgcolor: 'steelblue', color: 'white', p: 1.5, textAlign: 'center' }}>
-                                <Typography variant="h6" fontWeight="bold">
+                        <Paper className={styles.tableWrapper}>
+                            <Box className={styles.tableHeader}>
+                                <Typography variant="h6" className={styles.tableTitle}>
                                     업로드된 파일 목록
                                 </Typography>
                             </Box>
@@ -692,24 +699,16 @@ function MultiFileUploadPage() {
                                 rowSelectionModel={selectedFiles}
                                 disableRowSelectionOnClick
                                 hideFooter={files.length <= 10}
-                                sx={{
-                                    '& .MuiDataGrid-columnHeaders': {
-                                        bgcolor: 'lightsteelblue',
-                                        fontWeight: 'bold'
-                                    },
-                                    '& .MuiDataGrid-row:nth-of-type(even)': {
-                                        bgcolor: 'aliceblue'
-                                    }
-                                }}
+                                className={styles.dataGrid}
                             />
                         </Paper>
                     </Grid>
 
                     {/* 우측: 세션 목록 (40%) */}
                     <Grid item xs={12} md={5}>
-                        <Paper sx={{ height: 700 }}>
-                            <Box sx={{ bgcolor: 'steelblue', color: 'white', p: 1.5, textAlign: 'center' }}>
-                                <Typography variant="h6" fontWeight="bold">
+                        <Paper className={styles.tableWrapper}>
+                            <Box className={styles.tableHeader}>
+                                <Typography variant="h6" className={styles.tableTitle}>
                                     생성된 세션 목록
                                 </Typography>
                             </Box>
@@ -725,22 +724,14 @@ function MultiFileUploadPage() {
                                     return newRow;
                                 }}
                                 hideFooter={sessions.length <= 10}
-                                sx={{
-                                    '& .MuiDataGrid-columnHeaders': {
-                                        bgcolor: 'lightsteelblue',
-                                        fontWeight: 'bold'
-                                    },
-                                    '& .MuiDataGrid-row:nth-of-type(even)': {
-                                        bgcolor: 'aliceblue'
-                                    }
-                                }}
+                                className={styles.dataGrid}
                             />
                         </Paper>
                     </Grid>
                 </Grid>
 
                 {/* 다이얼로그들 */}
-                <SessionPartitionDialog
+                <PartitionDialog
                     open={partitionDialogOpen}
                     partitions={partitions}
                     onClose={() => setPartitionDialogOpen(false)}
