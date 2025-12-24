@@ -47,8 +47,32 @@ public class UploadService {
     /**
      * 세션 ID 생성
      */
+    /**
+     * 세션 ID 생성 및 FileSession 저장
+     */
+    @Transactional
     public String createSession(String projectId, String userId) {
-        return "session-" + UUID.randomUUID().toString();
+        String sessionId = "session-" + UUID.randomUUID().toString();
+
+        // FileSession 생성
+        FileSession fileSession = FileSession.builder()
+                .sessionId(sessionId)
+                .projectId(projectId)
+                .createdBy(userId)
+                .uploadedFiles(new ArrayList<>())
+                .totalFiles(0)
+                .isCompleted(false)
+                .isDeleted(false)
+                .createdAt(LocalDateTime.now())
+                .lastAccessedAt(LocalDateTime.now())
+                .build();
+
+        // MongoDB 저장
+        fileSessionRepository.save(fileSession);
+
+        log.info("FileSession 생성 완료: sessionId={}, projectId={}", sessionId, projectId);
+
+        return sessionId;
     }
 
     /**
