@@ -114,7 +114,7 @@ public class UploadController {
             @AuthenticationPrincipal UserPrincipal userPrincipal) {
 
         String userId = userPrincipal.getId();
-        log.info("업로드 상태 조회: projectId={}, uploadId={}", projectId, uploadId);
+        log.info("업로드 상태 조회: projectId={}, userId ={} , uploadId={}", projectId, userId,uploadId);
 
         // 프로젝트 권한 확인
         projectService.getProject(projectId, userId);
@@ -137,7 +137,7 @@ public class UploadController {
             @AuthenticationPrincipal UserPrincipal userPrincipal) {
 
         String userId = userPrincipal.getId();
-        log.info("프로젝트 파일 목록 조회: projectId={}", projectId);
+        log.info("프로젝트 파일 목록 조회: projectId={} , userId = {}", projectId ,userId);
 
         // 프로젝트 권한 확인
         projectService.getProject(projectId, userId);
@@ -165,7 +165,7 @@ public class UploadController {
             @Valid @RequestBody UploadFileRequest request) {
 
         String userId = userPrincipal.getId();
-        log.info("파일 업로드 완료: projectId={}, fileName={}", projectId, request.getFileName());
+        log.info("파일 업로드 완료: projectId={}, userId = {} ,fileName={}", projectId, userId,request.getFileName());
 
         // 프로젝트 권한 확인
         projectService.getProject(projectId, userId);
@@ -193,7 +193,7 @@ public class UploadController {
         String userId = userPrincipal.getId();
         List<String> fileIds = request.get("fileIds");
 
-        log.info("파일 분석 요청: projectId={}, fileIds={}", projectId, fileIds);
+        log.info("파일 분석 요청: projectId={}, userId ={}, fileIds={}", projectId, userId, fileIds);
 
         // 프로젝트 권한 확인
         projectService.getProject(projectId, userId);
@@ -223,7 +223,7 @@ public class UploadController {
             @Valid @RequestBody SetFileColumnsRequest request) {
 
         String userId = userPrincipal.getId();
-        log.info("파일 컬럼 설정: projectId={}, fileId={}", projectId, fileId);
+        log.info("파일 컬럼 설정: projectId={},userId = {}, fileId={}", projectId, userId ,fileId);
 
         // 프로젝트 권한 확인
         projectService.getProject(projectId, userId);
@@ -247,7 +247,7 @@ public class UploadController {
         String userId = userPrincipal.getId();
         String columnName = request.get("columnName");
 
-        log.info("계정명 추출: fileId={}, columnName={}", fileId, columnName);
+        log.info("계정명 추출: fileId={}, userId ={} ,columnName={}", fileId, userId, columnName);
 
         // 프로젝트 권한 확인
         projectService.getProject(projectId, userId);
@@ -271,7 +271,7 @@ public class UploadController {
         String userId = userPrincipal.getId();
         String columnName = request.get("columnName");
 
-        log.info("금액 합산: fileId={}, columnName={}", fileId, columnName);
+        log.info("금액 합산: fileId={},userId = {}, columnName={}", fileId, userId ,columnName);
 
         // 프로젝트 권한 확인
         projectService.getProject(projectId, userId);
@@ -292,7 +292,7 @@ public class UploadController {
             @AuthenticationPrincipal UserPrincipal userPrincipal) {
 
         String userId = userPrincipal.getId();
-        log.info("파일 삭제: fileId={}", fileId);
+        log.info("파일 삭제: fileId={} , userId ={}", fileId , userId);
 
         // 프로젝트 권한 확인
         projectService.getProject(projectId, userId);
