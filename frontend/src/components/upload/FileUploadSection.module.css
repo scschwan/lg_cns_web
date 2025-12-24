@@ -1,0 +1,62 @@
+/* frontend/src/components/upload/FileUploadSection.module.css */
+
+.paper {
+    height: 100%;
+}
+
+.header {
+    background-color: steelblue;
+    color: white;
+    padding: 0.75rem;
+}
+
+.headerTitle {
+    font-weight: bold;
+    text-align: center;
+}
+
+.buttonArea {
+    padding: 1rem;
+    display: flex;
+    gap: 0.5rem;
+    border-bottom: 1px solid #ddd;
+}
+
+.uploadButton {
+    background-color: dodgerblue !important;
+}
+
+.analyzeButton {
+    background-color: orange !important;
+}
+
+.selectionInfo {
+    margin-left: auto;
+    display: flex;
+    align-items: center;
+}
+
+.progressArea {
+    padding: 1rem;
+}
+
+.progressText {
+    margin-top: 0.5rem;
+    display: block;
+}
+
+.errorAlert {
+    margin: 1rem;
+}
+
+.tableContainer {
+    max-height: 500px;
+}
+
+.tableRow:nth-of-type(even) {
+    background-color: aliceblue;
+}
+
+.emptyCell {
+    padding: 2rem 0;
+}

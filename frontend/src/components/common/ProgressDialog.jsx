@@ -1,4 +1,4 @@
-// frontend/src/components/ProgressDialog.jsx
+// frontend/src/components/common/ProgressDialog.jsx
 
 import React from 'react';
 import {
@@ -9,6 +9,7 @@ import {
     Typography,
     Box
 } from '@mui/material';
+import styles from './ProgressDialog.module.css';
 
 function ProgressDialog({ open, message, value }) {
     return (
@@ -24,16 +25,16 @@ function ProgressDialog({ open, message, value }) {
                 </Typography>
             </DialogTitle>
             <DialogContent>
-                <Box sx={{ py: 2 }}>
+                <Box className={styles.contentBox}>
                     <LinearProgress
                         variant="determinate"
                         value={value}
-                        sx={{ height: 10, borderRadius: 5 }}
+                        className={styles.progressBar}
                     />
                     <Typography
                         variant="body1"
                         align="center"
-                        sx={{ mt: 2 }}
+                        className={styles.message}
                     >
                         {message}
                     </Typography>
@@ -41,7 +42,7 @@ function ProgressDialog({ open, message, value }) {
                         variant="h6"
                         align="center"
                         color="primary"
-                        sx={{ mt: 1 }}
+                        className={styles.percentage}
                     >
                         {Math.round(value)}%
                     </Typography>

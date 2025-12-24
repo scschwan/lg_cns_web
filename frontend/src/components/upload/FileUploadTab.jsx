@@ -1,3 +1,5 @@
+// frontend/src/components/upload/FileUploadTab.jsx
+
 import React, { useState, useEffect } from 'react';
 import {
     Paper,
@@ -13,13 +15,15 @@ import {
     LinearProgress,
     Alert,
     Chip,
-    IconButton, CircularProgress
+    IconButton,
+    CircularProgress
 } from '@mui/material';
 import UploadFileIcon from '@mui/icons-material/UploadFile';
 import DeleteIcon from '@mui/icons-material/Delete';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import ErrorIcon from '@mui/icons-material/Error';
 import uploadService from '../../services/uploadService';
+import styles from './FileUploadTab.module.css';
 
 function FileUploadTab({ projectId }) {
     const [files, setFiles] = useState([]);
@@ -49,7 +53,6 @@ function FileUploadTab({ projectId }) {
     const handleFileSelect = async (event) => {
         const selectedFiles = Array.from(event.target.files);
 
-        // Excel 파일만 필터링
         const excelFiles = selectedFiles.filter(file =>
             file.name.endsWith('.xlsx') || file.name.endsWith('.xls')
         );
@@ -87,7 +90,7 @@ function FileUploadTab({ projectId }) {
                 setUploading(false);
                 setUploadProgress(0);
                 setUploadMessage('');
-                loadFiles(); // 파일 목록 새로고침
+                loadFiles();
             }, 1500);
 
         } catch (err) {
@@ -96,7 +99,7 @@ function FileUploadTab({ projectId }) {
             setUploading(false);
         }
 
-        event.target.value = null; // 같은 파일 재선택 가능
+        event.target.value = null;
     };
 
     const formatFileSize = (bytes) => {
@@ -121,8 +124,8 @@ function FileUploadTab({ projectId }) {
     };
 
     return (
-        <Paper sx={{ p: 3 }}>
-            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
+        <Paper className={styles.paper}>
+            <Box className={styles.header}>
                 <Typography variant="h6">
                     파일 업로드
                 </Typography>
@@ -145,7 +148,7 @@ function FileUploadTab({ projectId }) {
 
             {/* 업로드 진행 상태 */}
             {uploading && (
-                <Box sx={{ mb: 3 }}>
+                <Box className={styles.progressBox}>
                     <Typography variant="body2" color="text.secondary" gutterBottom>
                         {uploadMessage}
                     </Typography>
@@ -158,7 +161,7 @@ function FileUploadTab({ projectId }) {
 
             {/* 에러 메시지 */}
             {error && (
-                <Alert severity="error" onClose={() => setError('')} sx={{ mb: 3 }}>
+                <Alert severity="error" onClose={() => setError('')} className={styles.errorAlert}>
                     {error}
                 </Alert>
             )}

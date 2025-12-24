@@ -1,0 +1,39 @@
+/* frontend/src/pages/project/ProjectSettingsPage.module.css */
+
+.contentWrapper {
+    margin-top: 2rem;
+    margin-bottom: 2rem;
+}
+
+.errorAlert {
+    margin-bottom: 1rem;
+}
+
+.sectionPaper {
+    padding: 1.5rem;
+    margin-bottom: 1.5rem;
+}
+
+.sectionHeader {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1rem;
+}
+
+.textField {
+    margin-bottom: 1rem;
+}
+
+.roleChip {
+    margin-right: 0.5rem;
+}
+
+.dangerZone {
+    padding: 1.5rem;
+    background-color: #ffebee;
+}
+
+.dialogTextField {
+    margin-top: 0.5rem;
+}

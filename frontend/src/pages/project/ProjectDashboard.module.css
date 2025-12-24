@@ -1,0 +1,43 @@
+/* frontend/src/pages/project/ProjectDashboard.module.css */
+
+.contentWrapper {
+    margin-top: 2rem;
+    margin-bottom: 2rem;
+}
+
+.header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1.5rem;
+}
+
+.errorAlert {
+    margin-bottom: 1.5rem;
+}
+
+.emptyState {
+    text-align: center;
+    margin-top: 4rem;
+}
+
+.emptyIcon {
+    font-size: 5rem;
+    color: rgba(0, 0, 0, 0.54);
+}
+
+.emptyTitle {
+    color: rgba(0, 0, 0, 0.54);
+    margin-top: 1rem;
+}
+
+.emptyDescription {
+    color: rgba(0, 0, 0, 0.54);
+    margin-top: 0.5rem;
+}
+
+.projectInfo {
+    color: rgba(0, 0, 0, 0.6);
+    display: block;
+    margin-top: 0.5rem;
+}

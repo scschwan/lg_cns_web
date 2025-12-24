@@ -1,0 +1,60 @@
+/* frontend/src/pages/project/ProjectDetail.module.css */
+
+.contentWrapper {
+    margin-top: 2rem;
+    margin-bottom: 2rem;
+}
+
+.loadingContainer {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 400px;
+}
+
+.errorContainer {
+    margin-top: 2rem;
+}
+
+.breadcrumbs {
+    margin-bottom: 1rem;
+}
+
+.breadcrumbLink {
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+}
+
+.breadcrumbIcon {
+    margin-right: 0.25rem;
+}
+
+.headerPaper {
+    padding: 1.5rem;
+    margin-bottom: 1.5rem;
+}
+
+.headerContent {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+}
+
+.description {
+    color: rgba(0, 0, 0, 0.6);
+    margin-bottom: 1rem;
+}
+
+.chipContainer {
+    display: flex;
+    gap: 0.5rem;
+}
+
+.tabPaper {
+    margin-bottom: 1.5rem;
+}
+
+.contentPaper {
+    padding: 1.5rem;
+}

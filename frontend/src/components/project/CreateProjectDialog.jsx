@@ -1,3 +1,5 @@
+// frontend/src/components/project/CreateProjectDialog.jsx
+
 import React, { useState } from 'react';
 import {
     Dialog,
@@ -22,6 +24,7 @@ import AddIcon from '@mui/icons-material/Add';
 import DeleteIcon from '@mui/icons-material/Delete';
 import AttachFileIcon from '@mui/icons-material/AttachFile';
 import uploadService from '../../services/uploadService';
+import styles from './CreateProjectDialog.module.css';
 
 function CreateProjectDialog({ open, onClose, onCreate }) {
     const [formData, setFormData] = useState({
@@ -40,14 +43,12 @@ function CreateProjectDialog({ open, onClose, onCreate }) {
         const email = memberEmail.trim();
         if (!email) return;
 
-        // 이메일 검증
         const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
         if (!emailRegex.test(email)) {
             setError('올바른 이메일 형식이 아닙니다.');
             return;
         }
 
-        // 중복 확인
         if (members.includes(email)) {
             setError('이미 추가된 멤버입니다.');
             return;
@@ -65,7 +66,6 @@ function CreateProjectDialog({ open, onClose, onCreate }) {
     const handleFileSelect = (event) => {
         const selectedFiles = Array.from(event.target.files);
 
-        // Excel 파일만 필터링
         const excelFiles = selectedFiles.filter(file =>
             file.name.endsWith('.xlsx') || file.name.endsWith('.xls')
         );
@@ -75,7 +75,7 @@ function CreateProjectDialog({ open, onClose, onCreate }) {
         }
 
         setFiles([...files, ...excelFiles]);
-        event.target.value = null; // 같은 파일 재선택 가능하도록
+        event.target.value = null;
     };
 
     const handleRemoveFile = (index) => {
@@ -94,7 +94,6 @@ function CreateProjectDialog({ open, onClose, onCreate }) {
             setUploadProgress(0);
             setUploadMessage('프로젝트 생성 중...');
 
-            // 1. 프로젝트 생성
             const projectData = {
                 name: formData.name,
                 description: formData.description
@@ -106,25 +105,19 @@ function CreateProjectDialog({ open, onClose, onCreate }) {
             setUploadProgress(20);
             setUploadMessage('프로젝트 생성 완료');
 
-            // 2. 멤버 초대 (선택사항)
             if (members.length > 0) {
                 setUploadMessage(`멤버 초대 중... (${members.length}명)`);
-
                 for (const email of members) {
                     try {
-                        // TODO: 멤버 초대 API 호출
-                        // await projectService.inviteMember(projectId, email);
                         console.log(`멤버 초대: ${email}`);
                     } catch (err) {
                         console.error(`멤버 초대 실패 (${email}):`, err);
                     }
                 }
-
                 setUploadProgress(40);
                 setUploadMessage('멤버 초대 완료');
             }
 
-            // 3. 파일 업로드 (선택사항)
             if (files.length > 0) {
                 setUploadMessage(`파일 업로드 중... (${files.length}개)`);
 
@@ -147,7 +140,6 @@ function CreateProjectDialog({ open, onClose, onCreate }) {
                         );
                     } catch (err) {
                         console.error(`파일 업로드 실패 (${file.name}):`, err);
-                        // 개별 파일 실패는 무시하고 계속 진행
                     }
                 }
 
@@ -158,7 +150,6 @@ function CreateProjectDialog({ open, onClose, onCreate }) {
             setUploadProgress(100);
             setUploadMessage('모든 작업 완료!');
 
-            // 잠시 대기 후 다이얼로그 닫기
             setTimeout(() => {
                 handleClose();
             }, 1000);
@@ -171,7 +162,7 @@ function CreateProjectDialog({ open, onClose, onCreate }) {
     };
 
     const handleClose = () => {
-        if (uploading) return; // 업로드 중에는 닫기 불가
+        if (uploading) return;
 
         setFormData({ name: '', description: '' });
         setMembers([]);
@@ -194,7 +185,7 @@ function CreateProjectDialog({ open, onClose, onCreate }) {
         >
             <DialogTitle>새 프로젝트 생성</DialogTitle>
             <DialogContent>
-                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, mt: 1 }}>
+                <Box className={styles.contentBox}>
                     {/* 기본 정보 */}
                     <TextField
                         autoFocus
@@ -215,12 +206,12 @@ function CreateProjectDialog({ open, onClose, onCreate }) {
                         disabled={uploading}
                     />
 
-                    {/* 멤버 초대 (선택사항) */}
+                    {/* 멤버 초대 */}
                     <Box>
                         <Typography variant="subtitle2" gutterBottom>
                             멤버 초대 (선택사항)
                         </Typography>
-                        <Box sx={{ display: 'flex', gap: 1, mb: 1 }}>
+                        <Box className={styles.memberInputBox}>
                             <TextField
                                 size="small"
                                 label="이메일"
@@ -259,7 +250,7 @@ function CreateProjectDialog({ open, onClose, onCreate }) {
                         )}
                     </Box>
 
-                    {/* 파일 업로드 (선택사항) */}
+                    {/* 파일 업로드 */}
                     <Box>
                         <Typography variant="subtitle2" gutterBottom>
                             Excel 파일 업로드 (선택사항)
@@ -281,7 +272,7 @@ function CreateProjectDialog({ open, onClose, onCreate }) {
                             />
                         </Button>
                         {files.length > 0 && (
-                            <List dense sx={{ mt: 1 }}>
+                            <List dense className={styles.fileList}>
                                 {files.map((file, index) => (
                                     <ListItem key={index}>
                                         <ListItemText

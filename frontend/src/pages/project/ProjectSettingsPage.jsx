@@ -1,4 +1,4 @@
-// frontend/src/pages/ProjectSettingsPage.jsx
+// frontend/src/pages/project/ProjectSettingsPage.jsx
 
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
@@ -24,6 +24,7 @@ import {
 import DeleteIcon from '@mui/icons-material/Delete';
 import AddIcon from '@mui/icons-material/Add';
 import projectService from '../../services/projectService';
+import styles from './ProjectSettingsPage.module.css';
 
 function ProjectSettingsPage() {
     const { projectId } = useParams();
@@ -97,15 +98,15 @@ function ProjectSettingsPage() {
 
     return (
         <Container maxWidth="md">
-            <Box sx={{ mt: 4, mb: 4 }}>
+            <Box className={styles.contentWrapper}>
                 <Typography variant="h4" gutterBottom>
                     프로젝트 설정
                 </Typography>
 
-                {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
+                {error && <Alert severity="error" className={styles.errorAlert}>{error}</Alert>}
 
                 {/* 프로젝트 정보 */}
-                <Paper sx={{ p: 3, mb: 3 }}>
+                <Paper className={styles.sectionPaper}>
                     <Typography variant="h6" gutterBottom>
                         프로젝트 정보
                     </Typography>
@@ -114,7 +115,7 @@ function ProjectSettingsPage() {
                         fullWidth
                         value={formData.name}
                         onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                        sx={{ mb: 2 }}
+                        className={styles.textField}
                     />
                     <TextField
                         label="설명"
@@ -123,7 +124,7 @@ function ProjectSettingsPage() {
                         rows={3}
                         value={formData.description}
                         onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                        sx={{ mb: 2 }}
+                        className={styles.textField}
                     />
                     <Button variant="contained" onClick={handleUpdate}>
                         저장
@@ -131,8 +132,8 @@ function ProjectSettingsPage() {
                 </Paper>
 
                 {/* 멤버 관리 */}
-                <Paper sx={{ p: 3, mb: 3 }}>
-                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+                <Paper className={styles.sectionPaper}>
+                    <Box className={styles.sectionHeader}>
                         <Typography variant="h6">
                             멤버 관리
                         </Typography>
@@ -151,7 +152,7 @@ function ProjectSettingsPage() {
                                     primary={member.userId}
                                     secondary={member.joinedAt}
                                 />
-                                <Chip label={member.role} size="small" sx={{ mr: 1 }} />
+                                <Chip label={member.role} size="small" className={styles.roleChip} />
                                 {member.role !== 'OWNER' && (
                                     <ListItemSecondaryAction>
                                         <IconButton
@@ -168,7 +169,7 @@ function ProjectSettingsPage() {
                 </Paper>
 
                 {/* 프로젝트 삭제 */}
-                <Paper sx={{ p: 3, bgcolor: 'error.light' }}>
+                <Paper className={styles.dangerZone}>
                     <Typography variant="h6" gutterBottom>
                         위험 구역
                     </Typography>
@@ -194,7 +195,7 @@ function ProjectSettingsPage() {
                             fullWidth
                             value={inviteEmail}
                             onChange={(e) => setInviteEmail(e.target.value)}
-                            sx={{ mt: 1 }}
+                            className={styles.dialogTextField}
                         />
                     </DialogContent>
                     <DialogActions>

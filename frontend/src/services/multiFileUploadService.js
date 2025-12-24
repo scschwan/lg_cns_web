@@ -1,163 +1,268 @@
 // frontend/src/services/multiFileUploadService.js
 
 import api from './api';
-import uploadService from './uploadService';
 
 const multiFileUploadService = {
-    // 파일 목록 조회
-    async getFiles(projectId) {
-        const response = await api.get(`/projects/${projectId}/files`);
-        return response.data;
-    },
+    // ⭐ 파일 업로드 관련 API ⭐
 
-    // 파일 업로드
-    async uploadFile(projectId, file, metadata) {
-        // 1. Presigned URL 요청
-        const presignedResponse = await api.post(
-            `/projects/${projectId}/files/presigned-url`,
+    /**
+     * Presigned URL 요청
+     * POST /api/projects/{projectId}/upload/presigned-url
+     */
+    async getPresignedUrl(projectId, fileName, fileSize, sessionId = null) {
+        const response = await api.post(
+            `/projects/${projectId}/upload/presigned-url`,
             {
-                fileName: file.name,
-                fileSize: file.size,
-                detectedColumns: metadata.columns,
-                rowCount: metadata.rowCount
+                fileName,
+                fileSize,
+                sessionId
             }
         );
+        return response.data;
+    },
 
-        const { presignedUrl, uploadId, fileId } = presignedResponse.data;
+    /**
+     * S3 직접 업로드
+     */
+    async uploadToS3(presignedUrl, file, onProgress) {
+        return new Promise((resolve, reject) => {
+            const xhr = new XMLHttpRequest();
 
-        // 2. S3 직접 업로드
-        await fetch(presignedUrl, {
-            method: 'PUT',
-            body: file,
-            headers: {
-                'Content-Type': file.type
-            }
+            xhr.upload.addEventListener('progress', (e) => {
+                if (e.lengthComputable && onProgress) {
+                    const percentComplete = Math.round((e.loaded * 100) / e.total);
+                    onProgress(percentComplete);
+                }
+            });
+
+            xhr.addEventListener('load', () => {
+                if (xhr.status === 200) {
+                    resolve();
+                } else {
+                    reject(new Error(`Upload failed: ${xhr.status}`));
+                }
+            });
+
+            xhr.addEventListener('error', () => {
+                reject(new Error('Upload failed'));
+            });
+
+            xhr.open('PUT', presignedUrl);
+            xhr.setRequestHeader('Content-Type', file.type);
+            xhr.send(file);
         });
-
-        // 3. 업로드 완료 알림
-        await api.post(
-            `/projects/${projectId}/files/${fileId}/complete`,
-            { uploadId }
-        );
-
-        return {
-            id: fileId,
-            fileName: file.name,
-            fileSize: file.size,
-            detectedColumns: metadata.columns,
-            rowCount: metadata.rowCount,
-            accountColumn: null,
-            amountColumn: null,
-            accountValues: [],
-            totalAmount: 0
-        };
     },
 
-    // 파일 컬럼 업데이트
-    async updateFileColumns(projectId, fileId, columns) {
-        const response = await api.put(
-            `/projects/${projectId}/files/${fileId}/columns`,
-            columns
+    /**
+     * 파일 업로드 완료 처리
+     * POST /api/projects/{projectId}/upload/files
+     */
+    async completeFileUpload(projectId, uploadId, fileName, fileSize, s3Key, sessionId) {
+        const response = await api.post(
+            `/projects/${projectId}/upload/files`,
+            {
+                uploadId,
+                fileName,
+                fileSize,
+                s3Key,
+                sessionId
+            }
         );
         return response.data;
     },
 
-    // 계정명 추출
-    async extractAccountValues(projectId, fileId, columnName) {
-        const response = await api.post(
-            `/projects/${projectId}/files/${fileId}/extract-accounts`,
-            { columnName }
-        );
-        return response.data.accounts;
-    },
-
-    // 금액 합산
-    async calculateTotalAmount(projectId, fileId, columnName) {
-        const response = await api.post(
-            `/projects/${projectId}/files/${fileId}/calculate-amount`,
-            { columnName }
-        );
-        return response.data.totalAmount;
-    },
-
-    // 파일 삭제
-    async deleteFile(projectId, fileId) {
-        await api.delete(`/projects/${projectId}/files/${fileId}`);
-    },
-
-    // 세션 목록 조회
-    async getSessions(projectId) {
-        const response = await api.get(`/projects/${projectId}/sessions`);
-        return response.data;
-    },
-
-    // 파티션 분석
-    async analyzePartitions(projectId, fileIds) {
-        const response = await api.post(
-            `/projects/${projectId}/sessions/analyze-partitions`,
-            { fileIds }
-        );
-        return response.data;
-    },
-
-    // 세션 생성
-    async createSessions(projectId, partitions) {
-        const response = await api.post(
-            `/projects/${projectId}/sessions`,
-            { partitions }
-        );
-        return response.data.sessions;
-    },
-
-    // 세션 수정
-    async updateSession(projectId, sessionId, updates) {
-        const response = await api.put(
-            `/projects/${projectId}/sessions/${sessionId}`,
-            updates
-        );
-        return response.data;
-    },
-
-    // 세션에 파일 추가
-    async addFilesToSession(projectId, sessionId, fileIds) {
-        const response = await api.post(
-            `/projects/${projectId}/sessions/${sessionId}/add-files`,
-            { fileIds }
-        );
-        return response.data;
-    },
-
-    // 세션 병합
-    async mergeSessions(projectId, sessionIds) {
-        const response = await api.post(
-            `/projects/${projectId}/sessions/merge`,
-            { sessionIds }
-        );
-        return response.data;
-    },
-
-    // 세션 삭제 (일괄)
-    async deleteSessions(projectId, sessionIds) {
-        await api.post(
-            `/projects/${projectId}/sessions/delete-batch`,
-            { sessionIds }
-        );
-    },
-
-    // 세션 완료 (계정 분석 시작)
-    async completeSession(projectId, sessionId) {
-        const response = await api.post(
-            `/projects/${projectId}/sessions/${sessionId}/complete`
-        );
-        return response.data;
-    },
-
-    // 결과 다운로드
-    async downloadResult(projectId, sessionId) {
+    /**
+     * 업로드 상태 조회
+     * GET /api/projects/{projectId}/upload/status/{uploadId}
+     */
+    async getUploadStatus(projectId, uploadId) {
         const response = await api.get(
-            `/projects/${projectId}/sessions/${sessionId}/result/download`
+            `/projects/${projectId}/upload/status/${uploadId}`
         );
-        return response.data.downloadUrl;
+        return response.data;
+    },
+
+    /**
+     * 프로젝트 파일 목록 조회
+     * GET /api/projects/{projectId}/upload/files
+     */
+    async getProjectFiles(projectId) {
+        const response = await api.get(
+            `/projects/${projectId}/upload/files`
+        );
+        return response.data;
+    },
+
+    /**
+     * 파일 분석 (계정명 추출, 파티션 제안)
+     * POST /api/projects/{projectId}/upload/analyze
+     */
+    async analyzeFiles(projectId, fileIds) {
+        const response = await api.post(
+            `/projects/${projectId}/upload/analyze`,
+            { fileIds }
+        );
+        return response.data;
+    },
+
+    /**
+     * 파일 컬럼 설정
+     * PUT /api/projects/{projectId}/upload/files/{fileId}/columns
+     */
+    async setFileColumns(projectId, fileId, accountColumnName, amountColumnName) {
+        const response = await api.put(
+            `/projects/${projectId}/upload/files/${fileId}/columns`,
+            {
+                accountColumnName,
+                amountColumnName
+            }
+        );
+        return response.data;
+    },
+
+    // ⭐ 세션 관리 API ⭐
+
+    /**
+     * 세션 생성
+     * POST /api/projects/{projectId}/upload/sessions
+     */
+    async createSession(projectId, sessionName, workerName, fileIds) {
+        const response = await api.post(
+            `/projects/${projectId}/upload/sessions`,
+            {
+                projectId,
+                sessionName,
+                workerName,
+                fileIds
+            }
+        );
+        return response.data;
+    },
+
+    /**
+     * 세션 목록 조회
+     * GET /api/projects/{projectId}/upload/sessions
+     */
+    async getSessions(projectId) {
+        const response = await api.get(
+            `/projects/${projectId}/upload/sessions`
+        );
+        return response.data;
+    },
+
+    /**
+     * 세션 상세 조회
+     * GET /api/projects/{projectId}/upload/sessions/{sessionId}
+     */
+    async getSession(projectId, sessionId) {
+        const response = await api.get(
+            `/projects/${projectId}/upload/sessions/${sessionId}`
+        );
+        return response.data;
+    },
+
+    /**
+     * 세션 수정
+     * PUT /api/projects/{projectId}/upload/sessions/{sessionId}
+     */
+    async updateSession(projectId, sessionId, sessionName, workerName) {
+        const response = await api.put(
+            `/projects/${projectId}/upload/sessions/${sessionId}`,
+            {
+                sessionName,
+                workerName
+            }
+        );
+        return response.data;
+    },
+
+    /**
+     * 세션 시작 (Step 2 진입)
+     * POST /api/projects/{projectId}/upload/sessions/{sessionId}/start
+     */
+    async startSession(projectId, sessionId) {
+        const response = await api.post(
+            `/projects/${projectId}/upload/sessions/${sessionId}/start`
+        );
+        return response.data;
+    },
+
+    /**
+     * 세션 초기화
+     * DELETE /api/projects/{projectId}/upload/sessions/{sessionId}/reset
+     */
+    async resetSession(projectId, sessionId) {
+        await api.delete(
+            `/projects/${projectId}/upload/sessions/${sessionId}/reset`
+        );
+    },
+
+    /**
+     * 세션 삭제
+     * DELETE /api/projects/{projectId}/upload/sessions/{sessionId}
+     */
+    async deleteSession(projectId, sessionId) {
+        await api.delete(
+            `/projects/${projectId}/upload/sessions/${sessionId}`
+        );
+    },
+
+    /**
+     * 세션 병합
+     * POST /api/projects/{projectId}/upload/sessions/merge
+     */
+    async mergeSessions(projectId, sessionIds, newSessionName, workerName) {
+        const response = await api.post(
+            `/projects/${projectId}/upload/sessions/merge`,
+            {
+                sessionIds,
+                newSessionName,
+                workerName
+            }
+        );
+        return response.data;
+    },
+
+    // ⭐ 헬퍼 메서드 (전체 플로우) ⭐
+
+    /**
+     * 파일 업로드 전체 플로우
+     *
+     * 1. Presigned URL 요청
+     * 2. S3 직접 업로드
+     * 3. 업로드 완료 처리
+     */
+    async uploadFile(projectId, file, sessionId = null, onProgress = null) {
+        try {
+            // 1. Presigned URL 요청
+            const presignedData = await this.getPresignedUrl(
+                projectId,
+                file.name,
+                file.size,
+                sessionId
+            );
+
+            const { presignedUrl, uploadId, s3Key, sessionId: returnedSessionId } = presignedData;
+
+            // 2. S3 직접 업로드
+            await this.uploadToS3(presignedUrl, file, onProgress);
+
+            // 3. 업로드 완료 처리
+            const fileData = await this.completeFileUpload(
+                projectId,
+                uploadId,
+                file.name,
+                file.size,
+                s3Key,
+                sessionId || returnedSessionId
+            );
+
+            return fileData;
+
+        } catch (error) {
+            console.error('파일 업로드 실패:', error);
+            throw error;
+        }
     }
 };
 

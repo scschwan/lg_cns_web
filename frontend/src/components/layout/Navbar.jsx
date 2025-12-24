@@ -1,3 +1,5 @@
+// frontend/src/components/layout/Navbar.jsx
+
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
@@ -9,6 +11,7 @@ import {
     Box
 } from '@mui/material';
 import LogoutIcon from '@mui/icons-material/Logout';
+import styles from './Navbar.module.css';
 
 function Navbar() {
     const { user, logout } = useAuth();
@@ -22,11 +25,11 @@ function Navbar() {
     return (
         <AppBar position="static">
             <Toolbar>
-                <Typography variant="h6" component="div" sx={{ flexGrow: 1 }}>
+                <Typography variant="h6" component="div" className={styles.title}>
                     Finance Tool
                 </Typography>
                 {user && (
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                    <Box className={styles.userBox}>
                         <Typography variant="body1">
                             {user.username || user.email}
                         </Typography>

@@ -1,4 +1,4 @@
-// frontend/src/pages/ProjectDetail.jsx
+// frontend/src/pages/project/ProjectDetail.jsx
 
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
@@ -20,6 +20,7 @@ import DashboardIcon from '@mui/icons-material/Dashboard';
 import UploadFileIcon from '@mui/icons-material/UploadFile';
 import projectService from '../../services/projectService';
 import FileUploadTab from '../../components/upload/FileUploadTab';
+import styles from './ProjectDetail.module.css';
 
 function ProjectDetail() {
     const { projectId } = useParams();
@@ -53,7 +54,7 @@ function ProjectDetail() {
     if (loading) {
         return (
             <Container maxWidth="lg">
-                <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '400px' }}>
+                <Box className={styles.loadingContainer}>
                     <CircularProgress />
                 </Box>
             </Container>
@@ -63,7 +64,7 @@ function ProjectDetail() {
     if (error || !project) {
         return (
             <Container maxWidth="lg">
-                <Box sx={{ mt: 4 }}>
+                <Box className={styles.errorContainer}>
                     <Alert severity="error">{error || '프로젝트를 찾을 수 없습니다.'}</Alert>
                 </Box>
             </Container>
@@ -72,34 +73,34 @@ function ProjectDetail() {
 
     return (
         <Container maxWidth="lg">
-            <Box sx={{ mt: 4, mb: 4 }}>
+            <Box className={styles.contentWrapper}>
                 {/* Breadcrumb */}
-                <Breadcrumbs sx={{ mb: 2 }}>
+                <Breadcrumbs className={styles.breadcrumbs}>
                     <Link
                         underline="hover"
                         color="inherit"
                         onClick={() => navigate('/projects')}
-                        sx={{ cursor: 'pointer', display: 'flex', alignItems: 'center' }}
+                        className={styles.breadcrumbLink}
                     >
-                        <FolderIcon sx={{ mr: 0.5 }} fontSize="small" />
+                        <FolderIcon className={styles.breadcrumbIcon} fontSize="small" />
                         내 프로젝트
                     </Link>
                     <Typography color="text.primary">{project.projectName}</Typography>
                 </Breadcrumbs>
 
                 {/* 프로젝트 헤더 */}
-                <Paper sx={{ p: 3, mb: 3 }}>
-                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                <Paper className={styles.headerPaper}>
+                    <Box className={styles.headerContent}>
                         <Box>
                             <Typography variant="h4" gutterBottom>
                                 {project.projectName}
                             </Typography>
                             {project.description && (
-                                <Typography variant="body1" color="text.secondary" sx={{ mb: 2 }}>
+                                <Typography variant="body1" className={styles.description}>
                                     {project.description}
                                 </Typography>
                             )}
-                            <Box sx={{ display: 'flex', gap: 1 }}>
+                            <Box className={styles.chipContainer}>
                                 <Chip
                                     label={`세션: ${project.completedSessions || 0}/${project.totalSessions || 0}`}
                                     size="small"
@@ -117,8 +118,8 @@ function ProjectDetail() {
                     </Box>
                 </Paper>
 
-                {/* 탭 네비게이션 - 2개만 유지 */}
-                <Paper sx={{ mb: 3 }}>
+                {/* 탭 네비게이션 */}
+                <Paper className={styles.tabPaper}>
                     <Tabs value={currentTab} onChange={handleTabChange}>
                         <Tab icon={<DashboardIcon />} label="대시보드" iconPosition="start" />
                         <Tab icon={<UploadFileIcon />} label="파일 업로드" iconPosition="start" />
@@ -128,7 +129,7 @@ function ProjectDetail() {
                 {/* 탭 콘텐츠 */}
                 <Box>
                     {currentTab === 0 && (
-                        <Paper sx={{ p: 3 }}>
+                        <Paper className={styles.contentPaper}>
                             <Typography variant="h6" gutterBottom>
                                 프로젝트 대시보드
                             </Typography>

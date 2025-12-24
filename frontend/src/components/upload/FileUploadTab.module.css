@@ -1,0 +1,20 @@
+/* frontend/src/components/upload/FileUploadTab.module.css */
+
+.paper {
+    padding: 1.5rem;
+}
+
+.header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1.5rem;
+}
+
+.progressBox {
+    margin-bottom: 1.5rem;
+}
+
+.errorAlert {
+    margin-bottom: 1.5rem;
+}

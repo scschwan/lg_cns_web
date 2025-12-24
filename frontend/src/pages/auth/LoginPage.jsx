@@ -1,3 +1,5 @@
+// frontend/src/pages/auth/LoginPage.jsx
+
 import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
@@ -10,6 +12,7 @@ import {
     Paper,
     Alert
 } from '@mui/material';
+import styles from './LoginPage.module.css';
 
 function LoginPage() {
     const [email, setEmail] = useState('');
@@ -27,7 +30,6 @@ function LoginPage() {
 
         try {
             await login({ email, password });
-            //navigate('/dashboard');
             navigate('/projects');
         } catch (err) {
             setError(err.response?.data?.message || '로그인에 실패했습니다.');
@@ -38,22 +40,22 @@ function LoginPage() {
 
     return (
         <Container maxWidth="sm">
-            <Box sx={{ mt: 8, display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-                <Paper elevation={3} sx={{ p: 4, width: '100%' }}>
-                    <Typography component="h1" variant="h4" align="center" gutterBottom>
+            <Box className={styles.container}>
+                <Paper elevation={3} className={styles.paper}>
+                    <Typography component="h1" variant="h4" className={styles.title}>
                         Finance Tool
                     </Typography>
-                    <Typography variant="h6" align="center" color="text.secondary" gutterBottom>
+                    <Typography variant="h6" className={styles.subtitle}>
                         로그인
                     </Typography>
 
                     {error && (
-                        <Alert severity="error" sx={{ mt: 2, mb: 2 }}>
+                        <Alert severity="error" className={styles.errorAlert}>
                             {error}
                         </Alert>
                     )}
 
-                    <Box component="form" onSubmit={handleSubmit} sx={{ mt: 3 }}>
+                    <Box component="form" onSubmit={handleSubmit} className={styles.form}>
                         <TextField
                             margin="normal"
                             required
@@ -82,13 +84,13 @@ function LoginPage() {
                             type="submit"
                             fullWidth
                             variant="contained"
-                            sx={{ mt: 3, mb: 2 }}
+                            className={styles.submitButton}
                             disabled={loading}
                         >
                             {loading ? '로그인 중...' : '로그인'}
                         </Button>
-                        <Box sx={{ textAlign: 'center' }}>
-                            <Link to="/register" style={{ textDecoration: 'none' }}>
+                        <Box className={styles.linkBox}>
+                            <Link to="/register" className={styles.link}>
                                 <Typography variant="body2" color="primary">
                                     계정이 없으신가요? 회원가입
                                 </Typography>

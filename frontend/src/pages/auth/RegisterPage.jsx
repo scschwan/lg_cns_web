@@ -1,3 +1,5 @@
+// frontend/src/pages/auth/RegisterPage.jsx
+
 import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import authService from '../../services/authService';
@@ -10,10 +12,11 @@ import {
     Paper,
     Alert
 } from '@mui/material';
+import styles from './RegisterPage.module.css';
 
 function RegisterPage() {
     const [formData, setFormData] = useState({
-        name: '',              // ⭐ username → name
+        name: '',
         email: '',
         password: '',
         confirmPassword: ''
@@ -34,13 +37,11 @@ function RegisterPage() {
         e.preventDefault();
         setError('');
 
-        // 비밀번호 확인
         if (formData.password !== formData.confirmPassword) {
             setError('비밀번호가 일치하지 않습니다.');
             return;
         }
 
-        // 비밀번호 길이 검증
         if (formData.password.length < 8) {
             setError('비밀번호는 최소 8자 이상이어야 합니다.');
             return;
@@ -50,7 +51,7 @@ function RegisterPage() {
 
         try {
             await authService.register({
-                name: formData.name,        // ⭐ username → name
+                name: formData.name,
                 email: formData.email,
                 password: formData.password
             });
@@ -66,32 +67,32 @@ function RegisterPage() {
 
     return (
         <Container maxWidth="sm">
-            <Box sx={{ mt: 8, display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-                <Paper elevation={3} sx={{ p: 4, width: '100%' }}>
-                    <Typography component="h1" variant="h4" align="center" gutterBottom>
+            <Box className={styles.container}>
+                <Paper elevation={3} className={styles.paper}>
+                    <Typography component="h1" variant="h4" className={styles.title}>
                         Finance Tool
                     </Typography>
-                    <Typography variant="h6" align="center" color="text.secondary" gutterBottom>
+                    <Typography variant="h6" className={styles.subtitle}>
                         회원가입
                     </Typography>
 
                     {error && (
-                        <Alert severity="error" sx={{ mt: 2, mb: 2 }}>
+                        <Alert severity="error" className={styles.errorAlert}>
                             {error}
                         </Alert>
                     )}
 
-                    <Box component="form" onSubmit={handleSubmit} sx={{ mt: 3 }}>
+                    <Box component="form" onSubmit={handleSubmit} className={styles.form}>
                         <TextField
                             margin="normal"
                             required
                             fullWidth
-                            id="name"                    // ⭐ username → name
-                            label="이름"                  // ⭐ "사용자 이름" → "이름"
-                            name="name"                  // ⭐ username → name
+                            id="name"
+                            label="이름"
+                            name="name"
                             autoComplete="name"
                             autoFocus
-                            value={formData.name}        // ⭐ username → name
+                            value={formData.name}
                             onChange={handleChange}
                         />
                         <TextField
@@ -110,7 +111,7 @@ function RegisterPage() {
                             required
                             fullWidth
                             name="password"
-                            label="비밀번호 (8자 이상)"    // ⭐ 힌트 추가
+                            label="비밀번호 (8자 이상)"
                             type="password"
                             id="password"
                             autoComplete="new-password"
@@ -132,13 +133,13 @@ function RegisterPage() {
                             type="submit"
                             fullWidth
                             variant="contained"
-                            sx={{ mt: 3, mb: 2 }}
+                            className={styles.submitButton}
                             disabled={loading}
                         >
                             {loading ? '처리 중...' : '회원가입'}
                         </Button>
-                        <Box sx={{ textAlign: 'center' }}>
-                            <Link to="/login" style={{ textDecoration: 'none' }}>
+                        <Box className={styles.linkBox}>
+                            <Link to="/login" className={styles.link}>
                                 <Typography variant="body2" color="primary">
                                     이미 계정이 있으신가요? 로그인
                                 </Typography>

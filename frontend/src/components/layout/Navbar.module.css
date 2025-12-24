@@ -1,0 +1,11 @@
+/* frontend/src/components/layout/Navbar.module.css */
+
+.title {
+    flex-grow: 1;
+}
+
+.userBox {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+}

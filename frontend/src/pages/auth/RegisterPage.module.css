@@ -1,0 +1,46 @@
+/* frontend/src/pages/auth/RegisterPage.module.css */
+
+.container {
+    margin-top: 4rem;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+
+.paper {
+    padding: 2rem;
+    width: 100%;
+}
+
+.title {
+    text-align: center;
+    margin-bottom: 0.5rem;
+}
+
+.subtitle {
+    text-align: center;
+    color: rgba(0, 0, 0, 0.6);
+    margin-bottom: 0.5rem;
+}
+
+.errorAlert {
+    margin-top: 1rem;
+    margin-bottom: 1rem;
+}
+
+.form {
+    margin-top: 1.5rem;
+}
+
+.submitButton {
+    margin-top: 1.5rem;
+    margin-bottom: 1rem;
+}
+
+.linkBox {
+    text-align: center;
+}
+
+.link {
+    text-decoration: none;
+}

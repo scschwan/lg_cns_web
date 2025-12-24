@@ -1,0 +1,19 @@
+/* frontend/src/components/common/ProgressDialog.module.css */
+
+.contentBox {
+    padding-top: 1rem;
+    padding-bottom: 1rem;
+}
+
+.progressBar {
+    height: 10px;
+    border-radius: 5px;
+}
+
+.message {
+    margin-top: 1rem;
+}
+
+.percentage {
+    margin-top: 0.5rem;
+}
