@@ -1,8 +1,8 @@
-package com.example.finance.dto.response;
+package com.example.finance.dto.response.session;
 
 import com.example.finance.enums.ProcessStep;
-import com.example.finance.model.StepHistory;
-import com.example.finance.model.UploadedFileInfo;
+import com.example.finance.model.session.StepHistory;
+import com.example.finance.model.session.UploadedFileInfo;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;

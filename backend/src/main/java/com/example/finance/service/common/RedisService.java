@@ -1,4 +1,4 @@
-package com.example.finance.service;
+package com.example.finance.service.common;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;

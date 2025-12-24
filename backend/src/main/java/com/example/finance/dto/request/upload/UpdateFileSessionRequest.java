@@ -1,4 +1,4 @@
-package com.example.finance.dto.request;
+package com.example.finance.dto.request.upload;
 
 import lombok.AllArgsConstructor;
 import lombok.Builder;

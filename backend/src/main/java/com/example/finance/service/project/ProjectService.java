@@ -1,24 +1,26 @@
-package com.example.finance.service;
+package com.example.finance.service.project;
 
-import com.example.finance.dto.request.CreateProjectRequest;
-import com.example.finance.dto.request.InviteMemberRequest;
-import com.example.finance.dto.response.ProjectSummary;
+import com.example.finance.dto.response.project.ProjectSummary;
 import com.example.finance.enums.ProjectRole;
 import com.example.finance.exception.ProjectNotFoundException;
 import com.example.finance.exception.UserNotFoundException;
-import com.example.finance.model.Project;
-import com.example.finance.model.ProjectMember;
-import com.example.finance.model.User;
-import com.example.finance.repository.FileSessionRepository;
-import com.example.finance.repository.ProjectRepository;
-import com.example.finance.repository.UserRepository;
+import com.example.finance.model.project.Project;
+import com.example.finance.model.project.ProjectMember;
+import com.example.finance.model.auth.User;
+import com.example.finance.repository.session.FileSessionRepository;
+import com.example.finance.repository.project.ProjectRepository;
+import com.example.finance.repository.auth.UserRepository;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
+import java.util.UUID;
 import java.util.stream.Collectors;
 
 /**
@@ -43,7 +45,7 @@ public class ProjectService {
      * @return 생성된 프로젝트
      */
     @Transactional
-    public Project createProject(String userId, CreateProjectRequest request) {
+    public Project createProject(String userId, com.example.finance.dto.request.project.@Valid CreateProjectRequest request) {
         log.info("프로젝트 생성: userId={}, name={}", userId, request.getName());
 
         // 1. Owner 멤버 생성
@@ -86,7 +88,7 @@ public class ProjectService {
      */
     @Transactional
     public Project inviteMember(String projectId, String invitedBy,
-                                InviteMemberRequest request) {
+                                com.example.finance.dto.request.project.@Valid InviteMemberRequest request) {
         log.info("멤버 초대: projectId={}, email={}, role={}",
                 projectId, request.getEmail(), request.getRole());
 
@@ -298,7 +300,7 @@ public class ProjectService {
      * @return 업데이트된 프로젝트
      */
     @Transactional
-    public Project updateProject(String projectId, String userId, CreateProjectRequest request) {
+    public Project updateProject(String projectId, String userId, com.example.finance.dto.request.project.@Valid CreateProjectRequest request) {
         log.info("프로젝트 수정: projectId={}", projectId);
 
         Project project = projectRepository.findByProjectId(projectId)

@@ -1,6 +1,6 @@
-package com.example.finance.controller;
+package com.example.finance.controller.common;
 
-import com.example.finance.service.RedisService;
+import com.example.finance.service.common.RedisService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.*;

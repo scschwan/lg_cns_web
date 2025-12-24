@@ -1,6 +1,6 @@
-package com.example.finance.repository;
+package com.example.finance.repository.project;
 
-import com.example.finance.model.ProjectMember;
+import com.example.finance.model.project.ProjectMember;
 import org.springframework.data.mongodb.repository.MongoRepository;
 import org.springframework.stereotype.Repository;
 

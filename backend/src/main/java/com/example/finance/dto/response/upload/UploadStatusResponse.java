@@ -1,6 +1,6 @@
-package com.example.finance.dto;
+package com.example.finance.dto.response.upload;
 
-import com.example.finance.model.UploadSession;
+import com.example.finance.model.upload.UploadSession;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;

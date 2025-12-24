@@ -4,6 +4,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.validation.FieldError;
+import org.springframework.web.ErrorResponse;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
@@ -42,6 +43,28 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(AlreadyMemberException.class)
     public ResponseEntity<Map<String, Object>> handleAlreadyMember(AlreadyMemberException e) {
         return createErrorResponse(HttpStatus.CONFLICT, e.getMessage());
+    }
+
+    /**
+     * BusinessException 처리 (신규 추가)
+     */
+    // 기존 파일 끝에 추가
+
+    /**
+     * BusinessException 처리
+     */
+    @ExceptionHandler(BusinessException.class)
+    public ResponseEntity<Map<String, Object>> handleBusinessException(BusinessException e) {
+        log.error("Business exception: errorCode={}, message={}",
+                e.getErrorCode(), e.getMessage());
+
+        Map<String, Object> response = new HashMap<>();
+        response.put("success", false);
+        response.put("error", e.getErrorCode());
+        response.put("message", e.getMessage());
+        response.put("timestamp", LocalDateTime.now());
+
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(response);
     }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)

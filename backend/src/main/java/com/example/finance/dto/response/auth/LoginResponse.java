@@ -1,4 +1,4 @@
-package com.example.finance.dto.response;
+package com.example.finance.dto.response.auth;
 
 import lombok.AllArgsConstructor;
 import lombok.Builder;

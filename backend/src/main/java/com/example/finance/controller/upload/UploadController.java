@@ -7,8 +7,6 @@ import com.example.finance.dto.response.upload.AccountPartitionResponse;
 import com.example.finance.dto.response.upload.PresignedUrlResponse;
 import com.example.finance.dto.response.upload.UploadFileResponse;
 import com.example.finance.model.session.UploadedFileInfo;
-import com.example.finance.model.upload.UploadSession;
-import com.example.finance.security.CurrentUser;
 import com.example.finance.service.common.S3Service;
 import com.example.finance.service.project.ProjectService;
 import com.example.finance.service.upload.FileAnalysisService;
@@ -50,6 +48,7 @@ public class UploadController {
      *
      * POST /api/projects/{projectId}/upload/presigned-url
      */
+    // ===== createPresignedUrl 메서드 전체 수정 =====
     @Operation(summary = "Presigned URL 생성", description = "S3 직접 업로드를 위한 Presigned URL 생성")
     @PostMapping("/presigned-url")
     public ResponseEntity<PresignedUrlResponse> createPresignedUrl(
@@ -64,26 +63,22 @@ public class UploadController {
         // 1. 프로젝트 권한 확인
         projectService.getProject(projectId, userId);
 
-        // 2. 세션 ID 생성 (또는 요청에서 받기)
-        String sessionId = request.getSessionId() != null
-                ? request.getSessionId()
-                : uploadService.createSession(projectId, userId);
-
-        // 3. 업로드 ID 생성
+        // 2. 세션 ID와 업로드 ID 생성
+        String sessionId = uploadService.createSession(projectId, userId);
         String uploadId = uploadService.createUploadId();
 
-        // 4. S3 키 생성 (프로젝트별 경로)
-        String s3Key = String.format("uploads/%s/%s/%s",
-                projectId, sessionId, request.getFileName());
+        // 3. S3 키 생성
+        String s3Key = s3Service.buildS3Key(projectId, sessionId, uploadId, request.getFileName());
 
-        // 5. Presigned URL 생성
+        // 4. Presigned URL 생성
         String presignedUrl = s3Service.generatePresignedUrl(
-                s3Key,
-                request.getFileName(),
-                request.getFileSize()
+                projectId,
+                sessionId,
+                uploadId,
+                request.getFileName()
         );
 
-        // 6. Redis에 업로드 세션 초기화
+        // 5. Redis에 업로드 세션 초기화
         uploadService.saveUploadSession(
                 projectId,
                 sessionId,
@@ -93,13 +88,12 @@ public class UploadController {
                 request.getFileSize()
         );
 
-        // 7. 응답 생성
+        // 6. 응답 생성
         PresignedUrlResponse response = PresignedUrlResponse.builder()
                 .presignedUrl(presignedUrl)
                 .uploadId(uploadId)
-                .sessionId(sessionId)
                 .s3Key(s3Key)
-                .expiresIn(3600) // 1시간
+                .expiresIn(3600L)
                 .build();
 
         log.info("Presigned URL 생성 완료: uploadId={}, sessionId={}", uploadId, sessionId);
@@ -238,5 +232,74 @@ public class UploadController {
         UploadedFileInfo fileInfo = uploadService.setFileColumns(projectId, fileId, request);
 
         return ResponseEntity.ok(fileInfo);
+    }
+
+    /**
+     * 계정명 값 추출
+     */
+    @PostMapping("/files/{fileId}/extract-accounts")
+    public ResponseEntity<Map<String, List<String>>> extractAccountValues(
+            @PathVariable String projectId,
+            @PathVariable String fileId,
+            @AuthenticationPrincipal UserDetails userDetails,
+            @RequestBody Map<String, String> request) {
+
+        String userId = userDetails.getUsername();
+        String columnName = request.get("columnName");
+
+        log.info("계정명 추출: fileId={}, columnName={}", fileId, columnName);
+
+        // 프로젝트 권한 확인
+        projectService.getProject(projectId, userId);
+
+        // FileAnalysisService 활용
+        List<String> accounts = uploadService.extractAccountValues(projectId, fileId, columnName);
+
+        return ResponseEntity.ok(Map.of("accounts", accounts));
+    }
+
+    /**
+     * 금액 합계 계산
+     */
+    @PostMapping("/files/{fileId}/calculate-amount")
+    public ResponseEntity<Map<String, Double>> calculateTotalAmount(
+            @PathVariable String projectId,
+            @PathVariable String fileId,
+            @AuthenticationPrincipal UserDetails userDetails,
+            @RequestBody Map<String, String> request) {
+
+        String userId = userDetails.getUsername();
+        String columnName = request.get("columnName");
+
+        log.info("금액 합산: fileId={}, columnName={}", fileId, columnName);
+
+        // 프로젝트 권한 확인
+        projectService.getProject(projectId, userId);
+
+        // UploadService에 메서드 추가 필요
+        Double totalAmount = uploadService.calculateTotalAmount(projectId, fileId, columnName);
+
+        return ResponseEntity.ok(Map.of("totalAmount", totalAmount));
+    }
+
+    /**
+     * 파일 삭제
+     */
+    @DeleteMapping("/files/{fileId}")
+    public ResponseEntity<Void> deleteFile(
+            @PathVariable String projectId,
+            @PathVariable String fileId,
+            @AuthenticationPrincipal UserDetails userDetails) {
+
+        String userId = userDetails.getUsername();
+        log.info("파일 삭제: fileId={}", fileId);
+
+        // 프로젝트 권한 확인
+        projectService.getProject(projectId, userId);
+
+        // UploadService에 메서드 추가 필요
+        uploadService.deleteFile(projectId, fileId);
+
+        return ResponseEntity.noContent().build();
     }
 }

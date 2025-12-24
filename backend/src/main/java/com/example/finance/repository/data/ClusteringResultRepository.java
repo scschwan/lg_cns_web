@@ -1,6 +1,6 @@
-package com.example.finance.repository;
+package com.example.finance.repository.data;
 
-import com.example.finance.model.ClusteringResult;
+import com.example.finance.model.data.ClusteringResult;
 import org.springframework.data.mongodb.repository.MongoRepository;
 import org.springframework.stereotype.Repository;
 

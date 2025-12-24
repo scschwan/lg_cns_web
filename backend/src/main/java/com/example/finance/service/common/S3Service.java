@@ -1,10 +1,11 @@
-package com.example.finance.service;
+package com.example.finance.service.common;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import software.amazon.awssdk.services.s3.S3Client;
+import software.amazon.awssdk.services.s3.model.GetObjectRequest;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 import software.amazon.awssdk.services.s3.presigner.S3Presigner;
 import software.amazon.awssdk.services.s3.presigner.model.PresignedPutObjectRequest;
@@ -84,5 +85,33 @@ public class S3Service {
                              String uploadId, String fileName) {
         return String.format("projects/%s/sessions/%s/uploads/%s/%s",
                 projectId, sessionId, uploadId, fileName);
+    }
+
+    // ⭐⭐⭐ 신규 메서드 추가 ⭐⭐⭐
+
+    /**
+     * S3에서 파일 다운로드
+     *
+     * @param s3Key S3 키
+     * @return 파일 바이트 배열
+     */
+    public byte[] downloadFile(String s3Key) {
+        log.info("S3 파일 다운로드: bucket={}, key={}", excelBucket, s3Key);
+
+        try {
+            GetObjectRequest getObjectRequest = GetObjectRequest.builder()
+                    .bucket(excelBucket)
+                    .key(s3Key)
+                    .build();
+
+            byte[] fileBytes = s3Client.getObject(getObjectRequest).readAllBytes();
+            log.info("S3 파일 다운로드 완료: {} bytes", fileBytes.length);
+
+            return fileBytes;
+
+        } catch (Exception e) {
+            log.error("S3 파일 다운로드 실패: key={}, error={}", s3Key, e.getMessage(), e);
+            throw new RuntimeException("S3 파일 다운로드 실패: " + e.getMessage(), e);
+        }
     }
 }

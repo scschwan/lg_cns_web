@@ -1,14 +1,13 @@
-package com.example.finance.service;
+package com.example.finance.service.auth;
 
-import com.example.finance.dto.request.LoginRequest;
-import com.example.finance.dto.request.RegisterRequest;
-import com.example.finance.dto.response.LoginResponse;
+import com.example.finance.dto.response.auth.LoginResponse;
 import com.example.finance.exception.DuplicateEmailException;
 import com.example.finance.exception.InvalidCredentialsException;
 import com.example.finance.exception.UserNotFoundException;
-import com.example.finance.model.User;
-import com.example.finance.repository.UserRepository;
+import com.example.finance.model.auth.User;
+import com.example.finance.repository.auth.UserRepository;
 import com.example.finance.security.JwtTokenProvider;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -38,7 +37,7 @@ public class AuthService {
      * @return 생성된 사용자
      */
     @Transactional
-    public User register(RegisterRequest request) {
+    public User register(com.example.finance.dto.request.auth.@Valid RegisterRequest request) {
         log.info("회원가입 시도: email={}", request.getEmail());
 
         // 1. 이메일 중복 확인
@@ -72,7 +71,7 @@ public class AuthService {
      * @return 로그인 응답 (JWT 토큰 포함)
      */
     @Transactional
-    public LoginResponse login(LoginRequest request) {
+    public LoginResponse login(com.example.finance.dto.request.auth.@Valid LoginRequest request) {
         log.info("로그인 시도: email={}", request.getEmail());
 
         // 1. 사용자 조회

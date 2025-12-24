@@ -1,4 +1,4 @@
-package com.example.finance.model;
+package com.example.finance.model.upload;
 
 import lombok.AllArgsConstructor;
 import lombok.Builder;

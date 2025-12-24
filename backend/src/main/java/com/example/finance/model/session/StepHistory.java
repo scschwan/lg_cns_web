@@ -1,4 +1,4 @@
-package com.example.finance.model;
+package com.example.finance.model.session;
 
 import com.example.finance.enums.ProcessStep;
 import lombok.AllArgsConstructor;

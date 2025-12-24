@@ -1,11 +1,10 @@
-package com.example.finance.dto.request;
+package com.example.finance.dto.request.upload;
 
+import jakarta.validation.constraints.NotBlank;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
-
-import jakarta.validation.constraints.NotBlank;
 
 /**
  * 파일 컬럼 설정 요청 (계정명, 금액 컬럼)

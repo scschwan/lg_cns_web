@@ -1,5 +1,6 @@
 package com.example.finance.dto.request.upload;
 
+import com.example.finance.dto.response.upload.AccountPartitionResponse;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotEmpty;
 import lombok.AllArgsConstructor;
@@ -8,8 +9,6 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 import java.util.List;
-
-import com.example.finance.dto.response.upload.AccountPartitionResponse;
 
 /**
  * 세션 파티션 생성 요청

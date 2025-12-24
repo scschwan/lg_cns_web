@@ -257,12 +257,193 @@ public class UploadService {
     }
 
     /**
-     * Cell 값을 String으로 변환
+     * 계정명 값 추출
+     *
+     * @param projectId 프로젝트 ID
+     * @param fileId 파일 ID
+     * @param columnName 계정명 컬럼
+     * @return 계정명 고유값 리스트
+     */
+    public List<String> extractAccountValues(String projectId, String fileId, String columnName) {
+        log.info("계정명 추출: projectId={}, fileId={}, columnName={}", projectId, fileId, columnName);
+
+        // 1. 파일 정보 조회
+        FileSession fileSession = fileSessionRepository.findByUploadedFilesFileId(fileId)
+                .orElseThrow(() -> new BusinessException(
+                        "FILE_NOT_FOUND", "파일을 찾을 수 없습니다: " + fileId));
+
+        UploadedFileInfo fileInfo = fileSession.getUploadedFiles().stream()
+                .filter(f -> f.getFileId().equals(fileId))
+                .findFirst()
+                .orElseThrow(() -> new BusinessException(
+                        "FILE_NOT_FOUND", "파일을 찾을 수 없습니다: " + fileId));
+
+        // 2. S3에서 파일 다운로드
+        byte[] fileBytes = s3Service.downloadFile(fileInfo.getS3Key());
+
+        // 3. Excel 파싱 (계정명 추출)
+        try (ByteArrayInputStream bis = new ByteArrayInputStream(fileBytes);
+             Workbook workbook = new XSSFWorkbook(bis)) {
+
+            Sheet sheet = workbook.getSheetAt(0);
+            Row headerRow = sheet.getRow(0);
+
+            // 컬럼 인덱스 찾기
+            int columnIndex = -1;
+            for (int i = 0; i < headerRow.getLastCellNum(); i++) {
+                Cell cell = headerRow.getCell(i);
+                if (cell != null && columnName.equals(getCellValueAsString(cell))) {
+                    columnIndex = i;
+                    break;
+                }
+            }
+
+            if (columnIndex == -1) {
+                throw new BusinessException("COLUMN_NOT_FOUND",
+                        "컬럼을 찾을 수 없습니다: " + columnName);
+            }
+
+            // 고유값 추출 (최대 1000개 샘플링)
+            Set<String> accountValues = new HashSet<>();
+            int maxRows = Math.min(sheet.getLastRowNum(), 1000);
+
+            for (int i = 1; i <= maxRows; i++) {
+                Row row = sheet.getRow(i);
+                if (row == null) continue;
+
+                Cell cell = row.getCell(columnIndex);
+                if (cell == null) continue;
+
+                String value = getCellValueAsString(cell);
+                if (value != null && !value.trim().isEmpty()) {
+                    accountValues.add(value.trim());
+                }
+            }
+
+            log.info("계정명 추출 완료: {} 개", accountValues.size());
+            return new ArrayList<>(accountValues);
+
+        } catch (IOException e) {
+            log.error("Excel 파싱 실패: fileId={}", fileId, e);
+            throw new BusinessException("FILE_PARSE_ERROR", "파일 파싱 실패: " + e.getMessage());
+        }
+    }
+
+    /**
+     * 금액 합계 계산
+     *
+     * @param projectId 프로젝트 ID
+     * @param fileId 파일 ID
+     * @param columnName 금액 컬럼
+     * @return 금액 합계
+     */
+    public Double calculateTotalAmount(String projectId, String fileId, String columnName) {
+        log.info("금액 합산: projectId={}, fileId={}, columnName={}", projectId, fileId, columnName);
+
+        // 1. 파일 정보 조회
+        FileSession fileSession = fileSessionRepository.findByUploadedFilesFileId(fileId)
+                .orElseThrow(() -> new BusinessException(
+                        "FILE_NOT_FOUND", "파일을 찾을 수 없습니다: " + fileId));
+
+        UploadedFileInfo fileInfo = fileSession.getUploadedFiles().stream()
+                .filter(f -> f.getFileId().equals(fileId))
+                .findFirst()
+                .orElseThrow(() -> new BusinessException(
+                        "FILE_NOT_FOUND", "파일을 찾을 수 없습니다: " + fileId));
+
+        // 2. S3에서 파일 다운로드
+        byte[] fileBytes = s3Service.downloadFile(fileInfo.getS3Key());
+
+        // 3. Excel 파싱 (금액 합산)
+        try (ByteArrayInputStream bis = new ByteArrayInputStream(fileBytes);
+             Workbook workbook = new XSSFWorkbook(bis)) {
+
+            Sheet sheet = workbook.getSheetAt(0);
+            Row headerRow = sheet.getRow(0);
+
+            // 컬럼 인덱스 찾기
+            int columnIndex = -1;
+            for (int i = 0; i < headerRow.getLastCellNum(); i++) {
+                Cell cell = headerRow.getCell(i);
+                if (cell != null && columnName.equals(getCellValueAsString(cell))) {
+                    columnIndex = i;
+                    break;
+                }
+            }
+
+            if (columnIndex == -1) {
+                throw new BusinessException("COLUMN_NOT_FOUND",
+                        "컬럼을 찾을 수 없습니다: " + columnName);
+            }
+
+            // 금액 합산
+            double totalAmount = 0.0;
+            for (int i = 1; i <= sheet.getLastRowNum(); i++) {
+                Row row = sheet.getRow(i);
+                if (row == null) continue;
+
+                Cell cell = row.getCell(columnIndex);
+                if (cell == null) continue;
+
+                if (cell.getCellType() == CellType.NUMERIC) {
+                    totalAmount += cell.getNumericCellValue();
+                } else if (cell.getCellType() == CellType.STRING) {
+                    String value = cell.getStringCellValue().replaceAll("[^0-9.-]", "");
+                    if (!value.isEmpty()) {
+                        try {
+                            totalAmount += Double.parseDouble(value);
+                        } catch (NumberFormatException e) {
+                            // 무시
+                        }
+                    }
+                }
+            }
+
+            log.info("금액 합산 완료: {}", totalAmount);
+            return totalAmount;
+
+        } catch (IOException e) {
+            log.error("Excel 파싱 실패: fileId={}", fileId, e);
+            throw new BusinessException("FILE_PARSE_ERROR", "파일 파싱 실패: " + e.getMessage());
+        }
+    }
+
+    /**
+     * 파일 삭제
+     *
+     * @param projectId 프로젝트 ID
+     * @param fileId 파일 ID
+     */
+    public void deleteFile(String projectId, String fileId) {
+        log.info("파일 삭제: projectId={}, fileId={}", projectId, fileId);
+
+        // 1. 파일이 속한 세션 조회
+        FileSession fileSession = fileSessionRepository.findByUploadedFilesFileId(fileId)
+                .orElseThrow(() -> new BusinessException(
+                        "FILE_NOT_FOUND", "파일을 찾을 수 없습니다: " + fileId));
+
+        // 2. 파일 정보 찾기
+        UploadedFileInfo fileToDelete = fileSession.getUploadedFiles().stream()
+                .filter(f -> f.getFileId().equals(fileId))
+                .findFirst()
+                .orElseThrow(() -> new BusinessException(
+                        "FILE_NOT_FOUND", "파일을 찾을 수 없습니다: " + fileId));
+
+        // 3. 세션에서 파일 제거
+        fileSession.getUploadedFiles().removeIf(f -> f.getFileId().equals(fileId));
+
+        // 4. 세션 업데이트
+        fileSession.setUpdatedAt(LocalDateTime.now());
+        fileSessionRepository.save(fileSession);
+
+        log.info("파일 삭제 완료: fileId={}", fileId);
+    }
+
+    /**
+     * Cell 값을 String으로 변환 (재사용 헬퍼 메서드)
      */
     private String getCellValueAsString(Cell cell) {
-        if (cell == null) {
-            return null;
-        }
+        if (cell == null) return null;
 
         switch (cell.getCellType()) {
             case STRING:
@@ -325,4 +506,6 @@ public class UploadService {
                 .flatMap(session -> session.getUploadedFiles().stream())
                 .collect(Collectors.toList());
     }
+
+
 }

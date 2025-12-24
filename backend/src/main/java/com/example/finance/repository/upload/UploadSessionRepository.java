@@ -1,8 +1,6 @@
-package com.example.finance.repository;
+package com.example.finance.repository.upload;
 
-import com.example.finance.model.UploadSession;
-import org.springframework.data.domain.Page;
-import org.springframework.data.domain.Pageable;
+import com.example.finance.model.upload.UploadSession;
 import org.springframework.data.mongodb.repository.MongoRepository;
 import org.springframework.stereotype.Repository;
 

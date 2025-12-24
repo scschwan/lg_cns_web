@@ -1,19 +1,19 @@
-package com.example.finance.controller;
+package com.example.finance.controller.project;
 
-import com.example.finance.dto.request.CreateProjectRequest;
-import com.example.finance.dto.request.InviteMemberRequest;
-import com.example.finance.dto.response.ProjectSummary;
+import com.example.finance.dto.request.project.CreateProjectRequest;
+import com.example.finance.dto.request.project.InviteMemberRequest;
+import com.example.finance.dto.response.project.ProjectSummary;
 import com.example.finance.enums.ProjectRole;
-import com.example.finance.model.Project;
+import com.example.finance.model.project.Project;
 import com.example.finance.security.CurrentUser;
 import com.example.finance.security.UserPrincipal;
-import com.example.finance.service.ProjectService;
+import com.example.finance.service.project.ProjectService;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
-import jakarta.validation.Valid;
 import java.util.List;
 
 /**

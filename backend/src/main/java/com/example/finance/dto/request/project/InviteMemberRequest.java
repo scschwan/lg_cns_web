@@ -1,4 +1,4 @@
-package com.example.finance.dto.request;
+package com.example.finance.dto.request.project;
 
 import com.example.finance.enums.ProjectRole;
 import jakarta.validation.constraints.Email;

@@ -1,6 +1,6 @@
-package com.example.finance.repository;
+package com.example.finance.repository.data;
 
-import com.example.finance.model.ProcessDataDocument;
+import com.example.finance.model.data.ProcessDataDocument;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.mongodb.repository.MongoRepository;

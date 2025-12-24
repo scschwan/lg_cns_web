@@ -1,10 +1,10 @@
-package com.example.finance.controller;
+package com.example.finance.controller.auth;
 
-import com.example.finance.dto.request.LoginRequest;
-import com.example.finance.dto.request.RegisterRequest;
-import com.example.finance.dto.response.LoginResponse;
-import com.example.finance.model.User;
-import com.example.finance.service.AuthService;
+import com.example.finance.dto.request.auth.LoginRequest;
+import com.example.finance.dto.request.auth.RegisterRequest;
+import com.example.finance.dto.response.auth.LoginResponse;
+import com.example.finance.model.auth.User;
+import com.example.finance.service.auth.AuthService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;

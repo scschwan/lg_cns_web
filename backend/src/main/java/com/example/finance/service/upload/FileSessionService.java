@@ -1,20 +1,26 @@
-package com.example.finance.service;
+package com.example.finance.service.upload;
 
-import com.example.finance.dto.request.CreateFileSessionRequest;
-import com.example.finance.dto.request.MergeSessionsRequest;
-import com.example.finance.dto.request.SetFileColumnsRequest;
-import com.example.finance.dto.request.UpdateFileSessionRequest;
-import com.example.finance.dto.response.FileMetadataResponse;
-import com.example.finance.dto.response.FileSessionResponse;
+import com.example.finance.dto.request.upload.CreateFileSessionRequest;
+import com.example.finance.dto.request.upload.MergeSessionsRequest;
+import com.example.finance.dto.request.upload.SetFileColumnsRequest;
+import com.example.finance.dto.request.upload.UpdateFileSessionRequest;
+import com.example.finance.dto.response.session.FileSessionResponse;
 import com.example.finance.enums.ProcessStep;
+import com.example.finance.exception.BusinessException;
 import com.example.finance.exception.ProjectNotFoundException;
-import com.example.finance.model.*;
-import com.example.finance.repository.*;
+import com.example.finance.model.session.FileSession;
+import com.example.finance.model.project.Project;
+import com.example.finance.model.session.StepHistory;
+import com.example.finance.model.session.UploadedFileInfo;
+import com.example.finance.model.upload.UploadSession;
+import com.example.finance.repository.data.ClusteringResultRepository;
+import com.example.finance.repository.data.ProcessDataRepository;
+import com.example.finance.repository.data.RawDataRepository;
+import com.example.finance.repository.project.ProjectRepository;
+import com.example.finance.repository.session.FileSessionRepository;
+import com.example.finance.repository.upload.UploadSessionRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.data.domain.Page;
-import org.springframework.data.domain.PageRequest;
-import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -539,5 +545,177 @@ public class FileSessionService {
                 .uploadedFiles(session.getUploadedFiles())
                 .stepHistory(session.getStepHistory())
                 .build();
+    }
+
+    /**
+     * 세션에 파일 추가
+     *
+     * @param sessionId 세션 ID
+     * @param userId 사용자 ID
+     * @param fileIds 추가할 파일 ID 리스트
+     * @return 업데이트된 세션
+     */
+    public FileSession addFilesToSession(String sessionId, String userId, List<String> fileIds) {
+        log.info("세션에 파일 추가: sessionId={}, fileIds={}", sessionId, fileIds);
+
+        // 1. 세션 조회
+        FileSession session = fileSessionRepository.findBySessionId(sessionId)
+                .orElseThrow(() -> new BusinessException(
+                        "SESSION_NOT_FOUND", "세션을 찾을 수 없습니다: " + sessionId));
+
+        // 2. 권한 확인
+        if (!session.getCreatedBy().equals(userId)) {
+            throw new BusinessException("FORBIDDEN", "세션 접근 권한이 없습니다");
+        }
+
+        // 3. 파일 정보 조회 및 추가
+        for (String fileId : fileIds) {
+            // 다른 세션에서 파일 정보 조회
+            FileSession sourceSession = fileSessionRepository.findByUploadedFilesFileId(fileId)
+                    .orElseThrow(() -> new BusinessException(
+                            "FILE_NOT_FOUND", "파일을 찾을 수 없습니다: " + fileId));
+
+            UploadedFileInfo fileInfo = sourceSession.getUploadedFiles().stream()
+                    .filter(f -> f.getFileId().equals(fileId))
+                    .findFirst()
+                    .orElseThrow(() -> new BusinessException(
+                            "FILE_NOT_FOUND", "파일을 찾을 수 없습니다: " + fileId));
+
+            // 중복 체크
+            boolean alreadyExists = session.getUploadedFiles().stream()
+                    .anyMatch(f -> f.getFileId().equals(fileId));
+
+            if (!alreadyExists) {
+                session.getUploadedFiles().add(fileInfo);
+            }
+        }
+
+        // 4. 세션 업데이트
+        session.setUpdatedAt(LocalDateTime.now());
+        FileSession updated = fileSessionRepository.save(session);
+
+        log.info("세션에 파일 추가 완료: {} 개 파일 추가됨", fileIds.size());
+        return updated;
+    }
+
+    /**
+     * 세션 일괄 삭제
+     *
+     * @param projectId 프로젝트 ID
+     * @param sessionIds 삭제할 세션 ID 리스트
+     */
+    public void deleteSessions(String projectId, List<String> sessionIds) {
+        log.info("세션 일괄 삭제: projectId={}, sessionIds={}", projectId, sessionIds);
+
+        for (String sessionId : sessionIds) {
+            FileSession session = fileSessionRepository.findBySessionId(sessionId)
+                    .orElseThrow(() -> new BusinessException(
+                            "SESSION_NOT_FOUND", "세션을 찾을 수 없습니다: " + sessionId));
+
+            // 프로젝트 확인
+            if (!session.getProjectId().equals(projectId)) {
+                throw new BusinessException("FORBIDDEN", "프로젝트 세션이 아닙니다");
+            }
+
+            // 소프트 삭제
+            session.setIsDeleted(true);
+            session.setUpdatedAt(LocalDateTime.now());
+            fileSessionRepository.save(session);
+        }
+
+        log.info("세션 일괄 삭제 완료: {} 개", sessionIds.size());
+    }
+
+    /**
+     * 세션 완료 처리 (Step 2 진입)
+     *
+     * @param sessionId 세션 ID
+     * @param userId 사용자 ID
+     * @return 처리 결과
+     */
+    public Map<String, Object> completeSessionProcessing(String sessionId, String userId) {
+        log.info("세션 완료 처리: sessionId={}", sessionId);
+
+        // 1. 세션 조회
+        FileSession session = fileSessionRepository.findBySessionId(sessionId)
+                .orElseThrow(() -> new BusinessException(
+                        "SESSION_NOT_FOUND", "세션을 찾을 수 없습니다: " + sessionId));
+
+        // 2. 권한 확인
+        if (!session.getCreatedBy().equals(userId)) {
+            throw new BusinessException("FORBIDDEN", "세션 접근 권한이 없습니다");
+        }
+
+        // 3. Step 2로 진입 가능한지 확인
+        if (session.getUploadedFiles() == null || session.getUploadedFiles().isEmpty()) {
+            throw new BusinessException("NO_FILES", "업로드된 파일이 없습니다");
+        }
+
+        // 4. 현재 단계 업데이트 (Step 1 → Step 2)
+        session.setCurrentStep(ProcessStep.FILE_LOAD); // Step 2
+        session.setUpdatedAt(LocalDateTime.now());
+        fileSessionRepository.save(session);
+
+        // 5. Lambda 파싱 트리거는 별도 로직에서 수행
+        // (Phase 1에서 구현된 Lambda Coordinator 호출)
+
+        Map<String, Object> result = new HashMap<>();
+        result.put("sessionId", sessionId);
+        result.put("currentStep", "FILE_LOAD");
+        result.put("fileCount", session.getUploadedFiles().size());
+        result.put("message", "세션이 Step 2로 진행되었습니다");
+
+        log.info("세션 완료 처리 완료: sessionId={}, step={}", sessionId, "FILE_LOAD");
+        return result;
+    }
+
+    /**
+     * 결과 다운로드 URL
+     *
+     * @param sessionId 세션 ID
+     * @param userId 사용자 ID
+     * @return Presigned URL
+     */
+    public String getResultDownloadUrl(String sessionId, String userId) {
+        log.info("결과 다운로드 URL 요청: sessionId={}", sessionId);
+
+        // 1. 세션 조회
+        FileSession session = fileSessionRepository.findBySessionId(sessionId)
+                .orElseThrow(() -> new BusinessException(
+                        "SESSION_NOT_FOUND", "세션을 찾을 수 없습니다: " + sessionId));
+
+        // 2. 권한 확인
+        if (!session.getCreatedBy().equals(userId)) {
+            throw new BusinessException("FORBIDDEN", "세션 접근 권한이 없습니다");
+        }
+
+        // 3. 완료 여부 확인
+        if (!session.getIsCompleted()) {
+            throw new BusinessException("SESSION_NOT_COMPLETED", "세션이 완료되지 않았습니다");
+        }
+
+        // 4. Export 경로 확인
+        if (session.getExportPath() == null || session.getExportPath().isEmpty()) {
+            throw new BusinessException("NO_EXPORT_FILE", "내보내기 파일이 없습니다");
+        }
+
+        // 5. S3 Presigned URL 생성 (GET용)
+        // TODO: S3Service에 GET용 Presigned URL 메서드 추가 필요
+        String downloadUrl = generateDownloadPresignedUrl(session.getExportPath());
+
+        log.info("다운로드 URL 생성 완료: {}", downloadUrl);
+        return downloadUrl;
+    }
+
+    /**
+     * S3 다운로드 Presigned URL 생성 (헬퍼 메서드)
+     *
+     * @param s3Key S3 키
+     * @return Presigned URL
+     */
+    private String generateDownloadPresignedUrl(String s3Key) {
+        // TODO: S3Service.generateDownloadPresignedUrl() 호출
+        // 임시로 s3Key 반환
+        return "https://s3.amazonaws.com/" + s3Key;
     }
 }

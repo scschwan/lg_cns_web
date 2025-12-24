@@ -1,4 +1,4 @@
-package com.example.finance.dto.response;
+package com.example.finance.dto.response.project;
 
 import com.example.finance.enums.ProjectRole;
 import lombok.AllArgsConstructor;

@@ -1,7 +1,7 @@
-package com.example.finance.repository;
+package com.example.finance.repository.session;
 
 import com.example.finance.enums.ProcessStep;
-import com.example.finance.model.FileSession;
+import com.example.finance.model.session.FileSession;
 import org.springframework.data.mongodb.repository.MongoRepository;
 import org.springframework.stereotype.Repository;
 
@@ -51,4 +51,18 @@ public interface FileSessionRepository extends MongoRepository<FileSession, Stri
      * 프로젝트의 완료된 세션 개수 조회
      */
     long countByProjectIdAndIsCompletedTrueAndIsDeletedFalse(String projectId);
+
+    // ⭐⭐⭐ 신규 메서드 추가 ⭐⭐⭐
+
+    /**
+     * 업로드된 파일 ID로 세션 조회
+     *
+     * uploadedFiles 배열의 fileId를 검색
+     */
+    Optional<FileSession> findByUploadedFilesFileId(String fileId);
+
+    /**
+     * 프로젝트 ID로 삭제되지 않은 세션 목록 조회
+     */
+    List<FileSession> findByProjectIdAndIsDeletedFalse(String projectId);
 }

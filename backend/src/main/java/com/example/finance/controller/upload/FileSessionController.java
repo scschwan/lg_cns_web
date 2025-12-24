@@ -4,7 +4,7 @@ import com.example.finance.dto.request.upload.CreateFileSessionRequest;
 import com.example.finance.dto.request.upload.MergeSessionsRequest;
 import com.example.finance.dto.request.upload.SetFileColumnsRequest;
 import com.example.finance.dto.request.upload.UpdateFileSessionRequest;
-import com.example.finance.dto.response.upload.FileSessionResponse;
+import com.example.finance.dto.response.session.FileSessionResponse;
 import com.example.finance.model.session.FileSession;
 import com.example.finance.security.CurrentUser;
 import com.example.finance.security.UserPrincipal;
@@ -19,6 +19,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+import java.util.Map;
 
 /**
  * 파일 세션 컨트롤러
@@ -249,5 +250,94 @@ public class FileSessionController {
         FileSession mergedSession = fileSessionService.mergeSessions(userId, request);
 
         return ResponseEntity.ok(mergedSession);
+    }
+
+    /**
+     * 세션에 파일 추가
+     */
+    @PostMapping("/{sessionId}/add-files")
+    public ResponseEntity<FileSession> addFilesToSession(
+            @PathVariable String projectId,
+            @PathVariable String sessionId,
+            @CurrentUser UserPrincipal userPrincipal,
+            @Valid @RequestBody Map<String, List<String>> request) {
+
+        String userId = userPrincipal.getId();
+        List<String> fileIds = request.get("fileIds");
+
+        log.info("세션에 파일 추가: sessionId={}, fileIds={}", sessionId, fileIds);
+
+        // 프로젝트 권한 확인
+        projectService.getProject(projectId, userId);
+
+        // FileSessionService에 메서드 추가 필요
+        FileSession session = fileSessionService.addFilesToSession(sessionId, userId, fileIds);
+
+        return ResponseEntity.ok(session);
+    }
+
+    /**
+     * 세션 일괄 삭제
+     */
+    @PostMapping("/delete-batch")
+    public ResponseEntity<Void> deleteSessions(
+            @PathVariable String projectId,
+            @CurrentUser UserPrincipal userPrincipal,
+            @Valid @RequestBody Map<String, List<String>> request) {
+
+        String userId = userPrincipal.getId();
+        List<String> sessionIds = request.get("sessionIds");
+
+        log.info("세션 일괄 삭제: sessionIds={}", sessionIds);
+
+        // 프로젝트 권한 확인
+        projectService.getProject(projectId, userId);
+
+        // FileSessionService에 메서드 추가 필요
+        fileSessionService.deleteSessions(projectId, sessionIds);
+
+        return ResponseEntity.noContent().build();
+    }
+
+    /**
+     * 세션 완료 처리 (Step 2 진입)
+     */
+    @PostMapping("/{sessionId}/complete")
+    public ResponseEntity<Map<String, Object>> completeSession(
+            @PathVariable String projectId,
+            @PathVariable String sessionId,
+            @CurrentUser UserPrincipal userPrincipal) {
+
+        String userId = userPrincipal.getId();
+        log.info("세션 완료: sessionId={}", sessionId);
+
+        // 프로젝트 권한 확인
+        projectService.getProject(projectId, userId);
+
+        // FileSessionService에 메서드 추가 필요
+        Map<String, Object> result = fileSessionService.completeSessionProcessing(sessionId, userId);
+
+        return ResponseEntity.ok(result);
+    }
+
+    /**
+     * 결과 다운로드 URL
+     */
+    @GetMapping("/{sessionId}/result/download")
+    public ResponseEntity<Map<String, String>> getDownloadUrl(
+            @PathVariable String projectId,
+            @PathVariable String sessionId,
+            @CurrentUser UserPrincipal userPrincipal) {
+
+        String userId = userPrincipal.getId();
+        log.info("다운로드 URL 요청: sessionId={}", sessionId);
+
+        // 프로젝트 권한 확인
+        projectService.getProject(projectId, userId);
+
+        // FileSessionService에 메서드 추가 필요
+        String downloadUrl = fileSessionService.getResultDownloadUrl(sessionId, userId);
+
+        return ResponseEntity.ok(Map.of("downloadUrl", downloadUrl));
     }
 }

@@ -1,4 +1,4 @@
-package com.example.finance.dto.request;
+package com.example.finance.dto.request.project;
 
 import jakarta.validation.constraints.NotBlank;
 import lombok.AllArgsConstructor;
