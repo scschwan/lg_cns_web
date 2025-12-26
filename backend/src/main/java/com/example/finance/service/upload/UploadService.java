@@ -509,8 +509,13 @@ public class UploadService {
                 .orElseThrow(() -> new BusinessException(
                         "FILE_NOT_FOUND", "파일을 찾을 수 없습니다: " + fileId));
 
-        fileInfo.setAccountColumnName(request.getAccountColumnName());
-        fileInfo.setAmountColumnName(request.getAmountColumnName());
+        // ⭐ null이 아닐 때만 설정
+        if (request.getAccountColumnName() != null) {
+            fileInfo.setAccountColumnName(request.getAccountColumnName());
+        }
+        if (request.getAmountColumnName() != null) {
+            fileInfo.setAmountColumnName(request.getAmountColumnName());
+        }
 
         fileSession.setUpdatedAt(LocalDateTime.now());
         fileSessionRepository.save(fileSession);
