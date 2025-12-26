@@ -7,6 +7,7 @@ import com.example.finance.dto.request.upload.UpdateFileSessionRequest;
 import com.example.finance.dto.response.fileload.SessionCompleteResponse;
 import com.example.finance.dto.response.fileload.SessionCompleteStatusResponse;
 import com.example.finance.dto.response.session.FileSessionResponse;
+import com.example.finance.dto.response.upload.AccountPartitionResponse;
 import com.example.finance.enums.ProcessStep;
 import com.example.finance.exception.BusinessException;
 import com.example.finance.exception.ProjectNotFoundException;
@@ -893,6 +894,130 @@ public class FileSessionService {
         return updated;
     }
 
+    /**
+     * 파티션 기반 세션 일괄 생성
+     *
+     * @param userId 사용자 ID
+     * @param projectId 프로젝트 ID
+     * @param partitions 파티션 정보 목록
+     * @return 생성된 세션 응답 목록
+     */
+    @Transactional
+    public List<FileSessionResponse> createSessionsFromPartitions(
+            String userId,
+            String projectId,
+            List<AccountPartitionResponse> partitions) {
+
+        log.info("⭐ 파티션 기반 세션 일괄 생성 시작: userId={}, projectId={}, partitions={}",
+                userId, projectId, partitions.size());
+
+        // 1. 프로젝트 조회 및 권한 확인
+        Project project = projectRepository.findByProjectId(projectId)
+                .orElseThrow(() -> new ProjectNotFoundException("프로젝트를 찾을 수 없습니다"));
+
+        boolean isMember = project.getMembers().stream()
+                .anyMatch(m -> m.getUserId().equals(userId));
+
+        if (!isMember) {
+            throw new RuntimeException("프로젝트에 접근할 권한이 없습니다");
+        }
+
+        List<FileSessionResponse> createdSessions = new ArrayList<>();
+
+        // 2. 각 파티션별로 세션 생성
+        for (AccountPartitionResponse partition : partitions) {
+            try {
+                // 2-1. 파일 목록 조회 (UploadSession → UploadedFileInfo 변환)
+                List<UploadSession> uploadSessions = uploadSessionRepository
+                        .findAllById(partition.getFileIds());
+
+                if (uploadSessions.size() != partition.getFileIds().size()) {
+                    log.warn("일부 파일을 찾을 수 없습니다: partition={}", partition.getAccountName());
+                    continue;
+                }
+
+                List<UploadedFileInfo> uploadedFiles = uploadSessions.stream()
+                        .map(us -> UploadedFileInfo.builder()
+                                .fileId(us.getId())
+                                .fileName(us.getFileName())
+                                .fileSize(us.getFileSize())
+                                .s3Key(us.getS3Key())
+                                .rowCount(us.getTotalRows() != null ? us.getTotalRows().longValue() : 0L)
+                                .uploadedAt(us.getCreatedAt())
+                                .detectedColumns(new ArrayList<>())
+                                .accountContents(new ArrayList<>())
+                                .build())
+                        .collect(Collectors.toList());
+
+                // 2-2. 통계 계산
+                long totalRowCount = uploadedFiles.stream()
+                        .mapToLong(UploadedFileInfo::getRowCount)
+                        .sum();
+
+                // 2-3. FileSession 생성
+                FileSession session = FileSession.builder()
+                        .sessionId(UUID.randomUUID().toString())
+                        .projectId(projectId)
+                        .sessionName(partition.getSessionName())
+                        .workerName(partition.getWorkerName() != null ? partition.getWorkerName() : "")
+                        .createdBy(userId)
+                        .createdAt(LocalDateTime.now())
+                        .updatedAt(LocalDateTime.now())
+                        .lastAccessedAt(LocalDateTime.now())
+                        .uploadedFiles(uploadedFiles)
+                        .totalFiles(uploadedFiles.size())
+                        .totalRowCount(totalRowCount)
+                        .totalAmount(partition.getTotalAmount() != null ?
+                                partition.getTotalAmount().longValue() : 0L)
+                        .currentStep(null)
+                        .progressPercentage(0)
+                        .stepHistory(new ArrayList<>())
+                        .isCompleted(false)
+                        .accountNames(Arrays.asList(partition.getAccountName()))  // ⭐ List로 추가
+                        .accountColumnNames(new ArrayList<>())
+                        .isDeleted(false)
+                        .build();
+
+                // 2-4. MongoDB 저장
+                session = fileSessionRepository.save(session);
+
+                // 2-5. 응답 DTO 생성
+                FileSessionResponse response = FileSessionResponse.builder()
+                        .sessionId(session.getSessionId())
+                        .projectId(session.getProjectId())
+                        .sessionName(session.getSessionName())
+                        .workerName(session.getWorkerName())
+                        .totalFiles(session.getTotalFiles())
+                        .totalRowCount(session.getTotalRowCount())
+                        .totalAmount(session.getTotalAmount())
+                        .currentStep(session.getCurrentStep())
+                        .progressPercentage(session.getProgressPercentage())
+                        .isCompleted(session.getIsCompleted())
+                        .createdAt(session.getCreatedAt())
+                        .updatedAt(session.getUpdatedAt())
+                        .lastAccessedAt(session.getLastAccessedAt())
+                        .build();
+
+                createdSessions.add(response);
+
+                log.info("세션 생성 완료: sessionId={}, accountName={}, files={}",
+                        session.getSessionId(), partition.getAccountName(), uploadedFiles.size());
+
+            } catch (Exception e) {
+                log.error("세션 생성 실패: accountName={}, error={}",
+                        partition.getAccountName(), e.getMessage(), e);
+            }
+        }
+
+        // 3. 프로젝트 세션 수 업데이트
+        project.setTotalSessions(project.getTotalSessions() + createdSessions.size());
+        project.setUpdatedAt(LocalDateTime.now());
+        projectRepository.save(project);
+
+        log.info("⭐ 파티션 기반 세션 일괄 생성 완료: {} 개", createdSessions.size());
+
+        return createdSessions;
+    }
     /**
      * 세션 일괄 삭제
      *

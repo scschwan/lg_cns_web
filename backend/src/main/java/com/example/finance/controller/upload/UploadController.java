@@ -4,6 +4,7 @@ import com.example.finance.dto.request.upload.PresignedUrlRequest;
 import com.example.finance.dto.request.upload.SetFileColumnsRequest;
 import com.example.finance.dto.request.upload.UploadFileRequest;
 import com.example.finance.dto.response.upload.AccountPartitionResponse;
+import com.example.finance.dto.response.upload.PartitionAnalysisResponse;
 import com.example.finance.dto.response.upload.PresignedUrlResponse;
 import com.example.finance.dto.response.upload.UploadFileResponse;
 import com.example.finance.model.session.UploadedFileInfo;
@@ -206,6 +207,36 @@ public class UploadController {
         log.info("파일 분석 완료: {} 개 파티션 생성", partitions.size());
 
         return ResponseEntity.ok(partitions);
+    }
+
+    /**
+     * 파티션 분석 (계정명별 그룹핑)
+     *
+     * POST /api/projects/{projectId}/upload/analyze-partitions
+     */
+    @Operation(summary = "파티션 분석", description = "계정명별 파일 그룹핑 및 세션 파티션 제안")
+    @PostMapping("/analyze-partitions")
+    public ResponseEntity<Map<String, Object>> analyzePartitions(
+            @PathVariable String projectId,
+            @AuthenticationPrincipal UserPrincipal userPrincipal,
+            @RequestBody Map<String, List<String>> request) {
+
+        String userId = userPrincipal.getId();
+        List<String> fileIds = request.get("fileIds");
+
+        log.info("파티션 분석 요청: projectId={}, userId={}, fileIds={}",
+                projectId, userId, fileIds);
+
+        // 프로젝트 권한 확인
+        projectService.getProject(projectId, userId);
+
+        // 파일 분석 및 파티션 생성
+        List<AccountPartitionResponse> partitions =
+                fileAnalysisService.analyzeFilesAndCreatePartitions(projectId, fileIds);
+
+        log.info("파티션 분석 완료: {} 개 파티션 생성", partitions.size());
+
+        return ResponseEntity.ok(Map.of("partitions", partitions));
     }
 
     /**

@@ -5,6 +5,7 @@ import com.example.finance.dto.request.upload.MergeSessionsRequest;
 import com.example.finance.dto.request.upload.SetFileColumnsRequest;
 import com.example.finance.dto.request.upload.UpdateFileSessionRequest;
 import com.example.finance.dto.response.session.FileSessionResponse;
+import com.example.finance.dto.response.upload.AccountPartitionResponse;
 import com.example.finance.model.session.FileSession;
 import com.example.finance.security.CurrentUser;
 import com.example.finance.security.UserPrincipal;
@@ -60,6 +61,37 @@ public class FileSessionController {
         FileSession session = fileSessionService.createFileSession(userId, request);
 
         return ResponseEntity.ok(session);
+    }
+
+    /**
+     * 세션 일괄 생성 (파티션 기반)`
+     *
+     * POST /api/projects/{projectId}/upload/sessions/batch
+     */
+    // ⭐⭐⭐ 신규 API: 세션 일괄 생성
+    @Operation(summary = "세션 일괄 생성", description = "파티션별로 세션 일괄 생성")
+    @PostMapping("/batch")
+    public ResponseEntity<List<FileSessionResponse>> createSessionsBatch(
+            @PathVariable String projectId,
+            @CurrentUser UserPrincipal userPrincipal,
+            @RequestBody Map<String, List<AccountPartitionResponse>> request) {
+
+        String userId = userPrincipal.getId();
+        List<AccountPartitionResponse> partitions = request.get("partitions");
+
+        log.info("세션 일괄 생성 요청: projectId={}, userId={}, partitions={}",
+                projectId, userId, partitions != null ? partitions.size() : 0);
+
+        projectService.getProject(projectId, userId);
+
+        // 파티션별로 세션 생성
+        List<FileSessionResponse> sessions = fileSessionService.createSessionsFromPartitions(
+                userId, projectId, partitions
+        );
+
+        log.info("세션 일괄 생성 완료: {} 개 세션", sessions.size());
+
+        return ResponseEntity.ok(sessions);
     }
 
     /**
