@@ -923,42 +923,61 @@ public class FileSessionService {
         }
 
         List<FileSessionResponse> createdSessions = new ArrayList<>();
+        int sessionCounter = 1;  // ⭐ 세션 번호 카운터
 
         // 2. 각 파티션별로 세션 생성
         for (AccountPartitionResponse partition : partitions) {
             try {
-                // 2-1. 파일 목록 조회 (UploadSession → UploadedFileInfo 변환)
-                List<UploadSession> uploadSessions = uploadSessionRepository
-                        .findAllById(partition.getFileIds());
+                log.info("파티션 처리 중: accountName={}, fileIds={}",
+                        partition.getAccountName(), partition.getFileIds());
 
-                if (uploadSessions.size() != partition.getFileIds().size()) {
-                    log.warn("일부 파일을 찾을 수 없습니다: partition={}", partition.getAccountName());
+                // 2-1. FileSession에서 파일 정보 조회 (UploadedFileInfo 추출)
+                List<UploadedFileInfo> uploadedFiles = new ArrayList<>();
+
+                for (String fileId : partition.getFileIds()) {
+                    // FileSession에서 fileId로 파일 찾기
+                    Optional<FileSession> sessionOpt = fileSessionRepository.findByUploadedFilesFileId(fileId);
+
+                    if (sessionOpt.isPresent()) {
+                        FileSession existingSession = sessionOpt.get();
+                        UploadedFileInfo fileInfo = existingSession.getUploadedFiles().stream()
+                                .filter(f -> f.getFileId().equals(fileId))
+                                .findFirst()
+                                .orElse(null);
+
+                        if (fileInfo != null) {
+                            uploadedFiles.add(fileInfo);
+                        } else {
+                            log.warn("파일 정보를 찾을 수 없음: fileId={}", fileId);
+                        }
+                    } else {
+                        log.warn("FileSession을 찾을 수 없음: fileId={}", fileId);
+                    }
+                }
+
+                if (uploadedFiles.isEmpty()) {
+                    log.warn("업로드된 파일이 없습니다: accountName={}", partition.getAccountName());
                     continue;
                 }
 
-                List<UploadedFileInfo> uploadedFiles = uploadSessions.stream()
-                        .map(us -> UploadedFileInfo.builder()
-                                .fileId(us.getId())
-                                .fileName(us.getFileName())
-                                .fileSize(us.getFileSize())
-                                .s3Key(us.getS3Key())
-                                .rowCount(us.getTotalRows() != null ? us.getTotalRows().longValue() : 0L)
-                                .uploadedAt(us.getCreatedAt())
-                                .detectedColumns(new ArrayList<>())
-                                .accountContents(new ArrayList<>())
-                                .build())
-                        .collect(Collectors.toList());
-
                 // 2-2. 통계 계산
                 long totalRowCount = uploadedFiles.stream()
-                        .mapToLong(UploadedFileInfo::getRowCount)
+                        .mapToLong(f -> f.getRowCount() != null ? f.getRowCount() : 0L)
                         .sum();
 
-                // 2-3. FileSession 생성
+                long totalAmount = partition.getTotalAmount() != null ?
+                        partition.getTotalAmount().longValue() : 0L;
+
+                // 2-3. 세션명 생성 (기본값: 계정명_session_1, 계정명_session_2, ...)
+                String sessionName = partition.getSessionName() != null && !partition.getSessionName().isEmpty()
+                        ? partition.getSessionName()
+                        : String.format("%s_session_%d", partition.getAccountName(), sessionCounter++);
+
+                // 2-4. FileSession 생성
                 FileSession session = FileSession.builder()
                         .sessionId(UUID.randomUUID().toString())
                         .projectId(projectId)
-                        .sessionName(partition.getSessionName())
+                        .sessionName(sessionName)  // ⭐ 기본값 적용
                         .workerName(partition.getWorkerName() != null ? partition.getWorkerName() : "")
                         .createdBy(userId)
                         .createdAt(LocalDateTime.now())
@@ -967,8 +986,7 @@ public class FileSessionService {
                         .uploadedFiles(uploadedFiles)
                         .totalFiles(uploadedFiles.size())
                         .totalRowCount(totalRowCount)
-                        .totalAmount(partition.getTotalAmount() != null ?
-                                partition.getTotalAmount().longValue() : 0L)
+                        .totalAmount(totalAmount)
                         .currentStep(null)
                         .progressPercentage(0)
                         .stepHistory(new ArrayList<>())
@@ -978,10 +996,10 @@ public class FileSessionService {
                         .isDeleted(false)
                         .build();
 
-                // 2-4. MongoDB 저장
+                // 2-5. MongoDB 저장
                 session = fileSessionRepository.save(session);
 
-                // 2-5. 응답 DTO 생성
+                // 2-6. 응답 DTO 생성 (⭐ 파일 정보 포함)
                 FileSessionResponse response = FileSessionResponse.builder()
                         .sessionId(session.getSessionId())
                         .projectId(session.getProjectId())
@@ -996,12 +1014,14 @@ public class FileSessionService {
                         .createdAt(session.getCreatedAt())
                         .updatedAt(session.getUpdatedAt())
                         .lastAccessedAt(session.getLastAccessedAt())
+                        .uploadedFiles(session.getUploadedFiles())  // ⭐ 파일 정보 포함
                         .build();
 
                 createdSessions.add(response);
 
-                log.info("세션 생성 완료: sessionId={}, accountName={}, files={}",
-                        session.getSessionId(), partition.getAccountName(), uploadedFiles.size());
+                log.info("세션 생성 완료: sessionId={}, sessionName={}, accountName={}, files={}",
+                        session.getSessionId(), session.getSessionName(),
+                        partition.getAccountName(), uploadedFiles.size());
 
             } catch (Exception e) {
                 log.error("세션 생성 실패: accountName={}, error={}",
@@ -1010,9 +1030,15 @@ public class FileSessionService {
         }
 
         // 3. 프로젝트 세션 수 업데이트
-        project.setTotalSessions(project.getTotalSessions() + createdSessions.size());
-        project.setUpdatedAt(LocalDateTime.now());
-        projectRepository.save(project);
+        if (!createdSessions.isEmpty()) {
+            project.setTotalSessions(project.getTotalSessions() + createdSessions.size());
+            project.setTotalFiles(project.getTotalFiles() +
+                    createdSessions.stream()
+                            .mapToInt(s -> s.getTotalFiles() != null ? s.getTotalFiles() : 0)
+                            .sum());
+            project.setUpdatedAt(LocalDateTime.now());
+            projectRepository.save(project);
+        }
 
         log.info("⭐ 파티션 기반 세션 일괄 생성 완료: {} 개", createdSessions.size());
 
