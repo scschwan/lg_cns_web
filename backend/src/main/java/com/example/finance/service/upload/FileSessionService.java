@@ -4,6 +4,8 @@ import com.example.finance.dto.request.upload.CreateFileSessionRequest;
 import com.example.finance.dto.request.upload.MergeSessionsRequest;
 import com.example.finance.dto.request.upload.SetFileColumnsRequest;
 import com.example.finance.dto.request.upload.UpdateFileSessionRequest;
+import com.example.finance.dto.response.fileload.SessionCompleteResponse;
+import com.example.finance.dto.response.fileload.SessionCompleteStatusResponse;
 import com.example.finance.dto.response.session.FileSessionResponse;
 import com.example.finance.enums.ProcessStep;
 import com.example.finance.exception.BusinessException;
@@ -19,13 +21,24 @@ import com.example.finance.repository.data.RawDataRepository;
 import com.example.finance.repository.project.ProjectRepository;
 import com.example.finance.repository.session.FileSessionRepository;
 import com.example.finance.repository.upload.UploadSessionRepository;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.data.mongodb.core.MongoTemplate;
+import org.springframework.data.mongodb.core.query.Criteria;
+import org.springframework.data.mongodb.core.query.Query;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import software.amazon.awssdk.services.sqs.SqsClient;
+import software.amazon.awssdk.services.sqs.model.SendMessageRequest;
+
+
 import java.time.LocalDateTime;
 import java.util.*;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
 /**
@@ -44,6 +57,288 @@ public class FileSessionService {
     private final RawDataRepository rawDataRepository;
     private final ProcessDataRepository processDataRepository;
     private final ClusteringResultRepository clusteringResultRepository;
+
+    // 클래스 상단에 추가
+    private final MongoTemplate mongoTemplate;
+    private final ObjectMapper objectMapper;
+    private final SqsClient sqsClient;
+    private final StringRedisTemplate redisTemplate;
+
+    @Value("${aws.sqs.excel-queue-url}")
+    private String sqsQueueUrl;
+
+    /**
+     * 세션 완료 처리 (계정 분석 시작)
+     *
+     * C# SessionDataProcessor.ProcessFullWorkflowAsync() 재현
+     */
+    @Transactional
+    public SessionCompleteResponse completeSession(
+            String projectId,
+            String sessionId,
+            String userId) {
+
+        log.info("⭐ 세션 완료 처리 시작: sessionId={}", sessionId);
+
+        // 1. 세션 조회
+        FileSession fileSession = fileSessionRepository.findBySessionId(sessionId)
+                .orElseThrow(() -> new BusinessException(
+                        "SESSION_NOT_FOUND", "세션을 찾을 수 없습니다: " + sessionId));
+
+        // 2. 프로젝트 ID 검증
+        if (!fileSession.getProjectId().equals(projectId)) {
+            throw new BusinessException(
+                    "INVALID_PROJECT", "프로젝트 ID가 일치하지 않습니다");
+        }
+
+        // 3. 권한 검증
+        if (!fileSession.getCreatedBy().equals(userId)) {
+            throw new BusinessException(
+                    "FORBIDDEN", "세션에 대한 권한이 없습니다");
+        }
+
+        // 4. 이미 완료된 세션 확인
+        if (Boolean.TRUE.equals(fileSession.getIsCompleted())) {
+            log.warn("이미 완료된 세션: sessionId={}", sessionId);
+            throw new BusinessException(
+                    "SESSION_ALREADY_COMPLETED", "이미 완료된 세션입니다");
+        }
+
+        // 5. Redis 진행률 초기화
+        String progressKey = "session:complete:" + sessionId;
+        initializeProgress(progressKey);
+
+        try {
+            // 6. raw_data 컬렉션 초기화
+            log.info("⭐ Step 1: raw_data 컬렉션 초기화 시작");
+            updateProgress(progressKey, 10, "raw_data 컬렉션 초기화 중...");
+            clearRawDataCollection(sessionId);
+
+            // 7. process_data 컬렉션 초기화
+            log.info("⭐ Step 2: process_data 컬렉션 초기화 시작");
+            updateProgress(progressKey, 20, "process_data 컬렉션 초기화 중...");
+            clearProcessDataCollection(sessionId);
+
+            // 8. 세션 파일 목록 조회
+            log.info("⭐ Step 3: 세션 파일 목록 조회");
+            updateProgress(progressKey, 30, "파일 목록 조회 중...");
+
+            List<UploadedFileInfo> files = fileSession.getUploadedFiles();
+            log.info("파일 목록 조회 완료: {} files", files.size());
+
+            // 9. Lambda 병렬 처리 트리거
+            log.info("⭐ Step 4: Lambda 병렬 처리 시작 ({} files)", files.size());
+            updateProgress(progressKey, 40, "Lambda 병렬 처리 시작...");
+
+            int totalProcessedRows = 0;
+            int processedFileCount = 0;
+
+            for (int i = 0; i < files.size(); i++) {
+                UploadedFileInfo fileInfo = files.get(i);
+                int fileProgress = 40 + ((i + 1) * 50 / files.size());
+
+                updateProgress(progressKey, fileProgress,
+                        String.format("파일 처리 중... (%d/%d): %s",
+                                i + 1, files.size(), fileInfo.getFileName()));
+
+                // Lambda Coordinator 호출 (SQS 메시지 발행)
+                int rowCount = triggerLambdaRawDataInsert(
+                        sessionId,
+                        fileInfo
+                );
+
+                totalProcessedRows += rowCount;
+                processedFileCount++;
+
+                log.info("파일 처리 완료: file={}, rows={}",
+                        fileInfo.getFileName(), rowCount);
+            }
+
+            // 10. 세션 완료 상태 업데이트
+            log.info("⭐ Step 5: 세션 상태 업데이트");
+            updateProgress(progressKey, 90, "세션 상태 업데이트 중...");
+
+            fileSession.setIsCompleted(true);
+            fileSession.setCompletedAt(LocalDateTime.now());
+            fileSession.setUpdatedAt(LocalDateTime.now());
+            fileSessionRepository.save(fileSession);
+
+            // 11. Redis 진행률 완료
+            updateProgress(progressKey, 100, "완료");
+
+            log.info("⭐ 세션 완료 처리 성공: sessionId={}, files={}, rows={}",
+                    sessionId, processedFileCount, totalProcessedRows);
+
+            return SessionCompleteResponse.builder()
+                    .sessionId(sessionId)
+                    .success(true)
+                    .processedFileCount(processedFileCount)
+                    .processedRowCount(totalProcessedRows)
+                    .message("세션 완료 처리가 성공적으로 완료되었습니다.")
+                    .build();
+
+        } catch (Exception e) {
+            log.error("⭐ 세션 완료 처리 실패: sessionId={}, error={}",
+                    sessionId, e.getMessage(), e);
+
+            // 실패 상태 업데이트
+            updateProgress(progressKey, -1, "오류: " + e.getMessage());
+
+            throw new BusinessException(
+                    "SESSION_COMPLETE_FAILED",
+                    "세션 완료 처리 중 오류 발생: " + e.getMessage());
+        }
+    }
+
+    /**
+     * raw_data 컬렉션 초기화 (해당 세션만)
+     */
+    private void clearRawDataCollection(String sessionId) {
+        try {
+            Query query = new Query(Criteria.where("sessionId").is(sessionId));
+            long deletedCount = mongoTemplate.remove(query, "raw_data").getDeletedCount();
+
+            log.info("raw_data 컬렉션 초기화 완료: sessionId={}, deleted={}",
+                    sessionId, deletedCount);
+        } catch (Exception e) {
+            log.error("raw_data 컬렉션 초기화 실패: {}", e.getMessage(), e);
+            throw new BusinessException(
+                    "RAW_DATA_CLEAR_FAILED", "raw_data 컬렉션 초기화 실패");
+        }
+    }
+
+    /**
+     * process_data 컬렉션 초기화 (해당 세션만)
+     */
+    private void clearProcessDataCollection(String sessionId) {
+        try {
+            Query query = new Query(Criteria.where("sessionId").is(sessionId));
+            long deletedCount = mongoTemplate.remove(query, "process_data").getDeletedCount();
+
+            log.info("process_data 컬렉션 초기화 완료: sessionId={}, deleted={}",
+                    sessionId, deletedCount);
+        } catch (Exception e) {
+            log.error("process_data 컬렉션 초기화 실패: {}", e.getMessage(), e);
+            // process_data 초기화 실패는 치명적이지 않으므로 로그만 남김
+        }
+    }
+
+    /**
+     * Lambda raw_data Insert 트리거 (SQS 메시지 발행)
+     */
+    private int triggerLambdaRawDataInsert(
+            String sessionId,
+            UploadedFileInfo fileInfo) {
+
+        try {
+            log.info("⭐ Lambda raw_data Insert 트리거: file={}, account={}",
+                    fileInfo.getFileName(), fileInfo.getAccountColumnName());
+
+            // SQS 메시지 생성
+            Map<String, Object> message = new HashMap<>();
+            message.put("operation", "RAW_DATA_INSERT");  // ⭐ 작업 구분
+            message.put("sessionId", sessionId);
+            message.put("fileId", fileInfo.getFileId());
+            message.put("s3Bucket", "finance-excel-uploads");
+            message.put("s3Key", fileInfo.getS3Key());
+            message.put("fileName", fileInfo.getFileName());
+            message.put("accountColumnName", fileInfo.getAccountColumnName());
+            message.put("amountColumnName", fileInfo.getAmountColumnName());
+            message.put("accountContents", fileInfo.getAccountContents()); // ⭐ 계정명 필터
+
+            String messageBody = objectMapper.writeValueAsString(message);
+
+            // SQS 메시지 발행
+            SendMessageRequest request = SendMessageRequest.builder()
+                    .queueUrl(sqsQueueUrl)
+                    .messageBody(messageBody)
+                    .build();
+
+            sqsClient.sendMessage(request);
+
+            log.info("SQS 메시지 발행 완료: file={}", fileInfo.getFileName());
+
+            // 예상 행 수 반환
+            return estimateRowCount(fileInfo);
+
+        } catch (Exception e) {
+            log.error("Lambda 트리거 실패: file={}, error={}",
+                    fileInfo.getFileName(), e.getMessage(), e);
+            throw new BusinessException(
+                    "LAMBDA_TRIGGER_FAILED", "Lambda 트리거 실패");
+        }
+    }
+
+    /**
+     * 파일 크기 기반 행 수 예상
+     */
+    private int estimateRowCount(UploadedFileInfo fileInfo) {
+        // 평균 행당 크기: 500 bytes
+        long estimatedRows = fileInfo.getFileSize() / 500;
+        return (int) Math.min(estimatedRows, Integer.MAX_VALUE);
+    }
+
+    /**
+     * Redis 진행률 초기화
+     */
+    private void initializeProgress(String progressKey) {
+        Map<String, String> progressData = new HashMap<>();
+        progressData.put("status", "PROCESSING");
+        progressData.put("progress", "0");
+        progressData.put("message", "세션 완료 처리 시작...");
+        progressData.put("startTime", String.valueOf(System.currentTimeMillis()));
+
+        redisTemplate.opsForHash().putAll(progressKey, progressData);
+        redisTemplate.expire(progressKey, 24, TimeUnit.HOURS);
+    }
+
+    /**
+     * Redis 진행률 업데이트
+     */
+    private void updateProgress(String progressKey, int progress, String message) {
+        try {
+            redisTemplate.opsForHash().put(progressKey, "progress", String.valueOf(progress));
+            redisTemplate.opsForHash().put(progressKey, "message", message);
+            redisTemplate.opsForHash().put(progressKey, "updateTime",
+                    String.valueOf(System.currentTimeMillis()));
+
+            if (progress >= 100) {
+                redisTemplate.opsForHash().put(progressKey, "status", "COMPLETED");
+            } else if (progress < 0) {
+                redisTemplate.opsForHash().put(progressKey, "status", "FAILED");
+            }
+
+            log.debug("진행률 업데이트: progress={}%, message={}", progress, message);
+        } catch (Exception e) {
+            log.warn("진행률 업데이트 실패: {}", e.getMessage());
+        }
+    }
+
+    /**
+     * 세션 완료 처리 진행률 조회
+     */
+    public SessionCompleteStatusResponse getCompleteStatus(
+            String projectId,
+            String sessionId) {
+
+        String progressKey = "session:complete:" + sessionId;
+
+        Map<Object, Object> progressData = redisTemplate.opsForHash().entries(progressKey);
+
+        if (progressData.isEmpty()) {
+            return SessionCompleteStatusResponse.builder()
+                    .status("NOT_STARTED")
+                    .progress(0)
+                    .message("세션 완료 처리가 시작되지 않았습니다.")
+                    .build();
+        }
+
+        return SessionCompleteStatusResponse.builder()
+                .status((String) progressData.getOrDefault("status", "PROCESSING"))
+                .progress(Integer.parseInt((String) progressData.getOrDefault("progress", "0")))
+                .message((String) progressData.getOrDefault("message", ""))
+                .build();
+    }
 
     /**
      * 파일 세션 생성
@@ -634,7 +929,7 @@ public class FileSessionService {
      * @return 처리 결과
      */
     public Map<String, Object> completeSessionProcessing(String sessionId, String userId) {
-        log.info("세션 완료 처리: sessionId={}", sessionId);
+        log.info("⭐ 세션 완료 처리: sessionId={}", sessionId);
 
         // 1. 세션 조회
         FileSession session = fileSessionRepository.findBySessionId(sessionId)
@@ -651,21 +946,60 @@ public class FileSessionService {
             throw new BusinessException("NO_FILES", "업로드된 파일이 없습니다");
         }
 
-        // 4. 현재 단계 업데이트 (Step 1 → Step 2)
-        session.setCurrentStep(ProcessStep.FILE_LOAD); // Step 2
+        // ⭐⭐⭐ 4. raw_data 컬렉션 초기화 (신규 추가)
+        Query deleteQuery = new Query(Criteria.where("sessionId").is(sessionId));
+        long deletedRawData = mongoTemplate.remove(deleteQuery, "raw_data").getDeletedCount();
+        log.info("raw_data 초기화 완료: {} 건 삭제", deletedRawData);
+
+        // ⭐⭐⭐ 5. Lambda 병렬 처리 트리거 (신규 추가)
+        int processedFileCount = 0;
+        for (UploadedFileInfo fileInfo : session.getUploadedFiles()) {
+            try {
+                // SQS 메시지 발행
+                Map<String, Object> message = new HashMap<>();
+                message.put("operation", "RAW_DATA_INSERT");
+                message.put("sessionId", sessionId);
+                message.put("fileId", fileInfo.getFileId());
+                message.put("s3Bucket", "finance-excel-uploads");
+                message.put("s3Key", fileInfo.getS3Key());
+                message.put("fileName", fileInfo.getFileName());
+                message.put("accountColumnName", fileInfo.getAccountColumnName());
+                message.put("amountColumnName", fileInfo.getAmountColumnName());
+                message.put("accountContents", fileInfo.getAccountContents());
+
+                String messageBody = objectMapper.writeValueAsString(message);
+
+                SendMessageRequest request = SendMessageRequest.builder()
+                        .queueUrl(sqsQueueUrl)
+                        .messageBody(messageBody)
+                        .build();
+
+                sqsClient.sendMessage(request);
+                processedFileCount++;
+
+                log.info("SQS 메시지 발행 완료: file={}", fileInfo.getFileName());
+
+            } catch (Exception e) {
+                log.error("Lambda 트리거 실패: file={}, error={}",
+                        fileInfo.getFileName(), e.getMessage(), e);
+            }
+        }
+
+        // 6. 현재 단계 업데이트
+        session.setCurrentStep(ProcessStep.FILE_LOAD);
         session.setUpdatedAt(LocalDateTime.now());
         fileSessionRepository.save(session);
-
-        // 5. Lambda 파싱 트리거는 별도 로직에서 수행
-        // (Phase 1에서 구현된 Lambda Coordinator 호출)
 
         Map<String, Object> result = new HashMap<>();
         result.put("sessionId", sessionId);
         result.put("currentStep", "FILE_LOAD");
         result.put("fileCount", session.getUploadedFiles().size());
-        result.put("message", "세션이 Step 2로 진행되었습니다");
+        result.put("processedFileCount", processedFileCount);
+        result.put("message", "세션이 Step 2로 진행되었습니다. Lambda 병렬 처리 시작됨");
 
-        log.info("세션 완료 처리 완료: sessionId={}, step={}", sessionId, "FILE_LOAD");
+        log.info("⭐ 세션 완료 처리 완료: sessionId={}, 처리 파일={}",
+                sessionId, processedFileCount);
+
         return result;
     }
 

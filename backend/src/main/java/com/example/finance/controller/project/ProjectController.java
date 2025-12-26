@@ -5,9 +5,11 @@ import com.example.finance.dto.request.project.InviteMemberRequest;
 import com.example.finance.dto.response.project.ProjectSummary;
 import com.example.finance.enums.ProjectRole;
 import com.example.finance.model.project.Project;
+import com.example.finance.model.session.UploadedFileInfo;
 import com.example.finance.security.CurrentUser;
 import com.example.finance.security.UserPrincipal;
 import com.example.finance.service.project.ProjectService;
+import com.example.finance.service.upload.UploadService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -28,6 +30,9 @@ import java.util.List;
 public class ProjectController {
 
     private final ProjectService projectService;
+    private final UploadService uploadService;
+
+
 
     /**
      * 프로젝트 생성
@@ -157,5 +162,29 @@ public class ProjectController {
                 projectId, userPrincipal.getId(), userId);
 
         return ResponseEntity.ok(project);
+    }
+
+
+    /**
+     * 프로젝트에 업로드된 파일 목록 조회
+     * GET /api/projects/{projectId}/files
+     */
+    @GetMapping("/{projectId}/files")
+    public ResponseEntity<List<UploadedFileInfo>> getProjectFiles(
+            @CurrentUser UserPrincipal userPrincipal,
+            @PathVariable String projectId) {
+
+        log.info("프로젝트 파일 목록 조회: projectId={}, userId={}",
+                projectId, userPrincipal.getId());
+
+        // 1. 프로젝트 권한 검증 (읽기 권한)
+        projectService.getProject(projectId, userPrincipal.getId());
+
+        // 2. 파일 목록 조회 (UploadService에 이미 구현됨!)
+        List<UploadedFileInfo> files = uploadService.getProjectFiles(projectId);
+
+        log.info("프로젝트 파일 조회 완료: {} files", files.size());
+
+        return ResponseEntity.ok(files);
     }
 }
