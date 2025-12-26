@@ -299,11 +299,7 @@ const uploadService = {
 
             // 2. S3 업로드
             onProgress?.(20, 'S3 업로드 중...');
-            await this.uploadToS3(presignedUrl, file, (progress) => {
-                onProgress(30 + progress * 0.6, 'S3 업로드 중...');
-            });
-
-            onProgress(90, '파일 등록 중...');
+            await uploadService.uploadToS3(presignedUrl, file);
 
             // 3. 업로드 완료 처리
             await uploadService.completeFileUpload(
