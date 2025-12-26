@@ -80,49 +80,87 @@ function MultiFileUploadPage() {
     };
 
     // 파일 업로드
-    const handleFileUpload = async (file) => {
+    // 파일 업로드
+    const handleFileUpload = async (event) => {  // ✅ event로 받기!
+        // 이벤트 검증
+        if (!event.target.files || event.target.files.length === 0) {
+            console.error('파일이 선택되지 않았습니다.');
+            alert('파일을 선택해주세요.');
+            return;
+        }
+
+        const uploadedFiles = Array.from(event.target.files);  // ✅ 실제 파일 추출
+
+        console.log('업로드된 파일:', uploadedFiles);
+
+        // Excel 파일 필터링
+        const excelFiles = uploadedFiles.filter(f =>
+            f.name.endsWith('.xlsx') || f.name.endsWith('.xls')
+        );
+
+        if (excelFiles.length === 0) {
+            alert('Excel 파일(.xlsx, .xls)을 선택해주세요.');
+            return;
+        }
+
+        setProgressDialogOpen(true);
+        setProgressValue(0);
+        setProgressMessage('파일 업로드 시작...');
+
         try {
-            // 1. Excel 분석 (로컬에서만)
-            const excelData = await analyzeExcelColumns(file);
-            // excelData = { columns: [...], rowCount: 6270 }
+            for (let i = 0; i < excelFiles.length; i++) {
+                const file = excelFiles[i];  // ✅ 실제 File 객체
 
-            // 2. Presigned URL 요청
-            const { presignedUrl, uploadId, sessionId, s3Key } =
-                await uploadService.getPresignedUrl(projectId, file.name, file.size);
-            // ⭐ sessionId를 받음! (백엔드 수정 후)
+                setProgressValue(((i + 1) / excelFiles.length) * 90);
+                setProgressMessage(`파일 처리 중... (${i + 1}/${excelFiles.length})`);
 
-            console.log('Presigned URL 응답:', {
-                uploadId,
-                sessionId,  // ← String이어야 함!
-                s3Key
-            });
+                // 1. Excel 분석
+                const excelData = await analyzeExcelColumns(file);  // ✅ File 객체 전달
 
-            // 3. S3 업로드
-            await uploadService.uploadToS3(presignedUrl, file);
+                // 2. Presigned URL 요청
+                const { presignedUrl, uploadId, sessionId, s3Key } =
+                    await uploadService.getPresignedUrl(projectId, file.name, file.size);
 
-            // 4. 파일 업로드 완료 처리
-            const response = await uploadService.completeFileUpload(projectId, {
-                uploadId: uploadId,
-                sessionId: sessionId,  // ✅ String (Presigned URL 응답에서 받음)
-                fileName: file.name,
-                fileSize: file.size,
-                s3Key: s3Key
-                // ❌ excelData는 여기에 안 넣음!
-            });
+                console.log('Presigned URL 응답:', {
+                    uploadId,
+                    sessionId,
+                    s3Key
+                });
 
-            console.log('업로드 완료:', response);
+                // 3. S3 업로드
+                await uploadService.uploadToS3(presignedUrl, file);
 
-            // 5. Excel 메타데이터는 별도로 저장 (옵션)
-            // 파일 목록에 추가할 때 excelData를 함께 저장
-            return {
-                ...response,
-                detectedColumns: excelData.columns,
-                rowCount: excelData.rowCount
-            };
+                // 4. 파일 업로드 완료 처리
+                const response = await uploadService.completeFileUpload(projectId, {
+                    uploadId,
+                    sessionId,
+                    fileName: file.name,
+                    fileSize: file.size,
+                    s3Key
+                });
+
+                console.log('업로드 완료:', response);
+
+                // 5. 파일 목록에 추가
+                setFiles(prev => [...prev, {
+                    ...response,
+                    detectedColumns: excelData.columns,
+                    rowCount: excelData.rowCount
+                }]);
+            }
+
+            setProgressValue(100);
+            setProgressMessage('완료');
+            setTimeout(() => setProgressDialogOpen(false), 500);
+
+            alert(`${excelFiles.length}개의 파일이 성공적으로 업로드되었습니다.`);
+
+            loadFiles();  // 파일 목록 새로고침
 
         } catch (error) {
             console.error('파일 업로드 실패:', error);
-            throw error;
+            alert(`파일 업로드 중 오류가 발생했습니다: ${error.message}`);
+            setProgressDialogOpen(false);
         }
     };
 
@@ -694,6 +732,7 @@ function MultiFileUploadPage() {
                             <DataGrid
                                 rows={files}
                                 columns={fileColumns}
+                                getRowId={(row) => row.fileId}  // ⭐ 이 한 줄만 추가!
                                 checkboxSelection
                                 onRowSelectionModelChange={(ids) => setSelectedFiles(ids)}
                                 rowSelectionModel={selectedFiles}
@@ -715,6 +754,7 @@ function MultiFileUploadPage() {
                             <DataGrid
                                 rows={sessions}
                                 columns={sessionColumns}
+                                getRowId={(row) => row.id || row.sessionId}  // ⭐ 추가!
                                 checkboxSelection
                                 onRowSelectionModelChange={(ids) => setSelectedSessions(ids)}
                                 rowSelectionModel={selectedSessions}
