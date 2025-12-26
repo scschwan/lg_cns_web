@@ -5,11 +5,10 @@ import {
     Dialog,
     DialogContent,
     DialogTitle,
+    Box,
     LinearProgress,
-    Typography,
-    Box
+    Typography
 } from '@mui/material';
-import styles from './ProgressDialog.module.css';
 
 function ProgressDialog({ open, message, value }) {
     return (
@@ -20,31 +19,22 @@ function ProgressDialog({ open, message, value }) {
             fullWidth
         >
             <DialogTitle>
-                <Typography variant="h6" align="center">
-                    처리 중...
-                </Typography>
+                처리 중...
             </DialogTitle>
             <DialogContent>
-                <Box className={styles.contentBox}>
+                <Box sx={{ width: '100%', mt: 2 }}>
                     <LinearProgress
-                        variant="determinate"
-                        value={value}
-                        className={styles.progressBar}
+                        variant={value !== undefined ? "determinate" : "indeterminate"}
+                        value={value || 0}
                     />
+                    {/* ⭐ Typography를 Box 밖으로 이동 */}
                     <Typography
-                        variant="body1"
+                        variant="body2"
+                        color="text.secondary"
                         align="center"
-                        className={styles.message}
+                        sx={{ mt: 2 }}
                     >
                         {message}
-                    </Typography>
-                    <Typography
-                        variant="h6"
-                        align="center"
-                        color="primary"
-                        className={styles.percentage}
-                    >
-                        {Math.round(value)}%
                     </Typography>
                 </Box>
             </DialogContent>
