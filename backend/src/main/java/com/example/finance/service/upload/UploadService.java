@@ -757,9 +757,20 @@ public class UploadService {
     public List<UploadedFileInfo> getProjectFiles(String projectId) {
         List<FileSession> sessions = fileSessionRepository.findByProjectIdAndIsDeletedFalse(projectId);
 
-        return sessions.stream()
-                .flatMap(session -> session.getUploadedFiles().stream())
-                .collect(Collectors.toList());
+        // fileId를 키로 사용하여 중복 제거 (Map 활용)
+        Map<String, UploadedFileInfo> uniqueFilesMap = new HashMap<>();
+
+        for (FileSession session : sessions) {
+            if (session.getUploadedFiles() != null) {
+                for (UploadedFileInfo file : session.getUploadedFiles()) {
+                    // 이미 존재하는 fileId라면 put하지 않음 (최초 1회만 등록)
+                    uniqueFilesMap.putIfAbsent(file.getFileId(), file);
+                }
+            }
+        }
+
+        // Map의 값들만 리스트로 반환
+        return new ArrayList<>(uniqueFilesMap.values());
     }
 
 
