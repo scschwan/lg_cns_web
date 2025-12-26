@@ -30,6 +30,20 @@ const projectService = {
         await api.delete(`/api/projects/${projectId}`);
     },
 
+    // ============================================
+    // ⭐ 신규 추가: 프로젝트 파일 목록 조회
+    // ============================================
+
+    /**
+     * 프로젝트에 업로드된 파일 목록 조회
+     * GET /api/projects/{projectId}/files
+     */
+    getProjectFiles: async (projectId) => {
+        const response = await api.get(`/api/projects/${projectId}/files`);
+        return response.data;
+    },
+
+
     // 멤버 초대
     inviteMember: async (projectId, memberData) => {
         const response = await api.post(`/api/projects/${projectId}/members`, memberData);

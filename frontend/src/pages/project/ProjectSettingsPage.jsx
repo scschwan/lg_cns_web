@@ -3,209 +3,300 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
-    Container,
     Box,
-    Typography,
     Paper,
+    Typography,
     TextField,
     Button,
-    List,
-    ListItem,
-    ListItemText,
-    ListItemSecondaryAction,
-    IconButton,
-    Chip,
-    Dialog,
-    DialogTitle,
-    DialogContent,
-    DialogActions,
-    Alert
+    Alert,
+    CircularProgress,
+    Divider,
+    Chip
 } from '@mui/material';
-import DeleteIcon from '@mui/icons-material/Delete';
-import AddIcon from '@mui/icons-material/Add';
-import projectService from '../../services/projectService';
-import styles from './ProjectSettingsPage.module.css';
+import { DataGrid } from '@mui/x-data-grid';
+import SaveIcon from '@mui/icons-material/Save';
+import ArrowBackIcon from '@mui/icons-material/ArrowBack';
+import DescriptionIcon from '@mui/icons-material/Description';
 
-function ProjectSettingsPage() {
+import projectService from '../../services/projectService';
+
+const ProjectSettingsPage = () => {
     const { projectId } = useParams();
     const navigate = useNavigate();
-    const [project, setProject] = useState(null);
-    const [formData, setFormData] = useState({ name: '', description: '' });
-    const [openInvite, setOpenInvite] = useState(false);
-    const [inviteEmail, setInviteEmail] = useState('');
-    const [error, setError] = useState('');
 
+    const [project, setProject] = useState(null);
+    const [projectName, setProjectName] = useState('');
+    const [projectDescription, setProjectDescription] = useState('');
+
+    // ⭐ 신규 추가: 파일 목록 상태
+    const [files, setFiles] = useState([]);
+    const [filesLoading, setFilesLoading] = useState(false);
+
+    const [loading, setLoading] = useState(true);
+    const [saving, setSaving] = useState(false);
+    const [error, setError] = useState(null);
+    const [successMessage, setSuccessMessage] = useState('');
+
+    // 프로젝트 정보 로드
     useEffect(() => {
-        loadProject();
+        loadProjectData();
     }, [projectId]);
 
-    const loadProject = async () => {
-        const data = await projectService.getProject(projectId);
-        setProject(data);
-        setFormData({ name: data.projectName, description: data.description });
-    };
-
-    const handleUpdate = async () => {
+    const loadProjectData = async () => {
         try {
-            await projectService.updateProject(projectId, formData);
-            alert('프로젝트가 수정되었습니다.');
-            loadProject();
+            setLoading(true);
+            setError(null);
+
+            // 프로젝트 정보 로드
+            const projectData = await projectService.getProject(projectId);
+            setProject(projectData);
+            setProjectName(projectData.name);
+            setProjectDescription(projectData.description || '');
+
+            // ⭐ 파일 목록 로드
+            await loadProjectFiles();
+
         } catch (err) {
-            setError('프로젝트 수정에 실패했습니다.');
+            console.error('프로젝트 정보 로드 실패:', err);
+            setError('프로젝트 정보를 불러오는데 실패했습니다.');
+        } finally {
+            setLoading(false);
         }
     };
 
-    const handleInvite = async () => {
+    // ⭐ 신규 추가: 파일 목록 로드
+    const loadProjectFiles = async () => {
         try {
-            await projectService.inviteMember(projectId, {
-                email: inviteEmail,
-                role: 'VIEWER'
+            setFilesLoading(true);
+            const filesData = await projectService.getProjectFiles(projectId);
+
+            // DataGrid용 데이터 변환
+            const formattedFiles = filesData.map((file, index) => ({
+                id: file.id || index,
+                fileName: file.fileName,
+                fileSize: formatFileSize(file.fileSize),
+                columnCount: file.detectedColumns?.length || 0,
+                uploadedAt: formatDate(file.uploadedAt),
+                accountColumn: file.accountColumnName || '-',
+                amountColumn: file.amountColumnName || '-'
+            }));
+
+            setFiles(formattedFiles);
+        } catch (err) {
+            console.error('파일 목록 로드 실패:', err);
+            // 파일 목록 로드 실패는 치명적이지 않으므로 에러 무시
+        } finally {
+            setFilesLoading(false);
+        }
+    };
+
+    // 파일 크기 포맷팅
+    const formatFileSize = (bytes) => {
+        if (bytes === 0) return '0 Bytes';
+        const k = 1024;
+        const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+        const i = Math.floor(Math.log(bytes) / Math.log(k));
+        return Math.round(bytes / Math.pow(k, i) * 100) / 100 + ' ' + sizes[i];
+    };
+
+    // 날짜 포맷팅
+    const formatDate = (dateString) => {
+        if (!dateString) return '-';
+        const date = new Date(dateString);
+        return date.toLocaleString('ko-KR', {
+            year: 'numeric',
+            month: '2-digit',
+            day: '2-digit',
+            hour: '2-digit',
+            minute: '2-digit'
+        });
+    };
+
+    // 프로젝트 저장
+    const handleSave = async () => {
+        try {
+            setSaving(true);
+            setError(null);
+            setSuccessMessage('');
+
+            await projectService.updateProject(projectId, {
+                name: projectName,
+                description: projectDescription
             });
-            alert('멤버가 초대되었습니다.');
-            setOpenInvite(false);
-            setInviteEmail('');
-            loadProject();
+
+            setSuccessMessage('프로젝트 정보가 저장되었습니다.');
+
+            // 3초 후 메시지 자동 제거
+            setTimeout(() => setSuccessMessage(''), 3000);
+
         } catch (err) {
-            setError('멤버 초대에 실패했습니다.');
+            console.error('프로젝트 저장 실패:', err);
+            setError('프로젝트 정보 저장에 실패했습니다.');
+        } finally {
+            setSaving(false);
         }
     };
 
-    const handleRemoveMember = async (userId) => {
-        if (window.confirm('정말 이 멤버를 삭제하시겠습니까?')) {
-            try {
-                await projectService.removeMember(projectId, userId);
-                alert('멤버가 삭제되었습니다.');
-                loadProject();
-            } catch (err) {
-                setError('멤버 삭제에 실패했습니다.');
-            }
+    // ⭐ 파일 목록 DataGrid 컬럼 정의
+    const fileColumns = [
+        {
+            field: 'fileName',
+            headerName: '파일명',
+            flex: 2,
+            minWidth: 200
+        },
+        {
+            field: 'fileSize',
+            headerName: '크기',
+            width: 100,
+            align: 'right'
+        },
+        {
+            field: 'columnCount',
+            headerName: '컬럼 수',
+            width: 100,
+            align: 'center'
+        },
+        {
+            field: 'accountColumn',
+            headerName: '계정명 컬럼',
+            flex: 1,
+            minWidth: 150
+        },
+        {
+            field: 'amountColumn',
+            headerName: '금액 컬럼',
+            flex: 1,
+            minWidth: 150
+        },
+        {
+            field: 'uploadedAt',
+            headerName: '업로드 시간',
+            flex: 1,
+            minWidth: 150
         }
-    };
+    ];
 
-    const handleDeleteProject = async () => {
-        if (window.confirm('정말 이 프로젝트를 삭제하시겠습니까?')) {
-            try {
-                await projectService.deleteProject(projectId);
-                alert('프로젝트가 삭제되었습니다.');
-                navigate('/projects');
-            } catch (err) {
-                setError('프로젝트 삭제에 실패했습니다.');
-            }
-        }
-    };
-
-    if (!project) return null;
+    if (loading) {
+        return (
+            <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '400px' }}>
+                <CircularProgress />
+            </Box>
+        );
+    }
 
     return (
-        <Container maxWidth="md">
-            <Box className={styles.contentWrapper}>
-                <Typography variant="h4" gutterBottom>
+        <Box sx={{ p: 3 }}>
+            {/* 헤더 */}
+            <Box sx={{ display: 'flex', alignItems: 'center', mb: 3 }}>
+                <Button
+                    startIcon={<ArrowBackIcon />}
+                    onClick={() => navigate('/projects')}
+                    sx={{ mr: 2 }}
+                >
+                    프로젝트 목록
+                </Button>
+                <Typography variant="h5" sx={{ fontWeight: 600 }}>
                     프로젝트 설정
                 </Typography>
+            </Box>
 
-                {error && <Alert severity="error" className={styles.errorAlert}>{error}</Alert>}
+            {/* 에러/성공 메시지 */}
+            {error && (
+                <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError(null)}>
+                    {error}
+                </Alert>
+            )}
 
-                {/* 프로젝트 정보 */}
-                <Paper className={styles.sectionPaper}>
-                    <Typography variant="h6" gutterBottom>
-                        프로젝트 정보
-                    </Typography>
-                    <TextField
-                        label="프로젝트 이름"
-                        fullWidth
-                        value={formData.name}
-                        onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                        className={styles.textField}
-                    />
-                    <TextField
-                        label="설명"
-                        fullWidth
-                        multiline
-                        rows={3}
-                        value={formData.description}
-                        onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                        className={styles.textField}
-                    />
-                    <Button variant="contained" onClick={handleUpdate}>
-                        저장
-                    </Button>
-                </Paper>
+            {successMessage && (
+                <Alert severity="success" sx={{ mb: 2 }} onClose={() => setSuccessMessage('')}>
+                    {successMessage}
+                </Alert>
+            )}
 
-                {/* 멤버 관리 */}
-                <Paper className={styles.sectionPaper}>
-                    <Box className={styles.sectionHeader}>
-                        <Typography variant="h6">
-                            멤버 관리
-                        </Typography>
-                        <Button
-                            variant="outlined"
-                            startIcon={<AddIcon />}
-                            onClick={() => setOpenInvite(true)}
-                        >
-                            멤버 초대
-                        </Button>
-                    </Box>
-                    <List>
-                        {project.members?.map((member) => (
-                            <ListItem key={member.userId}>
-                                <ListItemText
-                                    primary={member.userId}
-                                    secondary={member.joinedAt}
-                                />
-                                <Chip label={member.role} size="small" className={styles.roleChip} />
-                                {member.role !== 'OWNER' && (
-                                    <ListItemSecondaryAction>
-                                        <IconButton
-                                            edge="end"
-                                            onClick={() => handleRemoveMember(member.userId)}
-                                        >
-                                            <DeleteIcon />
-                                        </IconButton>
-                                    </ListItemSecondaryAction>
-                                )}
-                            </ListItem>
-                        ))}
-                    </List>
-                </Paper>
+            {/* 프로젝트 기본 정보 */}
+            <Paper sx={{ p: 3, mb: 3 }}>
+                <Typography variant="h6" sx={{ mb: 2, fontWeight: 600 }}>
+                    기본 정보
+                </Typography>
 
-                {/* 프로젝트 삭제 */}
-                <Paper className={styles.dangerZone}>
-                    <Typography variant="h6" gutterBottom>
-                        위험 구역
-                    </Typography>
-                    <Typography variant="body2" gutterBottom>
-                        프로젝트를 삭제하면 복구할 수 없습니다.
-                    </Typography>
+                <TextField
+                    fullWidth
+                    label="프로젝트 이름"
+                    value={projectName}
+                    onChange={(e) => setProjectName(e.target.value)}
+                    sx={{ mb: 2 }}
+                    required
+                />
+
+                <TextField
+                    fullWidth
+                    label="프로젝트 설명"
+                    value={projectDescription}
+                    onChange={(e) => setProjectDescription(e.target.value)}
+                    multiline
+                    rows={3}
+                    sx={{ mb: 2 }}
+                />
+
+                <Box sx={{ display: 'flex', justifyContent: 'flex-end' }}>
                     <Button
                         variant="contained"
-                        color="error"
-                        onClick={handleDeleteProject}
+                        startIcon={<SaveIcon />}
+                        onClick={handleSave}
+                        disabled={saving || !projectName.trim()}
                     >
-                        프로젝트 삭제
+                        {saving ? '저장 중...' : '저장'}
                     </Button>
-                </Paper>
+                </Box>
+            </Paper>
 
-                {/* 멤버 초대 다이얼로그 */}
-                <Dialog open={openInvite} onClose={() => setOpenInvite(false)}>
-                    <DialogTitle>멤버 초대</DialogTitle>
-                    <DialogContent>
-                        <TextField
-                            autoFocus
-                            label="이메일"
-                            fullWidth
-                            value={inviteEmail}
-                            onChange={(e) => setInviteEmail(e.target.value)}
-                            className={styles.dialogTextField}
-                        />
-                    </DialogContent>
-                    <DialogActions>
-                        <Button onClick={() => setOpenInvite(false)}>취소</Button>
-                        <Button onClick={handleInvite} variant="contained">초대</Button>
-                    </DialogActions>
-                </Dialog>
-            </Box>
-        </Container>
+            {/* ⭐ 신규 추가: 업로드된 파일 목록 */}
+            <Paper sx={{ p: 3 }}>
+                <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
+                    <DescriptionIcon sx={{ mr: 1, color: 'primary.main' }} />
+                    <Typography variant="h6" sx={{ fontWeight: 600 }}>
+                        업로드된 파일
+                    </Typography>
+                    <Chip
+                        label={`${files.length}개`}
+                        size="small"
+                        sx={{ ml: 1 }}
+                        color="primary"
+                    />
+                </Box>
+
+                <Divider sx={{ mb: 2 }} />
+
+                {filesLoading ? (
+                    <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}>
+                        <CircularProgress />
+                    </Box>
+                ) : files.length === 0 ? (
+                    <Box sx={{ textAlign: 'center', py: 4, color: 'text.secondary' }}>
+                        <DescriptionIcon sx={{ fontSize: 48, mb: 1, opacity: 0.3 }} />
+                        <Typography>
+                            업로드된 파일이 없습니다.
+                        </Typography>
+                    </Box>
+                ) : (
+                    <DataGrid
+                        rows={files}
+                        columns={fileColumns}
+                        pageSize={10}
+                        rowsPerPageOptions={[10, 25, 50]}
+                        autoHeight
+                        disableSelectionOnClick
+                        sx={{
+                            '& .MuiDataGrid-row:hover': {
+                                backgroundColor: 'action.hover'
+                            }
+                        }}
+                    />
+                )}
+            </Paper>
+        </Box>
     );
-}
+};
 
 export default ProjectSettingsPage;

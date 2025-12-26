@@ -288,35 +288,52 @@ const uploadService = {
 
     /**
      * 파일 업로드 + Lambda 진행률 추적 (고급 버전)
-     * FileUploadTab에서 사용
+     * ⭐ 수정: completeFileUpload() 호출 추가
      */
     uploadFileWithProgress: async (projectId, file, onProgress) => {
         try {
             // 1. Presigned URL 요청
-            onProgress?.(10, '업로드 준비 중...');
+            onProgress?.(5, '업로드 준비 중...');
             const { presignedUrl, uploadId, sessionId, s3Key } =
                 await uploadService.getPresignedUrl(projectId, file.name, file.size);
 
-            // 2. S3 업로드
-            onProgress?.(20, 'S3 업로드 중...');
-            await uploadService.uploadToS3(presignedUrl, file);
-
-            // 3. 업로드 완료 처리
-            await uploadService.completeFileUpload(
-                projectId,
+            console.log('Presigned URL 요청 성공:', {
                 uploadId,
-                file.name,
-                file.size,
+                sessionId,
                 s3Key,
-                sessionId
-            );
+                sessionIdType: typeof sessionId  // 디버깅
+            });
 
-            // 4. Lambda 처리 대기 (진행률 폴링)
-            onProgress?.(40, 'Lambda 처리 중...');
+            // 2. S3 업로드 (진행률 5% → 30%)
+            onProgress?.(10, 'S3 업로드 중...');
+
+            await uploadService.uploadToS3(presignedUrl, file, (s3Progress) => {
+                // S3 업로드 진행률을 10% ~ 30% 범위로 매핑
+                const mappedProgress = 10 + (s3Progress * 0.2);
+                onProgress?.(Math.round(mappedProgress), `S3 업로드 중... ${s3Progress}%`);
+            });
+
+            console.log('S3 업로드 완료');
+
+            // ⭐⭐⭐ 3. 파일 업로드 완료 처리 (MongoDB 등록)
+            onProgress?.(35, '파일 등록 중...');
+
+            const fileData = await uploadService.completeFileUpload(projectId, {
+                uploadId,
+                sessionId,  // ✅ String 타입
+                fileName: file.name,
+                fileSize: file.size,
+                s3Key
+            });
+
+            console.log('파일 등록 완료:', fileData);
+
+            // 4. Lambda 처리 대기 (진행률 40% → 95%)
+            onProgress?.(40, 'Lambda 처리 시작...');
 
             let status = { status: 'PROCESSING', progress: 0 };
             let attempts = 0;
-            const maxAttempts = 300; // 최대 5분 (1초 * 300)
+            const maxAttempts = 300; // 최대 5분
 
             while (status.status === 'PROCESSING' && attempts < maxAttempts) {
                 await new Promise(resolve => setTimeout(resolve, 1000)); // 1초 대기
@@ -346,13 +363,16 @@ const uploadService = {
                 throw new Error('업로드 처리 시간 초과');
             }
 
+            console.log('전체 업로드 프로세스 완료');
+
             return {
                 uploadId,
                 sessionId,
                 s3Key,
                 fileName: file.name,
                 fileSize: file.size,
-                status: status.status
+                status: status.status,
+                fileId: fileData.id  // ⭐ MongoDB fileId 반환
             };
 
         } catch (error) {
