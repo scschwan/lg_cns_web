@@ -265,15 +265,16 @@ public class UploadService {
                         if (cell != null) {
                             String columnName = getCellValueAsString(cell);
                             if (columnName != null && !columnName.trim().isEmpty()) {
+                                // ⭐ trim 적용하여 저장
                                 columns.add(columnName.trim());
                             }
                         }
                     }
                 }
 
-                // ⭐ rowCount 계산 (헤더 제외)
-                long rowCount = sheet.getLastRowNum(); // 0-based, 헤더 포함
-                if (rowCount > 0) rowCount--; // 헤더 제외
+                // rowCount 계산 (헤더 제외)
+                long rowCount = sheet.getLastRowNum();
+                if (rowCount > 0) rowCount--;
 
                 log.debug("Excel 메타데이터: s3Key={}, columns={}, rowCount={}",
                         s3Key, columns.size(), rowCount);
@@ -700,12 +701,53 @@ public class UploadService {
     private int findColumnIndex(Row headerRow, String columnName) {
         if (headerRow == null) return -1;
 
+        // ⭐ 1단계: 정확히 일치하는 컬럼 찾기
         for (int i = 0; i < headerRow.getLastCellNum(); i++) {
             Cell cell = headerRow.getCell(i);
-            if (cell != null && columnName.equals(getCellValueAsString(cell))) {
-                return i;
+            if (cell != null) {
+                String cellValue = getCellValueAsString(cell);
+                if (cellValue != null && cellValue.equals(columnName)) {
+                    log.debug("컬럼 찾음 (정확 일치): index={}, columnName={}", i, columnName);
+                    return i;
+                }
             }
         }
+
+        // ⭐ 2단계: trim() 적용하여 찾기
+        for (int i = 0; i < headerRow.getLastCellNum(); i++) {
+            Cell cell = headerRow.getCell(i);
+            if (cell != null) {
+                String cellValue = getCellValueAsString(cell);
+                if (cellValue != null && cellValue.trim().equals(columnName.trim())) {
+                    log.debug("컬럼 찾음 (trim 일치): index={}, columnName={}", i, columnName);
+                    return i;
+                }
+            }
+        }
+
+        // ⭐ 3단계: 대소문자 무시하고 찾기
+        for (int i = 0; i < headerRow.getLastCellNum(); i++) {
+            Cell cell = headerRow.getCell(i);
+            if (cell != null) {
+                String cellValue = getCellValueAsString(cell);
+                if (cellValue != null && cellValue.trim().equalsIgnoreCase(columnName.trim())) {
+                    log.debug("컬럼 찾음 (대소문자 무시): index={}, columnName={}", i, columnName);
+                    return i;
+                }
+            }
+        }
+
+        // ⭐ 디버깅: 모든 헤더 출력
+        log.error("컬럼을 찾을 수 없음: columnName={}", columnName);
+        log.error("실제 헤더 목록:");
+        for (int i = 0; i < headerRow.getLastCellNum(); i++) {
+            Cell cell = headerRow.getCell(i);
+            if (cell != null) {
+                String cellValue = getCellValueAsString(cell);
+                log.error("  [{}] = '{}'", i, cellValue);
+            }
+        }
+
         return -1;
     }
 
