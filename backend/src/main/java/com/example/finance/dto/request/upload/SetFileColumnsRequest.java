@@ -18,18 +18,18 @@ public class SetFileColumnsRequest {
     /**
      * 파일 ID
      */
-    @NotBlank(message = "파일 ID는 필수입니다")
+    //@NotBlank(message = "파일 ID는 필수입니다")
     private String fileId;
 
     /**
      * 계정명 컬럼명
      */
-    @NotBlank(message = "계정명 컬럼은 필수입니다")
+    //@NotBlank(message = "계정명 컬럼은 필수입니다")
     private String accountColumnName;
 
     /**
      * 금액 컬럼명
      */
-    @NotBlank(message = "금액 컬럼은 필수입니다")
+    //@NotBlank(message = "금액 컬럼은 필수입니다")
     private String amountColumnName;
 }
