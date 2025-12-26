@@ -1,5 +1,6 @@
 package com.example.finance.dto.request.upload;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
 import jakarta.validation.constraints.NotBlank;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -25,11 +26,13 @@ public class SetFileColumnsRequest {
      * 계정명 컬럼명
      */
     //@NotBlank(message = "계정명 컬럼은 필수입니다")
+    @JsonProperty("accountColumnName")
     private String accountColumnName;
 
     /**
      * 금액 컬럼명
      */
     //@NotBlank(message = "금액 컬럼은 필수입니다")
+    @JsonProperty("amountColumnName")
     private String amountColumnName;
 }
