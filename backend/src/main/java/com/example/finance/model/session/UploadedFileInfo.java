@@ -82,4 +82,11 @@ public class UploadedFileInfo {
     @Field("account_contents")
     @Builder.Default
     private List<String> accountContents = new ArrayList<>();
+
+    // ⭐ 신규 필드 추가
+    /**
+     * 금액 합계
+     */
+    @Field("total_amount")
+    private Double totalAmount;
 }

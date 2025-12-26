@@ -44,6 +44,17 @@ public class UploadService {
     // Lambda와 공유하는 Redis Key Prefix
     private static final String UPLOAD_STATUS_KEY_PREFIX = "upload:status:";
 
+
+    /**
+     * Excel 메타데이터 (내부 클래스)
+     */
+    @lombok.Data
+    @lombok.AllArgsConstructor
+    private static class ExcelMetadata {
+        private List<String> columns;
+        private Long rowCount;
+    }
+
     /**
      * 세션 ID 생성
      */
@@ -173,15 +184,9 @@ public class UploadService {
         }
     }
 
-    // ⭐⭐⭐ 신규 메서드 추가 ⭐⭐⭐
-
     /**
      * 파일 업로드 완료 처리
-     *
-     * S3 업로드 완료 후 호출
-     * - FileSession에 파일 정보 추가
-     * - Excel 헤더 자동 감지
-     * - Lambda 트리거 (S3 Event)
+     * ⭐ rowCount 계산 추가
      */
     @Transactional
     public UploadFileResponse completeFileUpload(
@@ -190,7 +195,7 @@ public class UploadService {
         log.info("파일 업로드 완료 처리: projectId={}, uploadId={}, fileName={}",
                 projectId, request.getUploadId(), request.getFileName());
 
-        // 1. FileSession 조회 (sessionId로)
+        // FileSession 조회
         FileSession fileSession = fileSessionRepository.findBySessionId(request.getSessionId())
                 .orElseThrow(() -> new BusinessException(
                         "SESSION_NOT_FOUND", "세션을 찾을 수 없습니다: " + request.getSessionId()));
@@ -200,10 +205,10 @@ public class UploadService {
             throw new BusinessException("FORBIDDEN", "세션에 대한 권한이 없습니다");
         }
 
-        // 2. Excel 헤더 자동 감지
-        List<String> detectedColumns = detectExcelColumns(request.getS3Key());
+        // ⭐ Excel 헤더 & rowCount 자동 감지
+        ExcelMetadata metadata = detectExcelMetadata(request.getS3Key());
 
-        // 3. UploadedFileInfo 생성
+        // UploadedFileInfo 생성
         String fileId = new ObjectId().toString();
 
         UploadedFileInfo fileInfo = UploadedFileInfo.builder()
@@ -211,41 +216,84 @@ public class UploadService {
                 .fileName(request.getFileName())
                 .fileSize(request.getFileSize())
                 .s3Key(request.getS3Key())
-                .rowCount(0L) // Lambda 처리 후 업데이트
+                .rowCount(metadata.rowCount)  // ⭐ rowCount 저장
                 .uploadedAt(LocalDateTime.now())
-                .detectedColumns(detectedColumns)
+                .detectedColumns(metadata.columns)
                 .accountContents(new ArrayList<>())
                 .build();
 
-        // 4. FileSession에 파일 추가
+        // FileSession에 파일 추가
         fileSession.getUploadedFiles().add(fileInfo);
         fileSession.setTotalFiles(fileSession.getUploadedFiles().size());
         fileSession.setUpdatedAt(LocalDateTime.now());
 
         fileSessionRepository.save(fileSession);
 
-        log.info("파일 업로드 완료: fileId={}, detectedColumns={}",
-                fileId, detectedColumns.size());
+        log.info("파일 업로드 완료: fileId={}, rowCount={}, detectedColumns={}",
+                fileId, metadata.rowCount, metadata.columns.size());
 
-        // 5. 응답 생성
+        // 응답 생성
         return UploadFileResponse.builder()
                 .fileId(fileId)
                 .fileName(request.getFileName())
                 .fileSize(request.getFileSize())
                 .s3Key(request.getS3Key())
                 .uploadedAt(LocalDateTime.now())
-                .detectedColumns(detectedColumns)
-                .rowCount(0L)
+                .detectedColumns(metadata.columns)
+                .rowCount(metadata.rowCount)  // ⭐ 응답에도 포함
                 .status("UPLOADED")
                 .build();
     }
 
     /**
-     * Excel 컬럼 자동 감지
+     * Excel 메타데이터 감지 (컬럼 + rowCount)
+     */
+    private ExcelMetadata detectExcelMetadata(String s3Key) {
+        try {
+            byte[] fileBytes = s3Service.downloadFile(s3Key);
+
+            try (ByteArrayInputStream bis = new ByteArrayInputStream(fileBytes);
+                 Workbook workbook = new XSSFWorkbook(bis)) {
+
+                Sheet sheet = workbook.getSheetAt(0);
+                Row headerRow = sheet.getRow(0);
+
+                List<String> columns = new ArrayList<>();
+                if (headerRow != null) {
+                    for (int i = 0; i < headerRow.getLastCellNum(); i++) {
+                        Cell cell = headerRow.getCell(i);
+                        if (cell != null) {
+                            String columnName = getCellValueAsString(cell);
+                            if (columnName != null && !columnName.trim().isEmpty()) {
+                                columns.add(columnName.trim());
+                            }
+                        }
+                    }
+                }
+
+                // ⭐ rowCount 계산 (헤더 제외)
+                long rowCount = sheet.getLastRowNum(); // 0-based, 헤더 포함
+                if (rowCount > 0) rowCount--; // 헤더 제외
+
+                log.debug("Excel 메타데이터: s3Key={}, columns={}, rowCount={}",
+                        s3Key, columns.size(), rowCount);
+
+                return new ExcelMetadata(columns, rowCount);
+            }
+
+        } catch (IOException e) {
+            log.error("Excel 메타데이터 감지 실패: s3Key={}", s3Key, e);
+            return new ExcelMetadata(new ArrayList<>(), 0L);
+        }
+    }
+
+
+
+    /**
+     * Excel 컬럼 자동 감지 + rowCount 계산
      */
     private List<String> detectExcelColumns(String s3Key) {
         try {
-            // S3에서 파일 다운로드 (헤더만)
             byte[] fileBytes = s3Service.downloadFile(s3Key);
 
             try (ByteArrayInputStream bis = new ByteArrayInputStream(fileBytes);
@@ -258,6 +306,9 @@ public class UploadService {
                     log.warn("헤더 행이 없음: s3Key={}", s3Key);
                     return new ArrayList<>();
                 }
+
+                // ⭐ rowCount 계산을 위해 인스턴스 변수 사용 필요
+                // 대신 completeFileUpload()에서 처리하도록 수정
 
                 List<String> columns = new ArrayList<>();
                 for (int i = 0; i < headerRow.getLastCellNum(); i++) {
@@ -489,6 +540,7 @@ public class UploadService {
 
     /**
      * 파일 컬럼 설정 (계정명, 금액 컬럼)
+     * ⭐ 선택 시 자동으로 계정명 추출 & 금액 계산 & 저장
      */
     @Transactional
     public UploadedFileInfo setFileColumns(
@@ -509,20 +561,152 @@ public class UploadService {
                 .orElseThrow(() -> new BusinessException(
                         "FILE_NOT_FOUND", "파일을 찾을 수 없습니다: " + fileId));
 
-        // ⭐ null이 아닐 때만 설정
+        // ⭐ accountColumnName 설정 시 → 계정명 자동 추출 & 저장
         if (request.getAccountColumnName() != null) {
             fileInfo.setAccountColumnName(request.getAccountColumnName());
-        }
-        if (request.getAmountColumnName() != null) {
-            fileInfo.setAmountColumnName(request.getAmountColumnName());
+
+            // S3에서 파일 다운로드 & 계정명 추출
+            List<String> accountValues = extractAccountValuesInternal(
+                    fileInfo.getS3Key(),
+                    request.getAccountColumnName()
+            );
+            fileInfo.setAccountContents(accountValues);
+
+            log.info("계정명 추출 완료: {} 개", accountValues.size());
         }
 
+        // ⭐ amountColumnName 설정 시 → 금액 자동 계산 & 저장
+        if (request.getAmountColumnName() != null) {
+            fileInfo.setAmountColumnName(request.getAmountColumnName());
+
+            // S3에서 파일 다운로드 & 금액 계산
+            Double totalAmount = calculateTotalAmountInternal(
+                    fileInfo.getS3Key(),
+                    request.getAmountColumnName()
+            );
+            fileInfo.setTotalAmount(totalAmount);
+
+            log.info("금액 합산 완료: {}", totalAmount);
+        }
+
+        // ⭐ MongoDB 저장
         fileSession.setUpdatedAt(LocalDateTime.now());
         fileSessionRepository.save(fileSession);
 
         log.info("파일 컬럼 설정 완료: fileId={}", fileId);
 
         return fileInfo;
+    }
+
+    /**
+     * 계정명 추출 (내부 메서드)
+     */
+    private List<String> extractAccountValuesInternal(String s3Key, String columnName) {
+        try {
+            byte[] fileBytes = s3Service.downloadFile(s3Key);
+
+            try (ByteArrayInputStream bis = new ByteArrayInputStream(fileBytes);
+                 Workbook workbook = new XSSFWorkbook(bis)) {
+
+                Sheet sheet = workbook.getSheetAt(0);
+                Row headerRow = sheet.getRow(0);
+
+                // 컬럼 인덱스 찾기
+                int columnIndex = findColumnIndex(headerRow, columnName);
+                if (columnIndex == -1) {
+                    throw new BusinessException("COLUMN_NOT_FOUND",
+                            "컬럼을 찾을 수 없습니다: " + columnName);
+                }
+
+                // 고유값 추출 (전체 행 - 속도 우선)
+                Set<String> accountValues = new HashSet<>();
+
+                for (int i = 1; i <= sheet.getLastRowNum(); i++) {
+                    Row row = sheet.getRow(i);
+                    if (row == null) continue;
+
+                    Cell cell = row.getCell(columnIndex);
+                    if (cell == null) continue;
+
+                    String value = getCellValueAsString(cell);
+                    if (value != null && !value.trim().isEmpty()) {
+                        accountValues.add(value.trim());
+                    }
+                }
+
+                return new ArrayList<>(accountValues);
+            }
+        } catch (IOException e) {
+            log.error("계정명 추출 실패: s3Key={}", s3Key, e);
+            return new ArrayList<>();
+        }
+    }
+
+    /**
+     * 금액 합산 (내부 메서드)
+     */
+    private Double calculateTotalAmountInternal(String s3Key, String columnName) {
+        try {
+            byte[] fileBytes = s3Service.downloadFile(s3Key);
+
+            try (ByteArrayInputStream bis = new ByteArrayInputStream(fileBytes);
+                 Workbook workbook = new XSSFWorkbook(bis)) {
+
+                Sheet sheet = workbook.getSheetAt(0);
+                Row headerRow = sheet.getRow(0);
+
+                // 컬럼 인덱스 찾기
+                int columnIndex = findColumnIndex(headerRow, columnName);
+                if (columnIndex == -1) {
+                    throw new BusinessException("COLUMN_NOT_FOUND",
+                            "컬럼을 찾을 수 없습니다: " + columnName);
+                }
+
+                // 금액 합산 (전체 행 - 속도 우선)
+                double totalAmount = 0.0;
+
+                for (int i = 1; i <= sheet.getLastRowNum(); i++) {
+                    Row row = sheet.getRow(i);
+                    if (row == null) continue;
+
+                    Cell cell = row.getCell(columnIndex);
+                    if (cell == null) continue;
+
+                    if (cell.getCellType() == CellType.NUMERIC) {
+                        totalAmount += cell.getNumericCellValue();
+                    } else if (cell.getCellType() == CellType.STRING) {
+                        String value = cell.getStringCellValue().replaceAll("[^0-9.-]", "");
+                        if (!value.isEmpty()) {
+                            try {
+                                totalAmount += Double.parseDouble(value);
+                            } catch (NumberFormatException e) {
+                                // 무시
+                            }
+                        }
+                    }
+                }
+
+                return totalAmount;
+            }
+        } catch (IOException e) {
+            log.error("금액 계산 실패: s3Key={}", s3Key, e);
+            return 0.0;
+        }
+    }
+
+    /**
+     * 컬럼 인덱스 찾기 (헬퍼 메서드)
+     */
+    private int findColumnIndex(Row headerRow, String columnName) {
+        if (headerRow == null) return -1;
+
+        for (int i = 0; i < headerRow.getLastCellNum(); i++) {
+            Cell cell = headerRow.getCell(i);
+            if (cell != null && columnName.equals(getCellValueAsString(cell))) {
+                return i;
+            }
+        }
+        return -1;
     }
 
     /**
