@@ -64,7 +64,12 @@ function MultiFileUploadPage() {
     const loadFiles = async () => {
         try {
             const data = await uploadService.getFiles(projectId);
-            setFiles(data);
+
+            const filesWithId = data.map(file => ({
+                ...file,
+                id: file.fileId  // ⭐ DataGrid용 id 필드 추가
+            }));
+            setFiles(filesWithId);
         } catch (error) {
             console.error('파일 로드 실패:', error);
         }
@@ -144,6 +149,7 @@ function MultiFileUploadPage() {
                 // 5. 파일 목록에 추가
                 setFiles(prev => [...prev, {
                     ...response,
+                    id: response.fileId,  // ⭐ id 필드 추가
                     detectedColumns: excelData.columns,
                     rowCount: excelData.rowCount
                 }]);
@@ -192,68 +198,54 @@ function MultiFileUploadPage() {
         });
     };
 
-    // 계정명/금액 컬럼 선택
     const handleColumnSelect = async (fileId, columnType, columnName) => {
         try {
-            await uploadService.updateFileColumns(projectId, fileId, {
-                [columnType]: columnName
-            });
+            console.log(`컬럼 선택: fileId=${fileId}, type=${columnType}, column=${columnName}`);
 
-            // 로컬 상태 업데이트
-            setFiles(prev => prev.map(f =>
-                f.id === fileId
-                    ? { ...f, [columnType]: columnName }
-                    : f
-            ));
-
-            // 계정명/금액 자동 추출
-            if (columnType === 'accountColumn') {
-                await extractAccountValues(fileId, columnName);
-            } else if (columnType === 'amountColumn') {
-                await calculateTotalAmount(fileId, columnName);
+            const params = {};
+            if (columnType === 'accountColumnName') {
+                params.accountColumnName = columnName;
+            } else if (columnType === 'amountColumnName') {
+                params.amountColumnName = columnName;
             }
-        } catch (error) {
-            console.error('컬럼 선택 실패:', error);
-        }
-    };
 
-    // 계정명 추출
-    const extractAccountValues = async (fileId, columnName) => {
-        try {
-            const accounts = await uploadService.extractAccountValues(
+            const updatedFileInfo = await uploadService.updateFileColumns(
                 projectId,
                 fileId,
-                columnName
+                params
             );
 
+            console.log('컬럼 선택 완료:', updatedFileInfo);
+
+            // ⭐ 핵심 수정: 백엔드 응답 그대로 State 업데이트
             setFiles(prev => prev.map(f =>
-                f.id === fileId
-                    ? { ...f, accountValues: accounts }
+                f.fileId === fileId
+                    ? {
+                        ...f,
+                        // ⭐ 백엔드에서 온 값 그대로 사용
+                        accountColumnName: updatedFileInfo.accountColumnName || f.accountColumnName,
+                        amountColumnName: updatedFileInfo.amountColumnName || f.amountColumnName,
+                        accountContents: updatedFileInfo.accountContents || f.accountContents || [],
+                        totalAmount: updatedFileInfo.totalAmount !== undefined
+                            ? updatedFileInfo.totalAmount
+                            : f.totalAmount
+                    }
                     : f
             ));
-        } catch (error) {
-            console.error('계정명 추출 실패:', error);
+
+            if (columnType === 'accountColumnName' && updatedFileInfo.accountContents) {
+                console.log(`계정명 ${updatedFileInfo.accountContents.length}개 자동 추출 완료`);
+            }
+            if (columnType === 'amountColumnName' && updatedFileInfo.totalAmount) {
+                console.log(`금액 합계: ${updatedFileInfo.totalAmount.toLocaleString()} 원`);
+            }
+
+        } catch (err) {
+            console.error('컬럼 선택 실패:', err);
+            alert('컬럼 선택에 실패했습니다.');
         }
     };
 
-    // 금액 합산
-    const calculateTotalAmount = async (fileId, columnName) => {
-        try {
-            const totalAmount = await uploadService.calculateTotalAmount(
-                projectId,
-                fileId,
-                columnName
-            );
-
-            setFiles(prev => prev.map(f =>
-                f.id === fileId
-                    ? { ...f, totalAmount }
-                    : f
-            ));
-        } catch (error) {
-            console.error('금액 계산 실패:', error);
-        }
-    };
 
     // 세션 생성
     const handleCreateSessions = async () => {
@@ -265,7 +257,7 @@ function MultiFileUploadPage() {
         // 선택된 파일들 검증
         const invalidFiles = selectedFiles.filter(id => {
             const file = files.find(f => f.id === id);
-            return !file.accountColumn || !file.amountColumn;
+            return !file.accountColumnName || !file.amountColumnName;
         });
 
         if (invalidFiles.length > 0) {
@@ -474,13 +466,15 @@ function MultiFileUploadPage() {
             valueFormatter: (params) => params.value?.toLocaleString() || '0'
         },
         {
-            field: 'accountColumn',
+            field: 'accountColumnName',
             headerName: '대계정 컬럼',
             width: 180,
             renderCell: (params) => (
                 <select
-                    value={params.value || ''}
-                    onChange={(e) => handleColumnSelect(params.row.id, 'accountColumn', e.target.value)}
+                    // ⭐ 수정: params.row.accountColumnName을 직접 참조하여 상태 반영 확실하게 처리
+                    value={params.row.accountColumnName || ''}
+                    // 두 번째 인자 'accountColumn'은 handleColumnSelect 내부 분기용 문자열이므로 그대로 둠
+                    onChange={(e) => handleColumnSelect(params.row.fileId, 'accountColumn', e.target.value)}
                     className={styles.columnSelect}
                 >
                     <option value="">선택...</option>
@@ -491,13 +485,14 @@ function MultiFileUploadPage() {
             )
         },
         {
-            field: 'amountColumn',
+            field: 'amountColumnName',
             headerName: '금액 컬럼',
             width: 180,
             renderCell: (params) => (
                 <select
-                    value={params.value || ''}
-                    onChange={(e) => handleColumnSelect(params.row.id, 'amountColumn', e.target.value)}
+                    // ⭐ 수정: params.row.amountColumnName을 직접 참조
+                    value={params.row.amountColumnName || ''}
+                    onChange={(e) => handleColumnSelect(params.row.fileId, 'amountColumn', e.target.value)}
                     className={styles.columnSelect}
                 >
                     <option value="">선택...</option>
@@ -508,12 +503,12 @@ function MultiFileUploadPage() {
             )
         },
         {
-            field: 'accountValues',
+            field: 'accountContents',
             headerName: '계정명 내용',
             width: 150,
             renderCell: (params) => (
                 params.value?.length > 0
-                    ? <Chip label={`${params.value.length}개`} size="small" />
+                    ? <Chip label={`${params.value} (${params.value.length}개)`} size="small" />
                     : '-'
             )
         },

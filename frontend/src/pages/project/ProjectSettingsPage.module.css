@@ -37,3 +37,89 @@
 .dialogTextField {
     margin-top: 0.5rem;
 }
+
+/* ⭐ 신규 추가 스타일 */
+
+.headerBox {
+    display: flex;
+    align-items: center;
+    margin-bottom: 1.5rem;
+}
+
+.backButton {
+    margin-right: 1rem;
+}
+
+.tabsWrapper {
+    margin-bottom: 1.5rem;
+}
+
+.tabContent {
+    padding: 1.5rem;
+}
+
+.tabHeader {
+    display: flex;
+    align-items: center;
+    margin-bottom: 1rem;
+}
+
+.tabHeaderIcon {
+    margin-right: 0.5rem;
+    color: #1976d2;
+}
+
+.tabHeaderTitle {
+    font-weight: 600;
+}
+
+.tabHeaderChip {
+    margin-left: 0.5rem;
+}
+
+.divider {
+    margin-bottom: 1rem;
+}
+
+.emptyState {
+    text-align: center;
+    padding: 2rem 0;
+    color: #9e9e9e;
+}
+
+.emptyStateIcon {
+    font-size: 3rem;
+    margin-bottom: 0.5rem;
+    opacity: 0.3;
+}
+
+.buttonGroup {
+    display: flex;
+    justify-content: space-between;
+    margin-top: 1rem;
+}
+
+.loadingContainer {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 400px;
+}
+
+.fileLoadingContainer {
+    display: flex;
+    justify-content: center;
+    padding: 2rem 0;
+}
+
+.dataGrid {
+    /* DataGrid 기본 스타일 */
+}
+
+.dataGrid .MuiDataGrid-row:hover {
+    background-color: rgba(0, 0, 0, 0.04);
+}
+
+.inviteButton {
+    /* 초대 버튼 커스텀 스타일 (필요 시) */
+}

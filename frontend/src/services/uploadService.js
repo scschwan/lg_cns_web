@@ -398,9 +398,18 @@ const uploadService = {
      * PUT /api/projects/{projectId}/upload/files/{fileId}/columns
      */
     updateFileColumns: async (projectId, fileId, columns) => {
+        // 필드명 변환: accountColumn → accountColumnName
+        const requestBody = {};
+        if (columns.accountColumn) {
+            requestBody.accountColumnName = columns.accountColumn;
+        }
+        if (columns.amountColumn) {
+            requestBody.amountColumnName = columns.amountColumn;
+        }
+
         const response = await api.put(
             `/api/projects/${projectId}/upload/files/${fileId}/columns`,
-            columns
+            requestBody
         );
         return response.data;
     },

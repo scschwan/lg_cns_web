@@ -50,6 +50,13 @@ const projectService = {
         return response.data;
     },
 
+    // ⭐ 멤버 목록 조회 (신규 추가)
+    getProjectMembers: async (projectId) => {
+        const response = await api.get(`/api/projects/${projectId}`);
+        // Project 객체에서 members 필드만 추출
+        return response.data.members || [];
+    },
+
     // 멤버 권한 변경
     updateMemberRole: async (projectId, userId, role) => {
         const response = await api.put(
