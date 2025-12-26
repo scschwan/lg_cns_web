@@ -286,25 +286,33 @@ function MultiFileUploadPage() {
     };
 
     // 세션 생성 승인
-    const handlePartitionsApproved = async (approvedPartitions) => {
+    const handlePartitionsApproved = async (approvedItems) => {
+        // approvedItems: [{ partitionKey, count, fileIds, sessionName, workerName }, ...]
+
         setPartitionDialogOpen(false);
         setProgressDialogOpen(true);
         setProgressMessage('세션 생성 중...');
 
         try {
+            // 백엔드 API가 { partitionKey, fileIds, sessionName, workerName } 형태를 받도록 구성되어 있다고 가정
             const createdSessions = await uploadService.createSessions(
                 projectId,
-                approvedPartitions
+                approvedItems // 사용자가 입력한 세션명, 작업자명이 포함된 배열 전달
             );
 
-            setSessions(prev => [...prev, ...createdSessions]);
-            setSelectedFiles([]);
-
-            setProgressDialogOpen(false);
-            alert(`${createdSessions.length}개의 세션이 생성되었습니다.`);
+            // 생성된 세션이 0개인 경우 처리
+            if (!createdSessions || createdSessions.length === 0) {
+                alert('생성된 세션이 없습니다. 파일의 계정명 컬럼 내용을 확인해주세요.');
+            } else {
+                // 기존 세션 목록에 추가
+                setSessions(prev => [...prev, ...createdSessions]);
+                setSelectedFiles([]); // 선택 파일 초기화
+                alert(`${createdSessions.length}개의 세션이 생성되었습니다.`);
+            }
         } catch (error) {
             console.error('세션 생성 실패:', error);
             alert('세션 생성 중 오류가 발생했습니다.');
+        } finally {
             setProgressDialogOpen(false);
         }
     };
@@ -442,12 +450,37 @@ function MultiFileUploadPage() {
             });
 
             setSessions(prev => prev.map(s =>
-                s.id === sessionId
+                s.sessionId  === sessionId
                     ? { ...s, sessionName: newName }
                     : s
             ));
         } catch (error) {
             console.error('세션명 수정 실패:', error);
+        }
+    };
+
+    // ✅ [수정 1] 세션명 수정 핸들러 로직 개선
+    // newRow: 수정된 전체 행 데이터, oldRow: 수정 전 데이터
+    const handleProcessRowUpdate = async (newRow, oldRow) => {
+        try {
+            // 변경된 내용이 없으면 API 호출 생략
+            if (newRow.sessionName === oldRow.sessionName && newRow.workerName === oldRow.workerName) {
+                return oldRow;
+            }
+
+            // API 호출 (백엔드 DTO에 맞게 데이터 구성)
+            // 백엔드 UpdateFileSessionRequest: { sessionName, workerName }
+            await uploadService.updateSession(projectId, newRow.id || newRow.sessionId, {
+                sessionName: newRow.sessionName,
+                workerName: newRow.workerName
+            });
+
+            // 성공 시 수정된 행 반환 (화면 반영)
+            return newRow;
+        } catch (error) {
+            console.error('세션 수정 실패:', error);
+            alert('세션 정보를 수정하는 중 오류가 발생했습니다.');
+            return oldRow; // 실패 시 이전 값으로 복구
         }
     };
 
@@ -542,39 +575,51 @@ function MultiFileUploadPage() {
             headerName: '세션명',
             flex: 1,
             minWidth: 150,
-            editable: true
+            editable: true // 편집 가능
         },
         {
             field: 'workerName',
             headerName: '작업자명',
             width: 120,
-            editable: true
+            editable: true // 편집 가능
         },
         {
+            // ⭐ [수정] 백엔드는 accountNames(배열)을 주므로 첫 번째 요소를 가져오도록 처리
             field: 'accountName',
             headerName: '대계정',
-            width: 120
+            width: 120,
+            valueGetter: (params) => {
+                // 백엔드 필드명: accountNames (List<String>)
+                const names = params.row.accountNames || params.row.accountName;
+                if (Array.isArray(names) && names.length > 0) return names[0];
+                return names || '-';
+            }
         },
         {
             field: 'fileCount',
             headerName: '파일 수',
-            width: 80
+            width: 80,
+            valueGetter: (params) => {
+                // totalFiles 또는 uploadedFiles 배열 길이 확인
+                return params.row.totalFiles || params.row.uploadedFiles?.length || 0;
+            }
         },
         {
             field: 'totalRows',
             headerName: '행 수',
             width: 100,
-            valueFormatter: (params) => params.value?.toLocaleString() || '0'
+            valueFormatter: (params) => (params.value || 0).toLocaleString()
         },
         {
+            // ⭐ [수정] 합산금액 매핑
             field: 'totalAmount',
             headerName: '합산금액',
             width: 150,
             valueFormatter: (params) =>
-                params.value ? `${params.value.toLocaleString()} 원` : '-'
+                params.value ? `${params.value.toLocaleString()} 원` : '0 원'
         },
         {
-            field: 'status',
+            field: 'isCompleted',  // ⭐ status → isCompleted
             headerName: '완료',
             width: 80,
             type: 'boolean'
@@ -586,8 +631,8 @@ function MultiFileUploadPage() {
             renderCell: (params) => (
                 <Button
                     size="small"
-                    disabled={!params.row.status || !params.row.resultFilePath}
-                    onClick={() => handleDownload(params.row.id)}
+                    disabled={!params.row.isCompleted || !params.row.exportPath}  // ⭐ 필드명 수정
+                    onClick={() => handleDownload(params.row.sessionId)}
                 >
                     📥
                 </Button>
@@ -749,15 +794,21 @@ function MultiFileUploadPage() {
                             <DataGrid
                                 rows={sessions}
                                 columns={sessionColumns}
-                                getRowId={(row) => row.id || row.sessionId}  // ⭐ 추가!
+                                // ⭐ 핵심 수정: id가 확실히 있는지 확인하고, 없으면 index라도 사용 (undefined 방지)
+                                //getRowId={(row) => row.id || row.sessionId || row._id || Math.random()}
+                                getRowId={(row) => row.sessionId || row.id} // ⭐ ID 필드 명시
                                 checkboxSelection
                                 onRowSelectionModelChange={(ids) => setSelectedSessions(ids)}
                                 rowSelectionModel={selectedSessions}
                                 disableRowSelectionOnClick
-                                processRowUpdate={(newRow) => {
-                                    handleSessionNameEdit(newRow.id, newRow.sessionName);
+                                /*
+                                processRowUpdate={async (newRow) => {
+                                    handleSessionNameEdit(newRow.sessionId, newRow.sessionName);  // ⭐ id → sessionId
                                     return newRow;
                                 }}
+                                */
+                                processRowUpdate={handleProcessRowUpdate}
+                                onProcessRowUpdateError={(error) => console.error('Row update error:', error)}
                                 hideFooter={sessions.length <= 10}
                                 className={styles.dataGrid}
                             />

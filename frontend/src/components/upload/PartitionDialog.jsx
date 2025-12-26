@@ -23,9 +23,15 @@ function PartitionDialog({ open, partitions, onClose, onApprove }) {
     const [editedPartitions, setEditedPartitions] = useState([]);
     const [selectedPartitions, setSelectedPartitions] = useState([]);
 
+    // ⭐ 이 부분만 수정!
     React.useEffect(() => {
         if (open && partitions) {
-            setEditedPartitions(partitions.map(p => ({ ...p, selected: true })));
+            setEditedPartitions(partitions.map((p, index) => ({
+                ...p,
+                selected: true,
+                // ⭐ 세션명 기본값 추가 (이 한 줄만 추가됨)
+                sessionName: p.sessionName || `${p.accountName}_session_${index + 1}`
+            })));
             setSelectedPartitions(partitions.map((_, index) => index));
         }
     }, [open, partitions]);
