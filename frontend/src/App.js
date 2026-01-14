@@ -17,6 +17,7 @@ import FileLoadPage from './pages/fileload/FileLoadPage';
 import PreprocessingPage from './pages/preprocessing/PreprocessingPage';
 import DataTransformPage from './pages/transform/DataTransformPage';
 import ClusteringPage from './pages/clustering/ClusteringPage';
+import DetailClusteringPage from './pages/detailclustering/DetailClusteringPage';
 import ExportPage from './pages/export/ExportPage';
 
 function App() {
@@ -113,6 +114,16 @@ function App() {
                         element={
                             <PrivateRoute>
                                 <ExportPage />
+                            </PrivateRoute>
+                        }
+                    />
+
+                     {/* Step 7: DetailClustering */}
+                    <Route
+                        path="/projects/:projectId/sessions/:sessionId/detailclustering"
+                        element={
+                            <PrivateRoute>
+                                <DetailClusteringPage />
                             </PrivateRoute>
                         }
                     />

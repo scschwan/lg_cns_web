@@ -25,136 +25,145 @@ import {
     ActionButton,
 } from '../../components/common';
 
-import {
-    getFileLoadData,
-    getDeleteColumnList,
-    getStandardList,
-    getSessionInfo,
-} from '../../services/mockDataService';
-
 import { formatNumber } from '../../utils/formatters';
 import styles from './FileLoadPage.module.css';
+
+// Mock Data
+const generateMockRawData = () => {
+    const data = [];
+    for (let i = 1; i <= 30; i++) {
+        data.push({
+            id: i,
+            연도: '2019',
+            세그먼트: (7000 + Math.floor(Math.random() * 2000)).toString(),
+            전기일: (43000 + Math.floor(Math.random() * 1000)).toString(),
+            문서번호: (134000000 + Math.floor(Math.random() * 1000000)).toString(),
+            원가요소: '51213200',
+            계정명: '지급수수료',
+            원가요소이름: '지급수수료',
+        });
+    }
+    return data;
+};
+
+const generateMockProcessData = () => {
+    const data = [];
+    for (let i = 1; i <= 30; i++) {
+        data.push({
+            id: i,
+            연도: '2019',
+            세그먼트: (7000 + Math.floor(Math.random() * 2000)).toString(),
+            전기일: (43000 + Math.floor(Math.random() * 1000)).toString(),
+            문서번호: (134000000 + Math.floor(Math.random() * 1000000)).toString(),
+            원가요소: '51213200',
+            계정명: '지급수수료',
+            원가요소이름: '지급수수료',
+        });
+    }
+    return data;
+};
 
 function FileLoadPage() {
     const { projectId, sessionId } = useParams();
     const navigate = useNavigate();
 
     // 세션 정보
-    const [sessionInfo, setSessionInfo] = useState(null);
+    const [sessionInfo] = useState({
+        sessionName: '지급수수료_sampl1_2025-10-11'
+    });
 
     // 데이터
     const [rawData, setRawData] = useState([]);
     const [processData, setProcessData] = useState([]);
-    const [deleteColumns, setDeleteColumns] = useState([]);
-    const [deleteData, setDeleteData] = useState([]);
-    const [standardList, setStandardList] = useState([]);
 
     // 페이지네이션
     const [currentPage, setCurrentPage] = useState(1);
     const [pageSize, setPageSize] = useState(1000);
-    const [totalRows, setTotalRows] = useState(0);
+    const [totalRows] = useState(6270);
 
     // 탭 상태
     const [activeTab, setActiveTab] = useState(0);
 
-    // 검색
-    const [searchKeyword, setSearchKeyword] = useState('');
+    // 제거 열 설정
+    const [deleteColumns, setDeleteColumns] = useState([
+        { id: 1, columnName: '연도', selected: false },
+        { id: 2, columnName: '세그먼트', selected: false },
+        { id: 3, columnName: '전기일', selected: false },
+        { id: 4, columnName: '문서번호', selected: false },
+        { id: 5, columnName: '원가요소', selected: false },
+        { id: 6, columnName: '계정명', selected: false },
+    ]);
 
-    // 필수 컬럼 매핑
+    // 데이터 삭제 탭
+    const [searchKeyword, setSearchKeyword] = useState('');
+    const [selectAll, setSelectAll] = useState(false);
+
+    // 표준화 설정
+    const [keyColumn, setKeyColumn] = useState('');
+    const [valueColumn, setValueColumn] = useState('');
+    const [standardData, setStandardData] = useState([
+        { id: 1, keyValue: '인터넷몰', targetValue: '인터넷몰', count: 156 },
+        { id: 2, keyValue: '실비', targetValue: '실비', count: 89 },
+        { id: 3, keyValue: '안분', targetValue: '안분', count: 234 },
+    ]);
+
+    // 필수 항목 설정
     const [columnMapping, setColumnMapping] = useState({
-        세목: '',
-        코스트센터: '',
-        공급업체: '',
-        금액: '',
-        타겟: '',
+        세목열: '계정명',
+        코스트센터열: 'CO 오브젝트이름',
+        공급업체열: '상계계정이름',
+        금액열: 'Val.in RC',
+        타겟열: '이름',
     });
 
-    // 선택 상태
-    const [selectedDeleteColumns, setSelectedDeleteColumns] = useState([]);
+    // 컬럼 옵션
+    const columnOptions = ['연도', '세그먼트', '전기일', '문서번호', '원가요소', '계정명', '원가요소이름', 'Val.in RC', '코스트센터', '지점명', 'CO 오브젝트이름', '상계계정이름', '이름'];
 
     useEffect(() => {
-        loadData();
+        setRawData(generateMockRawData());
+        setProcessData(generateMockProcessData());
     }, []);
 
-    const loadData = () => {
-        const session = getSessionInfo();
-        setSessionInfo(session);
-
-        const { rawData, processData, totalRows, columns } = getFileLoadData();
-        setRawData(rawData);
-        setProcessData(processData);
-        setTotalRows(totalRows);
-
-        setDeleteColumns(getDeleteColumnList());
-        setStandardList(getStandardList());
+    // 데이터 원복
+    const handleDataRestore = () => {
+        alert('데이터가 원복되었습니다.');
     };
 
-    // 페이지 변경
-    const handlePageChange = (page) => {
-        setCurrentPage(page);
+    // 데이터 삭제
+    const handleDataDelete = () => {
+        alert('선택된 데이터가 삭제되었습니다.');
     };
 
-    const handlePageSizeChange = (size) => {
-        setPageSize(size);
-        setCurrentPage(1);
-    };
-
-    // 탭 변경
-    const handleTabChange = (event, newValue) => {
-        setActiveTab(newValue);
-    };
-
-    // 컬럼 매핑 변경
-    const handleColumnMappingChange = (field, value) => {
-        setColumnMapping(prev => ({ ...prev, [field]: value }));
+    // 표준화 수행
+    const handleStandardize = () => {
+        alert(`표준화 수행: Key(${keyColumn}) → Value(${valueColumn})`);
     };
 
     // 완료 버튼
     const handleComplete = () => {
-        alert('파일 로드 완료! 전처리 화면으로 이동합니다.');
         navigate(`/projects/${projectId}/sessions/${sessionId}/preprocessing`);
     };
 
-    // 원본 테이블 컬럼
+    // 원본 데이터 테이블 컬럼
     const rawDataColumns = [
-        { field: 'id', headerName: 'No', width: 70 },
-        { field: '날짜', headerName: '날짜', width: 120 },
-        { field: '세목', headerName: '세목', width: 120 },
-        { field: '코스트센터', headerName: '코스트센터', width: 150 },
-        { field: '공급업체', headerName: '공급업체', width: 150 },
-        { 
-            field: '금액', 
-            headerName: '금액', 
-            width: 150,
-            valueFormatter: (params) => formatNumber(params.value),
-        },
-        { field: '적요', headerName: '적요', flex: 1, minWidth: 200 },
-    ];
-
-    // 처리 테이블 컬럼
-    const processDataColumns = [
-        { field: 'id', headerName: 'No', width: 70 },
-        { field: '날짜', headerName: '날짜', width: 120 },
-        { field: '세목', headerName: '세목', width: 120 },
-        { field: '코스트센터_정제', headerName: '코스트센터', width: 150 },
-        { field: '공급업체_정제', headerName: '공급업체', width: 150 },
-        { 
-            field: '금액', 
-            headerName: '금액', 
-            width: 150,
-            valueFormatter: (params) => formatNumber(params.value),
-        },
-        { field: '키워드', headerName: '키워드', flex: 1, minWidth: 150 },
+        { field: '연도', headerName: '연도', width: 70 },
+        { field: '세그먼트', headerName: '세그먼트', width: 90 },
+        { field: '전기일', headerName: '전기일', width: 80 },
+        { field: '문서번호', headerName: '문서번호', width: 110 },
+        { field: '원가요소', headerName: '원가요소', width: 100 },
+        { field: '계정명', headerName: '계정명', width: 100 },
+        { field: '원가요소이름', headerName: '원가요소이름', width: 110 },
     ];
 
     // 삭제 컬럼 테이블 컬럼
     const deleteColumnColumns = [
         {
             field: 'selected',
-            headerName: '선택',
-            width: 80,
+            headerName: '',
+            width: 50,
             renderCell: (params) => (
                 <Checkbox
+                    size="small"
                     checked={params.value}
                     onChange={(e) => {
                         const updated = deleteColumns.map(col =>
@@ -172,8 +181,9 @@ function FileLoadPage() {
 
     // 표준화 테이블 컬럼
     const standardColumns = [
-        { field: 'original', headerName: '원본', flex: 1 },
-        { field: 'standard', headerName: '표준', flex: 1 },
+        { field: 'keyValue', headerName: 'Key 값', flex: 1 },
+        { field: 'targetValue', headerName: '대상값', flex: 1 },
+        { field: 'count', headerName: 'Count', width: 80 },
     ];
 
     const totalPages = Math.ceil(totalRows / pageSize);
@@ -187,28 +197,28 @@ function FileLoadPage() {
 
             {/* 메인 콘텐츠 */}
             <Grid container spacing={2} className={styles.mainContent}>
-                {/* 좌측 영역 (72%) */}
-                <Grid item xs={12} md={8.5}>
+                {/* 좌측 영역 - 원본/가공 데이터 테이블 */}
+                <Grid item xs={12} md={8}>
                     <Box className={styles.leftPanel}>
-                        {/* 원본 데이터 테이블 */}
-                        <Paper className={styles.tableSection}>
-                            <StyledDataGrid
-                                title="원본 테이블"
-                                rows={rawData}
-                                columns={rawDataColumns}
-                                height="350px"
-                            />
-                        </Paper>
-
-                        {/* 처리 데이터 테이블 */}
-                        <Paper className={styles.tableSection}>
-                            <StyledDataGrid
-                                title="처리 테이블"
-                                rows={processData}
-                                columns={processDataColumns}
-                                height="350px"
-                            />
-                        </Paper>
+                        {/* 두 테이블 나란히 */}
+                        <Grid container spacing={1}>
+                            <Grid item xs={6}>
+                                <StyledDataGrid
+                                    title="원본 데이터"
+                                    rows={rawData}
+                                    columns={rawDataColumns}
+                                    height="calc(100vh - 220px)"
+                                />
+                            </Grid>
+                            <Grid item xs={6}>
+                                <StyledDataGrid
+                                    title="가공 데이터"
+                                    rows={processData}
+                                    columns={rawDataColumns}
+                                    height="calc(100vh - 220px)"
+                                />
+                            </Grid>
+                        </Grid>
 
                         {/* 페이지네이션 */}
                         <Pagination
@@ -216,97 +226,186 @@ function FileLoadPage() {
                             totalPages={totalPages}
                             totalRows={totalRows}
                             pageSize={pageSize}
-                            onPageChange={handlePageChange}
-                            onPageSizeChange={handlePageSizeChange}
+                            onPageChange={setCurrentPage}
+                            onPageSizeChange={(size) => {
+                                setPageSize(size);
+                                setCurrentPage(1);
+                            }}
                         />
                     </Box>
                 </Grid>
 
-                {/* 우측 영역 (28%) */}
-                <Grid item xs={12} md={3.5}>
+                {/* 우측 영역 */}
+                <Grid item xs={12} md={4}>
                     <Box className={styles.rightPanel}>
-                        {/* 탭 컨트롤 */}
+                        {/* 탭 - 제거 열 설정 / 데이터 삭제 */}
                         <Paper className={styles.tabSection}>
                             <Tabs
                                 value={activeTab}
-                                onChange={handleTabChange}
+                                onChange={(e, v) => setActiveTab(v)}
                                 variant="fullWidth"
+                                sx={{ borderBottom: '1px solid #ddd' }}
                             >
-                                <Tab label="제거 열 설정" />
-                                <Tab label="데이터 삭제" />
+                                <Tab label="제거 열 설정" sx={{ fontSize: '13px' }} />
+                                <Tab label="데이터 삭제" sx={{ fontSize: '13px' }} />
                             </Tabs>
 
                             <Box className={styles.tabContent}>
                                 {activeTab === 0 && (
                                     <Box>
+                                        {/* 기준 열 선택 */}
+                                        <Box sx={{ mb: 1 }}>
+                                            <Typography sx={{ fontSize: '12px', mb: 0.5 }}>
+                                                기준 열 선택:
+                                            </Typography>
+                                            <Select
+                                                size="small"
+                                                fullWidth
+                                                value=""
+                                                displayEmpty
+                                            >
+                                                <MenuItem value="">데이터 삭제 기준 열 선택</MenuItem>
+                                                {columnOptions.map(col => (
+                                                    <MenuItem key={col} value={col}>{col}</MenuItem>
+                                                ))}
+                                            </Select>
+                                        </Box>
                                         <StyledDataGrid
                                             rows={deleteColumns}
                                             columns={deleteColumnColumns}
-                                            height="200px"
-                                            checkboxSelection={false}
+                                            height="150px"
                                         />
                                     </Box>
                                 )}
+
                                 {activeTab === 1 && (
                                     <Box>
-                                        <TextField
-                                            fullWidth
-                                            size="small"
-                                            placeholder="검색어 입력..."
-                                            value={searchKeyword}
-                                            onChange={(e) => setSearchKeyword(e.target.value)}
-                                            className={styles.searchInput}
+                                        {/* 검색 키워드 입력 */}
+                                        <Box sx={{ display: 'flex', gap: 1, mb: 1 }}>
+                                            <TextField
+                                                size="small"
+                                                placeholder="검색 키워드 입력"
+                                                value={searchKeyword}
+                                                onChange={(e) => setSearchKeyword(e.target.value)}
+                                                sx={{ flex: 1 }}
+                                            />
+                                            <ActionButton variant="search" size="small">
+                                                검색
+                                            </ActionButton>
+                                        </Box>
+
+                                        {/* 전체 선택 */}
+                                        <FormControlLabel
+                                            control={
+                                                <Checkbox
+                                                    size="small"
+                                                    checked={selectAll}
+                                                    onChange={(e) => setSelectAll(e.target.checked)}
+                                                />
+                                            }
+                                            label={<Typography sx={{ fontSize: '12px' }}>전체 선택</Typography>}
                                         />
-                                        <StyledDataGrid
-                                            rows={deleteData}
-                                            columns={[
-                                                { field: 'id', headerName: 'No', width: 70 },
-                                                { field: 'data', headerName: '데이터', flex: 1 },
-                                            ]}
-                                            height="160px"
-                                            checkboxSelection
-                                        />
+
+                                        {/* 버튼 */}
+                                        <Box sx={{ display: 'flex', gap: 1, mt: 1 }}>
+                                            <ActionButton
+                                                variant="apply"
+                                                size="small"
+                                                onClick={handleDataRestore}
+                                                sx={{ flex: 1, backgroundColor: '#4CAF50' }}
+                                            >
+                                                데이터 원복
+                                            </ActionButton>
+                                            <ActionButton
+                                                variant="delete"
+                                                size="small"
+                                                onClick={handleDataDelete}
+                                                sx={{ flex: 1 }}
+                                            >
+                                                데이터 삭제
+                                            </ActionButton>
+                                        </Box>
                                     </Box>
                                 )}
                             </Box>
                         </Paper>
 
-                        {/* 표준화 설정 */}
-                        <StyledGroupBox
-                            title="코스트센터/공급업체 명 표준화"
-                            warningText="원본 데이터의 표기를 표준화합니다."
-                        >
+                        {/* 코스트센터/공급업체 명 표준화 */}
+                        <StyledGroupBox title="코스트센터/공급업체 명 표준화">
+                            <Box sx={{ mb: 1 }}>
+                                <Typography sx={{ fontSize: '12px', mb: 0.5 }}>key 열 선택:</Typography>
+                                <Select
+                                    size="small"
+                                    fullWidth
+                                    value={keyColumn}
+                                    onChange={(e) => setKeyColumn(e.target.value)}
+                                    displayEmpty
+                                >
+                                    <MenuItem value="">-- Key 컬럼 선택 --</MenuItem>
+                                    {columnOptions.map(col => (
+                                        <MenuItem key={col} value={col}>{col}</MenuItem>
+                                    ))}
+                                </Select>
+                            </Box>
+
+                            <Box sx={{ mb: 1 }}>
+                                <Typography sx={{ fontSize: '12px', mb: 0.5 }}>변경 열 선택:</Typography>
+                                <Select
+                                    size="small"
+                                    fullWidth
+                                    value={valueColumn}
+                                    onChange={(e) => setValueColumn(e.target.value)}
+                                    displayEmpty
+                                >
+                                    <MenuItem value="">-- 대상 컬럼 선택 --</MenuItem>
+                                    {columnOptions.map(col => (
+                                        <MenuItem key={col} value={col}>{col}</MenuItem>
+                                    ))}
+                                </Select>
+                            </Box>
+
                             <StyledDataGrid
-                                rows={standardList}
+                                rows={standardData}
                                 columns={standardColumns}
-                                height="150px"
+                                height="120px"
                             />
+
+                            <ActionButton
+                                variant="apply"
+                                size="small"
+                                onClick={handleStandardize}
+                                sx={{ width: '100%', mt: 1, backgroundColor: '#2196F3' }}
+                            >
+                                표준화 수행
+                            </ActionButton>
                         </StyledGroupBox>
 
                         {/* 필수 항목 설정 */}
-                        <StyledGroupBox
-                            title="필수 항목 설정"
-                            warningText="각 컬럼을 매핑해주세요."
-                        >
+                        <StyledGroupBox title="필수 항목 설정">
                             <Box className={styles.mappingForm}>
-                                {['세목', '코스트센터', '공급업체', '금액', '타겟'].map((field) => (
-                                    <Box key={field} className={styles.mappingRow}>
+                                {[
+                                    { key: '세목열', label: '세목 열 :' },
+                                    { key: '코스트센터열', label: '코스트센터 열 :' },
+                                    { key: '공급업체열', label: '공급업체 열 :' },
+                                    { key: '금액열', label: '금액 열 :' },
+                                    { key: '타겟열', label: '타겟 열 :' },
+                                ].map(({ key, label }) => (
+                                    <Box key={key} className={styles.mappingRow}>
                                         <Typography className={styles.mappingLabel}>
-                                            {field}
+                                            {label}
                                         </Typography>
                                         <Select
                                             size="small"
-                                            value={columnMapping[field]}
-                                            onChange={(e) => handleColumnMappingChange(field, e.target.value)}
+                                            value={columnMapping[key]}
+                                            onChange={(e) => setColumnMapping(prev => ({
+                                                ...prev,
+                                                [key]: e.target.value
+                                            }))}
                                             className={styles.mappingSelect}
-                                            displayEmpty
                                         >
-                                            <MenuItem value="">선택...</MenuItem>
-                                            <MenuItem value="날짜">날짜</MenuItem>
-                                            <MenuItem value="세목">세목</MenuItem>
-                                            <MenuItem value="코스트센터">코스트센터</MenuItem>
-                                            <MenuItem value="공급업체">공급업체</MenuItem>
-                                            <MenuItem value="금액">금액</MenuItem>
+                                            {columnOptions.map(col => (
+                                                <MenuItem key={col} value={col}>{col}</MenuItem>
+                                            ))}
                                         </Select>
                                     </Box>
                                 ))}
@@ -321,7 +420,7 @@ function FileLoadPage() {
                                 onClick={handleComplete}
                                 sx={{ width: '100%' }}
                             >
-                                완료
+                                완  료
                             </ActionButton>
                         </Box>
                     </Box>

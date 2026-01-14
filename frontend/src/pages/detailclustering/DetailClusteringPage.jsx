@@ -1,4 +1,4 @@
-// frontend/src/pages/clustering/ClusteringPage.jsx
+// frontend/src/pages/clustering/DetailClusteringPage.jsx
 
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
@@ -25,7 +25,7 @@ import {
 } from '../../components/common';
 
 import { formatNumber, formatCurrency } from '../../utils/formatters';
-import styles from './ClusteringPage.module.css';
+import styles from './DetailClusteringPage.module.css';
 
 // Mock Data - 키워드별 요약
 const generateKeywordSummary = () => [
@@ -85,7 +85,7 @@ const generateMergeResults = () => [
     { id: 2, clusterName: '이커머스', keywordList: '실비,안분,이커...', count: 1408, amount: 16984864, selected: false },
 ];
 
-function ClusteringPage() {
+function DetailClusteringPage() {
     const { projectId, sessionId } = useParams();
     const navigate = useNavigate();
 
@@ -162,10 +162,10 @@ function ClusteringPage() {
     const handleMerge = () => {
         const selected = clusterList.filter(c => c.selected);
         if (selected.length < 2) {
-            alert('2개 이상의 클러스터를 선택해주세요.');
+            alert('2개 이상의 세부 클러스터를 선택해주세요.');
             return;
         }
-        alert(`${selected.length}개 클러스터 병합`);
+        alert(`${selected.length}개 세부 클러스터 병합`);
     };
 
     // 추가 병합
@@ -300,7 +300,7 @@ function ClusteringPage() {
                 />
             ),
         },
-        { field: 'clusterName', headerName: '클러스터명', flex: 1, minWidth: 280 },
+        { field: 'clusterName', headerName: '세부 클러스터명', flex: 1, minWidth: 280 },
         { field: 'keywordList', headerName: '키워드목록', width: 120 },
         { field: 'count', headerName: 'Count', width: 60, valueFormatter: (params) => formatNumber(params.value) },
         { field: 'amount', headerName: '합산금액', width: 120, valueFormatter: (params) => formatCurrency(params.value, '원') },
@@ -328,7 +328,7 @@ function ClusteringPage() {
                 />
             ),
         },
-        { field: 'clusterName', headerName: '클러스터명', width: 100 },
+        { field: 'clusterName', headerName: '세부 클러스터명', width: 100 },
         { field: 'keywordList', headerName: '키워드목록', flex: 1 },
         { field: 'count', headerName: 'Count', width: 60, valueFormatter: (params) => formatNumber(params.value) },
         { field: 'amount', headerName: '합산금액', width: 120, valueFormatter: (params) => formatCurrency(params.value, '원') },
@@ -350,7 +350,7 @@ function ClusteringPage() {
                     <Box className={styles.leftPanel}>
                         {/* Clustering 병합 타이틀 */}
                         <Box className={styles.titleSection}>
-                            <Typography className={styles.titleText}>Clustering 병합</Typography>
+                            <Typography className={styles.titleText}>세부 Clustering 병합</Typography>
                         </Box>
 
                         {/* 요약 정보 */}
@@ -380,7 +380,7 @@ function ClusteringPage() {
                                         onChange={(e) => setSearchColumn(e.target.value)}
                                     >
                                         <MenuItem value="키워드">키워드</MenuItem>
-                                        <MenuItem value="클러스터명">클러스터명</MenuItem>
+                                        <MenuItem value="클러스터명">세부 클러스터명</MenuItem>
                                         <MenuItem value="공급업체">공급업체</MenuItem>
                                     </Select>
                                 </Grid>
@@ -461,7 +461,7 @@ function ClusteringPage() {
                         {/* 미병합 클러스터 조회 목록 */}
                         <Box className={styles.clusterTableSection}>
                             <StyledDataGrid
-                                title="미병합 클러스터 조회 목록"
+                                title="미병합 세부 클러스터 조회 목록"
                                 rows={clusterList}
                                 columns={clusterColumns}
                                 height="calc(100vh - 450px)"
@@ -590,7 +590,7 @@ function ClusteringPage() {
                         </Grid>
 
                         {/* Clustering 병합 결과 확인 */}
-                        <StyledGroupBox title="Clustering 병합 결과 확인">
+                        <StyledGroupBox title="세부 Clustering 병합 결과 확인">
                             <Box sx={{ display: 'flex', gap: 0.5, mb: 0.5  }}>
                                 <ActionButton
                                     variant="apply"
@@ -660,4 +660,4 @@ function ClusteringPage() {
     );
 }
 
-export default ClusteringPage;
+export default DetailClusteringPage;

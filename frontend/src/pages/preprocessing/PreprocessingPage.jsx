@@ -8,6 +8,8 @@ import {
     Grid,
     TextField,
     Typography,
+    Checkbox,
+    FormControlLabel,
 } from '@mui/material';
 
 import {
@@ -17,147 +19,231 @@ import {
     ActionButton,
 } from '../../components/common';
 
-import {
-    getPreprocessingData,
-    getSeparatorList,
-    getStopwordList,
-    getSessionInfo,
-} from '../../services/mockDataService';
-
 import styles from './PreprocessingPage.module.css';
+
+// Mock Data - 키워드 추출 대상 (이름 컬럼)
+const generateExtractTargetData = () => {
+    const names = [
+        '이커머스 실비 안분_지급수수료',
+        '이커머스 실비 안분_지급수수료',
+        '이커머스 실비 안분_지급수수료',
+        '이커머스 실비 안분_지급수수료',
+        '이커머스 실비 안분_지급수수료',
+        '이커머스 실비 안분_지급수수료',
+        '이커머스 실비 안분_지급수수료',
+        '이커머스 실비 안분_지급수수료',
+        '이커머스 실비 안분_지급수수료',
+        '이커머스 실비 안분_지급수수료',
+        '이커머스 실비 안분_지급수수료',
+        '이커머스 실비 안분_지급수수료',
+        '이커머스 실비 안분_지급수수료',
+        '이커머스 실비 안분_지급수수료',
+        '이커머스 실비 안분_지급수수료',
+        '이커머스 실비 안분_지급수수료',
+        '이커머스 실비 안분_지급수수료',
+        '이커머스 실비 안분_지급수수료',
+        '이커머스 실비 안분_지급수수료',
+        '이커머스 실비 안분_지급수수료',
+        '이커머스 실비 안분_지급수수료',
+        '이커머스 실비 안분_지급수수료',
+        '이커머스 실비 안분_지급수수료',
+        '이커머스 실비 안분_지급수수료',
+        '이커머스 실비 안분_지급수수료',
+        '이커머스 실비 안분_지급수수료',
+        '이커머스 실비 안분_지급수수료',
+        '이커머스 실비 안분_지급수수료',
+        '이커머스 실비 안분_지급수수료',
+        '이커머스 실비 안분_지급수수료',
+        '이커머스 실비 안분_지급수수료',
+        '이커머스 실비 안분_지급수수료',
+        '이커머스 실비 안분_지급수수료',
+        '이커머스 실비 안분_지급수수료',
+        '이커머스 실비 안분_지급수수료',
+        '이커머스 실비 안분_지급수수료',
+        '이커머스 실비 안분_지급수수료',
+        '이커머스 실비 안분_지급수수료',
+        '이커머스 실비 안분_지급수수료',
+        '이커머스 실비 안분_지급수수료',
+        '이커머스 실비 안분_지급수수료',
+        '이커머스 실비 안분_지급수수료',
+        '이커머스 실비 안분_지급수수료',
+        '이커머스 실비 안분_지급수수료',
+        '이커머스 실비 안분_지급수수료',
+        '이커머스 실비 안분_지급수수료',
+        '이커머스 실비 안분_지급수수료',
+        '이커머스 실비 안분_지급수수료',
+        '이커머스 실비 안분_지급수수료',
+        '이커머스 실비 안분_지급수수료',
+
+    ];
+    return names.map((name, idx) => ({
+        id: idx + 1,
+        이름: name,
+    }));
+};
+
+// Mock Data - 키워드 추출 결과
+const generateExtractResultData = () => {
+    const results = [
+        { co: '인터넷몰 더데...', account: '지급수수료(통...', c0: '이커머스', c1: '실비', c2: '안분', c3: '지급수수료' },
+        { co: '인터넷몰 로엠...', account: '지급수수료(통...', c0: '이커머스', c1: '실비', c2: '안분', c3: '지급수수료' },
+        { co: '인터넷몰 포인포...', account: '지급수수료(통...', c0: '이커머스', c1: '실비', c2: '안분', c3: '지급수수료' },
+        { co: '인터넷몰 오휴', account: '지급수수료(통...', c0: '이커머스', c1: '실비', c2: '안분', c3: '지급수수료' },
+        { co: '인터넷몰 핸트...', account: '지급수수료(통...', c0: '이커머스', c1: '실비', c2: '안분', c3: '지급수수료' },
+        { co: '인터넷몰 쓰리엔', account: '지급수수료(통...', c0: '이커머스', c1: '실비', c2: '안분', c3: '지급수수료' },
+        { co: '인터넷몰 지크', account: '지급수수료(통...', c0: '이커머스', c1: '실비', c2: '안분', c3: '지급수수료' },
+        { co: '인터넷몰 엘본', account: '지급수수료(통...', c0: '이커머스', c1: '실비', c2: '안분', c3: '지급수수료' },
+        { co: '인터넷몰 이즈...', account: '지급수수료(통...', c0: '이커머스', c1: '실비', c2: '안분', c3: '지급수수료' },
+        { co: '인터넷몰 트루', account: '지급수수료(통...', c0: '이커머스', c1: '실비', c2: '안분', c3: '지급수수료' },
+        { co: '인터넷몰 CMC...', account: '지급수수료(통...', c0: '이커머스', c1: '실비', c2: '안분', c3: '지급수수료' },
+        { co: '인터넷몰 모스...', account: '지급수수료(통...', c0: '이커머스', c1: '실비', c2: '안분', c3: '지급수수료' },
+        { co: '인터넷몰 쓰시에', account: '지급수수료(통...', c0: '이커머스', c1: '실비', c2: '안분', c3: '지급수수료' },
+        { co: '인터넷몰 오스본', account: '지급수수료(통...', c0: '이커머스', c1: '실비', c2: '안분', c3: '지급수수료' },
+        { co: '인터넷몰 보보...', account: '지급수수료(통...', c0: '이커머스', c1: '실비', c2: '안분', c3: '지급수수료' },
+        { co: '인터넷몰 일로...', account: '지급수수료(통...', c0: '이커머스', c1: '실비', c2: '안분', c3: '지급수수료' },
+        { co: '인터넷몰 리틀', account: '지급수수료(통...', c0: '이커머스', c1: '실비', c2: '안분', c3: '지급수수료' },
+        { co: '인터넷몰 밀리밤', account: '지급수수료(통...', c0: '이커머스', c1: '실비', c2: '안분', c3: '지급수수료' },
+        { co: '인터넷몰 펠릭...', account: '지급수수료(통...', c0: '이커머스', c1: '실비', c2: '안분', c3: '지급수수료' },
+        { co: '인터넷몰 스탭...', account: '지급수수료(통...', c0: '이커머스', c1: '실비', c2: '안분', c3: '지급수수료' },
+        { co: '인터넷몰 신디...', account: '지급수수료(통...', c0: '이커머스', c1: '실비', c2: '안분', c3: '지급수수료' },
+        { co: '인터넷몰 인디...', account: '지급수수료(통...', c0: '이커머스', c1: '실비', c2: '안분', c3: '지급수수료' },
+        { co: '인터넷몰 엠아...', account: '지급수수료(통...', c0: '이커머스', c1: '실비', c2: '안분', c3: '지급수수료' },
+        { co: '인터넷몰 란찌', account: '지급수수료(통...', c0: '이커머스', c1: '실비', c2: '안분', c3: '지급수수료' },
+        { co: '인터넷몰 SAP', account: '지급수수료(통...', c0: '이커머스', c1: '실비', c2: '안분', c3: '지급수수료' },
+        { co: '인터넷몰 트렌...', account: '지급수수료(통...', c0: '이커머스', c1: '실비', c2: '안분', c3: '지급수수료' },
+        { co: '인터넷몰 알토', account: '지급수수료(통...', c0: '이커머스', c1: '실비', c2: '안분', c3: '지급수수료' },
+        { co: '인터넷몰 데이텀', account: '지급수수료(통...', c0: '이커머스', c1: '실비', c2: '안분', c3: '지급수수료' },
+        { co: '인터넷몰 신드', account: '지급수수료(통...', c0: '이커머스', c1: '실비', c2: '안분', c3: '지급수수료' },
+        { co: '인터넷몰 비욘드', account: '지급수수료(통...', c0: '이커머스', c1: '실비', c2: '안분', c3: '지급수수료' },
+        { co: '인터넷몰 핸트...', account: '지급수수료(통...', c0: '이커머스', c1: '실비', c2: '안분', c3: '지급수수료' },
+        { co: '인터넷몰 쓰리엔', account: '지급수수료(통...', c0: '이커머스', c1: '실비', c2: '안분', c3: '지급수수료' },
+        { co: '인터넷몰 지크', account: '지급수수료(통...', c0: '이커머스', c1: '실비', c2: '안분', c3: '지급수수료' },
+        { co: '인터넷몰 엘본', account: '지급수수료(통...', c0: '이커머스', c1: '실비', c2: '안분', c3: '지급수수료' },
+        { co: '인터넷몰 이즈...', account: '지급수수료(통...', c0: '이커머스', c1: '실비', c2: '안분', c3: '지급수수료' },
+        { co: '인터넷몰 트루', account: '지급수수료(통...', c0: '이커머스', c1: '실비', c2: '안분', c3: '지급수수료' },
+        { co: '인터넷몰 CMC...', account: '지급수수료(통...', c0: '이커머스', c1: '실비', c2: '안분', c3: '지급수수료' },
+        { co: '인터넷몰 모스...', account: '지급수수료(통...', c0: '이커머스', c1: '실비', c2: '안분', c3: '지급수수료' },
+        { co: '인터넷몰 쓰시에', account: '지급수수료(통...', c0: '이커머스', c1: '실비', c2: '안분', c3: '지급수수료' },
+    ];
+    return results.map((r, idx) => ({
+        id: idx + 1,
+        'CO 오브젝트이름': r.co,
+        '상계계정이름': r.account,
+        Column0: r.c0,
+        Column1: r.c1,
+        Column2: r.c2,
+        Column3: r.c3,
+    }));
+};
 
 function PreprocessingPage() {
     const { projectId, sessionId } = useParams();
     const navigate = useNavigate();
 
     // 세션 정보
-    const [sessionInfo, setSessionInfo] = useState(null);
+    const [sessionInfo] = useState({
+        sessionName: '지급수수료_sampl1_2025-10-11'
+    });
 
     // 데이터
     const [targetData, setTargetData] = useState([]);
-    const [appliedData, setAppliedData] = useState([]);
+    const [resultData, setResultData] = useState([]);
 
     // 구분자 변환
-    const [separatorList, setSeparatorList] = useState([]);
     const [newSeparator, setNewSeparator] = useState('');
+    const [separatorList, setSeparatorList] = useState([
+        { id: 1, value: ' ', checked: false },
+        { id: 2, value: ',', checked: false },
+        { id: 3, value: ',', checked: false },
+        { id: 4, value: '/', checked: false },
+        { id: 5, value: '&', checked: false },
+        { id: 6, value: '*', checked: false },
+    ]);
+    const [selectAllSeparator, setSelectAllSeparator] = useState(false);
 
     // 불용어 제거
-    const [stopwordList, setStopwordList] = useState([]);
     const [newStopword, setNewStopword] = useState('');
+    const [stopwordList, setStopwordList] = useState([
+        { id: 1, value: '12월', checked: false },
+        { id: 2, value: '11월', checked: false },
+        { id: 3, value: '10월', checked: false },
+        { id: 4, value: '9월', checked: false },
+    ]);
+    const [selectAllStopword, setSelectAllStopword] = useState(false);
 
-    // 키워드 추출
-    const [extractKeyword, setExtractKeyword] = useState('');
-    const [extractedList, setExtractedList] = useState([]);
-
-    // 선택 상태
-    const [selectedSeparators, setSelectedSeparators] = useState([]);
-    const [selectedStopwords, setSelectedStopwords] = useState([]);
+    // NLP 설정
+    const [minKeywordLength, setMinKeywordLength] = useState(4);
 
     useEffect(() => {
-        loadData();
+        setTargetData(generateExtractTargetData());
+        setResultData(generateExtractResultData());
     }, []);
-
-    const loadData = () => {
-        const session = getSessionInfo();
-        setSessionInfo(session);
-
-        const { targetData, appliedData } = getPreprocessingData();
-        setTargetData(targetData);
-        setAppliedData(appliedData);
-
-        setSeparatorList(getSeparatorList());
-        setStopwordList(getStopwordList());
-    };
 
     // 구분자 추가
     const handleAddSeparator = () => {
         if (newSeparator.trim()) {
-            const newItem = {
-                id: separatorList.length + 1,
-                separator: newSeparator.trim(),
-                description: '사용자 추가',
-            };
-            setSeparatorList([...separatorList, newItem]);
+            setSeparatorList([
+                ...separatorList,
+                { id: Date.now(), value: newSeparator.trim(), checked: false }
+            ]);
             setNewSeparator('');
         }
     };
 
-    // 구분자 삭제
-    const handleDeleteSeparator = () => {
-        const filtered = separatorList.filter(
-            (item) => !selectedSeparators.includes(item.id)
-        );
-        setSeparatorList(filtered);
-        setSelectedSeparators([]);
+    // 구분자 항목 제거
+    const handleRemoveSeparator = () => {
+        setSeparatorList(separatorList.filter(item => !item.checked));
     };
 
     // 불용어 추가
     const handleAddStopword = () => {
         if (newStopword.trim()) {
-            const newItem = {
-                id: stopwordList.length + 1,
-                stopword: newStopword.trim(),
-            };
-            setStopwordList([...stopwordList, newItem]);
+            setStopwordList([
+                ...stopwordList,
+                { id: Date.now(), value: newStopword.trim(), checked: false }
+            ]);
             setNewStopword('');
         }
     };
 
-    // 불용어 삭제
-    const handleDeleteStopword = () => {
-        const filtered = stopwordList.filter(
-            (item) => !selectedStopwords.includes(item.id)
-        );
-        setStopwordList(filtered);
-        setSelectedStopwords([]);
+    // 불용어 항목 제거
+    const handleRemoveStopword = () => {
+        setStopwordList(stopwordList.filter(item => !item.checked));
     };
 
     // 키워드 추출
-    const handleExtractKeyword = () => {
-        if (extractKeyword.trim()) {
-            const newItem = {
-                id: extractedList.length + 1,
-                keyword: extractKeyword.trim(),
-            };
-            setExtractedList([...extractedList, newItem]);
-            setExtractKeyword('');
-        }
+    const handleKeywordExtract = () => {
+        alert('키워드 추출 실행');
     };
 
-    // 완료 버튼
+    // 1글자 키워드 제거
+    const handleRemoveSingleChar = () => {
+        alert('1글자 키워드 제거 실행');
+    };
+
+    // NLP 키워드 추출
+    const handleNlpExtract = () => {
+        alert(`NLP 기반 키워드 추출 (${minKeywordLength}글자 이상)`);
+    };
+
+    // 완료
     const handleComplete = () => {
-        alert('전처리 완료! 데이터 변환 화면으로 이동합니다.');
         navigate(`/projects/${projectId}/sessions/${sessionId}/transform`);
     };
 
-    // 원본 테이블 컬럼
+    // 추출 대상 컬럼
     const targetColumns = [
-        { field: 'id', headerName: 'No', width: 70 },
-        { field: '원본텍스트', headerName: '원본 텍스트', flex: 1, minWidth: 300 },
-        { field: '키워드', headerName: '키워드', width: 150 },
+        { field: '이름', headerName: '이름', flex: 1, minWidth: 250 },
     ];
 
-    // 적용 테이블 컬럼
-    const appliedColumns = [
-        { field: 'id', headerName: 'No', width: 70 },
-        { field: '변환텍스트', headerName: '변환 텍스트', flex: 1, minWidth: 300 },
-        { field: '추출키워드', headerName: '추출 키워드', width: 150 },
-    ];
-
-    // 구분자 테이블 컬럼
-    const separatorColumns = [
-        { field: 'separator', headerName: '구분자', width: 80 },
-        { field: 'description', headerName: '설명', flex: 1 },
-    ];
-
-    // 불용어 테이블 컬럼
-    const stopwordColumns = [
-        { field: 'stopword', headerName: '불용어', flex: 1 },
-    ];
-
-    // 추출 키워드 테이블 컬럼
-    const extractedColumns = [
-        { field: 'keyword', headerName: '추출 키워드', flex: 1 },
+    // 추출 결과 컬럼
+    const resultColumns = [
+        { field: 'CO 오브젝트이름', headerName: 'CO 오브젝트이름', width: 120 },
+        { field: '상계계정이름', headerName: '상계계정이름', width: 120 },
+        { field: 'Column0', headerName: 'Column0', width: 90 },
+        { field: 'Column1', headerName: 'Column1', width: 80 },
+        { field: 'Column2', headerName: 'Column2', width: 80 },
+        { field: 'Column3', headerName: 'Column3', width: 90 },
     ];
 
     return (
@@ -169,137 +255,233 @@ function PreprocessingPage() {
 
             {/* 메인 콘텐츠 */}
             <Grid container spacing={2} className={styles.mainContent}>
-                {/* 좌측 영역 (72%) */}
-                <Grid item xs={12} md={8.5}>
+                {/* 좌측 영역 - 테이블 */}
+                <Grid item xs={12} md={8}>
                     <Box className={styles.leftPanel}>
-                        {/* 두 테이블 나란히 */}
-                        <Grid container spacing={2} className={styles.tableContainer}>
-                            <Grid item xs={6}>
+                        <Grid container spacing={1} sx={{ height: '100%' }}>
+                            {/* 키워드 추출 대상 */}
+                            <Grid item xs={5}>
                                 <StyledDataGrid
-                                    title="전처리 대상 테이블"
+                                    title="키워드 추출 대상"
                                     rows={targetData}
                                     columns={targetColumns}
-                                    height="calc(100vh - 250px)"
+                                    height="calc(100vh - 180px)"
                                 />
                             </Grid>
-                            <Grid item xs={6}>
+
+                            {/* 키워드 추출 결과 */}
+                            <Grid item xs={7}>
                                 <StyledDataGrid
-                                    title="전처리 적용 테이블"
-                                    rows={appliedData}
-                                    columns={appliedColumns}
-                                    height="calc(100vh - 250px)"
+                                    title="키워드 추출 결과"
+                                    rows={resultData}
+                                    columns={resultColumns}
+                                    height="calc(100vh - 180px)"
                                 />
                             </Grid>
                         </Grid>
                     </Box>
                 </Grid>
 
-                {/* 우측 영역 (28%) */}
-                <Grid item xs={12} md={3.5}>
-                    <Box className={styles.rightPanel}>
+                {/* 우측 영역 - 설정 패널 */}
+                <Grid item xs={12} md={4}>
+                    <Box className={styles.rightPanel} sx={{
+                                                              // 1. 박스 높이를 '내용물 크기'에 딱 맞춥니다 (늘어나지 않게 함)
+                                                              height: 'fit-content',
+
+                                                              // 2. 내부 콘텐츠 영역의 상하 여백을 강제로 줄입니다.
+                                                              // (StyledGroupBox 내부 구조에 따라 div나 .MuiBox-root 등을 타겟팅)
+                                                              '& > div:last-child': {
+                                                                  padding: '8px 16px !important', // 상하 8px, 좌우 16px (기존 대비 절반 이하로 축소)
+                                                              },
+                                                              // 혹시 위 선택자가 안 먹힐 경우를 대비한 일반적인 padding 제어
+                                                              paddingBottom: '0px !important'
+                                                          }}>
                         {/* 구분자 변환 */}
-                        <StyledGroupBox
-                            title="구분자 변환"
-                            warningText="구분자를 기준으로 텍스트를 분리합니다."
-                            sx={{ flex: '0 0 30%' }}
-                        >
-                            <Box className={styles.groupContent}>
-                                <StyledDataGrid
-                                    rows={separatorList}
-                                    columns={separatorColumns}
-                                    height="100px"
-                                    checkboxSelection
-                                    onSelectionChange={(ids) => setSelectedSeparators(ids)}
-                                    selectionModel={selectedSeparators}
+                        <StyledGroupBox title="구분자 변환">
+                            <Box sx={{ display: 'flex', gap: 1, mb: 1 }}>
+                                <TextField
+                                    size="small"
+                                    placeholder="신규 변환 대상 입력"
+                                    value={newSeparator}
+                                    onChange={(e) => setNewSeparator(e.target.value)}
+                                    sx={{ flex: 1 }}
                                 />
-                                <Box className={styles.inputRow}>
-                                    <TextField
-                                        size="small"
-                                        placeholder="구분자 입력"
-                                        value={newSeparator}
-                                        onChange={(e) => setNewSeparator(e.target.value)}
-                                        className={styles.inputField}
-                                    />
-                                    <ActionButton variant="add" size="small" onClick={handleAddSeparator}>
-                                        추가
-                                    </ActionButton>
-                                    <ActionButton variant="delete" size="small" onClick={handleDeleteSeparator}>
-                                        삭제
-                                    </ActionButton>
-                                </Box>
+                                <ActionButton
+                                    variant="add"
+                                    size="small"
+                                    onClick={handleAddSeparator}
+                                    sx={{ backgroundColor: '#e91e63', minWidth: '70px' }}
+                                >
+                                    대상 추가
+                                </ActionButton>
+
                             </Box>
+
+                            <Box className={styles.checkboxList}>
+                                <FormControlLabel
+                                    control={
+                                        <Checkbox
+                                            size="small"
+                                            checked={selectAllSeparator}
+                                            onChange={(e) => {
+                                                setSelectAllSeparator(e.target.checked);
+                                                setSeparatorList(separatorList.map(item => ({
+                                                    ...item,
+                                                    checked: e.target.checked
+                                                })));
+                                            }}
+                                        />
+                                    }
+                                    label={<Typography sx={{ fontSize: '12px' }}>전체 선택</Typography>}
+                                />
+                                {separatorList.map(item => (
+                                    <FormControlLabel
+                                        key={item.id}
+                                        control={
+                                            <Checkbox
+                                                size="small"
+                                                checked={item.checked}
+                                                onChange={(e) => {
+                                                    setSeparatorList(separatorList.map(s =>
+                                                        s.id === item.id ? { ...s, checked: e.target.checked } : s
+                                                    ));
+                                                }}
+                                            />
+                                        }
+                                        label={<Typography sx={{ fontSize: '12px' }}>{item.value}</Typography>}
+                                    />
+                                ))}
+                            </Box>
+
+                            <ActionButton
+                                variant="delete"
+                                size="small"
+                                onClick={handleRemoveSeparator}
+                                sx={{ width: '100%', backgroundColor: '#e91e63' }}
+                            >
+                                항목 제거
+                            </ActionButton>
                         </StyledGroupBox>
 
                         {/* 불용어 제거 */}
-                        <StyledGroupBox
-                            title="불용어 제거"
-                            warningText="지정한 불용어를 텍스트에서 제거합니다."
-                            sx={{ flex: '0 0 30%' }}
-                        >
-                            <Box className={styles.groupContent}>
-                                <StyledDataGrid
-                                    rows={stopwordList}
-                                    columns={stopwordColumns}
-                                    height="100px"
-                                    checkboxSelection
-                                    onSelectionChange={(ids) => setSelectedStopwords(ids)}
-                                    selectionModel={selectedStopwords}
+                        <StyledGroupBox title="불용어 제거">
+                            <Box sx={{ display: 'flex', gap: 1, mb: 1 }}>
+                                <TextField
+                                    size="small"
+                                    placeholder="신규 불용어 대상 입력"
+                                    value={newStopword}
+                                    onChange={(e) => setNewStopword(e.target.value)}
+                                    sx={{ flex: 1 }}
                                 />
-                                <Box className={styles.inputRow}>
-                                    <TextField
-                                        size="small"
-                                        placeholder="불용어 입력"
-                                        value={newStopword}
-                                        onChange={(e) => setNewStopword(e.target.value)}
-                                        className={styles.inputField}
-                                    />
-                                    <ActionButton variant="add" size="small" onClick={handleAddStopword}>
-                                        추가
-                                    </ActionButton>
-                                    <ActionButton variant="delete" size="small" onClick={handleDeleteStopword}>
-                                        삭제
-                                    </ActionButton>
-                                </Box>
+                                <ActionButton
+                                    variant="add"
+                                    size="small"
+                                    onClick={handleAddStopword}
+                                    sx={{ backgroundColor: '#2196F3', minWidth: '70px' }}
+                                >
+                                    대상 추가
+                                </ActionButton>
                             </Box>
+
+                            <Box className={styles.checkboxList}>
+                                <FormControlLabel
+                                    control={
+                                        <Checkbox
+                                            size="small"
+                                            checked={selectAllStopword}
+                                            onChange={(e) => {
+                                                setSelectAllStopword(e.target.checked);
+                                                setStopwordList(stopwordList.map(item => ({
+                                                    ...item,
+                                                    checked: e.target.checked
+                                                })));
+                                            }}
+                                        />
+                                    }
+                                    label={<Typography sx={{ fontSize: '12px' }}>전체 선택</Typography>}
+                                />
+                                {stopwordList.map(item => (
+                                    <FormControlLabel
+                                        key={item.id}
+                                        control={
+                                            <Checkbox
+                                                size="small"
+                                                checked={item.checked}
+                                                onChange={(e) => {
+                                                    setStopwordList(stopwordList.map(s =>
+                                                        s.id === item.id ? { ...s, checked: e.target.checked } : s
+                                                    ));
+                                                }}
+                                            />
+                                        }
+                                        label={<Typography sx={{ fontSize: '12px' }}>{item.value}</Typography>}
+                                    />
+                                ))}
+                            </Box>
+
+                            <ActionButton
+                                variant="delete"
+                                size="small"
+                                onClick={handleRemoveStopword}
+                                sx={{ width: '100%', backgroundColor: '#e91e63' }}
+                            >
+                                항목 제거
+                            </ActionButton>
                         </StyledGroupBox>
 
                         {/* 구분자 기반 키워드 추출 */}
-                        <StyledGroupBox
-                            title="구분자 기반 키워드 추출"
-                            warningText="구분자로 분리된 키워드를 추출합니다."
-                            sx={{ flex: '0 0 15%' }}
-                        >
-                            <Box className={styles.inputRow}>
-                                <TextField
-                                    size="small"
-                                    placeholder="키워드 입력"
-                                    value={extractKeyword}
-                                    onChange={(e) => setExtractKeyword(e.target.value)}
-                                    className={styles.inputField}
-                                />
-                                <ActionButton variant="apply" size="small" onClick={handleExtractKeyword}>
-                                    추출
-                                </ActionButton>
-                            </Box>
-                        </StyledGroupBox>
+                       {/* 구분자 기반 키워드 추출 */}
+                       <StyledGroupBox
+                           title="구분자 기반 키워드 추출"
 
-                        {/* NLP 기반 키워드 추출 (Hidden - 향후 구현) */}
-                        <StyledGroupBox
-                            title="NLP 기반 키워드 추출"
-                            warningText="자연어 처리 기반 키워드 추출 (준비 중)"
-                            sx={{ flex: '0 0 15%', opacity: 0.5 }}
-                        >
-                            <Typography
-                                sx={{
-                                    fontFamily: 'Pretendard, sans-serif',
-                                    fontSize: '13px',
-                                    color: '#666',
-                                    textAlign: 'center',
-                                    padding: '1rem',
-                                }}
-                            >
-                                향후 업데이트 예정
+                       >
+                           <Box sx={{ display: 'flex', gap: 1 }}>
+                               <ActionButton
+                                   variant="apply"
+                                   size="small"
+                                   onClick={handleKeywordExtract}
+                                   sx={{ flex: 1, backgroundColor: '#2196F3' }}
+                               >
+                                   키워드 추출
+                               </ActionButton>
+                               <ActionButton
+                                   variant="apply"
+                                   size="small"
+                                   onClick={handleRemoveSingleChar}
+                                   sx={{ flex: 1, backgroundColor: '#2196F3' }}
+                               >
+                                   1글자 키워드제거
+                               </ActionButton>
+                           </Box>
+                       </StyledGroupBox>
+
+                        {/* NLP 기반 키워드 추출 */}
+                        <StyledGroupBox title="NLP 기반 키워드 추출">
+                            <Typography sx={{ fontSize: '11px', color: '#e91e63', mb: 1 }}>
+                                * 구분자 기반으로 키워드 추출 후<br />
+                                AI가 추가적으로 키워드를 분할합니다.
                             </Typography>
+                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
+                                <TextField
+                                    type="number"
+                                    size="small"
+                                    value={minKeywordLength}
+                                    onChange={(e) => setMinKeywordLength(parseInt(e.target.value) || 4)}
+                                    inputProps={{ min: 1, max: 10 }}
+                                    sx={{ width: '60px' }}
+                                />
+                                <Typography sx={{ fontSize: '12px' }}>
+                                    글자 이상 키워드 자동 분할
+                                </Typography>
+                            </Box>
+                            <ActionButton
+                                variant="apply"
+                                size="small"
+                                onClick={handleNlpExtract}
+                                sx={{ width: '100%', backgroundColor: '#9c27b0' }}
+                            >
+                                키워드 추출
+                            </ActionButton>
                         </StyledGroupBox>
 
                         {/* 완료 버튼 */}
@@ -310,7 +492,7 @@ function PreprocessingPage() {
                                 onClick={handleComplete}
                                 sx={{ width: '100%' }}
                             >
-                                완료
+                                완 료
                             </ActionButton>
                         </Box>
                     </Box>
