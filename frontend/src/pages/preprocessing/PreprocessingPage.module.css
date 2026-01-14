@@ -1,0 +1,78 @@
+/* frontend/src/pages/preprocessing/PreprocessingPage.module.css */
+
+.container {
+    padding: 1rem;
+    background-color: #f5f5f5;
+    min-height: 100vh;
+}
+
+.sessionHeader {
+    margin-bottom: 1rem;
+}
+
+.mainContent {
+    height: calc(100vh - 120px);
+}
+
+/* 좌측 패널 */
+.leftPanel {
+    height: 100%;
+}
+
+.tableContainer {
+    height: 100%;
+}
+
+/* 우측 패널 */
+.rightPanel {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+    height: 100%;
+}
+
+/* 그룹 콘텐츠 */
+.groupContent {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+}
+
+/* 입력 행 */
+.inputRow {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.inputField {
+    flex: 1;
+}
+
+/* 완료 버튼 영역 */
+.completeButtonWrapper {
+    margin-top: auto;
+    padding-top: 1rem;
+}
+
+/* 반응형 */
+@media (max-width: 1200px) {
+    .mainContent {
+        height: auto;
+    }
+
+    .leftPanel,
+    .rightPanel {
+        height: auto;
+    }
+
+    .tableContainer {
+        min-height: 400px;
+    }
+}
+
+@media (max-width: 900px) {
+    .tableContainer > div {
+        min-height: 300px;
+    }
+}

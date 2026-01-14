@@ -1,0 +1,128 @@
+/* frontend/src/pages/transform/DataTransformPage.module.css */
+
+.container {
+    padding: 1rem;
+    background-color: #f5f5f5;
+    min-height: 100vh;
+}
+
+.sessionHeader {
+    margin-bottom: 1rem;
+}
+
+.mainContent {
+    height: calc(100vh - 120px);
+}
+
+/* 좌측 패널 */
+.leftPanel {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+    height: 100%;
+}
+
+.tableSection {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    background-color: #fff;
+    border-radius: 4px;
+    overflow: hidden;
+}
+
+.sectionTitle {
+    font-family: 'Pretendard', sans-serif;
+    font-weight: bold;
+    font-size: 16px;
+    padding: 0.75rem 1rem;
+    background-color: #f8f9fa;
+    border-bottom: 1px solid #ddd;
+}
+
+/* 우측 패널 */
+.rightPanel {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+    height: 100%;
+}
+
+/* 금액 단위 선택 */
+.unitSelector {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-bottom: 0.75rem;
+}
+
+.unitLabel {
+    font-family: 'Pretendard', sans-serif;
+    font-size: 14px;
+}
+
+.unitSelect {
+    min-width: 100px;
+}
+
+/* 검색 행 */
+.searchRow {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-bottom: 0.75rem;
+}
+
+.searchField {
+    flex: 1;
+}
+
+/* 수정 행 */
+.modifyRow {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-top: 0.75rem;
+}
+
+.modifyField {
+    flex: 1;
+}
+
+/* 클러스터 설정 */
+.clusterRow {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.clusterLabel {
+    font-family: 'Pretendard', sans-serif;
+    font-size: 14px;
+}
+
+.clusterInput {
+    width: 80px;
+}
+
+/* 완료 버튼 영역 */
+.completeButtonWrapper {
+    margin-top: auto;
+    padding-top: 1rem;
+}
+
+/* 반응형 */
+@media (max-width: 1200px) {
+    .mainContent {
+        height: auto;
+    }
+
+    .leftPanel,
+    .rightPanel {
+        height: auto;
+    }
+
+    .tableSection {
+        min-height: 350px;
+    }
+}
