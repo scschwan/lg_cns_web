@@ -17,6 +17,9 @@
 !/backend/**/src/main/**/bin/
 !/backend/**/src/test/**/bin/
 
+### Lambda ###
+/backend/lamdba/build/
+
 ### sample ###
 /backend/*.xlsx
 /backend/large_dataset_*.xlsx
