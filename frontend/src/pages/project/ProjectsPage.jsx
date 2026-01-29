@@ -1,0 +1,195 @@
+import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
+import projectService from '../services/projectService';
+import { Button } from '@/components/ui/button';
+import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from '@/components/ui/card';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Badge } from '@/components/ui/badge';
+import {
+    Plus,
+    Folder,
+    Users,
+    Calendar,
+    Settings,
+    FolderOpen,
+    Loader2
+} from 'lucide-react';
+import CreateProjectDialog from '../components/project/CreateProjectDialog';
+
+export default function ProjectsPage() {
+    const [projects, setProjects] = useState([]);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState('');
+    const [openDialog, setOpenDialog] = useState(false);
+
+    const navigate = useNavigate();
+
+    useEffect(() => {
+        loadProjects();
+    }, []);
+
+    const loadProjects = async () => {
+        try {
+            setLoading(true);
+            const data = await projectService.getMyProjects();
+            setProjects(data);
+            setError('');
+        } catch (err) {
+            setError('프로젝트 목록을 불러오는데 실패했습니다.');
+            console.error(err);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const formatDate = (dateString) => {
+        const date = new Date(dateString);
+        return date.toLocaleDateString('ko-KR', {
+            year: 'numeric',
+            month: 'long',
+            day: 'numeric'
+        });
+    };
+
+    return (
+        <div className="min-h-screen bg-gray-50">
+            {/* Header */}
+            <div className="bg-white border-b">
+                <div className="container mx-auto px-6 py-6">
+                    <div className="flex items-center justify-between">
+                        <div>
+                            <h1 className="text-3xl font-bold text-gray-900">내 프로젝트</h1>
+                            <p className="text-gray-600 mt-1">
+                                프로젝트를 관리하고 데이터를 분석하세요
+                            </p>
+                        </div>
+                        <Button
+                            onClick={() => setOpenDialog(true)}
+                            size="lg"
+                            className="gap-2"
+                        >
+                            <Plus className="h-5 w-5" />
+                            새 프로젝트
+                        </Button>
+                    </div>
+                </div>
+            </div>
+
+            {/* Content */}
+            <div className="container mx-auto px-6 py-8">
+                {error && (
+                    <Alert variant="destructive" className="mb-6">
+                        <AlertDescription>{error}</AlertDescription>
+                    </Alert>
+                )}
+
+                {loading ? (
+                    <div className="flex items-center justify-center py-12">
+                        <Loader2 className="h-8 w-8 animate-spin text-gray-400" />
+                        <span className="ml-3 text-gray-600">로딩 중...</span>
+                    </div>
+                ) : projects.length === 0 ? (
+                    /* Empty State */
+                    <Card className="border-dashed">
+                        <CardContent className="flex flex-col items-center justify-center py-16">
+                            <div className="w-20 h-20 bg-gray-100 rounded-full flex items-center justify-center mb-4">
+                                <Folder className="h-10 w-10 text-gray-400" />
+                            </div>
+                            <h3 className="text-xl font-semibold text-gray-900 mb-2">
+                                아직 프로젝트가 없습니다
+                            </h3>
+                            <p className="text-gray-600 mb-6 text-center max-w-sm">
+                                새 프로젝트를 생성하여 Excel 데이터 분석을 시작하세요
+                            </p>
+                            <Button
+                                onClick={() => setOpenDialog(true)}
+                                size="lg"
+                                className="gap-2"
+                            >
+                                <Plus className="h-5 w-5" />
+                                첫 프로젝트 만들기
+                            </Button>
+                        </CardContent>
+                    </Card>
+                ) : (
+                    /* Project Grid */
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                        {projects.map((project) => (
+                            <Card
+                                key={project.projectId}
+                                className="hover:shadow-lg transition-shadow cursor-pointer group"
+                            >
+                                <CardHeader>
+                                    <div className="flex items-start justify-between">
+                                        <div className="flex-1">
+                                            <CardTitle className="text-xl group-hover:text-blue-600 transition-colors">
+                                                {project.name}
+                                            </CardTitle>
+                                            <CardDescription className="mt-2 line-clamp-2">
+                                                {project.description || '설명 없음'}
+                                            </CardDescription>
+                                        </div>
+                                        <div className="w-12 h-12 bg-blue-50 rounded-lg flex items-center justify-center flex-shrink-0 ml-3">
+                                            <FolderOpen className="h-6 w-6 text-blue-600" />
+                                        </div>
+                                    </div>
+                                </CardHeader>
+
+                                <CardContent className="space-y-3">
+                                    <div className="flex items-center gap-2 text-sm text-gray-600">
+                                        <Calendar className="h-4 w-4" />
+                                        <span>{formatDate(project.createdAt)}</span>
+                                    </div>
+
+                                    <div className="flex items-center gap-2 text-sm text-gray-600">
+                                        <Users className="h-4 w-4" />
+                                        <span>멤버 {project.memberCount || 1}명</span>
+                                    </div>
+
+                                    <div className="flex items-center gap-2">
+                                        <Badge variant="outline">
+                                            세션: {project.completedSessions || 0}/{project.totalSessions || 0}
+                                        </Badge>
+                                        {project.completedSessions > 0 && (
+                                            <Badge variant="secondary">활성</Badge>
+                                        )}
+                                    </div>
+                                </CardContent>
+
+                                <CardFooter className="flex gap-2">
+                                    <Button
+                                        className="flex-1"
+                                        onClick={() => navigate(`/projects/${project.projectId}/upload`)}
+                                    >
+                                        열기
+                                    </Button>
+                                    <Button
+                                        variant="outline"
+                                        size="icon"
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            navigate(`/projects/${project.projectId}/settings`);
+                                        }}
+                                    >
+                                        <Settings className="h-4 w-4" />
+                                    </Button>
+                                </CardFooter>
+                            </Card>
+                        ))}
+                    </div>
+                )}
+            </div>
+
+            {/* Create Project Dialog */}
+            <CreateProjectDialog
+                open={openDialog}
+                onClose={() => setOpenDialog(false)}
+                onCreate={async (projectData) => {
+                    const createdProject = await projectService.createProject(projectData);
+                    await loadProjects();
+                    return createdProject;
+                }}
+            />
+        </div>
+    );
+}

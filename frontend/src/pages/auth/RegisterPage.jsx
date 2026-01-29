@@ -1,20 +1,15 @@
-// frontend/src/pages/auth/RegisterPage.jsx
-
 import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import authService from '../../services/authService';
-import {
-    Container,
-    Box,
-    TextField,
-    Button,
-    Typography,
-    Paper,
-    Alert
-} from '@mui/material';
-import styles from './RegisterPage.module.css';
+import authService from '../services/authService';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from '@/components/ui/card';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Badge } from '@/components/ui/badge';
+import { Loader2, CheckCircle2, XCircle } from 'lucide-react';
 
-function RegisterPage() {
+export default function RegisterPage() {
     const [formData, setFormData] = useState({
         name: '',
         email: '',
@@ -23,8 +18,29 @@ function RegisterPage() {
     });
     const [error, setError] = useState('');
     const [loading, setLoading] = useState(false);
+    const [success, setSuccess] = useState(false);
 
     const navigate = useNavigate();
+
+    // 비밀번호 강도 체크
+    const getPasswordStrength = (password) => {
+        if (!password) return { strength: 0, label: '', color: '' };
+        
+        let strength = 0;
+        if (password.length >= 8) strength++;
+        if (password.length >= 12) strength++;
+        if (/[a-z]/.test(password) && /[A-Z]/.test(password)) strength++;
+        if (/\d/.test(password)) strength++;
+        if (/[^A-Za-z0-9]/.test(password)) strength++;
+
+        if (strength <= 2) return { strength, label: '약함', color: 'bg-red-500' };
+        if (strength <= 3) return { strength, label: '보통', color: 'bg-yellow-500' };
+        return { strength, label: '강함', color: 'bg-green-500' };
+    };
+
+    const passwordStrength = getPasswordStrength(formData.password);
+    const passwordsMatch = formData.password && formData.confirmPassword && 
+                          formData.password === formData.confirmPassword;
 
     const handleChange = (e) => {
         setFormData({
@@ -56,8 +72,10 @@ function RegisterPage() {
                 password: formData.password
             });
 
-            alert('회원가입이 완료되었습니다. 로그인해주세요.');
-            navigate('/login');
+            setSuccess(true);
+            setTimeout(() => {
+                navigate('/login');
+            }, 2000);
         } catch (err) {
             setError(err.response?.data?.message || '회원가입에 실패했습니다.');
         } finally {
@@ -66,90 +84,156 @@ function RegisterPage() {
     };
 
     return (
-        <Container maxWidth="sm">
-            <Box className={styles.container}>
-                <Paper elevation={3} className={styles.paper}>
-                    <Typography component="h1" variant="h4" className={styles.title}>
-                        Finance Tool
-                    </Typography>
-                    <Typography variant="h6" className={styles.subtitle}>
-                        회원가입
-                    </Typography>
-
+        <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-gray-50 to-gray-100 p-4">
+            <Card className="w-full max-w-md shadow-lg">
+                <CardHeader className="space-y-1 text-center">
+                    <div className="flex justify-center mb-4">
+                        <div className="w-16 h-16 bg-blue-600 rounded-full flex items-center justify-center">
+                            <span className="text-white text-2xl font-bold">F</span>
+                        </div>
+                    </div>
+                    <CardTitle className="text-3xl font-bold">Finance Tool</CardTitle>
+                    <CardDescription className="text-base">
+                        새 계정을 만들어 시작하세요
+                    </CardDescription>
+                </CardHeader>
+                
+                <CardContent className="space-y-4">
                     {error && (
-                        <Alert severity="error" className={styles.errorAlert}>
-                            {error}
+                        <Alert variant="destructive">
+                            <AlertDescription>{error}</AlertDescription>
                         </Alert>
                     )}
 
-                    <Box component="form" onSubmit={handleSubmit} className={styles.form}>
-                        <TextField
-                            margin="normal"
-                            required
-                            fullWidth
-                            id="name"
-                            label="이름"
-                            name="name"
-                            autoComplete="name"
-                            autoFocus
-                            value={formData.name}
-                            onChange={handleChange}
-                        />
-                        <TextField
-                            margin="normal"
-                            required
-                            fullWidth
-                            id="email"
-                            label="이메일"
-                            name="email"
-                            autoComplete="email"
-                            value={formData.email}
-                            onChange={handleChange}
-                        />
-                        <TextField
-                            margin="normal"
-                            required
-                            fullWidth
-                            name="password"
-                            label="비밀번호 (8자 이상)"
-                            type="password"
-                            id="password"
-                            autoComplete="new-password"
-                            value={formData.password}
-                            onChange={handleChange}
-                        />
-                        <TextField
-                            margin="normal"
-                            required
-                            fullWidth
-                            name="confirmPassword"
-                            label="비밀번호 확인"
-                            type="password"
-                            id="confirmPassword"
-                            value={formData.confirmPassword}
-                            onChange={handleChange}
-                        />
-                        <Button
-                            type="submit"
-                            fullWidth
-                            variant="contained"
-                            className={styles.submitButton}
-                            disabled={loading}
+                    {success && (
+                        <Alert className="bg-green-50 text-green-800 border-green-200">
+                            <CheckCircle2 className="h-4 w-4" />
+                            <AlertDescription>
+                                회원가입이 완료되었습니다! 로그인 페이지로 이동합니다...
+                            </AlertDescription>
+                        </Alert>
+                    )}
+
+                    <form onSubmit={handleSubmit} className="space-y-4">
+                        <div className="space-y-2">
+                            <Label htmlFor="name">이름</Label>
+                            <Input
+                                id="name"
+                                name="name"
+                                type="text"
+                                placeholder="홍길동"
+                                value={formData.name}
+                                onChange={handleChange}
+                                required
+                                autoFocus
+                                disabled={loading || success}
+                            />
+                        </div>
+
+                        <div className="space-y-2">
+                            <Label htmlFor="email">이메일</Label>
+                            <Input
+                                id="email"
+                                name="email"
+                                type="email"
+                                placeholder="example@example.com"
+                                value={formData.email}
+                                onChange={handleChange}
+                                required
+                                disabled={loading || success}
+                            />
+                        </div>
+
+                        <div className="space-y-2">
+                            <Label htmlFor="password">비밀번호</Label>
+                            <Input
+                                id="password"
+                                name="password"
+                                type="password"
+                                placeholder="8자 이상"
+                                value={formData.password}
+                                onChange={handleChange}
+                                required
+                                disabled={loading || success}
+                            />
+                            {formData.password && (
+                                <div className="space-y-2">
+                                    <div className="flex items-center gap-2">
+                                        <div className="flex-1 h-2 bg-gray-200 rounded-full overflow-hidden">
+                                            <div 
+                                                className={`h-full transition-all ${passwordStrength.color}`}
+                                                style={{ width: `${(passwordStrength.strength / 5) * 100}%` }}
+                                            />
+                                        </div>
+                                        <Badge variant="outline" className="text-xs">
+                                            {passwordStrength.label}
+                                        </Badge>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+
+                        <div className="space-y-2">
+                            <Label htmlFor="confirmPassword">비밀번호 확인</Label>
+                            <div className="relative">
+                                <Input
+                                    id="confirmPassword"
+                                    name="confirmPassword"
+                                    type="password"
+                                    placeholder="비밀번호 재입력"
+                                    value={formData.confirmPassword}
+                                    onChange={handleChange}
+                                    required
+                                    disabled={loading || success}
+                                    className={
+                                        formData.confirmPassword && 
+                                        (passwordsMatch ? 'border-green-500' : 'border-red-500')
+                                    }
+                                />
+                                {formData.confirmPassword && (
+                                    <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                                        {passwordsMatch ? (
+                                            <CheckCircle2 className="h-5 w-5 text-green-500" />
+                                        ) : (
+                                            <XCircle className="h-5 w-5 text-red-500" />
+                                        )}
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+
+                        <Button 
+                            type="submit" 
+                            className="w-full" 
+                            disabled={loading || success}
+                            size="lg"
                         >
-                            {loading ? '처리 중...' : '회원가입'}
+                            {loading ? (
+                                <>
+                                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                    처리 중...
+                                </>
+                            ) : success ? (
+                                '완료!'
+                            ) : (
+                                '회원가입'
+                            )}
                         </Button>
-                        <Box className={styles.linkBox}>
-                            <Link to="/login" className={styles.link}>
-                                <Typography variant="body2" color="primary">
-                                    이미 계정이 있으신가요? 로그인
-                                </Typography>
-                            </Link>
-                        </Box>
-                    </Box>
-                </Paper>
-            </Box>
-        </Container>
+                    </form>
+                </CardContent>
+
+                <CardFooter className="flex justify-center">
+                    <p className="text-sm text-gray-600">
+                        이미 계정이 있으신가요?{' '}
+                        <Link 
+                            to="/login" 
+                            className="text-blue-600 hover:text-blue-700 font-medium hover:underline"
+                        >
+                            로그인
+                        </Link>
+                    </p>
+                </CardFooter>
+            </Card>
+        </div>
     );
 }
-
-export default RegisterPage;

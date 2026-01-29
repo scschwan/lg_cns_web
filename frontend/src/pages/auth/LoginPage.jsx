@@ -1,20 +1,14 @@
-// frontend/src/pages/auth/LoginPage.jsx
-
 import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { useAuth } from '../../context/AuthContext';
-import {
-    Container,
-    Box,
-    TextField,
-    Button,
-    Typography,
-    Paper,
-    Alert
-} from '@mui/material';
-import styles from './LoginPage.module.css';
+import { useAuth } from '../context/AuthContext';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from '@/components/ui/card';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Loader2 } from 'lucide-react';
 
-function LoginPage() {
+export default function LoginPage() {
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
     const [error, setError] = useState('');
@@ -39,68 +33,85 @@ function LoginPage() {
     };
 
     return (
-        <Container maxWidth="sm">
-            <Box className={styles.container}>
-                <Paper elevation={3} className={styles.paper}>
-                    <Typography component="h1" variant="h4" className={styles.title}>
-                        Finance Tool
-                    </Typography>
-                    <Typography variant="h6" className={styles.subtitle}>
-                        로그인
-                    </Typography>
-
+        <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-gray-50 to-gray-100 p-4">
+            <Card className="w-full max-w-md shadow-lg">
+                <CardHeader className="space-y-1 text-center">
+                    <div className="flex justify-center mb-4">
+                        <div className="w-16 h-16 bg-blue-600 rounded-full flex items-center justify-center">
+                            <span className="text-white text-2xl font-bold">F</span>
+                        </div>
+                    </div>
+                    <CardTitle className="text-3xl font-bold">Finance Tool</CardTitle>
+                    <CardDescription className="text-base">
+                        이메일과 비밀번호로 로그인하세요
+                    </CardDescription>
+                </CardHeader>
+                
+                <CardContent className="space-y-4">
                     {error && (
-                        <Alert severity="error" className={styles.errorAlert}>
-                            {error}
+                        <Alert variant="destructive">
+                            <AlertDescription>{error}</AlertDescription>
                         </Alert>
                     )}
 
-                    <Box component="form" onSubmit={handleSubmit} className={styles.form}>
-                        <TextField
-                            margin="normal"
-                            required
-                            fullWidth
-                            id="email"
-                            label="이메일"
-                            name="email"
-                            autoComplete="email"
-                            autoFocus
-                            value={email}
-                            onChange={(e) => setEmail(e.target.value)}
-                        />
-                        <TextField
-                            margin="normal"
-                            required
-                            fullWidth
-                            name="password"
-                            label="비밀번호"
-                            type="password"
-                            id="password"
-                            autoComplete="current-password"
-                            value={password}
-                            onChange={(e) => setPassword(e.target.value)}
-                        />
-                        <Button
-                            type="submit"
-                            fullWidth
-                            variant="contained"
-                            className={styles.submitButton}
+                    <form onSubmit={handleSubmit} className="space-y-4">
+                        <div className="space-y-2">
+                            <Label htmlFor="email">이메일</Label>
+                            <Input
+                                id="email"
+                                type="email"
+                                placeholder="example@example.com"
+                                value={email}
+                                onChange={(e) => setEmail(e.target.value)}
+                                required
+                                autoFocus
+                                disabled={loading}
+                            />
+                        </div>
+
+                        <div className="space-y-2">
+                            <Label htmlFor="password">비밀번호</Label>
+                            <Input
+                                id="password"
+                                type="password"
+                                placeholder="••••••••"
+                                value={password}
+                                onChange={(e) => setPassword(e.target.value)}
+                                required
+                                disabled={loading}
+                            />
+                        </div>
+
+                        <Button 
+                            type="submit" 
+                            className="w-full" 
                             disabled={loading}
+                            size="lg"
                         >
-                            {loading ? '로그인 중...' : '로그인'}
+                            {loading ? (
+                                <>
+                                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                    로그인 중...
+                                </>
+                            ) : (
+                                '로그인'
+                            )}
                         </Button>
-                        <Box className={styles.linkBox}>
-                            <Link to="/register" className={styles.link}>
-                                <Typography variant="body2" color="primary">
-                                    계정이 없으신가요? 회원가입
-                                </Typography>
-                            </Link>
-                        </Box>
-                    </Box>
-                </Paper>
-            </Box>
-        </Container>
+                    </form>
+                </CardContent>
+
+                <CardFooter className="flex justify-center">
+                    <p className="text-sm text-gray-600">
+                        계정이 없으신가요?{' '}
+                        <Link 
+                            to="/register" 
+                            className="text-blue-600 hover:text-blue-700 font-medium hover:underline"
+                        >
+                            회원가입
+                        </Link>
+                    </p>
+                </CardFooter>
+            </Card>
+        </div>
     );
 }
-
-export default LoginPage;

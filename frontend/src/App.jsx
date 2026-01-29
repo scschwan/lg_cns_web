@@ -5,8 +5,11 @@ import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-d
 import { AuthProvider } from './context/AuthContext';
 import Navbar from './components/layout/Navbar';
 import PrivateRoute from './components/PrivateRoute';
+
 import LoginPage from './pages/auth/LoginPage';
 import RegisterPage from './pages/auth/RegisterPage';
+import ProjectsPage from './pages/project/ProjectsPage';
+
 import ProjectDashboard from './pages/project/ProjectDashboard';
 import ProjectDetail from './pages/project/ProjectDetail';
 import MultiFileUploadPage from './pages/upload/MultiFileUploadPage';
@@ -20,24 +23,29 @@ import ClusteringPage from './pages/clustering/ClusteringPage';
 import DetailClusteringPage from './pages/detailclustering/DetailClusteringPage';
 import ExportPage from './pages/export/ExportPage';
 
+import TestPage from './pages/TestPage';
+
 function App() {
     return (
         <AuthProvider>
             <Router>
+                {/* ⭐ Tailwind 테스트용 임시 추가 */}
+                                <div className="p-4 bg-blue-500 text-white text-center">
+                                    ✅ Tailwind CSS 작동 중!
+                                </div>
+
                 <Navbar />
                 <Routes>
+                    <Route path="/test" element={<TestPage />} />
+
+
+
                     <Route path="/login" element={<LoginPage />} />
                     <Route path="/register" element={<RegisterPage />} />
+                    <Route path="/projects" element={<ProjectsPage />} />
+
 
                     {/* Private Routes */}
-                    <Route
-                        path="/projects"
-                        element={
-                            <PrivateRoute>
-                                <ProjectDashboard />
-                            </PrivateRoute>
-                        }
-                    />
 
                     <Route
                         path="/projects/:projectId"
@@ -129,7 +137,9 @@ function App() {
                     />
 
                     {/* Default Redirect */}
-                    <Route path="/" element={<Navigate to="/projects" />} />
+                    <Route path="/" element={<Navigate to="/login" />} />
+
+
                 </Routes>
             </Router>
         </AuthProvider>
