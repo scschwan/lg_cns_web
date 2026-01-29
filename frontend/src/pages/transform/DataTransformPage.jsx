@@ -2,312 +2,802 @@
 
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+import { ChevronRight, Home, GitMerge, Search, ChevronDown, ChevronUp, Settings } from 'lucide-react';
+
+// shadcn/ui components
 import {
-    Container,
-    Box,
-    Grid,
-    TextField,
-    Select,
-    MenuItem,
-    Typography,
-    Checkbox,
-    FormControlLabel,
-} from '@mui/material';
-
+  Breadcrumb,
+  BreadcrumbItem,
+  BreadcrumbLink,
+  BreadcrumbList,
+  BreadcrumbPage,
+  BreadcrumbSeparator,
+} from '@/components/ui/breadcrumb';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
+import { Checkbox } from '@/components/ui/checkbox';
 import {
-    SessionHeader,
-    Pagination,
-    StyledGroupBox,
-    StyledDataGrid,
-    ActionButton,
-} from '../../components/common';
-
-import { formatNumber, formatCurrency } from '../../utils/formatters';
-import styles from './DataTransformPage.module.css';
-
-// Mock Data - 원본 키워드 데이터
-const generateOriginalData = () => {
-    const data = [];
-    for (let i = 1; i <= 15; i++) {
-        data.push({
-            id: i,
-            연도: '2019',
-            세그먼트: (8000 + Math.floor(Math.random() * 500)).toString(),
-            전기일: (43000 + Math.floor(Math.random() * 1000)).toString(),
-            문서번호: (137000000 + Math.floor(Math.random() * 1000000)).toString(),
-            원가요소: '51213200',
-            계정명: '지급수수료',
-            원가요소이름: '지급수수료(하역...',
-            'Val.in RC': (Math.floor(Math.random() * 10000000)).toString(),
-            코스트센터: 'BGU' + (8000 + i),
-            지점명: ['평택점', '광주2점', '구로점', '인터넷몰'][i % 4],
-            'CO 오브젝트이름': ['평택 E', '광주2점', '구로점', '인터넷몰'][i % 4],
-        });
-    }
-    return data;
-};
-
-// Mock Data - 변환 키워드 데이터
-const generateTransformData = () => {
-    const data = [];
-    for (let i = 1; i <= 12; i++) {
-        data.push({
-            id: i,
-            연도: '2019',
-            세그먼트: (8100 + Math.floor(Math.random() * 100)).toString(),
-            전기일: (43000 + Math.floor(Math.random() * 500)).toString(),
-            문서번호: (133000000 + Math.floor(Math.random() * 1000000)).toString(),
-            원가요소: '51213200',
-            계정명: '지급수수료',
-            원가요소이름: '지급수수료(하역...',
-            'Val.in RC': (Math.floor(Math.random() * 15000000)).toString(),
-            코스트센터: 'BFK' + (8000 + i),
-            지점명: '외류CU_공통',
-            'CO 오브젝트이름': '본부 E',
-        });
-    }
-    return data;
-};
-
-// Mock Data - 키워드 요약
-const generateKeywordSummary = () => [
-    { id: 1, value: '이커머스', count: 1408, amount: 16984864},
-    { id: 2, value: '실비', count: 1403, amount: 0 },
-    { id: 3, value: '안분', count: 1403, amount: 0 },
-    { id: 4, value: '지급수수료', count: 1403, amount: 0 },
-    { id: 5, value: '물류수수료', count: 1272, amount: 4422146476 },
-    { id: 6, value: '아웃소싱수수료', count: 878, amount: 7954918617 },
-    { id: 7, value: '항만초도분배비용', count: 505, amount: 765694105},
-    { id: 8, value: '인천', count: 376, amount: 354202039 },
-    { id: 9, value: '수수료', count: 312, amount: 3084676256 },
-    { id: 10, value: '아웃소싱', count: 301, amount: 3069556310 },
-    { id: 11, value: '인타임', count: 301, amount: 3069556310 },
-];
-
-// Mock Data - 키워드 변환 테이블
-const generateKeywordMatch = () => [
-    { id: 1, value: '지급수수료', count: 1403, amount: 0, selected: false },
-    { id: 2, value: '물류수수료', count: 1272, amount: 4422146476, selected: false },
-    { id: 3, value: '아웃소싱수수료', count: 878, amount: 7954918617, selected: false },
-    { id: 4, value: '수수료', count: 312, amount: 3084676256, selected: true },
-    { id: 5, value: '아동물류수수료', count: 54, amount: 45397898, selected: false },
-    { id: 6, value: '남성스탁물류수수료', count: 52, amount: 48519580, selected: false },
-    { id: 7, value: '해외제화물류수수료', count: 46, amount: 10416368, selected: false },
-    { id: 8, value: '스포츠물류수수료', count: 41, amount: 62009839, selected: false },
-];
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
+import { Badge } from '@/components/ui/badge';
+import { Label } from '@/components/ui/label';
 
 function DataTransformPage() {
-    const { projectId, sessionId } = useParams();
-    const navigate = useNavigate();
+  const { projectId, sessionId } = useParams();
+  const navigate = useNavigate();
 
-    const [sessionInfo] = useState({ sessionName: '지급수수료_sampl1_2025-10-11' });
-    const [originalData, setOriginalData] = useState([]);
-    const [transformData, setTransformData] = useState([]);
-    const [keywordSummary, setKeywordSummary] = useState([]);
-    const [keywordMatch, setKeywordMatch] = useState([]);
+  // ===== 상태 관리 =====
+  const [sessionInfo] = useState({
+    sessionName: '지급수수료_sample1_2025-10-11',
+    totalRecords: 6270,
+  });
 
-    const [originalPage, setOriginalPage] = useState(1);
-    const [originalPageSize, setOriginalPageSize] = useState(1000);
-    const [originalTotalRows] = useState(6270);
+  // 금액 단위
+  const [amountUnit, setAmountUnit] = useState('원'); // 원, 천원, 백만원, 억원
+  const amountDivisor = {
+    '원': 1,
+    '천원': 1000,
+    '백만원': 1000000,
+    '억원': 100000000,
+  };
 
-    const [transformPage, setTransformPage] = useState(1);
-    const [transformPageSize, setTransformPageSize] = useState(1000);
-    const [transformTotalRows] = useState(312);
+  // 원본/검색결과 테이블 데이터
+  const [originalData, setOriginalData] = useState([]);
+  const [filteredData, setFilteredData] = useState([]);
 
-    const [amountUnit, setAmountUnit] = useState('원');
-    const [searchKeyword, setSearchKeyword] = useState('');
-    const [modifyKeyword, setModifyKeyword] = useState('');
-    const [selectAllMatch, setSelectAllMatch] = useState(false);
+  // 원본 테이블 최소화
+  const [isOriginalCollapsed, setIsOriginalCollapsed] = useState(false);
 
-    const [includeCostCenter, setIncludeCostCenter] = useState(true);
-    const [includeSupplier, setIncludeSupplier] = useState(true);
+  // 키워드 통계
+  const [keywordStats, setKeywordStats] = useState([]);
 
-    useEffect(() => {
-        setOriginalData(generateOriginalData());
-        setTransformData(generateTransformData());
-        setKeywordSummary(generateKeywordSummary());
-        setKeywordMatch(generateKeywordMatch());
-    }, []);
+  // 키워드 병합 - 검색
+  const [searchMethod, setSearchMethod] = useState('input'); // 'input' or 'select'
+  const [searchKeyword, setSearchKeyword] = useState('');
+  const [selectedKeywordFromStats, setSelectedKeywordFromStats] = useState('');
 
-    const handleSearch = () => alert(`"${searchKeyword}" 검색 실행`);
-    const handleModify = () => {
-        const selected = keywordMatch.filter(k => k.selected);
-        if (selected.length > 0 && modifyKeyword.trim()) {
-            alert(`선택된 ${selected.length}개 키워드를 "${modifyKeyword}"로 변환`);
+  // 키워드 병합 - 검색 결과
+  const [searchResults, setSearchResults] = useState([]);
+  const [selectedSearchResult, setSelectedSearchResult] = useState(null);
+
+  // 키워드 병합 - 대상
+  const [toKeyword, setToKeyword] = useState('');
+
+  // 클러스터링 조건
+  const [clusteringOptions, setClusteringOptions] = useState({
+    supplier: true,
+    costCenter: true,
+  });
+
+  // ===== Mock 데이터 생성 =====
+  const generateOriginalData = () => {
+    const companies = [
+      '더데이걸', '로엠', '포인포인트', '오휴', '핸트메이드',
+      '쓰리엔', '지크', '엘본', '이즈백', '트루',
+      'CMC', '모스트', '쓰시에', '오스본', '보보',
+      '일로', '리틀', '밀리밤', '펠릭스', '스탭',
+      '신디파크', '인디안', '엠아이', '란찌', 'SAP',
+      '트렌비', '알토', '데이텀', '신드롬', '비욘드',
+    ];
+
+    return companies.map((company, idx) => ({
+      id: idx + 1,
+      processDataId: `pd_${idx + 1}`,
+      'CO 오브젝트이름': `인터넷몰 ${company}`,
+      상계계정이름: '지급수수료(물류용역)',
+      keywords: ['이커머스', '실비', '안분', '지급수수료'], // 키워드 배열 추가
+      'Val.in RC': 100000 + Math.floor(Math.random() * 10000000),
+    }));
+  };
+
+  const calculateKeywordStats = (data) => {
+    // 키워드별 count와 합산 금액 계산
+    const keywordMap = {};
+
+    data.forEach((row) => {
+      row.keywords.forEach((keyword) => {
+        if (!keywordMap[keyword]) {
+          keywordMap[keyword] = { count: 0, totalAmount: 0 };
         }
-    };
-    const handleClusterCheck = () => {
-        alert(`Cluster 확인\n- 코스트센터 포함: ${includeCostCenter}\n- 공급업체 포함: ${includeSupplier}`);
-    };
-    const handleComplete = () => navigate(`/projects/${projectId}/sessions/${sessionId}/clustering`);
+        keywordMap[keyword].count += 1;
+        keywordMap[keyword].totalAmount += parseInt(row['Val.in RC']);
+      });
+    });
 
-    const dataColumns = [
-        { field: '연도', headerName: '연도', width: 55 },
-        { field: '세그먼트', headerName: '세그먼트', width: 75 },
-        { field: '전기일', headerName: '전기일', width: 65 },
-        { field: '문서번호', headerName: '문서번호', width: 100 },
-        { field: '원가요소', headerName: '원가요소', width: 80 },
-        { field: '계정명', headerName: '계정명', width: 80 },
-        { field: '원가요소이름', headerName: '원가요소이름', width: 110 },
-        { field: 'Val.in RC', headerName: 'Val.in RC', width: 90 },
-        { field: '코스트센터', headerName: '코스트센터', width: 90 },
-        { field: '지점명', headerName: '지점명', width: 85 },
-        { field: 'CO 오브젝트이름', headerName: 'CO 오브젝트이름', width: 110 },
-    ];
+    // 배열로 변환 후 count 기준 내림차순 정렬
+    const stats = Object.keys(keywordMap).map((keyword) => ({
+      keyword,
+      count: keywordMap[keyword].count,
+      totalAmount: keywordMap[keyword].totalAmount,
+    }));
 
-    const summaryColumns = [
-//         { field: 'marker', headerName: '', width: 30, renderCell: (params) => params.row.selected ? <Box sx={{ width: 8, height: 8, backgroundColor: '#2196F3' }} /> : null },
-        { field: 'value', headerName: 'Value', width: 120 },
-        { field: 'count', headerName: 'Count', width: 70, valueFormatter: (params) => formatNumber(params.value) },
-        { field: 'amount', headerName: '합산금액', width: 120, valueFormatter: (params) => formatCurrency(params.value, amountUnit) },
-    ];
+    stats.sort((a, b) => b.count - a.count);
 
-    const matchColumns = [
-        { field: 'selected', headerName: '', width: 40, renderCell: (params) => (
-            <Checkbox size="small" checked={params.value} onChange={(e) => {
-                setKeywordMatch(keywordMatch.map(k => k.id === params.row.id ? { ...k, selected: e.target.checked } : k));
-            }} />
-        )},
-        { field: 'value', headerName: 'Value', width: 120 },
-        { field: 'count', headerName: 'Count', width: 70, valueFormatter: (params) => formatNumber(params.value) },
-        { field: 'amount', headerName: '합산금액', width: 120, valueFormatter: (params) => formatCurrency(params.value, amountUnit) },
-    ];
+    return stats.map((item, idx) => ({
+      id: idx + 1,
+      ...item,
+    }));
+  };
 
-    const originalTotalPages = Math.ceil(originalTotalRows / originalPageSize);
-    const transformTotalPages = Math.ceil(transformTotalRows / transformPageSize);
-
-    return (
-        <Container maxWidth={false} className={styles.container}>
-            <Box className={styles.sessionHeader}>
-                <SessionHeader sessionName={sessionInfo?.sessionName} />
-            </Box>
-
-            <Grid container spacing={1.5} className={styles.mainContent}>
-                {/* 좌측 - 테이블 영역 (각 45%) */}
-                <Grid item xs={12} md={7.5}>
-                    <Box className={styles.leftPanel}>
-                        {/* 원본 키워드 데이터 - 45% */}
-                        <Box className={styles.tableSection}>
-                            <StyledDataGrid
-                                title="원본 키워드 데이터"
-                                rows={originalData}
-                                columns={dataColumns}
-                                height="calc(45vh - 60px)"
-                            />
-                            <Pagination
-                                currentPage={originalPage}
-                                totalPages={originalTotalPages}
-                                totalRows={originalTotalRows}
-                                pageSize={originalPageSize}
-                                onPageChange={setOriginalPage}
-                                onPageSizeChange={(size) => { setOriginalPageSize(size); setOriginalPage(1); }}
-                            />
-                        </Box>
-
-                        {/* 변환 키워드 데이터 - 45% */}
-                        <Box className={styles.tableSection}>
-                            <StyledDataGrid
-                                title="변환 키워드 데이터"
-                                rows={transformData}
-                                columns={dataColumns}
-                                height="calc(45vh - 60px)"
-                            />
-                            <Pagination
-                                currentPage={transformPage}
-                                totalPages={transformTotalPages}
-                                totalRows={transformTotalRows}
-                                pageSize={transformPageSize}
-                                onPageChange={setTransformPage}
-                                onPageSizeChange={(size) => { setTransformPageSize(size); setTransformPage(1); }}
-                            />
-                        </Box>
-                    </Box>
-                </Grid>
-
-                {/* 우측 영역 */}
-                <Grid item xs={12} md={4.5} sx={{
-                                                    // 1. 박스 높이를 '내용물 크기'에 딱 맞춥니다 (늘어나지 않게 함)
-                                                    height: 'fit-content',
-
-                                                    // 2. 내부 콘텐츠 영역의 상하 여백을 강제로 줄입니다.
-                                                    // (StyledGroupBox 내부 구조에 따라 div나 .MuiBox-root 등을 타겟팅)
-                                                    '& > div:last-child': {
-                                                    padding: ' !important', // 상하 8px, 좌우 16px (기존 대비 절반 이하로 축소)
-                                                    },
-
-                                                    }}>
-                    <Box className={styles.rightPanel}>
-                        {/* 키워드 요약 */}
-                        <StyledGroupBox title="키워드 요약">
-                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
-                                <Typography sx={{ fontSize: '15px' }}>단위</Typography>
-                                <Select size="small" value={amountUnit} onChange={(e) => setAmountUnit(e.target.value)} sx={{ minWidth: 70 }}>
-                                    <MenuItem value="원">원</MenuItem>
-                                    <MenuItem value="천원">천원</MenuItem>
-                                    <MenuItem value="백만원">백만원</MenuItem>
-                                </Select>
-                            </Box>
-                            <StyledDataGrid rows={keywordSummary} columns={summaryColumns} height="calc(30vh - 60px)" />
-                        </StyledGroupBox>
-
-                        {/* 키워드 변환 */}
-                        <StyledGroupBox title="키워드 변환">
-                            <Box sx={{ display: 'flex', gap: 1, mb: 1 }}>
-                                <TextField size="small" placeholder="수수" value={searchKeyword} onChange={(e) => setSearchKeyword(e.target.value)} sx={{ flex: 1 }} />
-                                <ActionButton variant="search" size="small" onClick={handleSearch}>검 색</ActionButton>
-                            </Box>
-                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
-                                <FormControlLabel
-                                    control={<Checkbox size="small" checked={selectAllMatch} onChange={(e) => {
-                                        setSelectAllMatch(e.target.checked);
-                                        setKeywordMatch(keywordMatch.map(k => ({ ...k, selected: e.target.checked })));
-                                    }} />}
-                                    label={<Typography sx={{ fontSize: '11px' }}>전체 선택</Typography>}
-                                />
-                                <Typography sx={{ fontSize: '11px', color: '#666' }}>다음 키워드로 변경</Typography>
-                                <TextField size="small" placeholder="변환 키워드 입력" value={modifyKeyword} onChange={(e) => setModifyKeyword(e.target.value)} sx={{ width: 200 }} />
-                                <ActionButton variant="apply" size="small" onClick={handleModify} sx={{ backgroundColor: '#ff9800' }}>변 환</ActionButton>
-                            </Box>
-                            <StyledDataGrid rows={keywordMatch} columns={matchColumns} height="calc(30vh - 60px)" />
-                        </StyledGroupBox>
-
-                        {/* Cluster 설정 - height 축소 (10~15%) */}
-                        <StyledGroupBox title="Cluster 설정">
-                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, flexWrap: 'wrap' }}>
-                                <Typography sx={{ fontSize: '12px' }}>필수 포함</Typography>
-                                <FormControlLabel
-                                    control={<Checkbox size="small" checked={includeCostCenter} onChange={(e) => setIncludeCostCenter(e.target.checked)} />}
-                                    label={<Typography sx={{ fontSize: '12px' }}>코스트센터</Typography>}
-                                />
-                                <FormControlLabel
-                                    control={<Checkbox size="small" checked={includeSupplier} onChange={(e) => setIncludeSupplier(e.target.checked)} />}
-                                    label={<Typography sx={{ fontSize: '12px' }}>공급업체</Typography>}
-                                />
-                                <ActionButton variant="apply" size="small" onClick={handleClusterCheck} sx={{ backgroundColor: '#e91e63' }}>
-                                    Cluster 미리보기
-                                </ActionButton>
-{/*                                 <ActionButton variant="complete" size="small" onClick={handleComplete} sx={{ backgroundColor: '#4caf50' }}> */}
-{/*                                     완 료 */}
-{/*                                 </ActionButton> */}
-                            </Box>
-                        </StyledGroupBox>
-
-                         {/* 완료 버튼 */}
-                                                <Box className={styles.completeButtonWrapper}>
-                                                    <ActionButton
-                                                        variant="complete"
-                                                        size="large"
-                                                        onClick={handleComplete}
-                                                        sx={{ width: '100%' }}
-                                                    >
-                                                        완 료
-                                                    </ActionButton>
-                                                </Box>
-                    </Box>
-                </Grid>
-            </Grid>
-        </Container>
+  const generateSearchResults = (keyword, data) => {
+    // 키워드가 포함된 데이터 찾기
+    const filtered = data.filter((row) =>
+      row.keywords.some((kw) => kw.includes(keyword))
     );
+
+    // 키워드별 통계 계산 (검색 결과용)
+    const keywordMap = {};
+    filtered.forEach((row) => {
+      row.keywords.forEach((kw) => {
+        if (kw.includes(keyword)) {
+          if (!keywordMap[kw]) {
+            keywordMap[kw] = { count: 0, totalAmount: 0, rows: [] };
+          }
+          keywordMap[kw].count += 1;
+          keywordMap[kw].totalAmount += parseInt(row['Val.in RC']);
+          keywordMap[kw].rows.push(row.id);
+        }
+      });
+    });
+
+    return Object.keys(keywordMap).map((kw, idx) => ({
+      id: idx + 1,
+      keyword: kw,
+      count: keywordMap[kw].count,
+      totalAmount: keywordMap[kw].totalAmount,
+      rowIds: keywordMap[kw].rows,
+    }));
+  };
+
+  // ===== useEffect =====
+  useEffect(() => {
+    loadData();
+  }, [sessionId]);
+
+  const loadData = async () => {
+    try {
+      const data = generateOriginalData();
+      setOriginalData(data);
+      setKeywordStats(calculateKeywordStats(data));
+    } catch (error) {
+      console.error('데이터 로드 실패:', error);
+    }
+  };
+
+  // ===== 핸들러 함수 =====
+  const handleSearchKeyword = () => {
+    const keyword = searchMethod === 'input' ? searchKeyword : selectedKeywordFromStats;
+
+    if (!keyword.trim()) {
+      alert('검색할 키워드를 입력하거나 선택해주세요.');
+      return;
+    }
+
+    // 검색 실행
+    const results = generateSearchResults(keyword, originalData);
+    setSearchResults(results);
+
+    // 검색 결과 초기화
+    setSelectedSearchResult(null);
+    setFilteredData([]);
+  };
+
+  const handleSelectSearchResult = (result) => {
+    setSelectedSearchResult(result);
+
+    const filtered = originalData.filter((row) =>
+      result.rowIds.includes(row.id)
+    );
+
+    setFilteredData(filtered);
+
+    // ✅ 페이지 초기화
+    setCurrentPage(1);
+  };
+
+  const handleMergeKeywords = () => {
+    if (!selectedSearchResult) {
+      alert('병합할 키워드를 선택해주세요.');
+      return;
+    }
+
+    if (!toKeyword.trim()) {
+      alert('대상 키워드를 입력해주세요.');
+      return;
+    }
+
+    // 키워드 병합 실행
+    const fromKeyword = selectedSearchResult.keyword;
+
+    // 원본 데이터의 키워드 변경
+    const updatedData = originalData.map((row) => ({
+      ...row,
+      keywords: row.keywords.map((kw) =>
+        kw === fromKeyword ? toKeyword : kw
+      ),
+    }));
+
+    setOriginalData(updatedData);
+
+    // 키워드 통계 재계산
+    setKeywordStats(calculateKeywordStats(updatedData));
+
+    // 필터링된 데이터도 업데이트
+    if (filteredData.length > 0) {
+      const updatedFiltered = filteredData.map((row) => ({
+        ...row,
+        keywords: row.keywords.map((kw) =>
+          kw === fromKeyword ? toKeyword : kw
+        ),
+      }));
+      setFilteredData(updatedFiltered);
+    }
+
+    alert(`키워드 병합 완료:\n[${fromKeyword}] → [${toKeyword}]`);
+
+    // 초기화
+    setSearchResults([]);
+    setSelectedSearchResult(null);
+    setSearchKeyword('');
+    setSelectedKeywordFromStats('');
+    setToKeyword('');
+  };
+
+  const formatAmount = (amount) => {
+    const value = amount / amountDivisor[amountUnit];
+    return value.toLocaleString(undefined, {
+      maximumFractionDigits: 1,
+    });
+  };
+
+  const handleComplete = () => {
+    navigate(`/projects/${projectId}/sessions/${sessionId}/clustering`);
+  };
+
+  // ✅ 페이징 state 추가
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(20);
+
+  // ✅ 계산된 값
+  const totalPages = Math.ceil(filteredData.length / pageSize);
+  const startRow = (currentPage - 1) * pageSize + 1;
+  const endRow = Math.min(currentPage * pageSize, filteredData.length);
+
+  // ✅ 현재 페이지 데이터
+  const paginatedData = filteredData.slice(
+    (currentPage - 1) * pageSize,
+    currentPage * pageSize
+  );
+
+  return (
+    <div className="flex flex-col h-full bg-gray-50 overflow-hidden">
+      <div className="container mx-auto px-4 py-4 h-full flex flex-col min-h-0 max-w-[98vw]">
+
+        {/* 상단 헤더 (고정) */}
+        <div className="flex-shrink-0 space-y-4 mb-4">
+          <Breadcrumb>
+            <BreadcrumbList>
+              <BreadcrumbItem>
+                <BreadcrumbLink href="/projects">
+                  <Home className="h-4 w-4" />
+                </BreadcrumbLink>
+              </BreadcrumbItem>
+              <BreadcrumbSeparator>
+                <ChevronRight className="h-4 w-4" />
+              </BreadcrumbSeparator>
+              <BreadcrumbItem>
+                <BreadcrumbLink href={`/projects/${projectId}/upload`}>
+                  프로젝트
+                </BreadcrumbLink>
+              </BreadcrumbItem>
+              <BreadcrumbSeparator>
+                <ChevronRight className="h-4 w-4" />
+              </BreadcrumbSeparator>
+              <BreadcrumbItem>
+                <BreadcrumbPage className="font-semibold">
+                  Step 4: Data Transform
+                </BreadcrumbPage>
+              </BreadcrumbItem>
+            </BreadcrumbList>
+          </Breadcrumb>
+
+          <Card>
+            <CardHeader className="py-3">
+              <CardTitle className="text-lg flex items-center justify-between">
+                <span>📂 {sessionInfo.sessionName}</span>
+                <div className="text-sm font-normal text-muted-foreground">
+                  총 {sessionInfo.totalRecords.toLocaleString()}건
+                </div>
+              </CardTitle>
+            </CardHeader>
+          </Card>
+        </div>
+
+        {/* 메인 콘텐츠 그리드 (남은 높이 100%) */}
+        <div className="flex-1 min-h-0 grid grid-cols-1 xl:grid-cols-12 gap-4">
+
+          {/* 좌측: 테이블 영역 (8/12) */}
+          <div className="xl:col-span-8 h-full flex flex-col min-h-0 gap-4">
+
+            {/* 1. 원본 테이블 (접기/펼치기) */}
+            <Card className={`flex-shrink-0 transition-all duration-300 shadow-sm`}>
+              <CardHeader
+                className="py-3 px-4 border-b bg-white cursor-pointer hover:bg-gray-50 transition-colors"
+                onClick={() => setIsOriginalCollapsed(!isOriginalCollapsed)}
+              >
+                <CardTitle className="text-base flex items-center justify-between">
+                  <span>
+                    원본 데이터
+                    <span className="text-xs font-normal text-gray-500 ml-2">
+                      (클릭하여 {isOriginalCollapsed ? '펼치기' : '접기'})
+                    </span>
+                  </span>
+                  {isOriginalCollapsed ? <ChevronDown className="h-4 w-4" /> : <ChevronUp className="h-4 w-4" />}
+                </CardTitle>
+              </CardHeader>
+
+              {!isOriginalCollapsed && (
+                <CardContent className="p-0">
+                  <div className="overflow-auto max-h-[250px] custom-scrollbar">
+                    <Table>
+                      <TableHeader className="bg-gray-100 sticky top-0 z-10">
+                        <TableRow>
+                          <TableHead className="font-semibold text-xs whitespace-nowrap bg-gray-100">Process Data ID</TableHead>
+                          <TableHead className="font-semibold text-xs whitespace-nowrap bg-gray-100">키워드</TableHead>
+                          <TableHead className="font-semibold text-xs whitespace-nowrap bg-gray-100">CO 오브젝트이름</TableHead>
+                          <TableHead className="font-semibold text-xs whitespace-nowrap bg-gray-100">상계계정이름</TableHead>
+                          <TableHead className="font-semibold text-xs whitespace-nowrap bg-gray-100">Val.in RC</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {originalData.map((row) => (
+                          <TableRow key={row.id} className="hover:bg-muted/50">
+                            <TableCell className="text-xs whitespace-nowrap font-mono">
+                              {row.processDataId}
+                            </TableCell>
+                            <TableCell className="text-xs">
+                              <div className="flex flex-wrap gap-1">
+                                {row.keywords.map((keyword, idx) => (
+                                  <Badge key={idx} variant="secondary" className="text-[10px]">
+                                    {keyword}
+                                  </Badge>
+                                ))}
+                              </div>
+                            </TableCell>
+                            <TableCell className="text-xs whitespace-nowrap">
+                              {row['CO 오브젝트이름']}
+                            </TableCell>
+                            <TableCell className="text-xs whitespace-nowrap">
+                              {row.상계계정이름}
+                            </TableCell>
+                            <TableCell className="text-xs text-right whitespace-nowrap">
+                              {parseInt(row['Val.in RC']).toLocaleString()}
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                </CardContent>
+              )}
+            </Card>
+
+            {/* 2. 검색 결과 테이블 (flex-1) */}
+            <Card className="flex-1 flex flex-col min-h-0 shadow-sm overflow-hidden">
+              <CardHeader className="py-3 px-4 border-b bg-white flex-shrink-0">
+                <CardTitle className="text-base">
+                  검색 결과 데이터
+                  {selectedSearchResult && (
+                    <span className="text-xs font-normal text-muted-foreground ml-2">
+                      (키워드: <Badge variant="outline" className="text-[10px]">{selectedSearchResult.keyword}</Badge>)
+                    </span>
+                  )}
+                </CardTitle>
+              </CardHeader>
+
+              <CardContent className="p-0 flex-1 relative min-h-0">
+                <div className="absolute inset-0 overflow-auto custom-scrollbar">
+                  {filteredData.length === 0 ? (
+                    <div className="flex items-center justify-center h-full text-sm text-muted-foreground">
+                      우측 키워드 병합에서 키워드를 검색하고 결과를 선택해주세요
+                    </div>
+                  ) : (
+                    <Table>
+                      <TableHeader className="bg-gray-100 sticky top-0 z-10 shadow-sm">
+                        <TableRow>
+                          <TableHead className="font-semibold text-xs whitespace-nowrap bg-gray-100">Process Data ID</TableHead>
+                          <TableHead className="font-semibold text-xs whitespace-nowrap bg-gray-100">키워드</TableHead>
+                          <TableHead className="font-semibold text-xs whitespace-nowrap bg-gray-100">CO 오브젝트이름</TableHead>
+                          <TableHead className="font-semibold text-xs whitespace-nowrap bg-gray-100">상계계정이름</TableHead>
+                          <TableHead className="font-semibold text-xs whitespace-nowrap bg-gray-100">Val.in RC</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {filteredData.map((row) => (
+                          <TableRow key={row.id} className="hover:bg-muted/50">
+                            <TableCell className="text-xs whitespace-nowrap font-mono">
+                              {row.processDataId}
+                            </TableCell>
+                            <TableCell className="text-xs">
+                              <div className="flex flex-wrap gap-1">
+                                {row.keywords.map((keyword, idx) => (
+                                  <Badge key={idx} variant="secondary" className="text-[10px]">
+                                    {keyword}
+                                  </Badge>
+                                ))}
+                              </div>
+                            </TableCell>
+                            <TableCell className="text-xs whitespace-nowrap">
+                              {row['CO 오브젝트이름']}
+                            </TableCell>
+                            <TableCell className="text-xs whitespace-nowrap">
+                              {row.상계계정이름}
+                            </TableCell>
+                            <TableCell className="text-xs text-right whitespace-nowrap">
+                              {parseInt(row['Val.in RC']).toLocaleString()}
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  )}
+                </div>
+              </CardContent>
+
+              {/* ✅ 페이징 Footer 추가 */}
+                {filteredData.length > 0 && totalPages > 1 && (
+                  <div className="p-3 border-t bg-white flex-shrink-0">
+                    <div className="flex items-center justify-between text-xs">
+                      <div className="text-muted-foreground hidden sm:block">
+                        {startRow} - {endRow} / 총 {filteredData.length}건
+                      </div>
+
+                      <div className="flex items-center gap-2 w-full sm:w-auto justify-between sm:justify-end">
+                        <Select
+                          value={pageSize.toString()}
+                          onValueChange={(value) => {
+                            setPageSize(Number(value));
+                            setCurrentPage(1);
+                          }}
+                        >
+                          <SelectTrigger className="w-[100px] h-8 text-xs">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="20">20개씩</SelectItem>
+                            <SelectItem value="50">50개씩</SelectItem>
+                            <SelectItem value="100">100개씩</SelectItem>
+                            <SelectItem value="500">500개씩</SelectItem>
+                          </SelectContent>
+                        </Select>
+
+                        <div className="flex gap-1">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="h-8 px-2"
+                            onClick={() => setCurrentPage(1)}
+                            disabled={currentPage === 1}
+                          >
+                            처음
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="h-8 px-2"
+                            onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                            disabled={currentPage === 1}
+                          >
+                            이전
+                          </Button>
+                          <span className="flex items-center px-2 text-xs font-medium">
+                            {currentPage} / {totalPages}
+                          </span>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="h-8 px-2"
+                            onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                            disabled={currentPage === totalPages}
+                          >
+                            다음
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="h-8 px-2"
+                            onClick={() => setCurrentPage(totalPages)}
+                            disabled={currentPage === totalPages}
+                          >
+                            마지막
+                          </Button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </Card>
+          </div>
+
+          {/* 우측: 키워드 통계 + 병합 패널 (4/12) */}
+          <div className="xl:col-span-4 h-full flex flex-col min-h-0">
+
+            {/* 설정 패널 (스크롤 가능) */}
+            <div className="flex-1 overflow-y-auto pr-1 space-y-4 pb-2">
+
+              {/* 키워드 통계 */}
+              <Card>
+                <CardHeader className="py-3 border-b">
+                  <div className="flex items-center justify-between">
+                    <CardTitle className="text-sm font-bold">키워드 통계</CardTitle>
+                    <Select value={amountUnit} onValueChange={setAmountUnit}>
+                      <SelectTrigger className="w-[80px] h-7 text-xs">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="원">원</SelectItem>
+                        <SelectItem value="천원">천원</SelectItem>
+                        <SelectItem value="백만원">백만원</SelectItem>
+                        <SelectItem value="억원">억원</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </CardHeader>
+                <CardContent className="p-0">
+                  <div className="overflow-auto max-h-[280px] custom-scrollbar">
+                    <Table>
+                      <TableHeader className="bg-gray-100 sticky top-0 z-10">
+                        <TableRow>
+                          <TableHead className="font-semibold text-xs w-[40px] text-center bg-gray-100">순위</TableHead>
+                          <TableHead className="font-semibold text-xs bg-gray-100">키워드</TableHead>
+                          <TableHead className="font-semibold text-xs text-right bg-gray-100">Count</TableHead>
+                          <TableHead className="font-semibold text-xs text-right bg-gray-100">합계({amountUnit})</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {keywordStats.map((row) => (
+                          <TableRow key={row.id} className="hover:bg-muted/50">
+                            <TableCell className="text-xs text-center">{row.id}</TableCell>
+                            <TableCell className="text-xs">
+                              <Badge variant="outline" className="text-[10px] font-medium">
+                                {row.keyword}
+                              </Badge>
+                            </TableCell>
+                            <TableCell className="text-xs text-right">
+                              {row.count.toLocaleString()}
+                            </TableCell>
+                            <TableCell className="text-xs text-right">
+                              {formatAmount(row.totalAmount)}
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* 키워드 병합 */}
+              <Card>
+                <CardHeader className="py-3 border-b">
+                  <CardTitle className="text-sm font-bold flex items-center gap-2">
+                    <GitMerge className="h-4 w-4" />
+                    키워드 병합
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-3 pt-4">
+
+                  {/* 검색 방법 선택 탭 */}
+                  <div className="flex gap-2 mb-3">
+                    <Button
+                      size="sm"
+                      variant={searchMethod === 'input' ? 'default' : 'outline'}
+                      className="flex-1 h-8 text-xs"
+                      onClick={() => setSearchMethod('input')}
+                    >
+                      직접 입력
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant={searchMethod === 'select' ? 'default' : 'outline'}
+                      className="flex-1 h-8 text-xs"
+                      onClick={() => setSearchMethod('select')}
+                    >
+                      통계에서 선택
+                    </Button>
+                  </div>
+
+                  {/* 검색 입력 영역 */}
+                  {searchMethod === 'input' ? (
+                    <div className="flex gap-2">
+                      <Input
+                        className="h-8 text-sm"
+                        placeholder="키워드 입력 (예: 이커머스)"
+                        value={searchKeyword}
+                        onChange={(e) => setSearchKeyword(e.target.value)}
+                        onKeyPress={(e) => {
+                          if (e.key === 'Enter') handleSearchKeyword();
+                        }}
+                      />
+                      <Button
+                        size="sm"
+                        className="h-8 whitespace-nowrap"
+                        onClick={handleSearchKeyword}
+                      >
+                        <Search className="h-3 w-3 mr-1" />
+                        검색
+                      </Button>
+                    </div>
+                  ) : (
+                    <div className="flex gap-2">
+                      <Select
+                        value={selectedKeywordFromStats}
+                        onValueChange={setSelectedKeywordFromStats}
+                      >
+                        <SelectTrigger className="h-8 text-sm">
+                          <SelectValue placeholder="키워드 선택" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {keywordStats.map((stat) => (
+                            <SelectItem key={stat.id} value={stat.keyword}>
+                              {stat.keyword} ({stat.count})
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <Button
+                        size="sm"
+                        className="h-8 whitespace-nowrap"
+                        onClick={handleSearchKeyword}
+                      >
+                        <Search className="h-3 w-3 mr-1" />
+                        검색
+                      </Button>
+                    </div>
+                  )}
+
+                  {/* 검색 결과 영역 */}
+                  <div>
+                    <label className="text-xs font-semibold mb-2 block">
+                      검색 결과 ({searchResults.length}건)
+                    </label>
+
+                    <div className="border rounded-md p-2 space-y-1 max-h-[200px] overflow-y-auto bg-white">
+                      {searchResults.length === 0 ? (
+                        <div className="text-xs text-muted-foreground text-center py-4">
+                          키워드를 검색해주세요
+                        </div>
+                      ) : (
+                        <Table>
+                          <TableHeader className="bg-gray-50 sticky top-0">
+                            <TableRow>
+                              <TableHead className="text-xs h-7 py-1">키워드</TableHead>
+                              <TableHead className="text-xs h-7 py-1 text-right">Count</TableHead>
+                              <TableHead className="text-xs h-7 py-1 text-right">합계({amountUnit})</TableHead>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                            {searchResults.map((result) => (
+                              <TableRow
+                                key={result.id}
+                                className={`cursor-pointer hover:bg-blue-50 ${
+                                  selectedSearchResult?.id === result.id ? 'bg-blue-100' : ''
+                                }`}
+                                onClick={() => handleSelectSearchResult(result)}
+                              >
+                                <TableCell className="text-xs py-1">
+                                  <Badge variant="outline" className="text-[10px]">
+                                    {result.keyword}
+                                  </Badge>
+                                </TableCell>
+                                <TableCell className="text-xs py-1 text-right">
+                                  {result.count}
+                                </TableCell>
+                                <TableCell className="text-xs py-1 text-right">
+                                  {formatAmount(result.totalAmount)}
+                                </TableCell>
+                              </TableRow>
+                            ))}
+                          </TableBody>
+                        </Table>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* 대상 키워드 (To) */}
+                  <div>
+                    <label className="text-xs font-semibold mb-2 block">
+                      대상 키워드 (병합 후)
+                    </label>
+                    <Input
+                      className="h-8 text-sm"
+                      placeholder="통합할 키워드 입력 (예: 이커머스)"
+                      value={toKeyword}
+                      onChange={(e) => setToKeyword(e.target.value)}
+                    />
+                  </div>
+
+                  {/* 병합 실행 버튼 */}
+                  <Button
+                    className="w-full bg-purple-600 hover:bg-purple-700 h-10 font-semibold"
+                    onClick={handleMergeKeywords}
+                    disabled={!selectedSearchResult}
+                  >
+                    <GitMerge className="h-4 w-4 mr-2" />
+                    키워드 병합 실행
+                  </Button>
+
+                  {/* 안내 메시지 */}
+                  <div className="text-[11px] text-muted-foreground bg-muted p-2 rounded">
+                    💡 검색 결과를 클릭 → 대상 키워드 입력 → 병합 실행
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* 클러스터링 조건 설정 */}
+              <Card>
+                <CardHeader className="py-3 border-b">
+                  <CardTitle className="text-sm font-bold flex items-center gap-2">
+                    <Settings className="h-4 w-4" />
+                    클러스터링 조건 설정
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-3 pt-4">
+                  <div className="flex items-center gap-2">
+                    <Checkbox
+                      id="supplier"
+                      checked={clusteringOptions.supplier}
+                      onCheckedChange={(checked) =>
+                        setClusteringOptions((prev) => ({ ...prev, supplier: !!checked }))
+                      }
+                    />
+                    <Label htmlFor="supplier" className="text-sm cursor-pointer">
+                      공급업체명
+                    </Label>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Checkbox
+                      id="costCenter"
+                      checked={clusteringOptions.costCenter}
+                      onCheckedChange={(checked) =>
+                        setClusteringOptions((prev) => ({ ...prev, costCenter: !!checked }))
+                      }
+                    />
+                    <Label htmlFor="costCenter" className="text-sm cursor-pointer">
+                      코스트센터명
+                    </Label>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+
+            {/* 완료 버튼 (하단 고정) */}
+            <div className="pt-3 mt-auto flex-shrink-0 z-20 bg-gray-50 pb-2">
+              <Button
+                className="w-full bg-green-600 hover:bg-green-700 text-white shadow-lg h-12 text-base font-semibold"
+                onClick={handleComplete}
+              >
+                완료 → Step 5: Clustering
+              </Button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 export default DataTransformPage;
