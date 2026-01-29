@@ -4,39 +4,39 @@ import React from 'react';
 import {
     Dialog,
     DialogContent,
+    DialogHeader,
     DialogTitle,
-    Box,
-    LinearProgress,
-    Typography
-} from '@mui/material';
+} from '@/components/ui/dialog';
+import { Progress } from '@/components/ui/progress';
+import { Loader2 } from 'lucide-react';
 
 function ProgressDialog({ open, message, value }) {
     return (
-        <Dialog
-            open={open}
-            disableEscapeKeyDown
-            maxWidth="sm"
-            fullWidth
-        >
-            <DialogTitle>
-                처리 중...
-            </DialogTitle>
-            <DialogContent>
-                <Box sx={{ width: '100%', mt: 2 }}>
-                    <LinearProgress
-                        variant={value !== undefined ? "determinate" : "indeterminate"}
-                        value={value || 0}
+        <Dialog open={open}>
+            <DialogContent className="sm:max-w-md" hideClose>
+                <DialogHeader>
+                    <DialogTitle className="flex items-center gap-2">
+                        <Loader2 className="h-5 w-5 animate-spin text-primary" />
+                        처리 중...
+                    </DialogTitle>
+                </DialogHeader>
+
+                <div className="space-y-4 py-4">
+                    <Progress
+                        value={value !== undefined ? value : undefined}
+                        className="h-2"
                     />
-                    {/* ⭐ Typography를 Box 밖으로 이동 */}
-                    <Typography
-                        variant="body2"
-                        color="text.secondary"
-                        align="center"
-                        sx={{ mt: 2 }}
-                    >
+
+                    <p className="text-sm text-center text-muted-foreground">
                         {message}
-                    </Typography>
-                </Box>
+                    </p>
+
+                    {value !== undefined && (
+                        <p className="text-xs text-center text-muted-foreground">
+                            {Math.round(value)}%
+                        </p>
+                    )}
+                </div>
             </DialogContent>
         </Dialog>
     );

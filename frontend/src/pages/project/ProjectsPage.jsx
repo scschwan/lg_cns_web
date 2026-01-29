@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import projectService from '../services/projectService';
+import projectService from '../../services/projectService';
 import { Button } from '@/components/ui/button';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from '@/components/ui/card';
 import { Alert, AlertDescription } from '@/components/ui/alert';
@@ -14,7 +14,7 @@ import {
     FolderOpen,
     Loader2
 } from 'lucide-react';
-import CreateProjectDialog from '../components/project/CreateProjectDialog';
+import CreateProjectDialog from './CreateProjectDialog';
 
 export default function ProjectsPage() {
     const [projects, setProjects] = useState([]);

@@ -4,14 +4,14 @@ import React from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider } from './context/AuthContext';
 import Navbar from './components/layout/Navbar';
+
+import DashboardLayout from './components/layout/DashboardLayout'; // ⭐ 추가
 import PrivateRoute from './components/PrivateRoute';
 
 import LoginPage from './pages/auth/LoginPage';
 import RegisterPage from './pages/auth/RegisterPage';
 import ProjectsPage from './pages/project/ProjectsPage';
 
-import ProjectDashboard from './pages/project/ProjectDashboard';
-import ProjectDetail from './pages/project/ProjectDetail';
 import MultiFileUploadPage from './pages/upload/MultiFileUploadPage';
 import ProjectSettingsPage from './pages/project/ProjectSettingsPage';
 
@@ -29,10 +29,6 @@ function App() {
     return (
         <AuthProvider>
             <Router>
-                {/* ⭐ Tailwind 테스트용 임시 추가 */}
-                                <div className="p-4 bg-blue-500 text-white text-center">
-                                    ✅ Tailwind CSS 작동 중!
-                                </div>
 
                 <Navbar />
                 <Routes>
@@ -47,23 +43,6 @@ function App() {
 
                     {/* Private Routes */}
 
-                    <Route
-                        path="/projects/:projectId"
-                        element={
-                            <PrivateRoute>
-                                <ProjectDetail />
-                            </PrivateRoute>
-                        }
-                    />
-
-                    <Route
-                        path="/projects/:projectId/upload"
-                        element={
-                            <PrivateRoute>
-                                <MultiFileUploadPage />
-                            </PrivateRoute>
-                        }
-                    />
 
                     <Route
                         path="/projects/:projectId/settings"
@@ -74,67 +53,92 @@ function App() {
                         }
                     />
 
-                    {/* ⭐⭐⭐ 신규 라우트: 세션 기반 5개 화면 */}
-                    
-                    {/* Step 2: File Load */}
-                    <Route
-                        path="/projects/:projectId/sessions/:sessionId/fileload"
-                        element={
-                            <PrivateRoute>
-                                <FileLoadPage />
-                            </PrivateRoute>
-                        }
-                    />
+                    {/* ⭐⭐⭐ Step 1-7: DashboardLayout으로 감싸기 */}
 
-                    {/* Step 3: Preprocessing */}
-                    <Route
-                        path="/projects/:projectId/sessions/:sessionId/preprocessing"
-                        element={
-                            <PrivateRoute>
-                                <PreprocessingPage />
-                            </PrivateRoute>
-                        }
-                    />
+                   {/* Step 1: Multi File Upload */}
+                   <Route
+                       path="/projects/:projectId/upload"
+                       element={
+                           <PrivateRoute>
+                               <DashboardLayout>
+                                   <MultiFileUploadPage />
+                               </DashboardLayout>
+                           </PrivateRoute>
+                       }
+                   />
 
-                    {/* Step 4: Data Transform */}
-                    <Route
-                        path="/projects/:projectId/sessions/:sessionId/transform"
-                        element={
-                            <PrivateRoute>
-                                <DataTransformPage />
-                            </PrivateRoute>
-                        }
-                    />
+                   {/* Step 2: File Load */}
+                   <Route
+                       path="/projects/:projectId/sessions/:sessionId/fileload"
+                       element={
+                           <PrivateRoute>
+                               <DashboardLayout>
+                                   <FileLoadPage />
+                               </DashboardLayout>
+                           </PrivateRoute>
+                       }
+                   />
 
-                    {/* Step 5: Clustering */}
-                    <Route
-                        path="/projects/:projectId/sessions/:sessionId/clustering"
-                        element={
-                            <PrivateRoute>
-                                <ClusteringPage />
-                            </PrivateRoute>
-                        }
-                    />
+                   {/* Step 3: Preprocessing */}
+                   <Route
+                       path="/projects/:projectId/sessions/:sessionId/preprocessing"
+                       element={
+                           <PrivateRoute>
+                               <DashboardLayout>
+                                   <PreprocessingPage />
+                               </DashboardLayout>
+                           </PrivateRoute>
+                       }
+                   />
 
-                    {/* Step 6: Export (Classification) */}
-                    <Route
-                        path="/projects/:projectId/sessions/:sessionId/export"
-                        element={
-                            <PrivateRoute>
-                                <ExportPage />
-                            </PrivateRoute>
-                        }
-                    />
+                   {/* Step 4: Data Transform */}
+                   <Route
+                       path="/projects/:projectId/sessions/:sessionId/transform"
+                       element={
+                           <PrivateRoute>
+                               <DashboardLayout>
+                                   <DataTransformPage />
+                               </DashboardLayout>
+                           </PrivateRoute>
+                       }
+                   />
 
-                     {/* Step 7: DetailClustering */}
-                    <Route
-                        path="/projects/:projectId/sessions/:sessionId/detailclustering"
-                        element={
-                            <PrivateRoute>
-                                <DetailClusteringPage />
-                            </PrivateRoute>
-                        }
-                    />
+                   {/* Step 5: Clustering */}
+                   <Route
+                       path="/projects/:projectId/sessions/:sessionId/clustering"
+                       element={
+                           <PrivateRoute>
+                               <DashboardLayout>
+                                   <ClusteringPage />
+                               </DashboardLayout>
+                           </PrivateRoute>
+                       }
+                   />
+
+                   {/* Step 6: Export (Classification) */}
+                   <Route
+                       path="/projects/:projectId/sessions/:sessionId/export"
+                       element={
+                           <PrivateRoute>
+                               <DashboardLayout>
+                                   <ExportPage />
+                               </DashboardLayout>
+                           </PrivateRoute>
+                       }
+                   />
+
+                    {/* Step 7: DetailClustering */}
+                   <Route
+                       path="/projects/:projectId/sessions/:sessionId/detailclustering"
+                       element={
+                           <PrivateRoute>
+                               <DashboardLayout>
+                                   <DetailClusteringPage />
+                               </DashboardLayout>
+                           </PrivateRoute>
+                       }
+                   />
+
 
                     {/* Default Redirect */}
                     <Route path="/" element={<Navigate to="/login" />} />

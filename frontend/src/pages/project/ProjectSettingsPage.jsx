@@ -1,472 +1,602 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Alert, AlertDescription } from '@/components/ui/alert';
 import {
-    Box,
-    Paper,
-    Typography,
-    TextField,
-    Button,
-    Alert,
-    CircularProgress,
-    Divider,
-    Chip,
-    Tabs,
-    Tab,
-    IconButton,
-    Dialog,
-    DialogTitle,
-    DialogContent,
-    DialogActions,
-    Select,
-    MenuItem,
-    FormControl,
-    InputLabel
-} from '@mui/material';
-import { DataGrid } from '@mui/x-data-grid';
-import SaveIcon from '@mui/icons-material/Save';
-import ArrowBackIcon from '@mui/icons-material/ArrowBack';
-import DescriptionIcon from '@mui/icons-material/Description';
-import PeopleIcon from '@mui/icons-material/People';
-import DeleteIcon from '@mui/icons-material/Delete';
-import PersonAddIcon from '@mui/icons-material/PersonAdd';
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
+import {
+  Breadcrumb,
+  BreadcrumbItem,
+  BreadcrumbLink,
+  BreadcrumbList,
+  BreadcrumbPage,
+  BreadcrumbSeparator,
+} from '@/components/ui/breadcrumb';
+import { Badge } from '@/components/ui/badge';
+import {
+  ArrowLeft,
+  Save,
+  Trash2,
+  UserPlus,
+  Loader2,
+  FileText,
+  Users,
+  Settings,
+  AlertCircle,
+  CheckCircle2,
+  FolderOpen
+} from 'lucide-react';
 
 import projectService from '../../services/projectService';
-import styles from './ProjectSettingsPage.module.css';
 
 const ProjectSettingsPage = () => {
-    const { projectId } = useParams();
-    const navigate = useNavigate();
+  const { projectId } = useParams();
+  const navigate = useNavigate();
 
-    const [project, setProject] = useState(null);
-    const [projectName, setProjectName] = useState('');
-    const [projectDescription, setProjectDescription] = useState('');
-    const [files, setFiles] = useState([]);
-    const [filesLoading, setFilesLoading] = useState(false);
-    const [loading, setLoading] = useState(true);
-    const [saving, setSaving] = useState(false);
-    const [error, setError] = useState(null);
-    const [successMessage, setSuccessMessage] = useState('');
+  // State
+  const [project, setProject] = useState(null);
+  const [projectName, setProjectName] = useState('');
+  const [projectDescription, setProjectDescription] = useState('');
+  const [files, setFiles] = useState([]);
+  const [members, setMembers] = useState([]);
 
-    const [currentTab, setCurrentTab] = useState(0);
-    const [members, setMembers] = useState([]);
-    const [inviteDialogOpen, setInviteDialogOpen] = useState(false);
-    const [inviteEmail, setInviteEmail] = useState('');
-    const [inviteRole, setInviteRole] = useState('VIEWER');
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [filesLoading, setFilesLoading] = useState(false);
+  const [error, setError] = useState(null);
+  const [successMessage, setSuccessMessage] = useState('');
 
-    useEffect(() => {
-        loadProjectData();
-    }, [projectId]);
+  // Dialog State
+  const [inviteDialogOpen, setInviteDialogOpen] = useState(false);
+  const [inviteEmail, setInviteEmail] = useState('');
+  const [inviteRole, setInviteRole] = useState('VIEWER');
 
-    const loadProjectData = async () => {
-        try {
-            setLoading(true);
-            setError(null);
+  useEffect(() => {
+    loadProjectData();
+  }, [projectId]);
 
-            const projectData = await projectService.getProject(projectId);
-            setProject(projectData);
-            setProjectName(projectData.projectName);
-            setProjectDescription(projectData.description || '');
+  const loadProjectData = async () => {
+    try {
+      setLoading(true);
+      setError(null);
 
-            await loadProjectFiles();
-            await loadProjectMembers();
+      const projectData = await projectService.getProject(projectId);
+      setProject(projectData);
+      setProjectName(projectData.projectName);
+      setProjectDescription(projectData.description || '');
 
-        } catch (err) {
-            console.error('프로젝트 정보 로드 실패:', err);
-            setError('프로젝트 정보를 불러오는데 실패했습니다.');
-        } finally {
-            setLoading(false);
-        }
-    };
+      await Promise.all([loadProjectFiles(), loadProjectMembers()]);
+    } catch (err) {
+      console.error('프로젝트 정보 로드 실패:', err);
+      setError('프로젝트 정보를 불러오는데 실패했습니다.');
+    } finally {
+      setLoading(false);
+    }
+  };
 
-    const loadProjectFiles = async () => {
-        try {
-            setFilesLoading(true);
-            const filesData = await projectService.getProjectFiles(projectId);
+  const loadProjectFiles = async () => {
+    try {
+      setFilesLoading(true);
+      const filesData = await projectService.getProjectFiles(projectId);
+      setFiles(filesData);
+    } catch (err) {
+      console.error('파일 목록 로드 실패:', err);
+    } finally {
+      setFilesLoading(false);
+    }
+  };
 
-            const formattedFiles = filesData.map((file, index) => ({
-                id: file.fileId || index,
-                fileName: file.fileName,
-                fileSize: formatFileSize(file.fileSize),
-                columnCount: file.detectedColumns?.length || 0,
-                uploadedAt: formatDate(file.uploadedAt),
-                accountColumn: file.accountColumnName || '-',
-                amountColumn: file.amountColumnName || '-'
-            }));
+  const loadProjectMembers = async () => {
+    try {
+      const membersData = await projectService.getProjectMembers(projectId);
+      setMembers(membersData);
+    } catch (err) {
+      console.error('멤버 목록 로드 실패:', err);
+      setMembers([]);
+    }
+  };
 
-            setFiles(formattedFiles);
-        } catch (err) {
-            console.error('파일 목록 로드 실패:', err);
-        } finally {
-            setFilesLoading(false);
-        }
-    };
+  const handleSave = async () => {
+    try {
+      setSaving(true);
+      setError(null);
+      setSuccessMessage('');
 
-    const loadProjectMembers = async () => {
-        try {
-            const membersData = await projectService.getProjectMembers(projectId);
+      await projectService.updateProject(projectId, {
+        name: projectName,
+        description: projectDescription
+      });
 
-            const formattedMembers = membersData.map(member => ({
-                id: member.userId,
-                email: member.email || '-',
-                name: member.name || '-',
-                role: member.role,
-                joinedAt: member.joinedAt,
-                isOwner: member.role === 'OWNER'
-            }));
+      setSuccessMessage('프로젝트 정보가 저장되었습니다.');
+      setTimeout(() => setSuccessMessage(''), 3000);
+    } catch (err) {
+      console.error('프로젝트 저장 실패:', err);
+      setError('프로젝트 정보 저장에 실패했습니다.');
+    } finally {
+      setSaving(false);
+    }
+  };
 
-            setMembers(formattedMembers);
-        } catch (err) {
-            console.error('멤버 목록 로드 실패:', err);
-            setMembers([]);
-        }
-    };
+  const handleDeleteProject = async () => {
+    if (!window.confirm(
+      '프로젝트를 삭제하시겠습니까?\n\n' +
+      '⚠️ 경고:\n' +
+      '- 프로젝트에 포함된 모든 파일이 삭제됩니다.\n' +
+      '- 이 작업은 되돌릴 수 없습니다.\n\n' +
+      '계속하시겠습니까?'
+    )) return;
 
-    const handleInviteMember = async () => {
-        if (!inviteEmail.trim()) {
-            alert('이메일을 입력해주세요.');
-            return;
-        }
+    try {
+      await projectService.deleteProject(projectId);
+      alert('프로젝트가 삭제되었습니다.');
+      navigate('/projects');
+    } catch (err) {
+      console.error('프로젝트 삭제 실패:', err);
+      setError('프로젝트 삭제에 실패했습니다.');
+    }
+  };
 
-        try {
-            await projectService.inviteMember(projectId, inviteEmail, inviteRole);
-            setInviteDialogOpen(false);
-            setInviteEmail('');
-            setInviteRole('VIEWER');
-            await loadProjectMembers();
-            setSuccessMessage('멤버 초대가 완료되었습니다.');
-            setTimeout(() => setSuccessMessage(''), 3000);
-        } catch (err) {
-            console.error('멤버 초대 실패:', err);
-            setError('멤버 초대에 실패했습니다.');
-        }
-    };
-
-    const handleDeleteMember = async (memberId) => {
-        if (!window.confirm('정말로 이 멤버를 삭제하시겠습니까?')) return;
-
-        try {
-            await projectService.removeMember(projectId, memberId);
-            await loadProjectMembers();
-            setSuccessMessage('멤버가 삭제되었습니다.');
-            setTimeout(() => setSuccessMessage(''), 3000);
-        } catch (err) {
-            console.error('멤버 삭제 실패:', err);
-            setError('멤버 삭제에 실패했습니다.');
-        }
-    };
-
-    const handleRoleChange = async (memberId, newRole) => {
-        try {
-            await projectService.updateMemberRole(projectId, memberId, newRole);
-            await loadProjectMembers();
-            setSuccessMessage('역할이 변경되었습니다.');
-            setTimeout(() => setSuccessMessage(''), 3000);
-        } catch (err) {
-            console.error('역할 변경 실패:', err);
-            setError('역할 변경에 실패했습니다.');
-        }
-    };
-
-    const handleDeleteProject = async () => {
-        if (!window.confirm(
-            '프로젝트를 삭제하시겠습니까?\n\n' +
-            '⚠️ 경고:\n' +
-            '- 프로젝트에 포함된 모든 파일이 삭제됩니다.\n' +
-            '- 이 작업은 되돌릴 수 없습니다.\n\n' +
-            '계속하시겠습니까?'
-        )) return;
-
-        try {
-            await projectService.deleteProject(projectId);
-            alert('프로젝트가 삭제되었습니다.');
-            navigate('/projects');
-        } catch (err) {
-            console.error('프로젝트 삭제 실패:', err);
-            setError('프로젝트 삭제에 실패했습니다.');
-        }
-    };
-
-    const formatFileSize = (bytes) => {
-        if (bytes === 0) return '0 Bytes';
-        const k = 1024;
-        const sizes = ['Bytes', 'KB', 'MB', 'GB'];
-        const i = Math.floor(Math.log(bytes) / Math.log(k));
-        return Math.round(bytes / Math.pow(k, i) * 100) / 100 + ' ' + sizes[i];
-    };
-
-    const formatDate = (dateString) => {
-        if (!dateString) return '-';
-        const date = new Date(dateString);
-        return date.toLocaleString('ko-KR', {
-            year: 'numeric',
-            month: '2-digit',
-            day: '2-digit',
-            hour: '2-digit',
-            minute: '2-digit'
-        });
-    };
-
-    const handleSave = async () => {
-        try {
-            setSaving(true);
-            setError(null);
-            setSuccessMessage('');
-
-            await projectService.updateProject(projectId, {
-                name: projectName,
-                description: projectDescription
-            });
-
-            setSuccessMessage('프로젝트 정보가 저장되었습니다.');
-            setTimeout(() => setSuccessMessage(''), 3000);
-
-        } catch (err) {
-            console.error('프로젝트 저장 실패:', err);
-            setError('프로젝트 정보 저장에 실패했습니다.');
-        } finally {
-            setSaving(false);
-        }
-    };
-
-    const fileColumns = [
-        { field: 'fileName', headerName: '파일명', flex: 2, minWidth: 200 },
-        { field: 'fileSize', headerName: '크기', width: 100, align: 'right' },
-        { field: 'columnCount', headerName: '컬럼 수', width: 100, align: 'center' },
-        { field: 'accountColumn', headerName: '계정명 컬럼', flex: 1, minWidth: 150 },
-        { field: 'amountColumn', headerName: '금액 컬럼', flex: 1, minWidth: 150 },
-        { field: 'uploadedAt', headerName: '업로드 시간', flex: 1, minWidth: 150 }
-    ];
-
-    const memberColumns = [
-        { field: 'email', headerName: '이메일', flex: 1, minWidth: 200 },
-        { field: 'name', headerName: '이름', width: 150 },
-        {
-            field: 'role',
-            headerName: '역할',
-            width: 150,
-            renderCell: (params) => (
-                <Select
-                    value={params.value}
-                    onChange={(e) => handleRoleChange(params.row.id, e.target.value)}
-                    size="small"
-                    disabled={params.row.isOwner}
-                >
-                    <MenuItem value="OWNER">소유자</MenuItem>
-                    <MenuItem value="EDITOR">편집자</MenuItem>
-                    <MenuItem value="VIEWER">뷰어</MenuItem>
-                </Select>
-            )
-        },
-        {
-            field: 'joinedAt',
-            headerName: '참여일',
-            width: 150,
-            valueFormatter: (params) => formatDate(params.value)
-        },
-        {
-            field: 'actions',
-            headerName: '삭제',
-            width: 80,
-            renderCell: (params) => (
-                <IconButton
-                    size="small"
-                    color="error"
-                    onClick={() => handleDeleteMember(params.row.id)}
-                    disabled={params.row.isOwner}
-                >
-                    <DeleteIcon fontSize="small" />
-                </IconButton>
-            )
-        }
-    ];
-
-    if (loading) {
-        return (
-            <Box className={styles.loadingContainer}>
-                <CircularProgress />
-            </Box>
-        );
+  const handleInviteMember = async () => {
+    if (!inviteEmail.trim()) {
+      alert('이메일을 입력해주세요.');
+      return;
     }
 
+    try {
+      await projectService.inviteMember(projectId, inviteEmail, inviteRole);
+      setInviteDialogOpen(false);
+      setInviteEmail('');
+      setInviteRole('VIEWER');
+      await loadProjectMembers();
+      setSuccessMessage('멤버 초대가 완료되었습니다.');
+      setTimeout(() => setSuccessMessage(''), 3000);
+    } catch (err) {
+      console.error('멤버 초대 실패:', err);
+      setError('멤버 초대에 실패했습니다.');
+    }
+  };
+
+  const handleDeleteMember = async (memberId) => {
+    if (!window.confirm('정말로 이 멤버를 삭제하시겠습니까?')) return;
+
+    try {
+      await projectService.removeMember(projectId, memberId);
+      await loadProjectMembers();
+      setSuccessMessage('멤버가 삭제되었습니다.');
+      setTimeout(() => setSuccessMessage(''), 3000);
+    } catch (err) {
+      console.error('멤버 삭제 실패:', err);
+      setError('멤버 삭제에 실패했습니다.');
+    }
+  };
+
+  const handleRoleChange = async (memberId, newRole) => {
+    try {
+      await projectService.updateMemberRole(projectId, memberId, newRole);
+      await loadProjectMembers();
+      setSuccessMessage('역할이 변경되었습니다.');
+      setTimeout(() => setSuccessMessage(''), 3000);
+    } catch (err) {
+      console.error('역할 변경 실패:', err);
+      setError('역할 변경에 실패했습니다.');
+    }
+  };
+
+  const formatFileSize = (bytes) => {
+    if (bytes === 0) return '0 Bytes';
+    const k = 1024;
+    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return Math.round(bytes / Math.pow(k, i) * 100) / 100 + ' ' + sizes[i];
+  };
+
+  const formatDate = (dateString) => {
+    if (!dateString) return '-';
+    const date = new Date(dateString);
+    return date.toLocaleString('ko-KR', {
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+  };
+
+  const getRoleBadgeVariant = (role) => {
+    switch (role) {
+      case 'OWNER': return 'default';
+      case 'EDITOR': return 'secondary';
+      case 'VIEWER': return 'outline';
+      default: return 'outline';
+    }
+  };
+
+  const getRoleLabel = (role) => {
+    switch (role) {
+      case 'OWNER': return '소유자';
+      case 'EDITOR': return '편집자';
+      case 'VIEWER': return '뷰어';
+      default: return role;
+    }
+  };
+
+  if (loading) {
     return (
-        <Box className={styles.contentWrapper}>
-            {/* 헤더 */}
-            <Box className={styles.headerBox}>
-                <Button
-                    className={styles.backButton}
-                    startIcon={<ArrowBackIcon />}
-                    onClick={() => navigate('/projects')}
-                >
-                    프로젝트 목록
-                </Button>
-                <Typography variant="h5" style={{ fontWeight: 600 }}>
-                    프로젝트 설정
-                </Typography>
-            </Box>
-
-            {/* 에러/성공 메시지 */}
-            {error && (
-                <Alert severity="error" className={styles.errorAlert} onClose={() => setError(null)}>
-                    {error}
-                </Alert>
-            )}
-            {successMessage && (
-                <Alert severity="success" className={styles.errorAlert} onClose={() => setSuccessMessage('')}>
-                    {successMessage}
-                </Alert>
-            )}
-
-            {/* 탭 */}
-            <Paper className={styles.tabsWrapper}>
-                <Tabs value={currentTab} onChange={(e, val) => setCurrentTab(val)}>
-                    <Tab label="기본 정보" />
-                    <Tab label="업로드된 파일" icon={<DescriptionIcon />} iconPosition="start" />
-                    <Tab label="프로젝트 멤버" icon={<PeopleIcon />} iconPosition="start" />
-                </Tabs>
-            </Paper>
-
-            {/* 탭 0: 기본 정보 */}
-            {currentTab === 0 && (
-                <Paper className={styles.tabContent}>
-                    <Typography variant="h6" className={styles.tabHeaderTitle}>
-                        기본 정보
-                    </Typography>
-                    <TextField
-                        fullWidth
-                        label="프로젝트 이름"
-                        value={projectName}
-                        onChange={(e) => setProjectName(e.target.value)}
-                        className={styles.textField}
-                        required
-                    />
-                    <TextField
-                        fullWidth
-                        label="프로젝트 설명"
-                        value={projectDescription}
-                        onChange={(e) => setProjectDescription(e.target.value)}
-                        multiline
-                        rows={3}
-                        className={styles.textField}
-                    />
-                    <Box className={styles.buttonGroup}>
-                        <Button
-                            variant="outlined"
-                            color="error"
-                            startIcon={<DeleteIcon />}
-                            onClick={handleDeleteProject}
-                        >
-                            프로젝트 삭제
-                        </Button>
-                        <Button
-                            variant="contained"
-                            startIcon={<SaveIcon />}
-                            onClick={handleSave}
-                            disabled={saving || !projectName.trim()}
-                        >
-                            {saving ? '저장 중...' : '저장'}
-                        </Button>
-                    </Box>
-                </Paper>
-            )}
-
-            {/* 탭 1: 업로드된 파일 */}
-            {currentTab === 1 && (
-                <Paper className={styles.tabContent}>
-                    <Box className={styles.tabHeader}>
-                        <DescriptionIcon className={styles.tabHeaderIcon} />
-                        <Typography variant="h6" className={styles.tabHeaderTitle}>
-                            업로드된 파일
-                        </Typography>
-                        <Chip label={`${files.length}개`} size="small" className={styles.tabHeaderChip} color="primary" />
-                    </Box>
-                    <Divider className={styles.divider} />
-                    {filesLoading ? (
-                        <Box className={styles.fileLoadingContainer}>
-                            <CircularProgress />
-                        </Box>
-                    ) : files.length === 0 ? (
-                        <Box className={styles.emptyState}>
-                            <DescriptionIcon className={styles.emptyStateIcon} />
-                            <Typography>업로드된 파일이 없습니다.</Typography>
-                        </Box>
-                    ) : (
-                        <DataGrid
-                            rows={files}
-                            columns={fileColumns}
-                            pageSize={10}
-                            rowsPerPageOptions={[10, 25, 50]}
-                            autoHeight
-                            disableSelectionOnClick
-                            className={styles.dataGrid}
-                        />
-                    )}
-                </Paper>
-            )}
-
-            {/* 탭 2: 프로젝트 멤버 */}
-            {currentTab === 2 && (
-                <Paper className={styles.tabContent}>
-                    <Box className={styles.sectionHeader}>
-                        <Box className={styles.tabHeader}>
-                            <PeopleIcon className={styles.tabHeaderIcon} />
-                            <Typography variant="h6" className={styles.tabHeaderTitle}>
-                                프로젝트 멤버
-                            </Typography>
-                            <Chip label={`${members.length}명`} size="small" className={styles.tabHeaderChip} color="primary" />
-                        </Box>
-                        <Button
-                            variant="contained"
-                            startIcon={<PersonAddIcon />}
-                            onClick={() => setInviteDialogOpen(true)}
-                            className={styles.inviteButton}
-                        >
-                            멤버 초대
-                        </Button>
-                    </Box>
-                    <Divider className={styles.divider} />
-                    <DataGrid
-                        rows={members}
-                        columns={memberColumns}
-                        pageSize={10}
-                        rowsPerPageOptions={[10, 25, 50]}
-                        autoHeight
-                        disableSelectionOnClick
-                        className={styles.dataGrid}
-                    />
-                </Paper>
-            )}
-
-            {/* 멤버 초대 다이얼로그 */}
-            <Dialog open={inviteDialogOpen} onClose={() => setInviteDialogOpen(false)} maxWidth="sm" fullWidth>
-                <DialogTitle>멤버 초대</DialogTitle>
-                <DialogContent>
-                    <TextField
-                        fullWidth
-                        label="이메일"
-                        value={inviteEmail}
-                        onChange={(e) => setInviteEmail(e.target.value)}
-                        className={styles.dialogTextField}
-                        placeholder="user@example.com"
-                    />
-                    <FormControl fullWidth className={styles.dialogTextField}>
-                        <InputLabel>역할</InputLabel>
-                        <Select
-                            value={inviteRole}
-                            onChange={(e) => setInviteRole(e.target.value)}
-                            label="역할"
-                        >
-                            <MenuItem value="EDITOR">편집자</MenuItem>
-                            <MenuItem value="VIEWER">뷰어</MenuItem>
-                        </Select>
-                    </FormControl>
-                </DialogContent>
-                <DialogActions>
-                    <Button onClick={() => setInviteDialogOpen(false)}>취소</Button>
-                    <Button variant="contained" onClick={handleInviteMember}>초대</Button>
-                </DialogActions>
-            </Dialog>
-        </Box>
+      <div className="flex items-center justify-center min-h-screen">
+        <Loader2 className="w-8 h-8 animate-spin text-primary" />
+      </div>
     );
+  }
+
+  return (
+    <div className="container mx-auto py-6 space-y-6">
+      {/* Breadcrumb */}
+      <Breadcrumb>
+        <BreadcrumbList>
+          <BreadcrumbItem>
+            <BreadcrumbLink
+              onClick={() => navigate('/projects')}
+              className="cursor-pointer flex items-center gap-1"
+            >
+              <FolderOpen className="w-4 h-4" />
+              프로젝트 목록
+            </BreadcrumbLink>
+          </BreadcrumbItem>
+          <BreadcrumbSeparator />
+          <BreadcrumbItem>
+            <BreadcrumbPage>{project?.projectName}</BreadcrumbPage>
+          </BreadcrumbItem>
+          <BreadcrumbSeparator />
+          <BreadcrumbItem>
+            <BreadcrumbPage>설정</BreadcrumbPage>
+          </BreadcrumbItem>
+        </BreadcrumbList>
+      </Breadcrumb>
+
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div className="space-y-1">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => navigate('/projects')}
+            className="mb-2"
+          >
+            <ArrowLeft className="w-4 h-4 mr-2" />
+            뒤로가기
+          </Button>
+          <h1 className="text-3xl font-bold tracking-tight flex items-center gap-2">
+            <Settings className="w-8 h-8" />
+            프로젝트 설정
+          </h1>
+        </div>
+      </div>
+
+      {/* Alerts */}
+      {error && (
+        <Alert variant="destructive" className="animate-in fade-in slide-in-from-top-2">
+          <AlertCircle className="h-4 w-4" />
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
+      )}
+
+      {successMessage && (
+        <Alert className="animate-in fade-in slide-in-from-top-2 border-green-500 text-green-700">
+          <CheckCircle2 className="h-4 w-4" />
+          <AlertDescription>{successMessage}</AlertDescription>
+        </Alert>
+      )}
+
+      {/* Tabs */}
+      <Tabs defaultValue="info" className="space-y-4">
+        <TabsList className="grid w-full grid-cols-3 lg:w-[600px]">
+          <TabsTrigger value="info" className="flex items-center gap-2">
+            <Settings className="w-4 h-4" />
+            기본 정보
+          </TabsTrigger>
+          <TabsTrigger value="files" className="flex items-center gap-2">
+            <FileText className="w-4 h-4" />
+            업로드된 파일
+            <Badge variant="secondary" className="ml-1">{files.length}</Badge>
+          </TabsTrigger>
+          <TabsTrigger value="members" className="flex items-center gap-2">
+            <Users className="w-4 h-4" />
+            프로젝트 멤버
+            <Badge variant="secondary" className="ml-1">{members.length}</Badge>
+          </TabsTrigger>
+        </TabsList>
+
+        {/* Tab 1: 기본 정보 */}
+        <TabsContent value="info">
+          <Card>
+            <CardHeader>
+              <CardTitle>기본 정보</CardTitle>
+              <CardDescription>
+                프로젝트의 이름과 설명을 수정할 수 있습니다.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="projectName">프로젝트 이름</Label>
+                <Input
+                  id="projectName"
+                  value={projectName}
+                  onChange={(e) => setProjectName(e.target.value)}
+                  placeholder="프로젝트 이름을 입력하세요"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="projectDescription">프로젝트 설명</Label>
+                <Textarea
+                  id="projectDescription"
+                  value={projectDescription}
+                  onChange={(e) => setProjectDescription(e.target.value)}
+                  placeholder="프로젝트 설명을 입력하세요 (선택사항)"
+                  rows={4}
+                />
+              </div>
+
+              <div className="flex items-center justify-between pt-4 border-t">
+                <Button
+                  variant="destructive"
+                  onClick={handleDeleteProject}
+                >
+                  <Trash2 className="w-4 h-4 mr-2" />
+                  프로젝트 삭제
+                </Button>
+
+                <Button
+                  onClick={handleSave}
+                  disabled={saving || !projectName.trim()}
+                >
+                  {saving ? (
+                    <>
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      저장 중...
+                    </>
+                  ) : (
+                    <>
+                      <Save className="w-4 h-4 mr-2" />
+                      저장
+                    </>
+                  )}
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* Tab 2: 업로드된 파일 */}
+        <TabsContent value="files">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <FileText className="w-5 h-5" />
+                업로드된 파일
+                <Badge variant="secondary">{files.length}개</Badge>
+              </CardTitle>
+              <CardDescription>
+                프로젝트에 업로드된 Excel 파일 목록입니다.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {filesLoading ? (
+                <div className="flex items-center justify-center py-8">
+                  <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
+                </div>
+              ) : files.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-12 text-center">
+                  <FileText className="w-12 h-12 text-muted-foreground mb-4" />
+                  <p className="text-muted-foreground">업로드된 파일이 없습니다.</p>
+                </div>
+              ) : (
+                <div className="rounded-md border">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>파일명</TableHead>
+                        <TableHead className="w-[100px]">크기</TableHead>
+                        <TableHead className="w-[100px]">컬럼 수</TableHead>
+                        <TableHead className="w-[150px]">계정명 컬럼</TableHead>
+                        <TableHead className="w-[150px]">금액 컬럼</TableHead>
+                        <TableHead className="w-[180px]">업로드 시간</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {files.map((file) => (
+                        <TableRow key={file.fileId}>
+                          <TableCell className="font-medium">
+                            {file.fileName}
+                          </TableCell>
+                          <TableCell>
+                            {formatFileSize(file.fileSize)}
+                          </TableCell>
+                          <TableCell className="text-center">
+                            {file.detectedColumns?.length || 0}
+                          </TableCell>
+                          <TableCell>
+                            {file.accountColumnName || '-'}
+                          </TableCell>
+                          <TableCell>
+                            {file.amountColumnName || '-'}
+                          </TableCell>
+                          <TableCell className="text-muted-foreground text-sm">
+                            {formatDate(file.uploadedAt)}
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* Tab 3: 프로젝트 멤버 */}
+        <TabsContent value="members">
+          <Card>
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <div className="space-y-1">
+                  <CardTitle className="flex items-center gap-2">
+                    <Users className="w-5 h-5" />
+                    프로젝트 멤버
+                    <Badge variant="secondary">{members.length}명</Badge>
+                  </CardTitle>
+                  <CardDescription>
+                    프로젝트에 참여 중인 멤버를 관리합니다.
+                  </CardDescription>
+                </div>
+                <Button onClick={() => setInviteDialogOpen(true)}>
+                  <UserPlus className="w-4 h-4 mr-2" />
+                  멤버 초대
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <div className="rounded-md border">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>이메일</TableHead>
+                      <TableHead className="w-[150px]">이름</TableHead>
+                      <TableHead className="w-[150px]">역할</TableHead>
+                      <TableHead className="w-[180px]">참여일</TableHead>
+                      <TableHead className="w-[80px]">삭제</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {members.map((member) => (
+                      <TableRow key={member.userId}>
+                        <TableCell className="font-medium">
+                          {member.email || '-'}
+                        </TableCell>
+                        <TableCell>{member.name || '-'}</TableCell>
+                        <TableCell>
+                          {member.role === 'OWNER' ? (
+                            <Badge variant={getRoleBadgeVariant(member.role)}>
+                              {getRoleLabel(member.role)}
+                            </Badge>
+                          ) : (
+                            <Select
+                              value={member.role}
+                              onValueChange={(value) =>
+                                handleRoleChange(member.userId, value)
+                              }
+                            >
+                              <SelectTrigger className="w-[120px]">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="EDITOR">편집자</SelectItem>
+                                <SelectItem value="VIEWER">뷰어</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          )}
+                        </TableCell>
+                        <TableCell className="text-muted-foreground text-sm">
+                          {formatDate(member.joinedAt)}
+                        </TableCell>
+                        <TableCell>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => handleDeleteMember(member.userId)}
+                            disabled={member.role === 'OWNER'}
+                          >
+                            <Trash2 className="w-4 h-4 text-destructive" />
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+      </Tabs>
+
+      {/* 멤버 초대 Dialog */}
+      <Dialog open={inviteDialogOpen} onOpenChange={setInviteDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>멤버 초대</DialogTitle>
+            <DialogDescription>
+              새로운 멤버를 프로젝트에 초대합니다.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="inviteEmail">이메일</Label>
+              <Input
+                id="inviteEmail"
+                type="email"
+                placeholder="user@example.com"
+                value={inviteEmail}
+                onChange={(e) => setInviteEmail(e.target.value)}
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="inviteRole">역할</Label>
+              <Select value={inviteRole} onValueChange={setInviteRole}>
+                <SelectTrigger id="inviteRole">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="EDITOR">편집자</SelectItem>
+                  <SelectItem value="VIEWER">뷰어</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setInviteDialogOpen(false)}
+            >
+              취소
+            </Button>
+            <Button onClick={handleInviteMember}>
+              <UserPlus className="w-4 h-4 mr-2" />
+              초대
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
 };
 
 export default ProjectSettingsPage;

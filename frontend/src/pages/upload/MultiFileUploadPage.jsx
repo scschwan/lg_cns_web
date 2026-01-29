@@ -3,30 +3,55 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
-    Container,
-    Box,
-    Typography,
-    Paper,
-    Button,
-    Breadcrumbs,
-    Link,
-    Grid,
-    Chip
-} from '@mui/material';
-import { DataGrid } from '@mui/x-data-grid';
-import UploadFileIcon from '@mui/icons-material/UploadFile';
-import FolderIcon from '@mui/icons-material/Folder';
-import DeleteIcon from '@mui/icons-material/Delete';
-import MergeIcon from '@mui/icons-material/MergeType';
-import PlayArrowIcon from '@mui/icons-material/PlayArrow';
-import AddIcon from '@mui/icons-material/Add';
+    Upload,
+    Folder,
+    FolderOpen,
+    Trash2,
+    GitMerge,
+    Play,
+    Plus,
+    Download,
+    Loader2,
+    FileText,
+    DollarSign,
+    User,
+} from 'lucide-react';
 import * as XLSX from 'xlsx';
+
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Badge } from '@/components/ui/badge';
+import {
+    Breadcrumb,
+    BreadcrumbItem,
+    BreadcrumbLink,
+    BreadcrumbList,
+    BreadcrumbPage,
+    BreadcrumbSeparator,
+} from '@/components/ui/breadcrumb';
+import {
+    Table,
+    TableBody,
+    TableCell,
+    TableHead,
+    TableHeader,
+    TableRow,
+} from '@/components/ui/table';
+import { Checkbox } from '@/components/ui/checkbox';
+import {
+    Select,
+    SelectContent,
+    SelectItem,
+    SelectTrigger,
+    SelectValue,
+} from '@/components/ui/select';
+import { Input } from '@/components/ui/input';
 
 import projectService from '../../services/projectService';
 import uploadService from '../../services/uploadService';
-import PartitionDialog from '../../components/upload/PartitionDialog'; // ⭐ 변경
+import PartitionDialog from '../../components/upload/PartitionDialog';
 import ProgressDialog from '../../components/common/ProgressDialog';
-import styles from './MultiFileUploadPage.module.css'; // ⭐ 추가
 
 function MultiFileUploadPage() {
     const { projectId } = useParams();
@@ -46,6 +71,9 @@ function MultiFileUploadPage() {
     const [progressMessage, setProgressMessage] = useState('');
     const [progressValue, setProgressValue] = useState(0);
 
+    // 편집 상태
+    const [editingSession, setEditingSession] = useState(null);
+
     useEffect(() => {
         loadProject();
         loadFiles();
@@ -64,12 +92,7 @@ function MultiFileUploadPage() {
     const loadFiles = async () => {
         try {
             const data = await uploadService.getFiles(projectId);
-
-            const filesWithId = data.map(file => ({
-                ...file,
-                id: file.fileId  // ⭐ DataGrid용 id 필드 추가
-            }));
-            setFiles(filesWithId);
+            setFiles(data);
         } catch (error) {
             console.error('파일 로드 실패:', error);
         }
@@ -85,22 +108,15 @@ function MultiFileUploadPage() {
     };
 
     // 파일 업로드
-    // 파일 업로드
-    const handleFileUpload = async (event) => {  // ✅ event로 받기!
-        // 이벤트 검증
+    const handleFileUpload = async (event) => {
         if (!event.target.files || event.target.files.length === 0) {
-            console.error('파일이 선택되지 않았습니다.');
             alert('파일을 선택해주세요.');
             return;
         }
 
-        const uploadedFiles = Array.from(event.target.files);  // ✅ 실제 파일 추출
-
-        console.log('업로드된 파일:', uploadedFiles);
-
-        // Excel 파일 필터링
-        const excelFiles = uploadedFiles.filter(f =>
-            f.name.endsWith('.xlsx') || f.name.endsWith('.xls')
+        const uploadedFiles = Array.from(event.target.files);
+        const excelFiles = uploadedFiles.filter(
+            (f) => f.name.endsWith('.xlsx') || f.name.endsWith('.xls')
         );
 
         if (excelFiles.length === 0) {
@@ -114,45 +130,29 @@ function MultiFileUploadPage() {
 
         try {
             for (let i = 0; i < excelFiles.length; i++) {
-                const file = excelFiles[i];  // ✅ 실제 File 객체
+                const file = excelFiles[i];
 
                 setProgressValue(((i + 1) / excelFiles.length) * 90);
                 setProgressMessage(`파일 처리 중... (${i + 1}/${excelFiles.length})`);
 
-                // 1. Excel 분석
-                const excelData = await analyzeExcelColumns(file);  // ✅ File 객체 전달
+                // Excel 분석
+                const excelData = await analyzeExcelColumns(file);
 
-                // 2. Presigned URL 요청
+                // Presigned URL 요청
                 const { presignedUrl, uploadId, sessionId, s3Key } =
                     await uploadService.getPresignedUrl(projectId, file.name, file.size);
 
-                console.log('Presigned URL 응답:', {
-                    uploadId,
-                    sessionId,
-                    s3Key
-                });
-
-                // 3. S3 업로드
+                // S3 업로드
                 await uploadService.uploadToS3(presignedUrl, file);
 
-                // 4. 파일 업로드 완료 처리
-                const response = await uploadService.completeFileUpload(projectId, {
+                // 업로드 완료 처리
+                await uploadService.completeFileUpload(projectId, {
                     uploadId,
                     sessionId,
                     fileName: file.name,
                     fileSize: file.size,
-                    s3Key
+                    s3Key,
                 });
-
-                console.log('업로드 완료:', response);
-
-                // 5. 파일 목록에 추가
-                setFiles(prev => [...prev, {
-                    ...response,
-                    id: response.fileId,  // ⭐ id 필드 추가
-                    detectedColumns: excelData.columns,
-                    rowCount: excelData.rowCount
-                }]);
             }
 
             setProgressValue(100);
@@ -160,9 +160,7 @@ function MultiFileUploadPage() {
             setTimeout(() => setProgressDialogOpen(false), 500);
 
             alert(`${excelFiles.length}개의 파일이 성공적으로 업로드되었습니다.`);
-
-            loadFiles();  // 파일 목록 새로고침
-
+            loadFiles();
         } catch (error) {
             console.error('파일 업로드 실패:', error);
             alert(`파일 업로드 중 오류가 발생했습니다: ${error.message}`);
@@ -181,13 +179,12 @@ function MultiFileUploadPage() {
                     const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
                     const jsonData = XLSX.utils.sheet_to_json(firstSheet, { header: 1 });
 
-                    // 첫 행을 컬럼으로 사용
                     const columns = jsonData[0] || [];
                     const rowCount = jsonData.length - 1;
 
                     resolve({
-                        columns: columns.filter(c => c),
-                        rowCount
+                        columns: columns.filter((c) => c),
+                        rowCount,
                     });
                 } catch (error) {
                     reject(error);
@@ -200,8 +197,6 @@ function MultiFileUploadPage() {
 
     const handleColumnSelect = async (fileId, columnType, columnName) => {
         try {
-            console.log(`컬럼 선택: fileId=${fileId}, type=${columnType}, column=${columnName}`);
-
             const params = {};
             if (columnType === 'accountColumnName') {
                 params.accountColumnName = columnName;
@@ -215,37 +210,30 @@ function MultiFileUploadPage() {
                 params
             );
 
-            console.log('컬럼 선택 완료:', updatedFileInfo);
-
-            // ⭐ 핵심 수정: 백엔드 응답 그대로 State 업데이트
-            setFiles(prev => prev.map(f =>
-                f.fileId === fileId
-                    ? {
-                        ...f,
-                        // ⭐ 백엔드에서 온 값 그대로 사용
-                        accountColumnName: updatedFileInfo.accountColumnName || f.accountColumnName,
-                        amountColumnName: updatedFileInfo.amountColumnName || f.amountColumnName,
-                        accountContents: updatedFileInfo.accountContents || f.accountContents || [],
-                        totalAmount: updatedFileInfo.totalAmount !== undefined
-                            ? updatedFileInfo.totalAmount
-                            : f.totalAmount
-                    }
-                    : f
-            ));
-
-            if (columnType === 'accountColumnName' && updatedFileInfo.accountContents) {
-                console.log(`계정명 ${updatedFileInfo.accountContents.length}개 자동 추출 완료`);
-            }
-            if (columnType === 'amountColumnName' && updatedFileInfo.totalAmount) {
-                console.log(`금액 합계: ${updatedFileInfo.totalAmount.toLocaleString()} 원`);
-            }
-
+            setFiles((prev) =>
+                prev.map((f) =>
+                    f.fileId === fileId
+                        ? {
+                              ...f,
+                              accountColumnName:
+                                  updatedFileInfo.accountColumnName || f.accountColumnName,
+                              amountColumnName:
+                                  updatedFileInfo.amountColumnName || f.amountColumnName,
+                              accountContents:
+                                  updatedFileInfo.accountContents || f.accountContents || [],
+                              totalAmount:
+                                  updatedFileInfo.totalAmount !== undefined
+                                      ? updatedFileInfo.totalAmount
+                                      : f.totalAmount,
+                          }
+                        : f
+                )
+            );
         } catch (err) {
             console.error('컬럼 선택 실패:', err);
             alert('컬럼 선택에 실패했습니다.');
         }
     };
-
 
     // 세션 생성
     const handleCreateSessions = async () => {
@@ -254,9 +242,8 @@ function MultiFileUploadPage() {
             return;
         }
 
-        // 선택된 파일들 검증
-        const invalidFiles = selectedFiles.filter(id => {
-            const file = files.find(f => f.id === id);
+        const invalidFiles = selectedFiles.filter((id) => {
+            const file = files.find((f) => f.fileId === id);
             return !file.accountColumnName || !file.amountColumnName;
         });
 
@@ -269,12 +256,7 @@ function MultiFileUploadPage() {
         setProgressMessage('파티션 분석 중...');
 
         try {
-            // 계정명별 파티션 분석
-            const result = await uploadService.analyzePartitions(
-                projectId,
-                selectedFiles
-            );
-
+            const result = await uploadService.analyzePartitions(projectId, selectedFiles);
             setPartitions(result.partitions);
             setPartitionDialogOpen(true);
             setProgressDialogOpen(false);
@@ -287,26 +269,21 @@ function MultiFileUploadPage() {
 
     // 세션 생성 승인
     const handlePartitionsApproved = async (approvedItems) => {
-        // approvedItems: [{ partitionKey, count, fileIds, sessionName, workerName }, ...]
-
         setPartitionDialogOpen(false);
         setProgressDialogOpen(true);
         setProgressMessage('세션 생성 중...');
 
         try {
-            // 백엔드 API가 { partitionKey, fileIds, sessionName, workerName } 형태를 받도록 구성되어 있다고 가정
             const createdSessions = await uploadService.createSessions(
                 projectId,
-                approvedItems // 사용자가 입력한 세션명, 작업자명이 포함된 배열 전달
+                approvedItems
             );
 
-            // 생성된 세션이 0개인 경우 처리
             if (!createdSessions || createdSessions.length === 0) {
-                alert('생성된 세션이 없습니다. 파일의 계정명 컬럼 내용을 확인해주세요.');
+                alert('생성된 세션이 없습니다.');
             } else {
-                // 기존 세션 목록에 추가
-                setSessions(prev => [...prev, ...createdSessions]);
-                setSelectedFiles([]); // 선택 파일 초기화
+                setSessions((prev) => [...prev, ...createdSessions]);
+                setSelectedFiles([]);
                 alert(`${createdSessions.length}개의 세션이 생성되었습니다.`);
             }
         } catch (error) {
@@ -314,36 +291,6 @@ function MultiFileUploadPage() {
             alert('세션 생성 중 오류가 발생했습니다.');
         } finally {
             setProgressDialogOpen(false);
-        }
-    };
-
-    // 세션에 파일 추가
-    const handleAddToSession = async () => {
-        if (selectedFiles.length === 0) {
-            alert('추가할 파일을 선택해주세요.');
-            return;
-        }
-
-        if (selectedSessions.length !== 1) {
-            alert('파일을 추가할 세션을 하나만 선택해주세요.');
-            return;
-        }
-
-        const targetSessionId = selectedSessions[0];
-
-        try {
-            await uploadService.addFilesToSession(
-                projectId,
-                targetSessionId,
-                selectedFiles
-            );
-
-            loadSessions();
-            setSelectedFiles([]);
-            alert('파일이 세션에 추가되었습니다.');
-        } catch (error) {
-            console.error('세션에 파일 추가 실패:', error);
-            alert('세션에 파일 추가 중 오류가 발생했습니다.');
         }
     };
 
@@ -356,7 +303,7 @@ function MultiFileUploadPage() {
 
         const confirmed = window.confirm(
             `선택된 ${selectedSessions.length}개의 세션을 병합하시겠습니까?\n\n` +
-            `※ 첫 번째 세션을 제외한 나머지 세션들은 삭제됩니다.`
+                `※ 첫 번째 세션을 제외한 나머지 세션들은 삭제됩니다.`
         );
 
         if (!confirmed) return;
@@ -365,11 +312,7 @@ function MultiFileUploadPage() {
         setProgressMessage('세션 병합 중...');
 
         try {
-            await uploadService.mergeSessions(
-                projectId,
-                selectedSessions
-            );
-
+            await uploadService.mergeSessions(projectId, selectedSessions);
             loadSessions();
             setSelectedSessions([]);
             setProgressDialogOpen(false);
@@ -414,11 +357,11 @@ function MultiFileUploadPage() {
 
         const confirmed = window.confirm(
             '선택된 세션을 처리하시겠습니까?\n\n' +
-            '처리 내용:\n' +
-            '• 기존 raw_data, process_data 컬렉션 초기화\n' +
-            '• 세션별 계정명 데이터 추출 및 raw_data 저장\n' +
-            '• 자동으로 파일 로드 화면으로 이동\n\n' +
-            '※ 이 작업은 취소할 수 없습니다.'
+                '처리 내용:\n' +
+                '• 기존 raw_data, process_data 컬렉션 초기화\n' +
+                '• 세션별 계정명 데이터 추출 및 raw_data 저장\n' +
+                '• 자동으로 파일 로드 화면으로 이동\n\n' +
+                '※ 이 작업은 취소할 수 없습니다.'
         );
 
         if (!confirmed) return;
@@ -433,8 +376,7 @@ function MultiFileUploadPage() {
             setProgressDialogOpen(false);
             alert('계정 분석이 시작되었습니다. 파일 로드 화면으로 이동합니다.');
 
-            // 파일 로드 화면으로 이동 (향후 구현)
-            // navigate(`/projects/${projectId}/sessions/${sessionId}/fileload`);
+            navigate(`/projects/${projectId}/sessions/${sessionId}/fileload`);
         } catch (error) {
             console.error('완료 처리 실패:', error);
             alert('완료 처리 중 오류가 발생했습니다.');
@@ -442,203 +384,22 @@ function MultiFileUploadPage() {
         }
     };
 
-    // 세션명 편집
-    const handleSessionNameEdit = async (sessionId, newName) => {
+    // 세션 편집
+    const handleSessionEdit = async (sessionId, field, value) => {
         try {
             await uploadService.updateSession(projectId, sessionId, {
-                sessionName: newName
+                [field]: value,
             });
 
-            setSessions(prev => prev.map(s =>
-                s.sessionId  === sessionId
-                    ? { ...s, sessionName: newName }
-                    : s
-            ));
-        } catch (error) {
-            console.error('세션명 수정 실패:', error);
-        }
-    };
-
-    // ✅ [수정 1] 세션명 수정 핸들러 로직 개선
-    // newRow: 수정된 전체 행 데이터, oldRow: 수정 전 데이터
-    const handleProcessRowUpdate = async (newRow, oldRow) => {
-        try {
-            // 변경된 내용이 없으면 API 호출 생략
-            if (newRow.sessionName === oldRow.sessionName && newRow.workerName === oldRow.workerName) {
-                return oldRow;
-            }
-
-            // API 호출 (백엔드 DTO에 맞게 데이터 구성)
-            // 백엔드 UpdateFileSessionRequest: { sessionName, workerName }
-            await uploadService.updateSession(projectId, newRow.id || newRow.sessionId, {
-                sessionName: newRow.sessionName,
-                workerName: newRow.workerName
-            });
-
-            // 성공 시 수정된 행 반환 (화면 반영)
-            return newRow;
+            setSessions((prev) =>
+                prev.map((s) =>
+                    s.sessionId === sessionId ? { ...s, [field]: value } : s
+                )
+            );
         } catch (error) {
             console.error('세션 수정 실패:', error);
-            alert('세션 정보를 수정하는 중 오류가 발생했습니다.');
-            return oldRow; // 실패 시 이전 값으로 복구
         }
     };
-
-    // 파일 테이블 컬럼 정의
-    const fileColumns = [
-        {
-            field: 'fileName',
-            headerName: '파일명',
-            flex: 1,
-            minWidth: 300
-        },
-        {
-            field: 'rowCount',
-            headerName: '행 수',
-            width: 100,
-            valueFormatter: (params) => params.value?.toLocaleString() || '0'
-        },
-        {
-            field: 'accountColumnName',
-            headerName: '대계정 컬럼',
-            width: 180,
-            renderCell: (params) => (
-                <select
-                    // ⭐ 수정: params.row.accountColumnName을 직접 참조하여 상태 반영 확실하게 처리
-                    value={params.row.accountColumnName || ''}
-                    // 두 번째 인자 'accountColumn'은 handleColumnSelect 내부 분기용 문자열이므로 그대로 둠
-                    onChange={(e) => handleColumnSelect(params.row.fileId, 'accountColumn', e.target.value)}
-                    className={styles.columnSelect}
-                >
-                    <option value="">선택...</option>
-                    {params.row.detectedColumns?.map(col => (
-                        <option key={col} value={col}>{col}</option>
-                    ))}
-                </select>
-            )
-        },
-        {
-            field: 'amountColumnName',
-            headerName: '금액 컬럼',
-            width: 180,
-            renderCell: (params) => (
-                <select
-                    // ⭐ 수정: params.row.amountColumnName을 직접 참조
-                    value={params.row.amountColumnName || ''}
-                    onChange={(e) => handleColumnSelect(params.row.fileId, 'amountColumn', e.target.value)}
-                    className={styles.columnSelect}
-                >
-                    <option value="">선택...</option>
-                    {params.row.detectedColumns?.map(col => (
-                        <option key={col} value={col}>{col}</option>
-                    ))}
-                </select>
-            )
-        },
-        {
-            field: 'accountContents',
-            headerName: '계정명 내용',
-            width: 150,
-            renderCell: (params) => (
-                params.value?.length > 0
-                    ? <Chip label={`${params.value} (${params.value.length}개)`} size="small" />
-                    : '-'
-            )
-        },
-        {
-            field: 'totalAmount',
-            headerName: '합산금액',
-            width: 150,
-            valueFormatter: (params) =>
-                params.value ? `${params.value.toLocaleString()} 원` : '-'
-        },
-        {
-            field: 'actions',
-            headerName: '삭제',
-            width: 80,
-            renderCell: (params) => (
-                <Button
-                    size="small"
-                    color="error"
-                    onClick={() => handleDeleteFile(params.row.id)}
-                >
-                    <DeleteIcon fontSize="small" />
-                </Button>
-            )
-        }
-    ];
-
-    // 세션 테이블 컬럼 정의
-    const sessionColumns = [
-        {
-            field: 'sessionName',
-            headerName: '세션명',
-            flex: 1,
-            minWidth: 150,
-            editable: true // 편집 가능
-        },
-        {
-            field: 'workerName',
-            headerName: '작업자명',
-            width: 120,
-            editable: true // 편집 가능
-        },
-        {
-            // ⭐ [수정] 백엔드는 accountNames(배열)을 주므로 첫 번째 요소를 가져오도록 처리
-            field: 'accountName',
-            headerName: '대계정',
-            width: 120,
-            valueGetter: (params) => {
-                // 백엔드 필드명: accountNames (List<String>)
-                const names = params.row.accountNames || params.row.accountName;
-                if (Array.isArray(names) && names.length > 0) return names[0];
-                return names || '-';
-            }
-        },
-        {
-            field: 'fileCount',
-            headerName: '파일 수',
-            width: 80,
-            valueGetter: (params) => {
-                // totalFiles 또는 uploadedFiles 배열 길이 확인
-                return params.row.totalFiles || params.row.uploadedFiles?.length || 0;
-            }
-        },
-        {
-            field: 'totalRows',
-            headerName: '행 수',
-            width: 100,
-            valueFormatter: (params) => (params.value || 0).toLocaleString()
-        },
-        {
-            // ⭐ [수정] 합산금액 매핑
-            field: 'totalAmount',
-            headerName: '합산금액',
-            width: 150,
-            valueFormatter: (params) =>
-                params.value ? `${params.value.toLocaleString()} 원` : '0 원'
-        },
-        {
-            field: 'isCompleted',  // ⭐ status → isCompleted
-            headerName: '완료',
-            width: 80,
-            type: 'boolean'
-        },
-        {
-            field: 'download',
-            headerName: '다운로드',
-            width: 100,
-            renderCell: (params) => (
-                <Button
-                    size="small"
-                    disabled={!params.row.isCompleted || !params.row.exportPath}  // ⭐ 필드명 수정
-                    onClick={() => handleDownload(params.row.sessionId)}
-                >
-                    📥
-                </Button>
-            )
-        }
-    ];
 
     const handleDeleteFile = async (fileId) => {
         const confirmed = window.confirm('파일을 삭제하시겠습니까?');
@@ -646,7 +407,7 @@ function MultiFileUploadPage() {
 
         try {
             await uploadService.deleteFile(projectId, fileId);
-            setFiles(prev => prev.filter(f => f.id !== fileId));
+            setFiles((prev) => prev.filter((f) => f.fileId !== fileId));
         } catch (error) {
             console.error('파일 삭제 실패:', error);
             alert('파일 삭제 중 오류가 발생했습니다.');
@@ -664,159 +425,462 @@ function MultiFileUploadPage() {
     };
 
     return (
-        <Container maxWidth={false} className={styles.container}>
-            <Box className={styles.contentWrapper}>
+        <div className="min-h-screen bg-gray-50">
+            <div className="container mx-auto px-4 py-6 max-w-[98vw]">
                 {/* Breadcrumb */}
-                <Breadcrumbs className={styles.breadcrumbs}>
-                    <Link
-                        underline="hover"
-                        color="inherit"
-                        onClick={() => navigate('/projects')}
-                        className={styles.breadcrumbLink}
-                    >
-                        <FolderIcon className={styles.breadcrumbIcon} fontSize="small" />
-                        내 프로젝트
-                    </Link>
-                    <Typography color="text.primary">{project?.projectName}</Typography>
-                    <Typography color="text.primary">다중 파일 업로드</Typography>
-                </Breadcrumbs>
+                <Breadcrumb className="mb-6">
+                    <BreadcrumbList>
+                        <BreadcrumbItem>
+                            <BreadcrumbLink
+                                onClick={() => navigate('/projects')}
+                                className="flex items-center gap-1 cursor-pointer hover:text-primary"
+                            >
+                                <Folder className="h-4 w-4" />
+                                내 프로젝트
+                            </BreadcrumbLink>
+                        </BreadcrumbItem>
+                        <BreadcrumbSeparator />
+                        <BreadcrumbItem>
+                            <BreadcrumbPage>{project?.projectName}</BreadcrumbPage>
+                        </BreadcrumbItem>
+                        <BreadcrumbSeparator />
+                        <BreadcrumbItem>
+                            <BreadcrumbPage>다중 파일 업로드</BreadcrumbPage>
+                        </BreadcrumbItem>
+                    </BreadcrumbList>
+                </Breadcrumb>
 
-                {/* 헤더 */}
-                <Paper className={styles.headerPaper}>
-                    <Grid container spacing={2}>
-                        {/* 좌측: 제목 + 버튼 */}
-                        <Grid item xs={12} md={7}>
-                            <Typography variant="h5" className={styles.headerTitle}>
-                                다중 파일 업로드
-                            </Typography>
-                            <Typography variant="body2" className={styles.headerDescription}>
-                                여러 Excel 파일을 업로드하고 계정명/금액 컬럼을 선택한 후, 동일한 컬럼명끼리 세션을 생성하세요.
-                            </Typography>
-                            <Box className={styles.uploadButtonGroup}>
-                                <Button
-                                    variant="contained"
-                                    component="label"
-                                    startIcon={<UploadFileIcon />}
-                                    className={styles.uploadButton}
-                                >
-                                    Excel 파일 업로드
-                                    <input
-                                        type="file"
-                                        hidden
-                                        multiple
-                                        accept=".xlsx,.xls"
-                                        onChange={handleFileUpload}
-                                    />
+                {/* Header Card */}
+                <Card className="mb-6">
+                    <CardHeader>
+                        <div className="flex items-start justify-between">
+                            <div>
+                                <CardTitle className="text-2xl">다중 파일 업로드</CardTitle>
+                                <p className="text-sm text-muted-foreground mt-2">
+                                    여러 Excel 파일을 업로드하고 계정명/금액 컬럼을 선택한 후, 동일한 컬럼명끼리 세션을 생성하세요.
+                                </p>
+                            </div>
+                        </div>
+                    </CardHeader>
+                    <CardContent>
+                        <div className="flex flex-wrap gap-3">
+                            {/* 좌측 버튼 그룹 */}
+                            <div className="flex gap-2">
+                                <Button asChild>
+                                    <label className="cursor-pointer">
+                                        <Upload className="h-4 w-4 mr-2" />
+                                        Excel 파일 업로드
+                                        <input
+                                            type="file"
+                                            hidden
+                                            multiple
+                                            accept=".xlsx,.xls"
+                                            onChange={handleFileUpload}
+                                        />
+                                    </label>
                                 </Button>
-                                <Button
-                                    variant="contained"
-                                    onClick={handleCreateSessions}
-                                    className={styles.createSessionButton}
-                                >
+                                <Button onClick={handleCreateSessions} variant="default">
+                                    <FolderOpen className="h-4 w-4 mr-2" />
                                     세션 생성
                                 </Button>
-                                <Button
-                                    variant="contained"
-                                    startIcon={<AddIcon />}
-                                    onClick={handleAddToSession}
-                                    className={styles.addToSessionButton}
-                                    style={{ display: 'none' }}
-                                >
-                                    기존 세션 추가
-                                </Button>
-                            </Box>
-                        </Grid>
+                            </div>
 
-                        {/* 우측: 세션 관리 버튼 */}
-                        <Grid item xs={12} md={5}>
-                            <Box className={styles.sessionButtonGroup}>
+                            {/* 우측 버튼 그룹 */}
+                            <div className="flex gap-2 ml-auto">
                                 <Button
-                                    variant="contained"
-                                    startIcon={<MergeIcon />}
                                     onClick={handleMergeSessions}
-                                    className={styles.mergeButton}
+                                    variant="outline"
+                                    disabled={selectedSessions.length < 2}
                                 >
+                                    <GitMerge className="h-4 w-4 mr-2" />
                                     세션 병합
                                 </Button>
                                 <Button
-                                    variant="contained"
-                                    color="error"
-                                    startIcon={<DeleteIcon />}
                                     onClick={handleDeleteSessions}
+                                    variant="destructive"
+                                    disabled={selectedSessions.length === 0}
                                 >
+                                    <Trash2 className="h-4 w-4 mr-2" />
                                     세션 삭제
                                 </Button>
                                 <Button
-                                    variant="contained"
-                                    startIcon={<PlayArrowIcon />}
                                     onClick={handleComplete}
-                                    className={styles.completeButton}
+                                    disabled={selectedSessions.length !== 1}
+                                    className="bg-green-600 hover:bg-green-700"
                                 >
+                                    <Play className="h-4 w-4 mr-2" />
                                     계정 분석 시작
                                 </Button>
-                            </Box>
-                        </Grid>
-                    </Grid>
-                </Paper>
+                            </div>
+                        </div>
+                    </CardContent>
+                </Card>
 
-                {/* 콘텐츠: 2개 테이블 */}
-                <Grid container spacing={2}>
-                    {/* 좌측: 파일 목록 (60%) */}
-                    <Grid item xs={12} md={7}>
-                        <Paper className={styles.tableWrapper}>
-                            <Box className={styles.tableHeader}>
-                                <Typography variant="h6" className={styles.tableTitle}>
-                                    업로드된 파일 목록
-                                </Typography>
-                            </Box>
-                            <DataGrid
-                                rows={files}
-                                columns={fileColumns}
-                                getRowId={(row) => row.fileId}  // ⭐ 이 한 줄만 추가!
-                                checkboxSelection
-                                onRowSelectionModelChange={(ids) => setSelectedFiles(ids)}
-                                rowSelectionModel={selectedFiles}
-                                disableRowSelectionOnClick
-                                hideFooter={files.length <= 10}
-                                className={styles.dataGrid}
-                            />
-                        </Paper>
-                    </Grid>
+                {/* ⭐ 수정 2: 그리드 비율 조정 (7:5) */}
+                <div className="grid grid-cols-1 xl:grid-cols-12 gap-4">
+                    {/* 좌측: 파일 목록 (58%) */}
+                    <div className="xl:col-span-7">
+                        <Card>
+                            <CardHeader>
+                                <CardTitle className="text-lg">업로드된 파일 목록</CardTitle>
+                            </CardHeader>
+                            <CardContent className="p-0">
+                                {files.length === 0 ? (
+                                    <div className="text-center py-12 px-6">
+                                        <FileText className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+                                        <p className="text-muted-foreground">
+                                            업로드된 파일이 없습니다
+                                        </p>
+                                    </div>
+                                ) : (
+                                    /* ⭐ 수정 3: 테이블 스크롤 컨테이너 */
+                                    <div className="border-t overflow-x-auto max-h-[700px] overflow-y-auto">
+                                        {/* ⭐ 수정 4: 테이블 min-width 고정 */}
+                                        <Table className="min-w-[1200px]">
+                                            <TableHeader className="sticky top-0 bg-background z-10">
+                                                <TableRow>
+                                                    <TableHead className="w-12">
+                                                        <Checkbox
+                                                            checked={
+                                                                selectedFiles.length === files.length &&
+                                                                files.length > 0
+                                                            }
+                                                            onCheckedChange={(checked) => {
+                                                                if (checked) {
+                                                                    setSelectedFiles(
+                                                                        files.map((f) => f.fileId)
+                                                                    );
+                                                                } else {
+                                                                    setSelectedFiles([]);
+                                                                }
+                                                            }}
+                                                        />
+                                                    </TableHead>
+                                                    <TableHead className="w-[300px]">파일명</TableHead>
+                                                    <TableHead className="w-[100px] text-center">행 수</TableHead>
+                                                    <TableHead className="w-[180px]">
+                                                        <div className="flex items-center gap-1">
+                                                            <User className="h-3 w-3" />
+                                                            대계정
+                                                        </div>
+                                                    </TableHead>
+                                                    <TableHead className="w-[180px]">
+                                                        <div className="flex items-center gap-1">
+                                                            <DollarSign className="h-3 w-3" />
+                                                            금액
+                                                        </div>
+                                                    </TableHead>
+                                                    <TableHead className="w-[120px]">계정명</TableHead>
+                                                    <TableHead className="w-[150px]">합산금액</TableHead>
+                                                    <TableHead className="w-[80px]">삭제</TableHead>
+                                                </TableRow>
+                                            </TableHeader>
+                                            <TableBody>
+                                                {files.map((file) => (
+                                                    <TableRow key={file.fileId}>
+                                                        <TableCell>
+                                                            <Checkbox
+                                                                checked={selectedFiles.includes(
+                                                                    file.fileId
+                                                                )}
+                                                                onCheckedChange={(checked) => {
+                                                                    if (checked) {
+                                                                        setSelectedFiles((prev) => [
+                                                                            ...prev,
+                                                                            file.fileId,
+                                                                        ]);
+                                                                    } else {
+                                                                        setSelectedFiles((prev) =>
+                                                                            prev.filter(
+                                                                                (id) => id !== file.fileId
+                                                                            )
+                                                                        );
+                                                                    }
+                                                                }}
+                                                            />
+                                                        </TableCell>
+                                                        <TableCell className="font-medium truncate">
+                                                            {file.fileName}
+                                                        </TableCell>
+                                                        <TableCell className="text-center">
+                                                            {file.rowCount?.toLocaleString() || '0'}
+                                                        </TableCell>
+                                                        <TableCell>
+                                                            <Select
+                                                                value={file.accountColumnName || ''}
+                                                                onValueChange={(value) =>
+                                                                    handleColumnSelect(
+                                                                        file.fileId,
+                                                                        'accountColumnName',
+                                                                        value
+                                                                    )
+                                                                }
+                                                            >
+                                                                <SelectTrigger className="h-8">
+                                                                    <SelectValue placeholder="선택..." />
+                                                                </SelectTrigger>
+                                                                <SelectContent>
+                                                                    {file.detectedColumns?.map(
+                                                                        (col) => (
+                                                                            <SelectItem
+                                                                                key={col}
+                                                                                value={col}
+                                                                            >
+                                                                                {col}
+                                                                            </SelectItem>
+                                                                        )
+                                                                    )}
+                                                                </SelectContent>
+                                                            </Select>
+                                                        </TableCell>
+                                                        <TableCell>
+                                                            <Select
+                                                                value={file.amountColumnName || ''}
+                                                                onValueChange={(value) =>
+                                                                    handleColumnSelect(
+                                                                        file.fileId,
+                                                                        'amountColumnName',
+                                                                        value
+                                                                    )
+                                                                }
+                                                            >
+                                                                <SelectTrigger className="h-8">
+                                                                    <SelectValue placeholder="선택..." />
+                                                                </SelectTrigger>
+                                                                <SelectContent>
+                                                                    {file.detectedColumns?.map(
+                                                                        (col) => (
+                                                                            <SelectItem
+                                                                                key={col}
+                                                                                value={col}
+                                                                            >
+                                                                                {col}
+                                                                            </SelectItem>
+                                                                        )
+                                                                    )}
+                                                                </SelectContent>
+                                                            </Select>
+                                                        </TableCell>
+                                                        <TableCell>
+                                                            {file.accountContents?.length > 0 ? (
+                                                                <Badge variant="secondary">
+                                                                    {file.accountContents.length}개
+                                                                </Badge>
+                                                            ) : (
+                                                                '-'
+                                                            )}
+                                                        </TableCell>
+                                                        <TableCell>
+                                                            {file.totalAmount
+                                                                ? `${file.totalAmount.toLocaleString()} 원`
+                                                                : '-'}
+                                                        </TableCell>
+                                                        <TableCell>
+                                                            <Button
+                                                                variant="ghost"
+                                                                size="icon"
+                                                                onClick={() =>
+                                                                    handleDeleteFile(file.fileId)
+                                                                }
+                                                            >
+                                                                <Trash2 className="h-4 w-4 text-red-500" />
+                                                            </Button>
+                                                        </TableCell>
+                                                    </TableRow>
+                                                ))}
+                                            </TableBody>
+                                        </Table>
+                                    </div>
+                                )}
+                            </CardContent>
+                        </Card>
+                    </div>
 
-                    {/* 우측: 세션 목록 (40%) */}
-                    <Grid item xs={12} md={5}>
-                        <Paper className={styles.tableWrapper}>
-                            <Box className={styles.tableHeader}>
-                                <Typography variant="h6" className={styles.tableTitle}>
-                                    생성된 세션 목록
-                                </Typography>
-                            </Box>
-                            <DataGrid
-                                rows={sessions}
-                                columns={sessionColumns}
-                                // ⭐ 핵심 수정: id가 확실히 있는지 확인하고, 없으면 index라도 사용 (undefined 방지)
-                                //getRowId={(row) => row.id || row.sessionId || row._id || Math.random()}
-                                getRowId={(row) => row.sessionId || row.id} // ⭐ ID 필드 명시
-                                checkboxSelection
-                                onRowSelectionModelChange={(ids) => setSelectedSessions(ids)}
-                                rowSelectionModel={selectedSessions}
-                                disableRowSelectionOnClick
-                                /*
-                                processRowUpdate={async (newRow) => {
-                                    handleSessionNameEdit(newRow.sessionId, newRow.sessionName);  // ⭐ id → sessionId
-                                    return newRow;
-                                }}
-                                */
-                                processRowUpdate={handleProcessRowUpdate}
-                                onProcessRowUpdateError={(error) => console.error('Row update error:', error)}
-                                hideFooter={sessions.length <= 10}
-                                className={styles.dataGrid}
-                            />
-                        </Paper>
-                    </Grid>
-                </Grid>
+                    {/* 우측: 세션 목록 (42%) */}
+                    <div className="xl:col-span-5">
+                        <Card>
+                            <CardHeader>
+                                <CardTitle className="text-lg">생성된 세션 목록</CardTitle>
+                            </CardHeader>
+                            <CardContent className="p-0">
+                                {sessions.length === 0 ? (
+                                    <div className="text-center py-12 px-6">
+                                        <FolderOpen className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+                                        <p className="text-muted-foreground">
+                                            생성된 세션이 없습니다
+                                        </p>
+                                    </div>
+                                ) : (
+                                    /* ⭐ 수정 5: 세션 테이블 스크롤 */
+                                    <div className="border-t overflow-x-auto max-h-[700px] overflow-y-auto">
+                                        {/* ⭐ 수정 6: 세션 테이블 min-width */}
+                                        <Table className="min-w-[1200px]">
+                                            <TableHeader className="sticky top-0 bg-background z-10">
+                                                <TableRow>
+                                                    <TableHead className="w-12">
+                                                        <Checkbox
+                                                            checked={
+                                                                selectedSessions.length ===
+                                                                    sessions.length &&
+                                                                sessions.length > 0
+                                                            }
+                                                            onCheckedChange={(checked) => {
+                                                                if (checked) {
+                                                                    setSelectedSessions(
+                                                                        sessions.map((s) => s.sessionId)
+                                                                    );
+                                                                } else {
+                                                                    setSelectedSessions([]);
+                                                                }
+                                                            }}
+                                                        />
+                                                    </TableHead>
+                                                    <TableHead className="w-[180px]">세션명</TableHead>
+                                                    <TableHead className="w-[100px]">작업자</TableHead>
+                                                    <TableHead className="w-[120px]">대계정</TableHead>
+                                                    <TableHead className="w-[80px] text-center">파일</TableHead>
+                                                    <TableHead className="w-[100px] text-center">행수</TableHead>
+                                                    <TableHead className="w-[130px]">합산금액</TableHead>
+                                                    <TableHead className="w-[80px] text-center">완료</TableHead>
+                                                    <TableHead className="w-[80px]">다운</TableHead>
+                                                </TableRow>
+                                            </TableHeader>
+                                            <TableBody>
+                                                {sessions.map((session) => (
+                                                    <TableRow key={session.sessionId}>
+                                                        <TableCell>
+                                                            <Checkbox
+                                                                checked={selectedSessions.includes(
+                                                                    session.sessionId
+                                                                )}
+                                                                onCheckedChange={(checked) => {
+                                                                    if (checked) {
+                                                                        setSelectedSessions((prev) => [
+                                                                            ...prev,
+                                                                            session.sessionId,
+                                                                        ]);
+                                                                    } else {
+                                                                        setSelectedSessions((prev) =>
+                                                                            prev.filter(
+                                                                                (id) =>
+                                                                                    id !== session.sessionId
+                                                                            )
+                                                                        );
+                                                                    }
+                                                                }}
+                                                            />
+                                                        </TableCell>
+                                                        <TableCell>
+                                                            {editingSession === session.sessionId ? (
+                                                                <Input
+                                                                    value={session.sessionName}
+                                                                    onChange={(e) =>
+                                                                        setSessions((prev) =>
+                                                                            prev.map((s) =>
+                                                                                s.sessionId ===
+                                                                                session.sessionId
+                                                                                    ? {
+                                                                                          ...s,
+                                                                                          sessionName:
+                                                                                              e.target
+                                                                                                  .value,
+                                                                                      }
+                                                                                    : s
+                                                                            )
+                                                                        )
+                                                                    }
+                                                                    onBlur={() => {
+                                                                        handleSessionEdit(
+                                                                            session.sessionId,
+                                                                            'sessionName',
+                                                                            session.sessionName
+                                                                        );
+                                                                        setEditingSession(null);
+                                                                    }}
+                                                                    onKeyDown={(e) => {
+                                                                        if (e.key === 'Enter') {
+                                                                            handleSessionEdit(
+                                                                                session.sessionId,
+                                                                                'sessionName',
+                                                                                session.sessionName
+                                                                            );
+                                                                            setEditingSession(null);
+                                                                        }
+                                                                    }}
+                                                                    className="h-8"
+                                                                    autoFocus
+                                                                />
+                                                            ) : (
+                                                                <div
+                                                                    className="cursor-pointer hover:text-primary truncate"
+                                                                    onDoubleClick={() =>
+                                                                        setEditingSession(
+                                                                            session.sessionId
+                                                                        )
+                                                                    }
+                                                                    title={session.sessionName}
+                                                                >
+                                                                    {session.sessionName}
+                                                                </div>
+                                                            )}
+                                                        </TableCell>
+                                                        <TableCell className="truncate">
+                                                            {session.workerName || '-'}
+                                                        </TableCell>
+                                                        <TableCell className="truncate">
+                                                            {Array.isArray(session.accountNames)
+                                                                ? session.accountNames[0]
+                                                                : session.accountName || '-'}
+                                                        </TableCell>
+                                                        <TableCell className="text-center">
+                                                            {session.totalFiles ||
+                                                                session.uploadedFiles?.length ||
+                                                                0}
+                                                        </TableCell>
+                                                        <TableCell className="text-center">
+                                                            {(session.totalRows || 0).toLocaleString()}
+                                                        </TableCell>
+                                                        <TableCell className="truncate">
+                                                            {session.totalAmount
+                                                                ? `${session.totalAmount.toLocaleString()} 원`
+                                                                : '0 원'}
+                                                        </TableCell>
+                                                        <TableCell className="text-center">
+                                                            {session.isCompleted ? (
+                                                                <Badge>완료</Badge>
+                                                            ) : (
+                                                                <Badge variant="outline">
+                                                                    진행중
+                                                                </Badge>
+                                                            )}
+                                                        </TableCell>
+                                                        <TableCell>
+                                                            <Button
+                                                                variant="ghost"
+                                                                size="icon"
+                                                                disabled={
+                                                                    !session.isCompleted ||
+                                                                    !session.exportPath
+                                                                }
+                                                                onClick={() =>
+                                                                    handleDownload(session.sessionId)
+                                                                }
+                                                            >
+                                                                <Download className="h-4 w-4" />
+                                                            </Button>
+                                                        </TableCell>
+                                                    </TableRow>
+                                                ))}
+                                            </TableBody>
+                                        </Table>
+                                    </div>
+                                )}
+                            </CardContent>
+                        </Card>
+                    </div>
+                </div>
 
-                {/* 다이얼로그들 */}
+                {/* Dialogs - 동일 */}
                 <PartitionDialog
                     open={partitionDialogOpen}
                     partitions={partitions}
@@ -829,8 +893,8 @@ function MultiFileUploadPage() {
                     message={progressMessage}
                     value={progressValue}
                 />
-            </Box>
-        </Container>
+            </div>
+        </div>
     );
 }
 
