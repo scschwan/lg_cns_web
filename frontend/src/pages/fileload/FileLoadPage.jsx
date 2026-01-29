@@ -2,432 +2,538 @@
 
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+import { ChevronRight, Home, Search, Plus, Trash2, RotateCcw, ChevronDown, ChevronUp } from 'lucide-react';
+
+// shadcn/ui components
 import {
-    Container,
-    Box,
-    Grid,
-    Typography,
-    Paper,
-    Tabs,
-    Tab,
-    TextField,
-    Checkbox,
-    FormControlLabel,
-    Select,
-    MenuItem,
-} from '@mui/material';
-
+  Breadcrumb,
+  BreadcrumbItem,
+  BreadcrumbLink,
+  BreadcrumbList,
+  BreadcrumbPage,
+  BreadcrumbSeparator,
+} from '@/components/ui/breadcrumb';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Checkbox } from '@/components/ui/checkbox';
 import {
-    SessionHeader,
-    Pagination,
-    StyledGroupBox,
-    StyledDataGrid,
-    ActionButton,
-} from '../../components/common';
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
 
-import { formatNumber } from '../../utils/formatters';
-import styles from './FileLoadPage.module.css';
-
-// Mock Data
-const generateMockRawData = () => {
-    const data = [];
-    for (let i = 1; i <= 30; i++) {
-        data.push({
-            id: i,
-            연도: '2019',
-            세그먼트: (7000 + Math.floor(Math.random() * 2000)).toString(),
-            전기일: (43000 + Math.floor(Math.random() * 1000)).toString(),
-            문서번호: (134000000 + Math.floor(Math.random() * 1000000)).toString(),
-            원가요소: '51213200',
-            계정명: '지급수수료',
-            원가요소이름: '지급수수료',
-        });
-    }
-    return data;
-};
-
-const generateMockProcessData = () => {
-    const data = [];
-    for (let i = 1; i <= 30; i++) {
-        data.push({
-            id: i,
-            연도: '2019',
-            세그먼트: (7000 + Math.floor(Math.random() * 2000)).toString(),
-            전기일: (43000 + Math.floor(Math.random() * 1000)).toString(),
-            문서번호: (134000000 + Math.floor(Math.random() * 1000000)).toString(),
-            원가요소: '51213200',
-            계정명: '지급수수료',
-            원가요소이름: '지급수수료',
-        });
-    }
-    return data;
-};
+// API 서비스 (추후 구현)
+// import sessionDataAPI from '@/services/sessionDataAPI';
 
 function FileLoadPage() {
-    const { projectId, sessionId } = useParams();
-    const navigate = useNavigate();
+  const { projectId, sessionId } = useParams();
+  const navigate = useNavigate();
 
-    // 세션 정보
-    const [sessionInfo] = useState({
-        sessionName: '지급수수료_sampl1_2025-10-11'
-    });
+  // ===== 상태 관리 =====
+  const [sessionInfo, setSessionInfo] = useState({
+    sessionName: '지급수수료_sample1_2025-10-11',
+    totalRecords: 6270,
+    totalAmount: 5461923000,
+  });
 
-    // 데이터
-    const [rawData, setRawData] = useState([]);
-    const [processData, setProcessData] = useState([]);
+  // 데이터
+  const [originalData, setOriginalData] = useState([]); // 원본 (불변)
+  const [sessionData, setSessionData] = useState([]);   // 변경본
+  const [columns, setColumns] = useState([]);
 
-    // 페이지네이션
-    const [currentPage, setCurrentPage] = useState(1);
-    const [pageSize, setPageSize] = useState(1000);
-    const [totalRows] = useState(6270);
+  // 원본 테이블 최소화 (기본값 false -> true로 변경하면 처음에 접힌 상태)
+  const [isOriginalCollapsed, setIsOriginalCollapsed] = useState(false);
 
-    // 탭 상태
-    const [activeTab, setActiveTab] = useState(0);
+  // 페이지네이션
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(1000);
+  const [totalRows, setTotalRows] = useState(6270);
 
-    // 제거 열 설정
-    const [deleteColumns, setDeleteColumns] = useState([
-        { id: 1, columnName: '연도', selected: false },
-        { id: 2, columnName: '세그먼트', selected: false },
-        { id: 3, columnName: '전기일', selected: false },
-        { id: 4, columnName: '문서번호', selected: false },
-        { id: 5, columnName: '원가요소', selected: false },
-        { id: 6, columnName: '계정명', selected: false },
-    ]);
+  // 탭 상태
+  const [activeTab, setActiveTab] = useState('remove-columns');
 
-    // 데이터 삭제 탭
-    const [searchKeyword, setSearchKeyword] = useState('');
-    const [selectAll, setSelectAll] = useState(false);
+  // 제거 열 설정
+  const [availableColumns, setAvailableColumns] = useState([
+    { id: 1, name: '연도', checked: false },
+    { id: 2, name: '세그먼트', checked: false },
+    { id: 3, name: '전기일', checked: false },
+    { id: 4, name: '문서번호', checked: false },
+    { id: 5, name: '원가요소', checked: false },
+    { id: 6, name: '계정명', checked: false },
+    { id: 7, name: '원가요소이름', checked: false },
+    { id: 8, name: 'CO 오브젝트이름', checked: false },
+    { id: 9, name: '상계계정이름', checked: false },
+    { id: 10, name: 'Val.in RC', checked: false },
+    { id: 11, name: '이름', checked: false },
+    { id: 12, name: '코스트센터', checked: false },
+  ]);
 
-    // 표준화 설정
-    const [keyColumn, setKeyColumn] = useState('');
-    const [valueColumn, setValueColumn] = useState('');
-    const [standardData, setStandardData] = useState([
-        { id: 1, keyValue: '인터넷몰', targetValue: '인터넷몰', count: 156 },
-        { id: 2, keyValue: '실비', targetValue: '실비', count: 89 },
-        { id: 3, keyValue: '안분', targetValue: '안분', count: 234 },
-    ]);
+  const [baseColumnForDelete, setBaseColumnForDelete] = useState('');
 
-    // 필수 항목 설정
-    const [columnMapping, setColumnMapping] = useState({
-        세목열: '계정명',
-        코스트센터열: 'CO 오브젝트이름',
-        공급업체열: '상계계정이름',
-        금액열: 'Val.in RC',
-        타겟열: '이름',
-    });
+  // 데이터 삭제
+  const [searchKeyword, setSearchKeyword] = useState('');
+  const [selectAllData, setSelectAllData] = useState(false);
 
-    // 컬럼 옵션
-    const columnOptions = ['연도', '세그먼트', '전기일', '문서번호', '원가요소', '계정명', '원가요소이름', 'Val.in RC', '코스트센터', '지점명', 'CO 오브젝트이름', '상계계정이름', '이름'];
+  // 표준화 설정
+  const [standardKeyColumn, setStandardKeyColumn] = useState('');
+  const [standardValueColumn, setStandardValueColumn] = useState('');
+  const [standardData, setStandardData] = useState([
+    { id: 1, keyValue: '인터넷몰', targetValue: '인터넷몰', count: 156 },
+    { id: 2, keyValue: '실비', targetValue: '실비', count: 89 },
+    { id: 3, keyValue: '안분', targetValue: '안분', count: 234 },
+    { id: 4, keyValue: '지급수수료', targetValue: '지급수수료', count: 450 },
+    { id: 5, keyValue: '이커머스', targetValue: '이커머스', count: 320 },
+    { id: 6, keyValue: '물류용역', targetValue: '물류용역', count: 180 },
+    { id: 7, keyValue: 'SAP', targetValue: 'SAP', count: 95 },
+    { id: 8, keyValue: '더데이걸', targetValue: '더데이걸', count: 67 },
+  ]);
 
-    useEffect(() => {
-        setRawData(generateMockRawData());
-        setProcessData(generateMockProcessData());
-    }, []);
+  // 필수 항목 설정
+  const [requiredColumns, setRequiredColumns] = useState({
+    category: '계정명',
+    costCenter: 'CO 오브젝트이름',
+    supplier: '상계계정이름',
+    amount: 'Val.in RC',
+    target: '이름',
+  });
 
-    // 데이터 원복
-    const handleDataRestore = () => {
-        alert('데이터가 원복되었습니다.');
-    };
+  // ===== Mock 데이터 생성 =====
+  const generateMockData = () => {
+    const data = [];
+    for (let i = 1; i <= 30; i++) {
+      data.push({
+        id: i,
+        연도: '2019',
+        세그먼트: (7000 + Math.floor(Math.random() * 2000)).toString(),
+        전기일: (43000 + Math.floor(Math.random() * 1000)).toString(),
+        문서번호: (134000000 + Math.floor(Math.random() * 1000000)).toString(),
+        원가요소: '51213200',
+        계정명: '지급수수료',
+        원가요소이름: '지급수수료',
+        'CO 오브젝트이름': '인터넷몰 더데이걸',
+        상계계정이름: '지급수수료(물류용역)',
+        'Val.in RC': Math.floor(Math.random() * 10000000),
+        이름: '이커머스 실비 안분_지급수수료',
+      });
+    }
+    return data;
+  };
 
-    // 데이터 삭제
-    const handleDataDelete = () => {
-        alert('선택된 데이터가 삭제되었습니다.');
-    };
+  // ===== useEffect - 초기 데이터 로드 =====
+  useEffect(() => {
+    loadSessionData();
+    loadColumns();
+  }, [sessionId, currentPage, pageSize]);
 
-    // 표준화 수행
-    const handleStandardize = () => {
-        alert(`표준화 수행: Key(${keyColumn}) → Value(${valueColumn})`);
-    };
+  // ===== 데이터 로드 =====
+  const loadSessionData = async () => {
+    try {
+      // TODO: API 호출
+      const mockData = generateMockData();
+      setOriginalData(mockData); // 원본 (불변)
+      setSessionData(mockData);  // 변경본 (수정 가능)
+    } catch (error) {
+      console.error('세션 데이터 로드 실패:', error);
+    }
+  };
 
-    // 완료 버튼
-    const handleComplete = () => {
-        navigate(`/projects/${projectId}/sessions/${sessionId}/preprocessing`);
-    };
+  const loadColumns = async () => {
+    try {
+      // Mock 컬럼
+      setColumns([
+        '연도', '세그먼트', '전기일', '문서번호', '원가요소', '계정명',
+        '원가요소이름', 'CO 오브젝트이름', '상계계정이름', 'Val.in RC', '이름'
+      ]);
+    } catch (error) {
+      console.error('컬럼 정보 로드 실패:', error);
+    }
+  };
 
-    // 원본 데이터 테이블 컬럼
-    const rawDataColumns = [
-        { field: '연도', headerName: '연도', width: 70 },
-        { field: '세그먼트', headerName: '세그먼트', width: 90 },
-        { field: '전기일', headerName: '전기일', width: 80 },
-        { field: '문서번호', headerName: '문서번호', width: 110 },
-        { field: '원가요소', headerName: '원가요소', width: 100 },
-        { field: '계정명', headerName: '계정명', width: 100 },
-        { field: '원가요소이름', headerName: '원가요소이름', width: 110 },
-    ];
+  // ===== 핸들러 함수 =====
+  const handleDataRestore = () => {
+    alert('데이터가 원복되었습니다.');
+    setSessionData([...originalData]); // 원본으로 복원
+  };
 
-    // 삭제 컬럼 테이블 컬럼
-    const deleteColumnColumns = [
-        {
-            field: 'selected',
-            headerName: '',
-            width: 50,
-            renderCell: (params) => (
-                <Checkbox
-                    size="small"
-                    checked={params.value}
-                    onChange={(e) => {
-                        const updated = deleteColumns.map(col =>
-                            col.id === params.row.id
-                                ? { ...col, selected: e.target.checked }
-                                : col
-                        );
-                        setDeleteColumns(updated);
-                    }}
-                />
-            ),
-        },
-        { field: 'columnName', headerName: '컬럼명', flex: 1 },
-    ];
+  const handleDataDelete = () => {
+    alert('선택된 데이터가 삭제되었습니다.');
+  };
 
-    // 표준화 테이블 컬럼
-    const standardColumns = [
-        { field: 'keyValue', headerName: 'Key 값', flex: 1 },
-        { field: 'targetValue', headerName: '대상값', flex: 1 },
-        { field: 'count', headerName: 'Count', width: 80 },
-    ];
+  const handleStandardize = () => {
+    if (!standardKeyColumn || !standardValueColumn) {
+      alert('Key 열과 변경 열을 선택해주세요.');
+      return;
+    }
+    alert(`표준화 수행: ${standardKeyColumn} → ${standardValueColumn}`);
+  };
 
-    const totalPages = Math.ceil(totalRows / pageSize);
+  const handleComplete = () => {
+    navigate(`/projects/${projectId}/sessions/${sessionId}/preprocessing`);
+  };
 
-    return (
-        <Container maxWidth={false} className={styles.container}>
-            {/* 세션 헤더 */}
-            <Box className={styles.sessionHeader}>
-                <SessionHeader sessionName={sessionInfo?.sessionName} />
-            </Box>
+  // ===== 페이지네이션 =====
+  const totalPages = Math.ceil(totalRows / pageSize);
+  const startRow = (currentPage - 1) * pageSize + 1;
+  const endRow = Math.min(currentPage * pageSize, totalRows);
 
-            {/* 메인 콘텐츠 */}
-            <Grid container spacing={2} className={styles.mainContent}>
-                {/* 좌측 영역 - 원본/가공 데이터 테이블 */}
-                <Grid item xs={12} md={8}>
-                    <Box className={styles.leftPanel}>
-                        {/* 두 테이블 나란히 */}
-                        <Grid container spacing={1}>
-                            <Grid item xs={6}>
-                                <StyledDataGrid
-                                    title="원본 데이터"
-                                    rows={rawData}
-                                    columns={rawDataColumns}
-                                    height="calc(100vh - 220px)"
-                                />
-                            </Grid>
-                            <Grid item xs={6}>
-                                <StyledDataGrid
-                                    title="가공 데이터"
-                                    rows={processData}
-                                    columns={rawDataColumns}
-                                    height="calc(100vh - 220px)"
-                                />
-                            </Grid>
-                        </Grid>
+  return (
+    // [Layout Fix] h-full로 DashboardLayout 영역 꽉 채우기
+    <div className="flex flex-col h-full bg-gray-50 overflow-hidden">
+      <div className="container mx-auto px-4 py-4 h-full flex flex-col min-h-0 max-w-[98vw]">
 
-                        {/* 페이지네이션 */}
-                        <Pagination
-                            currentPage={currentPage}
-                            totalPages={totalPages}
-                            totalRows={totalRows}
-                            pageSize={pageSize}
-                            onPageChange={setCurrentPage}
-                            onPageSizeChange={(size) => {
-                                setPageSize(size);
-                                setCurrentPage(1);
-                            }}
-                        />
-                    </Box>
-                </Grid>
+        {/* 상단 헤더 (고정) */}
+        <div className="flex-shrink-0 space-y-4 mb-4">
+          <Breadcrumb>
+            <BreadcrumbList>
+              <BreadcrumbItem>
+                <BreadcrumbLink href="/projects">
+                  <Home className="h-4 w-4" />
+                </BreadcrumbLink>
+              </BreadcrumbItem>
+              <BreadcrumbSeparator>
+                <ChevronRight className="h-4 w-4" />
+              </BreadcrumbSeparator>
+              <BreadcrumbItem>
+                <BreadcrumbLink href={`/projects/${projectId}/upload`}>
+                  프로젝트
+                </BreadcrumbLink>
+              </BreadcrumbItem>
+              <BreadcrumbSeparator>
+                <ChevronRight className="h-4 w-4" />
+              </BreadcrumbSeparator>
+              <BreadcrumbItem>
+                <BreadcrumbPage className="font-semibold">
+                  Step 2: File Load
+                </BreadcrumbPage>
+              </BreadcrumbItem>
+            </BreadcrumbList>
+          </Breadcrumb>
 
-                {/* 우측 영역 */}
-                <Grid item xs={12} md={4}>
-                    <Box className={styles.rightPanel}>
-                        {/* 탭 - 제거 열 설정 / 데이터 삭제 */}
-                        <Paper className={styles.tabSection}>
-                            <Tabs
-                                value={activeTab}
-                                onChange={(e, v) => setActiveTab(v)}
-                                variant="fullWidth"
-                                sx={{ borderBottom: '1px solid #ddd' }}
-                            >
-                                <Tab label="제거 열 설정" sx={{ fontSize: '13px' }} />
-                                <Tab label="데이터 삭제" sx={{ fontSize: '13px' }} />
-                            </Tabs>
+          <Card>
+            <CardHeader className="py-3">
+              <CardTitle className="text-lg flex items-center justify-between">
+                <span>📂 {sessionInfo.sessionName}</span>
+                <div className="text-sm font-normal text-muted-foreground">
+                  총 {totalRows.toLocaleString()}건 / 합계: {sessionInfo.totalAmount.toLocaleString()}원
+                </div>
+              </CardTitle>
+            </CardHeader>
+          </Card>
+        </div>
 
-                            <Box className={styles.tabContent}>
-                                {activeTab === 0 && (
-                                    <Box>
-                                        {/* 기준 열 선택 */}
-                                        <Box sx={{ mb: 1 }}>
-                                            <Typography sx={{ fontSize: '12px', mb: 0.5 }}>
-                                                기준 열 선택:
-                                            </Typography>
-                                            <Select
-                                                size="small"
-                                                fullWidth
-                                                value=""
-                                                displayEmpty
-                                            >
-                                                <MenuItem value="">데이터 삭제 기준 열 선택</MenuItem>
-                                                {columnOptions.map(col => (
-                                                    <MenuItem key={col} value={col}>{col}</MenuItem>
-                                                ))}
-                                            </Select>
-                                        </Box>
-                                        <StyledDataGrid
-                                            rows={deleteColumns}
-                                            columns={deleteColumnColumns}
-                                            height="150px"
-                                        />
-                                    </Box>
-                                )}
+        {/* 메인 콘텐츠 그리드 (남은 높이 100%) */}
+        <div className="flex-1 min-h-0 grid grid-cols-1 xl:grid-cols-12 gap-4">
 
-                                {activeTab === 1 && (
-                                    <Box>
-                                        {/* 검색 키워드 입력 */}
-                                        <Box sx={{ display: 'flex', gap: 1, mb: 1 }}>
-                                            <TextField
-                                                size="small"
-                                                placeholder="검색 키워드 입력"
-                                                value={searchKeyword}
-                                                onChange={(e) => setSearchKeyword(e.target.value)}
-                                                sx={{ flex: 1 }}
-                                            />
-                                            <ActionButton variant="search" size="small">
-                                                검색
-                                            </ActionButton>
-                                        </Box>
+          {/* 좌측: 테이블 영역 (8/12) */}
+          <div className="xl:col-span-8 h-full flex flex-col min-h-0 gap-4">
 
-                                        {/* 전체 선택 */}
-                                        <FormControlLabel
-                                            control={
-                                                <Checkbox
-                                                    size="small"
-                                                    checked={selectAll}
-                                                    onChange={(e) => setSelectAll(e.target.checked)}
-                                                />
-                                            }
-                                            label={<Typography sx={{ fontSize: '12px' }}>전체 선택</Typography>}
-                                        />
+            {/* 1. 원본 테이블 (flex-shrink-0: 필요할 때만 공간 차지) */}
+            <Card className={`flex-shrink-0 transition-all duration-300 shadow-sm ${isOriginalCollapsed ? '' : ''}`}>
+              <CardHeader
+                className="py-3 px-4 border-b bg-white cursor-pointer hover:bg-gray-50 transition-colors"
+                onClick={() => setIsOriginalCollapsed(!isOriginalCollapsed)}
+              >
+                <CardTitle className="text-base flex items-center justify-between">
+                  <span>원본 데이터 <span className="text-xs font-normal text-gray-500 ml-2">(클릭하여 {isOriginalCollapsed ? '펼치기' : '접기'})</span></span>
+                  {isOriginalCollapsed ? <ChevronDown className="h-4 w-4" /> : <ChevronUp className="h-4 w-4" />}
+                </CardTitle>
+              </CardHeader>
 
-                                        {/* 버튼 */}
-                                        <Box sx={{ display: 'flex', gap: 1, mt: 1 }}>
-                                            <ActionButton
-                                                variant="apply"
-                                                size="small"
-                                                onClick={handleDataRestore}
-                                                sx={{ flex: 1, backgroundColor: '#4CAF50' }}
-                                            >
-                                                데이터 원복
-                                            </ActionButton>
-                                            <ActionButton
-                                                variant="delete"
-                                                size="small"
-                                                onClick={handleDataDelete}
-                                                sx={{ flex: 1 }}
-                                            >
-                                                데이터 삭제
-                                            </ActionButton>
-                                        </Box>
-                                    </Box>
-                                )}
-                            </Box>
-                        </Paper>
+              {!isOriginalCollapsed && (
+                <CardContent className="p-0">
+                  {/* max-height를 주어 펼쳐졌을 때 너무 많은 공간을 차지하지 않도록 제어 */}
+                  <div className="overflow-auto max-h-[250px] custom-scrollbar">
+                    <Table>
+                      <TableHeader className="bg-gray-100 sticky top-0 z-10">
+                        <TableRow>
+                          {columns.map((col) => (
+                            <TableHead key={col} className="font-semibold text-xs whitespace-nowrap bg-gray-100">
+                              {col}
+                            </TableHead>
+                          ))}
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {originalData.map((row) => (
+                          <TableRow key={row.id} className="hover:bg-muted/50">
+                            {columns.map((col) => (
+                              <TableCell key={col} className="text-xs whitespace-nowrap">
+                                {row[col]}
+                              </TableCell>
+                            ))}
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                </CardContent>
+              )}
+            </Card>
 
-                        {/* 코스트센터/공급업체 명 표준화 */}
-                        <StyledGroupBox title="코스트센터/공급업체 명 표준화">
-                            <Box sx={{ mb: 1 }}>
-                                <Typography sx={{ fontSize: '12px', mb: 0.5 }}>key 열 선택:</Typography>
-                                <Select
-                                    size="small"
-                                    fullWidth
-                                    value={keyColumn}
-                                    onChange={(e) => setKeyColumn(e.target.value)}
-                                    displayEmpty
-                                >
-                                    <MenuItem value="">-- Key 컬럼 선택 --</MenuItem>
-                                    {columnOptions.map(col => (
-                                        <MenuItem key={col} value={col}>{col}</MenuItem>
-                                    ))}
-                                </Select>
-                            </Box>
+            {/* 2. 가공 데이터 테이블 (flex-1: 남은 공간 모두 차지) */}
+            <Card className="flex-1 flex flex-col min-h-0 shadow-sm overflow-hidden">
+              <CardHeader className="py-3 px-4 border-b bg-white flex-shrink-0">
+                <CardTitle className="text-base">가공 데이터</CardTitle>
+              </CardHeader>
 
-                            <Box sx={{ mb: 1 }}>
-                                <Typography sx={{ fontSize: '12px', mb: 0.5 }}>변경 열 선택:</Typography>
-                                <Select
-                                    size="small"
-                                    fullWidth
-                                    value={valueColumn}
-                                    onChange={(e) => setValueColumn(e.target.value)}
-                                    displayEmpty
-                                >
-                                    <MenuItem value="">-- 대상 컬럼 선택 --</MenuItem>
-                                    {columnOptions.map(col => (
-                                        <MenuItem key={col} value={col}>{col}</MenuItem>
-                                    ))}
-                                </Select>
-                            </Box>
+              {/* 테이블 영역: relative + absolute inset-0으로 부모 꽉 채우기 */}
+              <CardContent className="flex-1 relative p-0 min-h-0">
+                <div className="absolute inset-0 overflow-auto custom-scrollbar">
+                  <Table>
+                    <TableHeader className="bg-gray-100 sticky top-0 z-10 shadow-sm">
+                      <TableRow>
+                        {columns.map((col) => (
+                          <TableHead key={col} className="font-semibold text-xs whitespace-nowrap bg-gray-100">
+                            {col}
+                          </TableHead>
+                        ))}
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {sessionData.map((row) => (
+                        <TableRow key={row.id} className="hover:bg-muted/50">
+                          {columns.map((col) => (
+                            <TableCell key={col} className="text-xs whitespace-nowrap">
+                              {row[col]}
+                            </TableCell>
+                          ))}
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              </CardContent>
 
-                            <StyledDataGrid
-                                rows={standardData}
-                                columns={standardColumns}
-                                height="120px"
+              {/* 페이지네이션 (Card Footer - 고정) */}
+              <div className="p-3 border-t bg-white flex-shrink-0">
+                <div className="flex items-center justify-between text-xs">
+                  <div className="text-muted-foreground hidden sm:block">
+                    {startRow} - {endRow} / 총 {totalRows.toLocaleString()}건
+                  </div>
+
+                  <div className="flex items-center gap-2 w-full sm:w-auto justify-between sm:justify-end">
+                    <Select
+                      value={pageSize.toString()}
+                      onValueChange={(value) => {
+                        setPageSize(Number(value));
+                        setCurrentPage(1);
+                      }}
+                    >
+                      <SelectTrigger className="w-[100px] h-8 text-xs">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="100">100개씩</SelectItem>
+                        <SelectItem value="500">500개씩</SelectItem>
+                        <SelectItem value="1000">1000개씩</SelectItem>
+                        <SelectItem value="5000">5000개씩</SelectItem>
+                      </SelectContent>
+                    </Select>
+
+                    <div className="flex gap-1">
+                      <Button variant="outline" size="sm" className="h-8 px-2" onClick={() => setCurrentPage(1)} disabled={currentPage === 1}>
+                        처음
+                      </Button>
+                      <Button variant="outline" size="sm" className="h-8 px-2" onClick={() => setCurrentPage((prev) => Math.max(1, prev - 1))} disabled={currentPage === 1}>
+                        이전
+                      </Button>
+                      <span className="flex items-center px-2 text-xs font-medium">
+                        {currentPage} / {totalPages}
+                      </span>
+                      <Button variant="outline" size="sm" className="h-8 px-2" onClick={() => setCurrentPage((prev) => Math.min(totalPages, prev + 1))} disabled={currentPage === totalPages}>
+                        다음
+                      </Button>
+                      <Button variant="outline" size="sm" className="h-8 px-2" onClick={() => setCurrentPage(totalPages)} disabled={currentPage === totalPages}>
+                        마지막
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </Card>
+          </div>
+
+          {/* 우측: 설정 패널 (4/12) */}
+          <div className="xl:col-span-4 h-full flex flex-col min-h-0">
+
+            {/* 설정 패널 (스크롤 가능 영역) */}
+            <div className="flex-1 overflow-y-auto pr-1 space-y-4 pb-2">
+              {/* 제거 열 설정 / 데이터 삭제 탭 */}
+              <Card>
+                <CardContent className="pt-4 px-4 pb-4">
+                  <Tabs value={activeTab} onValueChange={setActiveTab}>
+                    <TabsList className="grid w-full grid-cols-2 mb-4">
+                      <TabsTrigger value="remove-columns">제거 열 설정</TabsTrigger>
+                      <TabsTrigger value="delete-data">데이터 삭제</TabsTrigger>
+                    </TabsList>
+
+                    <TabsContent value="remove-columns" className="space-y-3 mt-0">
+                      <div>
+                        <label className="text-xs font-medium mb-1.5 block">기준 열 선택</label>
+                        <Select value={baseColumnForDelete} onValueChange={setBaseColumnForDelete}>
+                          <SelectTrigger className="h-9">
+                            <SelectValue placeholder="데이터 삭제 기준 열 선택" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {columns.map((col) => (
+                              <SelectItem key={col} value={col}>{col}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+
+                      <div className="border rounded-md p-2 space-y-1 max-h-[200px] overflow-y-auto bg-white">
+                        {availableColumns.map((col) => (
+                          <div key={col.id} className="flex items-center gap-2 p-1 hover:bg-gray-50 rounded">
+                            <Checkbox
+                              id={`col-${col.id}`}
+                              checked={col.checked}
+                              onCheckedChange={(checked) => {
+                                setAvailableColumns(prev => prev.map(c => c.id === col.id ? { ...c, checked: !!checked } : c));
+                              }}
                             />
+                            <label htmlFor={`col-${col.id}`} className="text-sm cursor-pointer flex-1">{col.name}</label>
+                          </div>
+                        ))}
+                      </div>
+                    </TabsContent>
 
-                            <ActionButton
-                                variant="apply"
-                                size="small"
-                                onClick={handleStandardize}
-                                sx={{ width: '100%', mt: 1, backgroundColor: '#2196F3' }}
-                            >
-                                표준화 수행
-                            </ActionButton>
-                        </StyledGroupBox>
+                    <TabsContent value="delete-data" className="space-y-3 mt-0">
+                      <div className="flex gap-2">
+                        <Input
+                          className="h-9"
+                          placeholder="검색 키워드 입력"
+                          value={searchKeyword}
+                          onChange={(e) => setSearchKeyword(e.target.value)}
+                        />
+                        <Button size="icon" variant="outline" className="h-9 w-9">
+                          <Search className="h-4 w-4" />
+                        </Button>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Checkbox id="select-all" checked={selectAllData} onCheckedChange={(checked) => setSelectAllData(!!checked)} />
+                        <label htmlFor="select-all" className="text-sm cursor-pointer">전체 선택</label>
+                      </div>
+                      <div className="flex gap-2">
+                        <Button variant="outline" className="flex-1 h-9" onClick={handleDataRestore}>
+                          <RotateCcw className="h-4 w-4 mr-1" /> 원복
+                        </Button>
+                        <Button variant="destructive" className="flex-1 h-9" onClick={handleDataDelete}>
+                          <Trash2 className="h-4 w-4 mr-1" /> 삭제
+                        </Button>
+                      </div>
+                    </TabsContent>
+                  </Tabs>
+                </CardContent>
+              </Card>
 
-                        {/* 필수 항목 설정 */}
-                        <StyledGroupBox title="필수 항목 설정">
-                            <Box className={styles.mappingForm}>
-                                {[
-                                    { key: '세목열', label: '세목 열 :' },
-                                    { key: '코스트센터열', label: '코스트센터 열 :' },
-                                    { key: '공급업체열', label: '공급업체 열 :' },
-                                    { key: '금액열', label: '금액 열 :' },
-                                    { key: '타겟열', label: '타겟 열 :' },
-                                ].map(({ key, label }) => (
-                                    <Box key={key} className={styles.mappingRow}>
-                                        <Typography className={styles.mappingLabel}>
-                                            {label}
-                                        </Typography>
-                                        <Select
-                                            size="small"
-                                            value={columnMapping[key]}
-                                            onChange={(e) => setColumnMapping(prev => ({
-                                                ...prev,
-                                                [key]: e.target.value
-                                            }))}
-                                            className={styles.mappingSelect}
-                                        >
-                                            {columnOptions.map(col => (
-                                                <MenuItem key={col} value={col}>{col}</MenuItem>
-                                            ))}
-                                        </Select>
-                                    </Box>
-                                ))}
-                            </Box>
-                        </StyledGroupBox>
+              {/* 표준화 설정 */}
+              <Card>
+                <CardHeader className="py-3 px-4 border-b">
+                  <CardTitle className="text-sm font-bold">코스트센터/공급업체 명 표준화</CardTitle>
+                </CardHeader>
+                <CardContent className="pt-4 px-4 space-y-3">
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="text-xs font-medium mb-1 block">Key 열</label>
+                      <Select value={standardKeyColumn} onValueChange={setStandardKeyColumn}>
+                        <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="선택" /></SelectTrigger>
+                        <SelectContent>
+                          {columns.map((col) => (<SelectItem key={col} value={col}>{col}</SelectItem>))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div>
+                      <label className="text-xs font-medium mb-1 block">변경 열</label>
+                      <Select value={standardValueColumn} onValueChange={setStandardValueColumn}>
+                        <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="선택" /></SelectTrigger>
+                        <SelectContent>
+                          {columns.map((col) => (<SelectItem key={col} value={col}>{col}</SelectItem>))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+                  <div className="border rounded-md overflow-hidden max-h-[150px] overflow-y-auto bg-white">
+                    <Table>
+                      <TableHeader className="bg-gray-100 sticky top-0">
+                        <TableRow>
+                          <TableHead className="text-xs h-8">Key 값</TableHead>
+                          <TableHead className="text-xs h-8">대상값</TableHead>
+                          <TableHead className="text-xs h-8 w-16 text-center">Count</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {standardData.map((row) => (
+                          <TableRow key={row.id}>
+                            <TableCell className="text-xs py-1">{row.keyValue}</TableCell>
+                            <TableCell className="text-xs py-1">{row.targetValue}</TableCell>
+                            <TableCell className="text-xs py-1 text-center">{row.count}</TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                  <Button className="w-full h-8 text-xs" onClick={handleStandardize}>표준화 수행</Button>
+                </CardContent>
+              </Card>
 
-                        {/* 완료 버튼 */}
-                        <Box className={styles.completeButtonWrapper}>
-                            <ActionButton
-                                variant="complete"
-                                size="large"
-                                onClick={handleComplete}
-                                sx={{ width: '100%' }}
-                            >
-                                완  료
-                            </ActionButton>
-                        </Box>
-                    </Box>
-                </Grid>
-            </Grid>
-        </Container>
-    );
+              {/* 필수 항목 설정 */}
+              <Card>
+                <CardHeader className="py-3 px-4 border-b">
+                  <CardTitle className="text-sm font-bold">필수 항목 설정</CardTitle>
+                </CardHeader>
+                <CardContent className="pt-4 px-4 space-y-2">
+                  {[
+                    { label: '세목 열', key: 'category' },
+                    { label: '코스트센터 열', key: 'costCenter' },
+                    { label: '공급업체 열', key: 'supplier' },
+                    { label: '금액 열', key: 'amount' },
+                    { label: '타겟 열', key: 'target' },
+                  ].map((field) => (
+                    <div key={field.key} className="flex items-center justify-between">
+                      <label className="text-xs font-medium w-24">{field.label}</label>
+                      <Select
+                        value={requiredColumns[field.key]}
+                        onValueChange={(value) => setRequiredColumns(prev => ({ ...prev, [field.key]: value }))}
+                      >
+                        <SelectTrigger className="h-8 text-xs flex-1"><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          {columns.map((col) => (<SelectItem key={col} value={col}>{col}</SelectItem>))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  ))}
+                </CardContent>
+              </Card>
+            </div>
+
+            {/* 완료 버튼 (하단 고정) */}
+            <div className="pt-3 mt-auto flex-shrink-0 z-20 bg-gray-50 pb-2">
+              <Button
+                className="w-full bg-green-600 hover:bg-green-700 text-white shadow-lg h-12 text-base font-semibold"
+                onClick={handleComplete}
+              >
+                완료 → Step 3: Preprocessing
+              </Button>
+            </div>
+
+          </div>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 export default FileLoadPage;

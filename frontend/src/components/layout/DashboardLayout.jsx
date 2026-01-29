@@ -1,18 +1,18 @@
+// frontend/src/components/layout/DashboardLayout.jsx
+
 import React from 'react';
 import Sidebar from './Sidebar';
 
 const DashboardLayout = ({ children }) => {
   return (
-    <div className="flex h-screen overflow-hidden bg-background">
+    <div className="flex h-full overflow-hidden bg-background">
       {/* Sidebar */}
       <Sidebar />
 
       {/* Main Content */}
-       <main className="flex-1 overflow-y-auto">
-            {/* ⭐ 수정: container 제거, padding만 최소화 */}
-            <div className="w-full px-4 py-6">
-              {children}
-            </div>
+      {/* ⭐ overflow-hidden 추가 */}
+      <main className="flex-1 overflow-hidden flex flex-col">
+        {children}
       </main>
     </div>
   );

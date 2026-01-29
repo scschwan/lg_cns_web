@@ -1,50 +1,47 @@
-// frontend/src/components/layout/Navbar.jsx
-
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useAuth } from '../../context/AuthContext';
-import {
-    AppBar,
-    Toolbar,
-    Typography,
-    Button,
-    Box
-} from '@mui/material';
-import LogoutIcon from '@mui/icons-material/Logout';
-import styles from './Navbar.module.css';
+import { useAuth } from '@/context/AuthContext';
+import { Button } from '@/components/ui/button';
+import { Avatar, AvatarFallback } from '@/components/ui/avatar';
+import { LogOut } from 'lucide-react';
 
-function Navbar() {
-    const { user, logout } = useAuth();
-    const navigate = useNavigate();
+const Navbar = () => {
+  const { user, logout } = useAuth();
+  const navigate = useNavigate();
 
-    const handleLogout = () => {
-        logout();
-        navigate('/login');
-    };
+  const handleLogout = () => {
+    logout();
+    navigate('/login');
+  };
 
-    return (
-        <AppBar position="static">
-            <Toolbar>
-                <Typography variant="h6" component="div" className={styles.title}>
-                    Finance Tool
-                </Typography>
-                {user && (
-                    <Box className={styles.userBox}>
-                        <Typography variant="body1">
-                            {user.username || user.email}
-                        </Typography>
-                        <Button
-                            color="inherit"
-                            onClick={handleLogout}
-                            startIcon={<LogoutIcon />}
-                        >
-                            로그아웃
-                        </Button>
-                    </Box>
-                )}
-            </Toolbar>
-        </AppBar>
-    );
-}
+  const getUserInitial = () => {
+    if (user?.username) return user.username.charAt(0).toUpperCase();
+    if (user?.email) return user.email.charAt(0).toUpperCase();
+    return 'U';
+  };
+
+  return (
+    <header className="h-14 border-b bg-card flex items-center justify-between px-4">
+      <h1 className="text-lg font-semibold">Finance Tool</h1>
+
+      {user && (
+        <div className="flex items-center gap-3">
+          <Avatar className="h-8 w-8">
+            <AvatarFallback className="bg-primary text-primary-foreground">
+              {getUserInitial()}
+            </AvatarFallback>
+          </Avatar>
+          <span className="text-sm font-medium">
+            {user.username || user.email}
+          </span>
+          <Button variant="ghost" size="sm" onClick={handleLogout} className="gap-2">
+            <LogOut className="h-4 w-4" />
+            로그아웃
+          </Button>
+        </div>
+      )}
+    </header>
+  );
+};
 
 export default Navbar;

@@ -2,504 +2,475 @@
 
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+import { ChevronRight, Home, Plus, Trash2 } from 'lucide-react';
+
+// shadcn/ui components
 import {
-    Container,
-    Box,
-    Grid,
-    TextField,
-    Typography,
-    Checkbox,
-    FormControlLabel,
-} from '@mui/material';
-
+  Breadcrumb,
+  BreadcrumbItem,
+  BreadcrumbLink,
+  BreadcrumbList,
+  BreadcrumbPage,
+  BreadcrumbSeparator,
+} from '@/components/ui/breadcrumb';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
+import { Checkbox } from '@/components/ui/checkbox';
 import {
-    SessionHeader,
-    StyledGroupBox,
-    StyledDataGrid,
-    ActionButton,
-} from '../../components/common';
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
+import { Label } from '@/components/ui/label';
 
-import styles from './PreprocessingPage.module.css';
-
-// Mock Data - 키워드 추출 대상 (이름 컬럼)
-const generateExtractTargetData = () => {
-    const names = [
-        '이커머스 실비 안분_지급수수료',
-        '이커머스 실비 안분_지급수수료',
-        '이커머스 실비 안분_지급수수료',
-        '이커머스 실비 안분_지급수수료',
-        '이커머스 실비 안분_지급수수료',
-        '이커머스 실비 안분_지급수수료',
-        '이커머스 실비 안분_지급수수료',
-        '이커머스 실비 안분_지급수수료',
-        '이커머스 실비 안분_지급수수료',
-        '이커머스 실비 안분_지급수수료',
-        '이커머스 실비 안분_지급수수료',
-        '이커머스 실비 안분_지급수수료',
-        '이커머스 실비 안분_지급수수료',
-        '이커머스 실비 안분_지급수수료',
-        '이커머스 실비 안분_지급수수료',
-        '이커머스 실비 안분_지급수수료',
-        '이커머스 실비 안분_지급수수료',
-        '이커머스 실비 안분_지급수수료',
-        '이커머스 실비 안분_지급수수료',
-        '이커머스 실비 안분_지급수수료',
-        '이커머스 실비 안분_지급수수료',
-        '이커머스 실비 안분_지급수수료',
-        '이커머스 실비 안분_지급수수료',
-        '이커머스 실비 안분_지급수수료',
-        '이커머스 실비 안분_지급수수료',
-        '이커머스 실비 안분_지급수수료',
-        '이커머스 실비 안분_지급수수료',
-        '이커머스 실비 안분_지급수수료',
-        '이커머스 실비 안분_지급수수료',
-        '이커머스 실비 안분_지급수수료',
-        '이커머스 실비 안분_지급수수료',
-        '이커머스 실비 안분_지급수수료',
-        '이커머스 실비 안분_지급수수료',
-        '이커머스 실비 안분_지급수수료',
-        '이커머스 실비 안분_지급수수료',
-        '이커머스 실비 안분_지급수수료',
-        '이커머스 실비 안분_지급수수료',
-        '이커머스 실비 안분_지급수수료',
-        '이커머스 실비 안분_지급수수료',
-        '이커머스 실비 안분_지급수수료',
-        '이커머스 실비 안분_지급수수료',
-        '이커머스 실비 안분_지급수수료',
-        '이커머스 실비 안분_지급수수료',
-        '이커머스 실비 안분_지급수수료',
-        '이커머스 실비 안분_지급수수료',
-        '이커머스 실비 안분_지급수수료',
-        '이커머스 실비 안분_지급수수료',
-        '이커머스 실비 안분_지급수수료',
-        '이커머스 실비 안분_지급수수료',
-        '이커머스 실비 안분_지급수수료',
-
-    ];
-    return names.map((name, idx) => ({
-        id: idx + 1,
-        이름: name,
-    }));
-};
-
-// Mock Data - 키워드 추출 결과
-const generateExtractResultData = () => {
-    const results = [
-        { co: '인터넷몰 더데...', account: '지급수수료(통...', c0: '이커머스', c1: '실비', c2: '안분', c3: '지급수수료' },
-        { co: '인터넷몰 로엠...', account: '지급수수료(통...', c0: '이커머스', c1: '실비', c2: '안분', c3: '지급수수료' },
-        { co: '인터넷몰 포인포...', account: '지급수수료(통...', c0: '이커머스', c1: '실비', c2: '안분', c3: '지급수수료' },
-        { co: '인터넷몰 오휴', account: '지급수수료(통...', c0: '이커머스', c1: '실비', c2: '안분', c3: '지급수수료' },
-        { co: '인터넷몰 핸트...', account: '지급수수료(통...', c0: '이커머스', c1: '실비', c2: '안분', c3: '지급수수료' },
-        { co: '인터넷몰 쓰리엔', account: '지급수수료(통...', c0: '이커머스', c1: '실비', c2: '안분', c3: '지급수수료' },
-        { co: '인터넷몰 지크', account: '지급수수료(통...', c0: '이커머스', c1: '실비', c2: '안분', c3: '지급수수료' },
-        { co: '인터넷몰 엘본', account: '지급수수료(통...', c0: '이커머스', c1: '실비', c2: '안분', c3: '지급수수료' },
-        { co: '인터넷몰 이즈...', account: '지급수수료(통...', c0: '이커머스', c1: '실비', c2: '안분', c3: '지급수수료' },
-        { co: '인터넷몰 트루', account: '지급수수료(통...', c0: '이커머스', c1: '실비', c2: '안분', c3: '지급수수료' },
-        { co: '인터넷몰 CMC...', account: '지급수수료(통...', c0: '이커머스', c1: '실비', c2: '안분', c3: '지급수수료' },
-        { co: '인터넷몰 모스...', account: '지급수수료(통...', c0: '이커머스', c1: '실비', c2: '안분', c3: '지급수수료' },
-        { co: '인터넷몰 쓰시에', account: '지급수수료(통...', c0: '이커머스', c1: '실비', c2: '안분', c3: '지급수수료' },
-        { co: '인터넷몰 오스본', account: '지급수수료(통...', c0: '이커머스', c1: '실비', c2: '안분', c3: '지급수수료' },
-        { co: '인터넷몰 보보...', account: '지급수수료(통...', c0: '이커머스', c1: '실비', c2: '안분', c3: '지급수수료' },
-        { co: '인터넷몰 일로...', account: '지급수수료(통...', c0: '이커머스', c1: '실비', c2: '안분', c3: '지급수수료' },
-        { co: '인터넷몰 리틀', account: '지급수수료(통...', c0: '이커머스', c1: '실비', c2: '안분', c3: '지급수수료' },
-        { co: '인터넷몰 밀리밤', account: '지급수수료(통...', c0: '이커머스', c1: '실비', c2: '안분', c3: '지급수수료' },
-        { co: '인터넷몰 펠릭...', account: '지급수수료(통...', c0: '이커머스', c1: '실비', c2: '안분', c3: '지급수수료' },
-        { co: '인터넷몰 스탭...', account: '지급수수료(통...', c0: '이커머스', c1: '실비', c2: '안분', c3: '지급수수료' },
-        { co: '인터넷몰 신디...', account: '지급수수료(통...', c0: '이커머스', c1: '실비', c2: '안분', c3: '지급수수료' },
-        { co: '인터넷몰 인디...', account: '지급수수료(통...', c0: '이커머스', c1: '실비', c2: '안분', c3: '지급수수료' },
-        { co: '인터넷몰 엠아...', account: '지급수수료(통...', c0: '이커머스', c1: '실비', c2: '안분', c3: '지급수수료' },
-        { co: '인터넷몰 란찌', account: '지급수수료(통...', c0: '이커머스', c1: '실비', c2: '안분', c3: '지급수수료' },
-        { co: '인터넷몰 SAP', account: '지급수수료(통...', c0: '이커머스', c1: '실비', c2: '안분', c3: '지급수수료' },
-        { co: '인터넷몰 트렌...', account: '지급수수료(통...', c0: '이커머스', c1: '실비', c2: '안분', c3: '지급수수료' },
-        { co: '인터넷몰 알토', account: '지급수수료(통...', c0: '이커머스', c1: '실비', c2: '안분', c3: '지급수수료' },
-        { co: '인터넷몰 데이텀', account: '지급수수료(통...', c0: '이커머스', c1: '실비', c2: '안분', c3: '지급수수료' },
-        { co: '인터넷몰 신드', account: '지급수수료(통...', c0: '이커머스', c1: '실비', c2: '안분', c3: '지급수수료' },
-        { co: '인터넷몰 비욘드', account: '지급수수료(통...', c0: '이커머스', c1: '실비', c2: '안분', c3: '지급수수료' },
-        { co: '인터넷몰 핸트...', account: '지급수수료(통...', c0: '이커머스', c1: '실비', c2: '안분', c3: '지급수수료' },
-        { co: '인터넷몰 쓰리엔', account: '지급수수료(통...', c0: '이커머스', c1: '실비', c2: '안분', c3: '지급수수료' },
-        { co: '인터넷몰 지크', account: '지급수수료(통...', c0: '이커머스', c1: '실비', c2: '안분', c3: '지급수수료' },
-        { co: '인터넷몰 엘본', account: '지급수수료(통...', c0: '이커머스', c1: '실비', c2: '안분', c3: '지급수수료' },
-        { co: '인터넷몰 이즈...', account: '지급수수료(통...', c0: '이커머스', c1: '실비', c2: '안분', c3: '지급수수료' },
-        { co: '인터넷몰 트루', account: '지급수수료(통...', c0: '이커머스', c1: '실비', c2: '안분', c3: '지급수수료' },
-        { co: '인터넷몰 CMC...', account: '지급수수료(통...', c0: '이커머스', c1: '실비', c2: '안분', c3: '지급수수료' },
-        { co: '인터넷몰 모스...', account: '지급수수료(통...', c0: '이커머스', c1: '실비', c2: '안분', c3: '지급수수료' },
-        { co: '인터넷몰 쓰시에', account: '지급수수료(통...', c0: '이커머스', c1: '실비', c2: '안분', c3: '지급수수료' },
-    ];
-    return results.map((r, idx) => ({
-        id: idx + 1,
-        'CO 오브젝트이름': r.co,
-        '상계계정이름': r.account,
-        Column0: r.c0,
-        Column1: r.c1,
-        Column2: r.c2,
-        Column3: r.c3,
-    }));
-};
+// API 서비스 (추후 구현)
+// import preprocessingAPI from '@/services/preprocessingAPI';
 
 function PreprocessingPage() {
-    const { projectId, sessionId } = useParams();
-    const navigate = useNavigate();
+  const { projectId, sessionId } = useParams();
+  const navigate = useNavigate();
 
-    // 세션 정보
-    const [sessionInfo] = useState({
-        sessionName: '지급수수료_sampl1_2025-10-11'
-    });
+  // ===== 상태 관리 =====
+  const [sessionInfo] = useState({
+    sessionName: '지급수수료_sample1_2025-10-11',
+  });
 
-    // 데이터
-    const [targetData, setTargetData] = useState([]);
-    const [resultData, setResultData] = useState([]);
+  // 데이터
+  const [targetData, setTargetData] = useState([]);
+  const [resultData, setResultData] = useState([]);
 
-    // 구분자 변환
-    const [newSeparator, setNewSeparator] = useState('');
-    const [separatorList, setSeparatorList] = useState([
-        { id: 1, value: ' ', checked: false },
-        { id: 2, value: ',', checked: false },
-        { id: 3, value: ',', checked: false },
-        { id: 4, value: '/', checked: false },
-        { id: 5, value: '&', checked: false },
-        { id: 6, value: '*', checked: false },
-    ]);
-    const [selectAllSeparator, setSelectAllSeparator] = useState(false);
+  // 구분자 변환
+  const [newSeparator, setNewSeparator] = useState('');
+  const [separatorList, setSeparatorList] = useState([
+    { id: 1, value: '_', checked: false },
+    { id: 2, value: ' ', checked: false },
+    { id: 3, value: ',', checked: false },
+    { id: 4, value: '/', checked: false },
+    { id: 5, value: '&', checked: false },
+    { id: 6, value: '*', checked: false },
+  ]);
+  const [selectAllSeparator, setSelectAllSeparator] = useState(false);
 
-    // 불용어 제거
-    const [newStopword, setNewStopword] = useState('');
-    const [stopwordList, setStopwordList] = useState([
-        { id: 1, value: '12월', checked: false },
-        { id: 2, value: '11월', checked: false },
-        { id: 3, value: '10월', checked: false },
-        { id: 4, value: '9월', checked: false },
-    ]);
-    const [selectAllStopword, setSelectAllStopword] = useState(false);
+  // 불용어 제거
+  const [newStopword, setNewStopword] = useState('');
+  const [stopwordList, setStopwordList] = useState([
+    { id: 1, value: '12월', checked: false },
+    { id: 2, value: '11월', checked: false },
+    { id: 3, value: '10월', checked: false },
+    { id: 4, value: '9월', checked: false },
+  ]);
+  const [selectAllStopword, setSelectAllStopword] = useState(false);
 
-    // NLP 설정
-    const [minKeywordLength, setMinKeywordLength] = useState(4);
+  // NLP 설정
+  const [minKeywordLength, setMinKeywordLength] = useState(4);
 
-    useEffect(() => {
-        setTargetData(generateExtractTargetData());
-        setResultData(generateExtractResultData());
-    }, []);
+  // ===== Mock 데이터 생성 =====
+  const generateTargetData = () => {
+    const data = [];
+    for (let i = 1; i <= 50; i++) {
+      data.push({
+        id: i,
+        이름: '이커머스 실비 안분_지급수수료',
+      });
+    }
+    return data;
+  };
 
-    // 구분자 추가
-    const handleAddSeparator = () => {
-        if (newSeparator.trim()) {
-            setSeparatorList([
-                ...separatorList,
-                { id: Date.now(), value: newSeparator.trim(), checked: false }
-            ]);
-            setNewSeparator('');
-        }
-    };
-
-    // 구분자 항목 제거
-    const handleRemoveSeparator = () => {
-        setSeparatorList(separatorList.filter(item => !item.checked));
-    };
-
-    // 불용어 추가
-    const handleAddStopword = () => {
-        if (newStopword.trim()) {
-            setStopwordList([
-                ...stopwordList,
-                { id: Date.now(), value: newStopword.trim(), checked: false }
-            ]);
-            setNewStopword('');
-        }
-    };
-
-    // 불용어 항목 제거
-    const handleRemoveStopword = () => {
-        setStopwordList(stopwordList.filter(item => !item.checked));
-    };
-
-    // 키워드 추출
-    const handleKeywordExtract = () => {
-        alert('키워드 추출 실행');
-    };
-
-    // 1글자 키워드 제거
-    const handleRemoveSingleChar = () => {
-        alert('1글자 키워드 제거 실행');
-    };
-
-    // NLP 키워드 추출
-    const handleNlpExtract = () => {
-        alert(`NLP 기반 키워드 추출 (${minKeywordLength}글자 이상)`);
-    };
-
-    // 완료
-    const handleComplete = () => {
-        navigate(`/projects/${projectId}/sessions/${sessionId}/transform`);
-    };
-
-    // 추출 대상 컬럼
-    const targetColumns = [
-        { field: '이름', headerName: '이름', flex: 1, minWidth: 250 },
+  const generateResultData = () => {
+    const companies = [
+      '더데이걸', '로엠', '포인포인트', '오휴', '핸트메이드',
+      '쓰리엔', '지크', '엘본', '이즈백', '트루',
+      'CMC', '모스트', '쓰시에', '오스본', '보보',
+      '일로', '리틀', '밀리밤', '펠릭스', '스탭',
+      '신디파크', '인디안', '엠아이', '란찌', 'SAP',
+      '트렌비', '알토', '데이텀', '신드롬', '비욘드',
     ];
 
-    // 추출 결과 컬럼
-    const resultColumns = [
-        { field: 'CO 오브젝트이름', headerName: 'CO 오브젝트이름', width: 120 },
-        { field: '상계계정이름', headerName: '상계계정이름', width: 120 },
-        { field: 'Column0', headerName: 'Column0', width: 90 },
-        { field: 'Column1', headerName: 'Column1', width: 80 },
-        { field: 'Column2', headerName: 'Column2', width: 80 },
-        { field: 'Column3', headerName: 'Column3', width: 90 },
-    ];
+    return companies.map((company, idx) => ({
+      id: idx + 1,
+      'CO 오브젝트이름': `인터넷몰 ${company}`,
+      상계계정이름: '지급수수료(물류용역)',
+      Column0: '이커머스',
+      Column1: '실비',
+      Column2: '안분',
+      Column3: '지급수수료',
+    }));
+  };
 
-    return (
-        <Container maxWidth={false} className={styles.container}>
-            {/* 세션 헤더 */}
-            <Box className={styles.sessionHeader}>
-                <SessionHeader sessionName={sessionInfo?.sessionName} />
-            </Box>
+  // ===== useEffect =====
+  useEffect(() => {
+    loadData();
+  }, [sessionId]);
 
-            {/* 메인 콘텐츠 */}
-            <Grid container spacing={2} className={styles.mainContent}>
-                {/* 좌측 영역 - 테이블 */}
-                <Grid item xs={12} md={8}>
-                    <Box className={styles.leftPanel}>
-                        <Grid container spacing={1} sx={{ height: '100%' }}>
-                            {/* 키워드 추출 대상 */}
-                            <Grid item xs={5}>
-                                <StyledDataGrid
-                                    title="키워드 추출 대상"
-                                    rows={targetData}
-                                    columns={targetColumns}
-                                    height="calc(100vh - 180px)"
-                                />
-                            </Grid>
+  const loadData = async () => {
+    try {
+      setTargetData(generateTargetData());
+      setResultData(generateResultData());
+    } catch (error) {
+      console.error('데이터 로드 실패:', error);
+    }
+  };
 
-                            {/* 키워드 추출 결과 */}
-                            <Grid item xs={7}>
-                                <StyledDataGrid
-                                    title="키워드 추출 결과"
-                                    rows={resultData}
-                                    columns={resultColumns}
-                                    height="calc(100vh - 180px)"
-                                />
-                            </Grid>
-                        </Grid>
-                    </Box>
-                </Grid>
+  // ===== 핸들러 함수 =====
+  const handleAddSeparator = () => {
+    if (newSeparator.trim()) {
+      setSeparatorList([
+        ...separatorList,
+        { id: Date.now(), value: newSeparator.trim(), checked: false },
+      ]);
+      setNewSeparator('');
+    }
+  };
 
-                {/* 우측 영역 - 설정 패널 */}
-                <Grid item xs={12} md={4}>
-                    <Box className={styles.rightPanel} sx={{
-                                                              // 1. 박스 높이를 '내용물 크기'에 딱 맞춥니다 (늘어나지 않게 함)
-                                                              height: 'fit-content',
+  const handleRemoveSeparator = () => {
+    const checkedCount = separatorList.filter((item) => item.checked).length;
+    if (checkedCount === 0) {
+      alert('제거할 항목을 선택해주세요.');
+      return;
+    }
+    setSeparatorList(separatorList.filter((item) => !item.checked));
+    setSelectAllSeparator(false);
+  };
 
-                                                              // 2. 내부 콘텐츠 영역의 상하 여백을 강제로 줄입니다.
-                                                              // (StyledGroupBox 내부 구조에 따라 div나 .MuiBox-root 등을 타겟팅)
-                                                              '& > div:last-child': {
-                                                                  padding: '8px 16px !important', // 상하 8px, 좌우 16px (기존 대비 절반 이하로 축소)
-                                                              },
-                                                              // 혹시 위 선택자가 안 먹힐 경우를 대비한 일반적인 padding 제어
-                                                              paddingBottom: '0px !important'
-                                                          }}>
-                        {/* 구분자 변환 */}
-                        <StyledGroupBox title="구분자 변환">
-                            <Box sx={{ display: 'flex', gap: 1, mb: 1 }}>
-                                <TextField
-                                    size="small"
-                                    placeholder="신규 변환 대상 입력"
-                                    value={newSeparator}
-                                    onChange={(e) => setNewSeparator(e.target.value)}
-                                    sx={{ flex: 1 }}
-                                />
-                                <ActionButton
-                                    variant="add"
-                                    size="small"
-                                    onClick={handleAddSeparator}
-                                    sx={{ backgroundColor: '#e91e63', minWidth: '70px' }}
-                                >
-                                    대상 추가
-                                </ActionButton>
+  const handleAddStopword = () => {
+    if (newStopword.trim()) {
+      setStopwordList([
+        ...stopwordList,
+        { id: Date.now(), value: newStopword.trim(), checked: false },
+      ]);
+      setNewStopword('');
+    }
+  };
 
-                            </Box>
+  const handleRemoveStopword = () => {
+    const checkedCount = stopwordList.filter((item) => item.checked).length;
+    if (checkedCount === 0) {
+      alert('제거할 항목을 선택해주세요.');
+      return;
+    }
+    setStopwordList(stopwordList.filter((item) => !item.checked));
+    setSelectAllStopword(false);
+  };
 
-                            <Box className={styles.checkboxList}>
-                                <FormControlLabel
-                                    control={
-                                        <Checkbox
-                                            size="small"
-                                            checked={selectAllSeparator}
-                                            onChange={(e) => {
-                                                setSelectAllSeparator(e.target.checked);
-                                                setSeparatorList(separatorList.map(item => ({
-                                                    ...item,
-                                                    checked: e.target.checked
-                                                })));
-                                            }}
-                                        />
-                                    }
-                                    label={<Typography sx={{ fontSize: '12px' }}>전체 선택</Typography>}
-                                />
-                                {separatorList.map(item => (
-                                    <FormControlLabel
-                                        key={item.id}
-                                        control={
-                                            <Checkbox
-                                                size="small"
-                                                checked={item.checked}
-                                                onChange={(e) => {
-                                                    setSeparatorList(separatorList.map(s =>
-                                                        s.id === item.id ? { ...s, checked: e.target.checked } : s
-                                                    ));
-                                                }}
-                                            />
-                                        }
-                                        label={<Typography sx={{ fontSize: '12px' }}>{item.value}</Typography>}
-                                    />
-                                ))}
-                            </Box>
+  const handleKeywordExtract = () => {
+    alert('구분자 기반 키워드 추출을 시작합니다.');
+  };
 
-                            <ActionButton
-                                variant="delete"
-                                size="small"
-                                onClick={handleRemoveSeparator}
-                                sx={{ width: '100%', backgroundColor: '#e91e63' }}
-                            >
-                                항목 제거
-                            </ActionButton>
-                        </StyledGroupBox>
+  const handleRemoveSingleChar = () => {
+    alert('1글자 키워드를 제거합니다.');
+  };
 
-                        {/* 불용어 제거 */}
-                        <StyledGroupBox title="불용어 제거">
-                            <Box sx={{ display: 'flex', gap: 1, mb: 1 }}>
-                                <TextField
-                                    size="small"
-                                    placeholder="신규 불용어 대상 입력"
-                                    value={newStopword}
-                                    onChange={(e) => setNewStopword(e.target.value)}
-                                    sx={{ flex: 1 }}
-                                />
-                                <ActionButton
-                                    variant="add"
-                                    size="small"
-                                    onClick={handleAddStopword}
-                                    sx={{ backgroundColor: '#2196F3', minWidth: '70px' }}
-                                >
-                                    대상 추가
-                                </ActionButton>
-                            </Box>
+  const handleNlpExtract = () => {
+    alert(`NLP 기반 키워드 추출 (${minKeywordLength}글자 이상)`);
+  };
 
-                            <Box className={styles.checkboxList}>
-                                <FormControlLabel
-                                    control={
-                                        <Checkbox
-                                            size="small"
-                                            checked={selectAllStopword}
-                                            onChange={(e) => {
-                                                setSelectAllStopword(e.target.checked);
-                                                setStopwordList(stopwordList.map(item => ({
-                                                    ...item,
-                                                    checked: e.target.checked
-                                                })));
-                                            }}
-                                        />
-                                    }
-                                    label={<Typography sx={{ fontSize: '12px' }}>전체 선택</Typography>}
-                                />
-                                {stopwordList.map(item => (
-                                    <FormControlLabel
-                                        key={item.id}
-                                        control={
-                                            <Checkbox
-                                                size="small"
-                                                checked={item.checked}
-                                                onChange={(e) => {
-                                                    setStopwordList(stopwordList.map(s =>
-                                                        s.id === item.id ? { ...s, checked: e.target.checked } : s
-                                                    ));
-                                                }}
-                                            />
-                                        }
-                                        label={<Typography sx={{ fontSize: '12px' }}>{item.value}</Typography>}
-                                    />
-                                ))}
-                            </Box>
+  const handleComplete = () => {
+    navigate(`/projects/${projectId}/sessions/${sessionId}/transform`);
+  };
 
-                            <ActionButton
-                                variant="delete"
-                                size="small"
-                                onClick={handleRemoveStopword}
-                                sx={{ width: '100%', backgroundColor: '#e91e63' }}
-                            >
-                                항목 제거
-                            </ActionButton>
-                        </StyledGroupBox>
+  return (
+    // [중요] h-screen 대신 h-full 사용
+    // DashboardLayout의 main 영역을 100% 채우기 위함입니다.
+    <div className="flex flex-col h-full bg-gray-50 overflow-hidden">
+      <div className="container mx-auto px-4 py-4 h-full flex flex-col min-h-0 max-w-[98vw]">
 
-                        {/* 구분자 기반 키워드 추출 */}
-                       {/* 구분자 기반 키워드 추출 */}
-                       <StyledGroupBox
-                           title="구분자 기반 키워드 추출"
+        {/* 상단 헤더 (고정 높이) */}
+        <div className="flex-shrink-0 space-y-4 mb-4">
+          <Breadcrumb>
+            <BreadcrumbList>
+              <BreadcrumbItem>
+                <BreadcrumbLink href="/projects">
+                  <Home className="h-4 w-4" />
+                </BreadcrumbLink>
+              </BreadcrumbItem>
+              <BreadcrumbSeparator>
+                <ChevronRight className="h-4 w-4" />
+              </BreadcrumbSeparator>
+              <BreadcrumbItem>
+                <BreadcrumbLink href={`/projects/${projectId}/upload`}>
+                  프로젝트
+                </BreadcrumbLink>
+              </BreadcrumbItem>
+              <BreadcrumbSeparator>
+                <ChevronRight className="h-4 w-4" />
+              </BreadcrumbSeparator>
+              <BreadcrumbItem>
+                <BreadcrumbPage className="font-semibold">
+                  Step 3: Preprocessing
+                </BreadcrumbPage>
+              </BreadcrumbItem>
+            </BreadcrumbList>
+          </Breadcrumb>
 
-                       >
-                           <Box sx={{ display: 'flex', gap: 1 }}>
-                               <ActionButton
-                                   variant="apply"
-                                   size="small"
-                                   onClick={handleKeywordExtract}
-                                   sx={{ flex: 1, backgroundColor: '#2196F3' }}
-                               >
-                                   키워드 추출
-                               </ActionButton>
-                               <ActionButton
-                                   variant="apply"
-                                   size="small"
-                                   onClick={handleRemoveSingleChar}
-                                   sx={{ flex: 1, backgroundColor: '#2196F3' }}
-                               >
-                                   1글자 키워드제거
-                               </ActionButton>
-                           </Box>
-                       </StyledGroupBox>
+          <Card>
+            <CardHeader className="py-3">
+              <CardTitle className="text-lg">
+                📂 {sessionInfo.sessionName}
+              </CardTitle>
+            </CardHeader>
+          </Card>
+        </div>
 
-                        {/* NLP 기반 키워드 추출 */}
-                        <StyledGroupBox title="NLP 기반 키워드 추출">
-                            <Typography sx={{ fontSize: '11px', color: '#e91e63', mb: 1 }}>
-                                * 구분자 기반으로 키워드 추출 후<br />
-                                AI가 추가적으로 키워드를 분할합니다.
-                            </Typography>
-                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
-                                <TextField
-                                    type="number"
-                                    size="small"
-                                    value={minKeywordLength}
-                                    onChange={(e) => setMinKeywordLength(parseInt(e.target.value) || 4)}
-                                    inputProps={{ min: 1, max: 10 }}
-                                    sx={{ width: '60px' }}
-                                />
-                                <Typography sx={{ fontSize: '12px' }}>
-                                    글자 이상 키워드 자동 분할
-                                </Typography>
-                            </Box>
-                            <ActionButton
-                                variant="apply"
-                                size="small"
-                                onClick={handleNlpExtract}
-                                sx={{ width: '100%', backgroundColor: '#9c27b0' }}
-                            >
-                                키워드 추출
-                            </ActionButton>
-                        </StyledGroupBox>
+        {/* 메인 콘텐츠 그리드 (남은 높이 채움) */}
+        <div className="flex-1 min-h-0 grid grid-cols-1 xl:grid-cols-12 gap-4">
 
-                        {/* 완료 버튼 */}
-                        <Box className={styles.completeButtonWrapper}>
-                            <ActionButton
-                                variant="complete"
-                                size="large"
-                                onClick={handleComplete}
-                                sx={{ width: '100%' }}
-                            >
-                                완 료
-                            </ActionButton>
-                        </Box>
-                    </Box>
-                </Grid>
-            </Grid>
-        </Container>
-    );
+          {/* 좌측: 데이터 테이블 영역 (8/12) */}
+          <div className="xl:col-span-8 h-full flex flex-col min-h-0 gap-4">
+
+            {/* 내부 그리드: 대상 테이블(5) + 결과 테이블(7) */}
+            <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-12 gap-4">
+
+              {/* 키워드 추출 대상 */}
+              <div className="lg:col-span-5 h-full min-h-0">
+                <Card className="h-full flex flex-col overflow-hidden shadow-sm">
+                  <CardHeader className="py-3 px-4 border-b bg-white flex-shrink-0">
+                    <CardTitle className="text-base">키워드 추출 대상</CardTitle>
+                  </CardHeader>
+                  <CardContent className="p-0 flex-1 relative min-h-0">
+                    {/* absolute inset-0으로 부모 크기에 강제 고정 후 스크롤 생성 */}
+                    <div className="absolute inset-0 overflow-auto custom-scrollbar">
+                      <Table>
+                        <TableHeader className="bg-gray-100 sticky top-0 z-10 shadow-sm">
+                          <TableRow>
+                            <TableHead className="font-semibold text-xs w-[60px] text-center bg-gray-100">No</TableHead>
+                            <TableHead className="font-semibold text-xs bg-gray-100">이름</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {targetData.map((row) => (
+                            <TableRow key={row.id} className="hover:bg-muted/50">
+                              <TableCell className="text-xs text-center">{row.id}</TableCell>
+                              <TableCell className="text-xs">{row.이름}</TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </div>
+                  </CardContent>
+                </Card>
+              </div>
+
+              {/* 키워드 추출 결과 */}
+              <div className="lg:col-span-7 h-full min-h-0">
+                <Card className="h-full flex flex-col overflow-hidden shadow-sm">
+                  <CardHeader className="py-3 px-4 border-b bg-white flex-shrink-0">
+                    <CardTitle className="text-base">키워드 추출 결과</CardTitle>
+                  </CardHeader>
+                  <CardContent className="p-0 flex-1 relative min-h-0">
+                    <div className="absolute inset-0 overflow-auto custom-scrollbar">
+                      <Table>
+                        <TableHeader className="bg-gray-100 sticky top-0 z-10 shadow-sm">
+                          <TableRow>
+                            <TableHead className="font-semibold text-xs whitespace-nowrap bg-gray-100">CO 오브젝트이름</TableHead>
+                            <TableHead className="font-semibold text-xs whitespace-nowrap bg-gray-100">상계계정이름</TableHead>
+                            <TableHead className="font-semibold text-xs text-center bg-gray-100">C0</TableHead>
+                            <TableHead className="font-semibold text-xs text-center bg-gray-100">C1</TableHead>
+                            <TableHead className="font-semibold text-xs text-center bg-gray-100">C2</TableHead>
+                            <TableHead className="font-semibold text-xs text-center bg-gray-100">C3</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {resultData.map((row) => (
+                            <TableRow key={row.id} className="hover:bg-muted/50">
+                              <TableCell className="text-xs whitespace-nowrap">{row['CO 오브젝트이름']}</TableCell>
+                              <TableCell className="text-xs whitespace-nowrap">{row.상계계정이름}</TableCell>
+                              <TableCell className="text-xs text-center">{row.Column0}</TableCell>
+                              <TableCell className="text-xs text-center">{row.Column1}</TableCell>
+                              <TableCell className="text-xs text-center">{row.Column2}</TableCell>
+                              <TableCell className="text-xs text-center">{row.Column3}</TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </div>
+                  </CardContent>
+                </Card>
+              </div>
+
+            </div>
+          </div>
+
+          {/* 우측: 컨트롤 및 버튼 영역 (4/12) */}
+          <div className="xl:col-span-4 h-full flex flex-col min-h-0">
+
+            {/* 설정 패널 (스크롤 가능) */}
+            <div className="flex-1 overflow-y-auto pr-1 space-y-4 pb-2">
+
+              {/* 구분자 변환 */}
+              <Card>
+                <CardHeader className="py-3">
+                  <CardTitle className="text-sm font-bold">구분자 변환</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-3 pt-0">
+                  <div className="flex gap-2">
+                    <Input
+                      className="h-8 text-sm"
+                      placeholder="신규 변환 대상 입력"
+                      value={newSeparator}
+                      onChange={(e) => setNewSeparator(e.target.value)}
+                      onKeyPress={(e) => {
+                         if (e.key === 'Enter') handleAddSeparator();
+                       }}
+                    />
+                    <Button onClick={handleAddSeparator} className="bg-pink-600 hover:bg-pink-700 h-8 whitespace-nowrap">
+                      <Plus className="h-3 w-3 mr-1" />
+                      추가
+                    </Button>
+                  </div>
+                  <div className="border rounded-md p-2 space-y-1 max-h-[150px] overflow-y-auto bg-white">
+                    <div className="flex items-center gap-2 p-1 hover:bg-gray-50 rounded">
+                      <Checkbox
+                        id="sep-all"
+                        checked={selectAllSeparator}
+                        onCheckedChange={(checked) => {
+                          setSelectAllSeparator(!!checked);
+                          setSeparatorList(separatorList.map(item => ({ ...item, checked: !!checked })));
+                        }}
+                      />
+                      <label htmlFor="sep-all" className="text-xs font-semibold cursor-pointer w-full">전체 선택</label>
+                    </div>
+                    {separatorList.map((item) => (
+                      <div key={item.id} className="flex items-center gap-2 p-1 hover:bg-gray-50 rounded">
+                        <Checkbox
+                          id={`sep-${item.id}`}
+                          checked={item.checked}
+                          onCheckedChange={(checked) => {
+                            setSeparatorList(separatorList.map(s => s.id === item.id ? { ...s, checked: !!checked } : s));
+                          }}
+                        />
+                        <label htmlFor={`sep-${item.id}`} className="text-xs cursor-pointer w-full">
+                          {item.value === ' ' ? '(공백)' : item.value}
+                        </label>
+                      </div>
+                    ))}
+                  </div>
+                  <Button variant="outline" size="sm" className="w-full h-8 text-xs text-red-600 hover:text-red-700 hover:bg-red-50" onClick={handleRemoveSeparator}>
+                    <Trash2 className="h-3 w-3 mr-1" />
+                    선택 항목 제거
+                  </Button>
+                </CardContent>
+              </Card>
+
+              {/* 불용어 제거 */}
+              <Card>
+                <CardHeader className="py-3">
+                  <CardTitle className="text-sm font-bold">불용어 제거</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-3 pt-0">
+                  <div className="flex gap-2">
+                    <Input
+                      className="h-8 text-sm"
+                      placeholder="신규 불용어 입력"
+                      value={newStopword}
+                      onChange={(e) => setNewStopword(e.target.value)}
+                      onKeyPress={(e) => {
+                         if (e.key === 'Enter') handleAddStopword();
+                       }}
+                    />
+                    <Button onClick={handleAddStopword} className="h-8 whitespace-nowrap">
+                      <Plus className="h-3 w-3 mr-1" />
+                      추가
+                    </Button>
+                  </div>
+                  <div className="border rounded-md p-2 space-y-1 max-h-[150px] overflow-y-auto bg-white">
+                    <div className="flex items-center gap-2 p-1 hover:bg-gray-50 rounded">
+                      <Checkbox
+                        id="stop-all"
+                        checked={selectAllStopword}
+                        onCheckedChange={(checked) => {
+                          setSelectAllStopword(!!checked);
+                          setStopwordList(stopwordList.map(item => ({ ...item, checked: !!checked })));
+                        }}
+                      />
+                      <label htmlFor="stop-all" className="text-xs font-semibold cursor-pointer w-full">전체 선택</label>
+                    </div>
+                    {stopwordList.map((item) => (
+                      <div key={item.id} className="flex items-center gap-2 p-1 hover:bg-gray-50 rounded">
+                        <Checkbox
+                          id={`stop-${item.id}`}
+                          checked={item.checked}
+                          onCheckedChange={(checked) => {
+                            setStopwordList(stopwordList.map(s => s.id === item.id ? { ...s, checked: !!checked } : s));
+                          }}
+                        />
+                        <label htmlFor={`stop-${item.id}`} className="text-xs cursor-pointer w-full">
+                          {item.value}
+                        </label>
+                      </div>
+                    ))}
+                  </div>
+                  <Button variant="outline" size="sm" className="w-full h-8 text-xs text-red-600 hover:text-red-700 hover:bg-red-50" onClick={handleRemoveStopword}>
+                    <Trash2 className="h-3 w-3 mr-1" />
+                    선택 항목 제거
+                  </Button>
+                </CardContent>
+              </Card>
+
+              {/* 구분자 기반 키워드 추출 */}
+              <Card>
+                <CardHeader className="py-3">
+                  <CardTitle className="text-sm font-bold">구분자 기반 키워드 추출</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-2 pt-0">
+                  <div className="grid grid-cols-2 gap-2">
+                    <Button size="sm" className="h-8" onClick={handleKeywordExtract}>키워드 추출</Button>
+                    <Button size="sm" variant="secondary" className="h-8" onClick={handleRemoveSingleChar}>1글자 제거</Button>
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* NLP 기반 키워드 추출 */}
+              <Card>
+                <CardHeader className="py-3">
+                  <CardTitle className="text-sm font-bold">NLP 기반 키워드 추출</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-3 pt-0">
+                  <div className="text-[11px] text-pink-600 bg-pink-50 p-2 rounded">
+                    * 구분자 기반으로 키워드 추출 후<br />
+                    AI가 추가적으로 키워드를 분할합니다.
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Input
+                      type="number"
+                      value={minKeywordLength}
+                      onChange={(e) => setMinKeywordLength(parseInt(e.target.value) || 4)}
+                      min="1"
+                      max="10"
+                      className="w-16 h-8 text-sm"
+                    />
+                    <Label className="text-xs text-muted-foreground">글자 이상 키워드 자동 분할</Label>
+                  </div>
+                  <Button
+                    size="sm"
+                    className="w-full bg-purple-600 hover:bg-purple-700 h-8"
+                    onClick={handleNlpExtract}
+                  >
+                    키워드 추출
+                  </Button>
+                </CardContent>
+              </Card>
+
+            </div>
+
+            {/* 완료 버튼 (하단 고정) */}
+            <div className="pt-3 mt-auto flex-shrink-0 z-20 bg-gray-50 pb-2">
+              <Button
+                className="w-full bg-green-600 hover:bg-green-700 text-white shadow-lg h-12 text-base font-semibold"
+                onClick={handleComplete}
+              >
+                완료 → Step 4: Transform
+              </Button>
+            </div>
+
+          </div>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 export default PreprocessingPage;

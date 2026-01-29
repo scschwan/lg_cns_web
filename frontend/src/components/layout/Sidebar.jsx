@@ -151,17 +151,18 @@ const Sidebar = () => {
   };
 
   return (
-    <div className="w-64 h-screen bg-card border-r border-border flex flex-col">
-      {/* Header */}
-      <div className="p-4 border-b border-border">
-        <h2 className="text-lg font-semibold">Process Steps</h2>
-        <p className="text-sm text-muted-foreground mt-1">
-          7단계 데이터 처리 과정
-        </p>
-      </div>
+
+      <div className="w-64 h-screen bg-card border-r border-border flex flex-col">
+
+          <div className="p-4 border-b border-border flex-shrink-0">
+              <h2 className="text-lg font-semibold">Process Steps</h2>
+              <p className="text-sm text-muted-foreground mt-1">
+              7단계 데이터 처리 과정
+            </p>
+          </div>
 
       {/* Steps */}
-      <nav className="flex-1 overflow-y-auto p-2">
+      <nav className="flex-1 overflow-y-auto p-2 max-h-[calc(100vh-280px)]">
         <div className="space-y-1">
           {steps.map((step, index) => {
             const Icon = getStepIcon(step);
@@ -225,21 +226,21 @@ const Sidebar = () => {
       </nav>
 
       {/* Footer */}
-      <div className="p-4 border-t border-border bg-muted/30">
-        <div className="space-y-1 text-xs text-muted-foreground">
-          <p className="flex items-center gap-2">
-            <Circle className="w-3 h-3" />
-            세션이 필요한 Step은 Step 1 완료 후 활성화됩니다.
-          </p>
-          {sessionId && (
-            <p className="flex items-center gap-2 text-primary">
-              <CheckCircle2 className="w-3 h-3" />
-              현재 세션: {sessionId.slice(0, 8)}...
+      <div className="p-4 border-t border-border bg-muted/30 flex-shrink-0">
+          <div className="space-y-1 text-xs text-muted-foreground">
+            <p className="flex items-center gap-2">
+              <Circle className="w-3 h-3" />
+              세션이 필요한 Step은 Step 1 완료 후 활성화됩니다.
             </p>
-          )}
+            {sessionId && (
+              <p className="flex items-center gap-2 text-primary">
+                <CheckCircle2 className="w-3 h-3" />
+                현재 세션: {sessionId.slice(0, 8)}...
+              </p>
+            )}
+          </div>
         </div>
       </div>
-    </div>
   );
 };
 
