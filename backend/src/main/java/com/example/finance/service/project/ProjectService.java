@@ -65,7 +65,7 @@ public class ProjectService {
                 .createdBy(userId)
                 .createdAt(LocalDateTime.now())
                 .updatedAt(LocalDateTime.now())
-                .members(Collections.singletonList(owner))
+                .members(new ArrayList<>(Collections.singletonList(owner)))
                 .totalSessions(0)
                 .completedSessions(0)
                 .totalFiles(0)
@@ -114,7 +114,7 @@ public class ProjectService {
                 .anyMatch(m -> m.getUserId().equals(user.getId()));
 
         if (alreadyMember) {
-            throw new RuntimeException("이미 프로젝트 멤버입니다");
+            throw new BusinessException("ALREADY_EXISTS", "이미 프로젝트 멤버입니다");
         }
 
         // 5. 멤버 추가
