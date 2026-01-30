@@ -45,10 +45,23 @@ const projectService = {
 
 
     // 멤버 초대
-    inviteMember: async (projectId, memberData) => {
-        const response = await api.post(`/api/projects/${projectId}/members`, memberData);
-        return response.data;
-    },
+   /**
+      * 멤버 초대
+      * @param {string} projectId
+      * @param {string} email
+      * @param {string} role
+      */
+     inviteMember: async (projectId, email, role) => {
+       // ❌ 기존 (추정): 이렇게 되어 있어서 문자열만 전송됨
+       // return api.post(`/projects/${projectId}/members`, email);
+
+       // ✅ 수정: email과 role을 객체에 담아서 전송해야 함
+       const payload = {
+         email: email,
+         role: role
+       };
+       return api.post(`/api/projects/${projectId}/members`, payload);
+     },
 
     // ⭐ 멤버 목록 조회 (신규 추가)
     getProjectMembers: async (projectId) => {

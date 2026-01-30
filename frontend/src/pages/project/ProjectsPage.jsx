@@ -184,7 +184,7 @@ export default function ProjectsPage() {
             <CreateProjectDialog
                 open={openDialog}
                 onClose={() => setOpenDialog(false)}
-                onCreate={async (projectData) => {
+                onSuccess={async (projectData) => {
                     const createdProject = await projectService.createProject(projectData);
                     await loadProjects();
                     return createdProject;

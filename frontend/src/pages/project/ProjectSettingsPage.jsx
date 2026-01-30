@@ -163,16 +163,26 @@ const ProjectSettingsPage = () => {
   };
 
   const handleInviteMember = async () => {
-    if (!inviteEmail.trim()) {
-      alert('이메일을 입력해주세요.');
-      return;
-    }
+
+
 
     try {
+
+      // role 값이 "EDITOR" (대문자)여야 안전합니다.
+      // 만약 "Editor"나 "editor"로 보내고 있다면 위의 application.yml 설정이 필수입니다.
+      if (!inviteEmail || !inviteRole) {
+          alert("이메일과 역할을 모두 입력해주세요.");
+          return;
+      }
+
+      console.log("Sending Invite:", { inviteEmail, inviteRole }); // 로그 확인
+
+      // ✅ 수정: inviteEmail과 inviteRole 두 개의 인자를 모두 전달
       await projectService.inviteMember(projectId, inviteEmail, inviteRole);
-      setInviteDialogOpen(false);
-      setInviteEmail('');
-      setInviteRole('VIEWER');
+
+      // 성공 처리
+      setInviteEmail("");
+      setInviteRole("VIEWER");
       await loadProjectMembers();
       setSuccessMessage('멤버 초대가 완료되었습니다.');
       setTimeout(() => setSuccessMessage(''), 3000);

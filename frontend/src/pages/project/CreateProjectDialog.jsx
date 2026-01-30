@@ -34,7 +34,7 @@ const CreateProjectDialog = ({ open, onClose, onSuccess }) => {
     try {
       // 부모 컴포넌트로 데이터 전달
       await onSuccess({
-        projectName: projectName.trim(),
+        name: projectName.trim(),
         description: description.trim()
       });
 
