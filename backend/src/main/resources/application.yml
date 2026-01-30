@@ -63,7 +63,7 @@ management:
     redis:
       enabled: false
 
----
+
 # 로컬 개발 프로파일
 spring:
   config:
@@ -79,8 +79,6 @@ spring:
       port: 6379
       ssl:
         enabled: false
-
----
 
 
 # AWS 프로덕션 프로파일
@@ -100,3 +98,8 @@ spring:
       ssl:
         enabled: false
       timeout: 5000ms
+
+spring:
+  jackson:
+    mapper:
+      accept-case-insensitive-enums: true

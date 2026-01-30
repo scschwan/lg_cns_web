@@ -3,6 +3,7 @@ package com.example.finance.exception;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.validation.FieldError;
 import org.springframework.web.ErrorResponse;
 import org.springframework.web.bind.MethodArgumentNotValidException;
@@ -100,5 +101,19 @@ public class GlobalExceptionHandler {
         response.put("timestamp", LocalDateTime.now());
 
         return ResponseEntity.status(status).body(response);
+    }
+
+    @ExceptionHandler(HttpMessageNotReadableException.class)
+    public ResponseEntity<Map<String, Object>> handleJsonErrors(HttpMessageNotReadableException e) {
+        log.error("JSON 파싱 오류: {}", e.getMessage()); // 로그 강제 출력
+
+        Map<String, Object> response = new HashMap<>();
+        response.put("success", false);
+        response.put("error", "BAD_REQUEST");
+        response.put("message", "요청 데이터 형식이 올바르지 않습니다. (Enum 값 등을 확인하세요)");
+        response.put("details", e.getMessage());
+        response.put("timestamp", LocalDateTime.now());
+
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(response);
     }
 }
