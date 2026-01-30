@@ -17,6 +17,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+import com.example.finance.dto.response.project.ProjectDetailResponse;
 
 /**
  * 프로젝트 컨트롤러 (v2.0)
@@ -68,15 +69,16 @@ public class ProjectController {
      * 프로젝트 상세 조회
      */
     @GetMapping("/{projectId}")
-    public ResponseEntity<Project> getProject(
+    public ResponseEntity<ProjectDetailResponse> getProject(
             @CurrentUser UserPrincipal userPrincipal,
             @PathVariable String projectId) {
 
         log.info("프로젝트 조회: projectId={}", projectId);
 
-        Project project = projectService.getProject(projectId, userPrincipal.getId());
+        //Project project = projectService.getProject(projectId, userPrincipal.getId());
+        ProjectDetailResponse projectDetail = projectService.getProjectDetail( projectId, userPrincipal.getId());
 
-        return ResponseEntity.ok(project);
+        return ResponseEntity.ok(projectDetail);
     }
 
     /**

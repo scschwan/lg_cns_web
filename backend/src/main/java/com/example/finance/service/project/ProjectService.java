@@ -2,6 +2,7 @@ package com.example.finance.service.project;
 
 import com.example.finance.dto.response.project.ProjectSummary;
 import com.example.finance.enums.ProjectRole;
+import com.example.finance.exception.BusinessException;
 import com.example.finance.exception.ProjectNotFoundException;
 import com.example.finance.exception.UserNotFoundException;
 import com.example.finance.model.project.Project;
@@ -17,11 +18,11 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.List;
-import java.util.UUID;
+import java.util.*;
+import java.util.function.Function;
 import java.util.stream.Collectors;
+import com.example.finance.dto.response.project.ProjectDetailResponse; // 추가
+import com.example.finance.dto.response.project.ProjectMemberResponse; // 추가
 
 /**
  * 프로젝트 서비스 (v2.0 - members 임베디드)
@@ -79,36 +80,36 @@ public class ProjectService {
     }
 
     /**
-     * 멤버 초대
-     *
-     * @param projectId 프로젝트 ID
-     * @param invitedBy 초대한 사용자 ID
-     * @param request 멤버 초대 요청
-     * @return 업데이트된 프로젝트
+     * [수정] 멤버 초대
+     * - 개선: 이메일 공백 제거 (trim) 적용
+     * - 개선: 명확한 예외 처리 (BusinessException)
      */
     @Transactional
     public Project inviteMember(String projectId, String invitedBy,
                                 com.example.finance.dto.request.project.@Valid InviteMemberRequest request) {
-        log.info("멤버 초대: projectId={}, email={}, role={}",
-                projectId, request.getEmail(), request.getRole());
+        // ⭐ 1. 이메일 공백 제거 (핵심 수정)
+        String targetEmail = request.getEmail().trim();
 
-        // 1. 프로젝트 조회
+        log.info("멤버 초대: projectId={}, email={}, role={}",
+                projectId, targetEmail, request.getRole());
+
         Project project = projectRepository.findByProjectId(projectId)
                 .orElseThrow(() -> new ProjectNotFoundException("프로젝트를 찾을 수 없습니다"));
 
-        // 2. 권한 확인 (OWNER만 가능)
+        // 2. 권한 확인
         boolean isOwner = project.getMembers().stream()
                 .anyMatch(m -> m.getUserId().equals(invitedBy) && m.getRole() == ProjectRole.OWNER);
 
         if (!isOwner) {
-            throw new RuntimeException("멤버를 초대할 권한이 없습니다");
+            // ⭐ 403 원인 파악을 위해 명확한 예외 던지기 (GlobalExceptionHandler에서 400/403 처리)
+            throw new BusinessException("FORBIDDEN", "멤버를 초대할 권한이 없습니다 (OWNER만 가능)");
         }
 
-        // 3. 사용자 조회
-        User user = userRepository.findByEmail(request.getEmail())
-                .orElseThrow(() -> new UserNotFoundException("사용자를 찾을 수 없습니다: " + request.getEmail()));
+        // ⭐ 3. 공백 제거된 이메일로 조회
+        User user = userRepository.findByEmail(targetEmail)
+                .orElseThrow(() -> new UserNotFoundException("사용자를 찾을 수 없습니다: " + targetEmail));
 
-        // 4. 이미 멤버인지 확인
+        // 4. 중복 확인
         boolean alreadyMember = project.getMembers().stream()
                 .anyMatch(m -> m.getUserId().equals(user.getId()));
 
@@ -127,11 +128,7 @@ public class ProjectService {
         project.getMembers().add(newMember);
         project.setUpdatedAt(LocalDateTime.now());
 
-        project = projectRepository.save(project);
-
-        log.info("멤버 초대 완료: projectId={}, userId={}", projectId, user.getId());
-
-        return project;
+        return projectRepository.save(project);
     }
 
     /**
@@ -290,6 +287,63 @@ public class ProjectService {
 
         return project;
     }
+
+    /**
+     * [신규] 프로젝트 상세 조회 (User 정보 포함)
+     * - 기존 getProject 대신 이 메서드를 사용하여 화면에 이름/이메일 표시
+     */
+    public ProjectDetailResponse getProjectDetail(String projectId, String userId) {
+        log.info("프로젝트 상세 조회: projectId={}, userId={}", projectId, userId);
+
+        Project project = projectRepository.findByProjectId(projectId)
+                .orElseThrow(() -> new ProjectNotFoundException("프로젝트를 찾을 수 없습니다"));
+
+        // 멤버 확인
+        boolean isMember = project.getMembers().stream()
+                .anyMatch(m -> m.getUserId().equals(userId));
+
+        if (!isMember) {
+            throw new BusinessException("FORBIDDEN", "프로젝트에 접근할 권한이 없습니다");
+        }
+
+        // ⭐ 1. 모든 멤버의 User ID 추출
+        List<String> memberUserIds = project.getMembers().stream()
+                .map(ProjectMember::getUserId)
+                .collect(Collectors.toList());
+
+        // ⭐ 2. UserRepository에서 사용자 정보 일괄 조회 (최적화)
+        List<User> users = userRepository.findAllById(memberUserIds);
+
+        // ⭐ 3. 매핑을 위해 Map으로 변환
+        Map<String, User> userMap = users.stream()
+                .collect(Collectors.toMap(User::getId, Function.identity()));
+
+        // ⭐ 4. DTO 변환 (ProjectMember + User Info)
+        List<ProjectMemberResponse> memberResponses = project.getMembers().stream()
+                .map(member -> {
+                    User user = userMap.get(member.getUserId());
+                    return ProjectMemberResponse.builder()
+                            .userId(member.getUserId())
+                            .email(user != null ? user.getEmail() : "Unknown User") // 정보 매핑
+                            .name(user != null ? user.getName() : "알 수 없음")       // 정보 매핑
+                            .role(member.getRole())
+                            .joinedAt(member.getJoinedAt())
+                            .build();
+                })
+                .collect(Collectors.toList());
+
+        // ⭐ 5. 최종 응답 생성
+        return ProjectDetailResponse.builder()
+                .projectId(project.getProjectId())
+                .projectName(project.getProjectName())
+                .description(project.getDescription())
+                .members(memberResponses)
+                .createdBy(project.getCreatedBy())
+                .createdAt(project.getCreatedAt())
+                .updatedAt(project.getUpdatedAt())
+                .build();
+    }
+
 
     /**
      * 프로젝트 정보 수정
