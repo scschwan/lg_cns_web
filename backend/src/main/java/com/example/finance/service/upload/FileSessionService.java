@@ -969,9 +969,16 @@ public class FileSessionService {
 
                 // 2-3. 세션명 생성 (복원됨)
                 // 파티션에 세션명이 없으면 자동 생성 규칙 적용
-                String sessionName = (partition.getFileName() != null && !partition.getFileName().isEmpty())
-                        ? partition.getFileName() // 1. 파일명이 있으면 파일명 우선 (또는 DTO의 sessionName 필드)
-                        : String.format("%s_session_%d", partition.getAccountName(), sessionCounter++); // 2. 없으면 자동 생성
+                String sessionName;
+                if (partition.getSessionName() != null && !partition.getSessionName().isEmpty()) {
+                    sessionName = partition.getSessionName();
+                } else if (partition.getAccountName() != null && !partition.getAccountName().isEmpty()) {
+                    sessionName = partition.getAccountName() + "_session";
+                } else {
+                    sessionName = (partition.getFileName() != null && !partition.getFileName().isEmpty())
+                            ? partition.getFileName()
+                            : String.format("session_%d", sessionCounter++);
+                }
 
                 // 2-4. FileSession 생성
                 FileSession session = FileSession.builder()
@@ -1008,6 +1015,7 @@ public class FileSessionService {
                         .totalFiles(session.getTotalFiles())
                         .totalRowCount(session.getTotalRowCount())
                         .totalAmount(session.getTotalAmount())
+                        .accountNames(session.getAccountNames())
                         .currentStep(session.getCurrentStep())
                         .progressPercentage(session.getProgressPercentage())
                         .isCompleted(session.getIsCompleted())

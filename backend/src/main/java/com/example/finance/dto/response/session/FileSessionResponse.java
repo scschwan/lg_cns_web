@@ -44,4 +44,19 @@ public class FileSessionResponse {
 
     // 단계 이력 (선택적)
     private List<StepHistory> stepHistory;
+
+    /**
+     * Export 파일 경로
+     */
+    private String exportPath;
+
+    /**
+     * 계정명 목록
+     */
+    private List<String> accountNames;
+
+    /**
+     * 계정명 컬럼명 목록
+     */
+    private List<String> accountColumnNames;
 }
