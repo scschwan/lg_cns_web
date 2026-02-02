@@ -70,7 +70,7 @@ function PartitionDialog({ open, partitions, onClose, onApprove }) {
 
     return (
         <Dialog open={open} onOpenChange={onClose}>
-            <DialogContent className="max-w-4xl max-h-[80vh] overflow-y-auto">
+            <DialogContent className="max-w-5xl max-h-[80vh] overflow-y-auto"> {/* 너비 조금 늘림 */}
                 <DialogHeader>
                     <DialogTitle>파티션 분석 결과</DialogTitle>
                 </DialogHeader>
@@ -86,6 +86,7 @@ function PartitionDialog({ open, partitions, onClose, onApprove }) {
                     <Table>
                         <TableHeader>
                             <TableRow>
+                                {/* ... (체크박스, 계정명, 세션명, 작업자명 헤더 그대로) ... */}
                                 <TableHead className="w-12">
                                     <Checkbox
                                         checked={
@@ -97,9 +98,13 @@ function PartitionDialog({ open, partitions, onClose, onApprove }) {
                                 </TableHead>
                                 <TableHead>계정명</TableHead>
                                 <TableHead className="min-w-[200px]">세션명</TableHead>
-                                <TableHead className="min-w-[150px]">작업자명</TableHead>
-                                <TableHead className="text-center">파일 수</TableHead>
-                                <TableHead className="text-center">행 수</TableHead>
+                                 <TableHead className="min-w-[150px]">작업자명</TableHead>
+
+                                 {/* ▼▼▼ [추가] 금액 컬럼 헤더 ▼▼▼ */}
+                                 <TableHead className="text-right">합산 금액</TableHead>
+
+                                 <TableHead className="text-center">파일 수</TableHead>
+                                 <TableHead className="text-center">행 수</TableHead>
                             </TableRow>
                         </TableHeader>
                         <TableBody>
@@ -140,6 +145,11 @@ function PartitionDialog({ open, partitions, onClose, onApprove }) {
                                             className="h-8"
                                         />
                                     </TableCell>
+                                    {/* ▼▼▼ [추가] 금액 데이터 표시 ▼▼▼ */}
+                                    <TableCell className="text-right">
+                                        {partition.totalAmount?.toLocaleString()}
+                                    </TableCell>
+
                                     <TableCell className="text-center">
                                         {partition.fileCount}
                                     </TableCell>

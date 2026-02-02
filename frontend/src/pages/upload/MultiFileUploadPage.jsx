@@ -74,6 +74,8 @@ function MultiFileUploadPage() {
     // 편집 상태
     const [editingSession, setEditingSession] = useState(null);
 
+    const [isProcessing, setIsProcessing] = useState(false);
+
     useEffect(() => {
         loadProject();
         loadFiles();
@@ -91,11 +93,18 @@ function MultiFileUploadPage() {
 
     const loadFiles = async () => {
         try {
-            const data = await uploadService.getFiles(projectId);
-            setFiles(data);
-        } catch (error) {
-            console.error('파일 로드 실패:', error);
-        }
+                const fileList = await uploadService.getProjectFiles(projectId);
+
+                // [중요] 가져온 데이터에 checked: false 속성을 명시적으로 추가
+                const initializedFiles = fileList.map(f => ({
+                    ...f,
+                    checked: false // 초기값 설정
+                }));
+
+                setFiles(initializedFiles);
+            } catch (error) {
+                console.error("파일 로드 실패", error);
+            }
     };
 
     const loadSessions = async () => {
@@ -196,7 +205,13 @@ function MultiFileUploadPage() {
     };
 
     const handleColumnSelect = async (fileId, columnType, columnName) => {
+
+        // 이미 처리 중이면 클릭 무시 (Issue 3 방지)
+        if (isProcessing) return;
+
         try {
+            setIsProcessing(true); // 로딩 시작
+
             const params = {};
             if (columnType === 'accountColumnName') {
                 params.accountColumnName = columnName;
@@ -232,38 +247,74 @@ function MultiFileUploadPage() {
         } catch (err) {
             console.error('컬럼 선택 실패:', err);
             alert('컬럼 선택에 실패했습니다.');
-        }
+        }finally {
+             setIsProcessing(false); // 로딩 종료
+         }
+    };
+
+    // [수정/추가] 개별 체크박스 토글 핸들러
+    const handleToggleCheck = (fileId) => {
+        setFiles((prevFiles) =>
+            prevFiles.map((file) =>
+                // 클릭된 파일만 checked 상태를 반전시킴
+                file.fileId === fileId
+                    ? { ...file, checked: !file.checked }
+                    : file
+            )
+        );
+    };
+
+    // [추가] 전체 선택/해제 핸들러 (헤더 체크박스용)
+    const handleToggleAll = (checked) => {
+        setFiles((prevFiles) =>
+            prevFiles.map((file) => ({
+                ...file,
+                checked: checked // 전체를 true 또는 false로 설정
+            }))
+        );
     };
 
     // 세션 생성
     const handleCreateSessions = async () => {
+        // 1. 선택된 파일 확인
+        const selectedFiles = files.filter(f => f.checked);
         if (selectedFiles.length === 0) {
-            alert('세션을 생성할 파일을 선택해주세요.');
+            alert("세션을 생성할 파일을 선택해주세요.");
             return;
         }
-
-        const invalidFiles = selectedFiles.filter((id) => {
-            const file = files.find((f) => f.fileId === id);
-            return !file.accountColumnName || !file.amountColumnName;
-        });
-
-        if (invalidFiles.length > 0) {
-            alert('계정명과 금액 컬럼을 모두 선택해주세요.');
-            return;
-        }
-
-        setProgressDialogOpen(true);
-        setProgressMessage('파티션 분석 중...');
 
         try {
-            const result = await uploadService.analyzePartitions(projectId, selectedFiles);
-            setPartitions(result.partitions);
-            setPartitionDialogOpen(true);
-            setProgressDialogOpen(false);
+            setIsProcessing(true); // 로딩 시작
+
+            // 2. 파티션 분석 API 호출
+            const fileIds = selectedFiles.map(f => f.fileId);
+            const response = await uploadService.analyzePartitions(projectId, fileIds);
+
+            // 3. 백엔드 응답 매핑
+            const mappedPartitions = response.partitions.map((p) => ({
+                ...p,
+                // UI용 매핑
+                totalRows: p.rowCount,
+                totalAmount: p.totalAmount,
+                fileCount: p.fileIds ? p.fileIds.length : (p.fileId ? 1 : 0),
+
+                // 백엔드 전송용 데이터 보존
+                fileIds: p.fileIds || [p.fileId],
+                fileId: p.fileId,
+
+                sessionName: p.sessionName || `${p.accountName}_session`,
+                workerName: ''
+            }));
+
+            // 🚨 [수정 포인트] 선언된 state 이름에 맞춰 변경
+            setPartitions(mappedPartitions);        // (기존) setSessionPreviewData -> (수정) setPartitions
+            setPartitionDialogOpen(true);           // (기존) setIsSessionDialogOpen -> (수정) setPartitionDialogOpen
+
         } catch (error) {
-            console.error('파티션 분석 실패:', error);
-            alert('파티션 분석 중 오류가 발생했습니다.');
-            setProgressDialogOpen(false);
+            console.error("세션 분석 실패:", error);
+            alert("파일 분석 중 오류가 발생했습니다.");
+        } finally {
+            setIsProcessing(false);
         }
     };
 
@@ -541,19 +592,10 @@ function MultiFileUploadPage() {
                                                 <TableRow>
                                                     <TableHead className="w-12">
                                                         <Checkbox
-                                                            checked={
-                                                                selectedFiles.length === files.length &&
-                                                                files.length > 0
-                                                            }
-                                                            onCheckedChange={(checked) => {
-                                                                if (checked) {
-                                                                    setSelectedFiles(
-                                                                        files.map((f) => f.fileId)
-                                                                    );
-                                                                } else {
-                                                                    setSelectedFiles([]);
-                                                                }
-                                                            }}
+                                                                // 모든 파일이 체크되어 있으면 헤더도 체크
+                                                                checked={files.length > 0 && files.every((f) => f.checked)}
+                                                                // 헤더 체크박스 클릭 시 전체 선택/해제
+                                                                onCheckedChange={(checked) => handleToggleAll(checked)}
                                                         />
                                                     </TableHead>
                                                     <TableHead className="w-[300px]">파일명</TableHead>
@@ -580,23 +622,10 @@ function MultiFileUploadPage() {
                                                     <TableRow key={file.fileId}>
                                                         <TableCell>
                                                             <Checkbox
-                                                                checked={selectedFiles.includes(
-                                                                    file.fileId
-                                                                )}
-                                                                onCheckedChange={(checked) => {
-                                                                    if (checked) {
-                                                                        setSelectedFiles((prev) => [
-                                                                            ...prev,
-                                                                            file.fileId,
-                                                                        ]);
-                                                                    } else {
-                                                                        setSelectedFiles((prev) =>
-                                                                            prev.filter(
-                                                                                (id) => id !== file.fileId
-                                                                            )
-                                                                        );
-                                                                    }
-                                                                }}
+                                                                // 파일 객체의 checked 상태 바인딩 (없으면 false)
+                                                                checked={file.checked || false}
+                                                                // 클릭 시 핸들러 호출
+                                                                onCheckedChange={() => handleToggleCheck(file.fileId)}
                                                             />
                                                         </TableCell>
                                                         <TableCell className="font-medium truncate">
@@ -902,6 +931,11 @@ function MultiFileUploadPage() {
                     open={progressDialogOpen}
                     message={progressMessage}
                     value={progressValue}
+                />
+
+                <ProgressDialog
+                    open={isProcessing}
+                    message="데이터를 분석하고 있습니다. 잠시만 기다려주세요..."
                 />
             </div>
         </div>

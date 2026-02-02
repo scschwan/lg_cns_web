@@ -447,7 +447,7 @@ const uploadService = {
     analyzePartitions: async (projectId, fileIds) => {
         const response = await api.post(
             `/api/projects/${projectId}/upload/analyze-partitions`,
-            { fileIds }
+            { fileIds } // Request Body
         );
         return response.data;
     },
