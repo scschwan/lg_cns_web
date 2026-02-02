@@ -70,4 +70,7 @@ dependencies {
 
 tasks.named('test') {
     useJUnitPlatform()
+
+    // ▼▼▼ 이 줄을 추가해 주세요 ▼▼▼
+    jvmArgs("-XX:+EnableDynamicAgentLoading")
 }
