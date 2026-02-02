@@ -1,9 +1,12 @@
 package com.example.finance.controller.auth;
 
 import com.example.finance.dto.request.auth.LoginRequest;
+import com.example.finance.dto.request.auth.RefreshTokenRequest;
 import com.example.finance.dto.request.auth.RegisterRequest;
 import com.example.finance.dto.response.auth.LoginResponse;
 import com.example.finance.model.auth.User;
+import com.example.finance.security.CurrentUser;
+import com.example.finance.security.UserPrincipal;
 import com.example.finance.service.auth.AuthService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -58,6 +61,34 @@ public class AuthController {
         log.info("로그인 요청: email={}", request.getEmail());
 
         LoginResponse response = authService.login(request);
+
+        return ResponseEntity.ok(response);
+    }
+
+    /**
+     * 현재 사용자 정보 조회 (세션 유효성 검증)
+     *
+     * GET /api/auth/me
+     */
+    @GetMapping("/me")
+    public ResponseEntity<Map<String, Object>> getCurrentUser(@CurrentUser UserPrincipal userPrincipal) {
+        log.info("현재 사용자 조회: userId={}", userPrincipal.getId());
+
+        Map<String, Object> response = authService.getCurrentUserInfo(userPrincipal.getId());
+
+        return ResponseEntity.ok(response);
+    }
+
+    /**
+     * 토큰 갱신
+     *
+     * POST /api/auth/refresh
+     */
+    @PostMapping("/refresh")
+    public ResponseEntity<LoginResponse> refreshToken(@Valid @RequestBody RefreshTokenRequest request) {
+        log.info("토큰 갱신 요청");
+
+        LoginResponse response = authService.refreshToken(request.getRefreshToken());
 
         return ResponseEntity.ok(response);
     }

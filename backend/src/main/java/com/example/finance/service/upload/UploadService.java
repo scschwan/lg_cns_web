@@ -812,39 +812,37 @@ public class UploadService {
      * Issue 2 해결: 파일 내 계정명 별로 행을 나누어 통계 계산
      */
     public PartitionAnalysisResponse analyzePartitions(String projectId, List<String> fileIds) {
-        // 1. 내부 리스트 생성 (AccountPartition을 담을 리스트)
         List<AccountPartition> partitionList = new ArrayList<>();
 
         for (String fileId : fileIds) {
-            // 1) 파일 정보 조회 (Repository 수정 반영: findFirstBy...)
+            // 1. Get File Session
             FileSession session = fileSessionRepository.findFirstByUploadedFilesFileId(fileId)
-                    .orElseThrow(() -> new BusinessException("FILE_NOT_FOUND", "파일 세션을 찾을 수 없습니다."));
+                    .orElseThrow(() -> new BusinessException("FILE_NOT_FOUND", "File session not found: " + fileId));
 
+            // 2. Get File Info
             UploadedFileInfo fileInfo = session.getUploadedFiles().stream()
                     .filter(f -> f.getFileId().equals(fileId))
                     .findFirst()
-                    .orElseThrow(() -> new BusinessException("FILE_NOT_FOUND", "파일 정보가 없습니다."));
+                    .orElseThrow(() -> new BusinessException("FILE_NOT_FOUND", "File info not found."));
 
-            // 2) 엑셀 파싱 및 그룹핑 (계정명 기준)
+            // 3. Grouping and Statistics (Core Logic)
             Map<String, PartitionStats> statsMap = groupFileByAccount(fileInfo);
 
-            // 3) 결과 DTO 생성 (AccountPartition 생성)
+            // 4. Create DTOs
             for (Map.Entry<String, PartitionStats> entry : statsMap.entrySet()) {
                 String accountName = entry.getKey();
                 PartitionStats stats = entry.getValue();
 
-                // ⭐ [수정됨] PartitionAnalysisResponse가 아니라 AccountPartition을 빌드해야 함
                 partitionList.add(AccountPartition.builder()
                         .fileId(fileInfo.getFileId())
                         .fileName(fileInfo.getFileName())
-                        .accountName(accountName)  // 분리된 계정명
-                        .rowCount(stats.getCount())     // 해당 계정의 행 수 (lombok @Getter 활용)
-                        .totalAmount(stats.getAmount()) // 해당 계정의 합계 금액
+                        .accountName(accountName)
+                        .rowCount(stats.getCount())      // [Fix] Use specific count for this account
+                        .totalAmount(stats.getAmount())  // [Fix] Use specific sum for this account
                         .build());
             }
         }
 
-        // 4. 최종적으로 Wrapper DTO에 담아서 반환
         return PartitionAnalysisResponse.builder()
                 .partitions(partitionList)
                 .build();
@@ -863,65 +861,96 @@ public class UploadService {
      */
     private Map<String, PartitionStats> groupFileByAccount(UploadedFileInfo fileInfo) {
         Map<String, PartitionStats> statsMap = new HashMap<>();
+
         String accountColName = fileInfo.getAccountColumnName();
         String amountColName = fileInfo.getAmountColumnName();
 
-        if (accountColName == null) return statsMap; // 계정 컬럼 미지정 시 빈 맵 반환
+        if (accountColName == null) return statsMap;
 
         try {
+            // Download file
             byte[] fileBytes = s3Service.downloadFile(fileInfo.getS3Key());
+
             try (ByteArrayInputStream bis = new ByteArrayInputStream(fileBytes);
                  Workbook workbook = new XSSFWorkbook(bis)) {
 
                 Sheet sheet = workbook.getSheetAt(0);
                 Row headerRow = sheet.getRow(0);
 
+                // Find indices (using the robust findColumnIndex method)
                 int accIdx = findColumnIndex(headerRow, accountColName);
-                int amtIdx = findColumnIndex(headerRow, amountColName); // 금액 컬럼 없으면 -1
+                int amtIdx = findColumnIndex(headerRow, amountColName);
 
+                // Iterate rows (Start from index 1)
                 for (int i = 1; i <= sheet.getLastRowNum(); i++) {
                     Row row = sheet.getRow(i);
                     if (row == null) continue;
 
-                    // 계정명 추출
+                    // 1. Extract Account Name
                     String account = "";
                     if (accIdx != -1) {
-                        account = getCellValueAsString(row.getCell(accIdx));
-                        if (account == null) account = "Unknown";
-                        account = account.trim();
+                        Cell cell = row.getCell(accIdx);
+                        if (cell != null) {
+                            account = getCellValueAsString(cell);
+                        }
                     }
-                    if (account.isEmpty()) continue;
 
-                    // 금액 추출
+                    // Skip invalid or empty accounts
+                    if (account == null || account.trim().isEmpty()) continue;
+                    account = account.trim();
+
+                    // 2. Extract Amount
                     double amount = 0.0;
                     if (amtIdx != -1) {
-                        amount = getCellValueAsNumeric(row.getCell(amtIdx));
+                        Cell cell = row.getCell(amtIdx);
+                        amount = getCellValueAsNumeric(cell);
                     }
 
-                    // 집계
+                    // 3. Aggregate
                     PartitionStats stats = statsMap.getOrDefault(account, new PartitionStats());
-                    stats.count++;
-                    stats.amount += amount;
+                    stats.setCount(stats.getCount() + 1);
+                    stats.setAmount(stats.getAmount() + amount);
                     statsMap.put(account, stats);
                 }
             }
         } catch (Exception e) {
-            log.error("파티션 분석 중 엑셀 파싱 오류: {}", e.getMessage());
+            log.error("Error analyzing partitions for file {}: {}", fileInfo.getFileId(), e.getMessage());
         }
+
         return statsMap;
     }
 
     // getCellValueAsNumeric 헬퍼 (기존 코드에 없다면 추가)
     private double getCellValueAsNumeric(Cell cell) {
         if (cell == null) return 0.0;
+
         try {
-            if (cell.getCellType() == CellType.NUMERIC) return cell.getNumericCellValue();
-            if (cell.getCellType() == CellType.STRING) {
-                String val = cell.getStringCellValue().replaceAll(",", "").trim();
-                return val.isEmpty() ? 0.0 : Double.parseDouble(val);
+            switch (cell.getCellType()) {
+                case NUMERIC:
+                    return cell.getNumericCellValue();
+                case STRING:
+                    // Remove commas and non-numeric chars (except dot and minus)
+                    String val = cell.getStringCellValue().replaceAll("[^0-9.-]", "").trim();
+                    if (val.isEmpty()) return 0.0;
+                    return Double.parseDouble(val);
+                case FORMULA:
+                    try {
+                        return cell.getNumericCellValue();
+                    } catch (Exception e) {
+                        // If formula evaluates to string
+                        try {
+                            String fVal = cell.getStringCellValue().replaceAll("[^0-9.-]", "").trim();
+                            return fVal.isEmpty() ? 0.0 : Double.parseDouble(fVal);
+                        } catch (Exception ex) {
+                            return 0.0;
+                        }
+                    }
+                default:
+                    return 0.0;
             }
-        } catch (Exception e) { return 0.0; }
-        return 0.0;
+        } catch (Exception e) {
+            return 0.0;
+        }
     }
 
 

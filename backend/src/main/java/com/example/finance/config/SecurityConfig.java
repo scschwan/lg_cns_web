@@ -73,7 +73,10 @@ public class SecurityConfig {
 
                 // 요청 권한 설정
                 .authorizeHttpRequests(auth -> auth
-                        // /api/auth/** 경로는 누구나 접근 가능
+                        // /api/auth/me 는 인증 필요 (permitAll보다 먼저 선언해야 우선 적용됨)
+                        .requestMatchers("/api/auth/me").authenticated()
+
+                        // 나머지 /api/auth/** 경로는 누구나 접근 가능
                         .requestMatchers("/api/auth/**").permitAll()
 
                         // /actuator/health 경로는 누구나 접근 가능 (헬스 체크)
