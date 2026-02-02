@@ -546,6 +546,8 @@ public class FileSessionService {
                 .findByProjectIdAndIsDeletedFalseOrderByCreatedAtDesc(projectId);
 
         return sessions.stream()
+                // ⭐ [신규 추가] 세션명이 있는(유효한) 세션만 필터링
+                .filter(s -> s.getSessionName() != null && !s.getSessionName().trim().isEmpty())
                 .map(this::toFileSessionResponse)
                 .collect(Collectors.toList());
     }

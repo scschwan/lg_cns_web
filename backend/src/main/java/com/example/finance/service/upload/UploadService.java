@@ -586,11 +586,48 @@ public class UploadService {
             log.info("금액 합산 완료: {}", totalAmount);
         }
 
+        // ⭐⭐⭐ [신규 추가] 세션 전체 통계 재계산 및 저장 ⭐⭐⭐
+        recalculateSessionStats(fileSession);
+
         // 4. 변경사항 저장
         fileSession.setUpdatedAt(LocalDateTime.now());
         fileSessionRepository.save(fileSession);
 
         return fileInfo;
+    }
+
+    // ⭐ [신규 헬퍼 메서드] 세션 통계 재계산
+    private void recalculateSessionStats(FileSession session) {
+        if (session.getUploadedFiles() == null) return;
+
+        // 1. 총 행 수 합산
+        long totalRows = session.getUploadedFiles().stream()
+                .mapToLong(f -> f.getRowCount() != null ? f.getRowCount() : 0L)
+                .sum();
+        session.setTotalRowCount(totalRows);
+
+        // 2. 총 금액 합산
+        long totalAmount = session.getUploadedFiles().stream()
+                .mapToLong(f -> f.getTotalAmount() != null ? f.getTotalAmount().longValue() : 0L)
+                .sum();
+        session.setTotalAmount(totalAmount);
+
+        // 3. 계정명 컬럼 목록 (중복 제거)
+        List<String> accountCols = session.getUploadedFiles().stream()
+                .map(UploadedFileInfo::getAccountColumnName)
+                .filter(Objects::nonNull)
+                .distinct()
+                .collect(Collectors.toList());
+        session.setAccountColumnNames(accountCols);
+
+        // 4. 계정명 값 목록 (중복 제거)
+        List<String> accountNames = session.getUploadedFiles().stream()
+                .map(UploadedFileInfo::getAccountContents)
+                .filter(Objects::nonNull)
+                .flatMap(List::stream)
+                .distinct()
+                .collect(Collectors.toList());
+        session.setAccountNames(accountNames);
     }
 
     /**
