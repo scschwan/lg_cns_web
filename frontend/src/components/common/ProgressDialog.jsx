@@ -1,5 +1,3 @@
-// frontend/src/components/common/ProgressDialog.jsx
-
 import React from 'react';
 import {
     Dialog,
@@ -13,7 +11,15 @@ import { Loader2 } from 'lucide-react';
 function ProgressDialog({ open, message, value }) {
     return (
         <Dialog open={open}>
-            <DialogContent className="sm:max-w-md" hideClose>
+            {/* 수정 사항:
+               1. hideClose 속성 제거
+               2. [&>button]:hidden 클래스 추가 (DialogContent 내부의 닫기 버튼 숨김)
+               3. onInteractOutside={(e) => e.preventDefault()} (배경 클릭 시 닫힘 방지)
+            */}
+            <DialogContent
+                className="sm:max-w-md [&>button]:hidden"
+                onInteractOutside={(e) => e.preventDefault()}
+            >
                 <DialogHeader>
                     <DialogTitle className="flex items-center gap-2">
                         <Loader2 className="h-5 w-5 animate-spin text-primary" />

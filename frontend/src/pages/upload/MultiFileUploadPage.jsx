@@ -570,7 +570,7 @@ function MultiFileUploadPage() {
                                                             금액
                                                         </div>
                                                     </TableHead>
-                                                    <TableHead className="w-[120px]">계정명</TableHead>
+                                                    <TableHead className="w-[160px]">계정명</TableHead>
                                                     <TableHead className="w-[150px]">합산금액</TableHead>
                                                     <TableHead className="w-[80px]">삭제</TableHead>
                                                 </TableRow>
@@ -661,15 +661,25 @@ function MultiFileUploadPage() {
                                                                 </SelectContent>
                                                             </Select>
                                                         </TableCell>
-                                                        <TableCell>
-                                                            {file.accountContents?.length > 0 ? (
-                                                                <Badge variant="secondary">
-                                                                    {file.accountContents.length}개
-                                                                </Badge>
-                                                            ) : (
-                                                                '-'
-                                                            )}
-                                                        </TableCell>
+                                                     <TableCell>
+                                                         {file.accountContents?.length > 0 ? (
+                                                             <div className="flex flex-col gap-1">
+                                                                 {/* 개수 표기 추가 */}
+                                                                 <span className="text-xs text-muted-foreground font-medium">
+                                                                     ({file.accountContents.length}개)
+                                                                 </span>
+                                                                 <div className="flex flex-wrap gap-1">
+                                                                     {file.accountContents.map((content, idx) => (
+                                                                         <Badge key={idx} variant="secondary" className="font-normal">
+                                                                             {content}
+                                                                         </Badge>
+                                                                     ))}
+                                                                 </div>
+                                                             </div>
+                                                         ) : (
+                                                             '-'
+                                                         )}
+                                                     </TableCell>
                                                         <TableCell>
                                                             {file.totalAmount
                                                                 ? `${file.totalAmount.toLocaleString()} 원`

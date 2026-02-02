@@ -391,27 +391,31 @@ const uploadService = {
         return uploadService.getProjectFiles(projectId);
     },
 
-    /**
+      /**
      * 파일 컬럼 업데이트
      * PUT /api/projects/{projectId}/upload/files/{fileId}/columns
      */
     updateFileColumns: async (projectId, fileId, columns) => {
-        // 필드명 변환: accountColumn → accountColumnName
+        // [수정 전] 잘못된 키 매핑
+        // if (columns.accountColumn) { requestBody.accountColumnName = columns.accountColumn; }
+
+        // [수정 후] 올바른 키 매핑 (accountColumnName, amountColumnName 확인)
         const requestBody = {};
-        if (columns.accountColumn) {
-            requestBody.accountColumnName = columns.accountColumn;
+
+        // 페이지에서 넘겨준 키(accountColumnName)를 그대로 사용하거나 확인
+        if (columns.accountColumnName) {
+            requestBody.accountColumnName = columns.accountColumnName;
         }
-        if (columns.amountColumn) {
-            requestBody.amountColumnName = columns.amountColumn;
+        if (columns.amountColumnName) {
+            requestBody.amountColumnName = columns.amountColumnName;
         }
 
         const response = await api.put(
-            `/api/projects/${projectId}/upload/files/${fileId}/columns`,
+            `/api/projects/${projectId}/upload/files/${fileId}/columns`, // /api 접두사 확인
             requestBody
         );
         return response.data;
     },
-
     /**
      * 계정명 값 추출
      * POST /api/projects/{projectId}/upload/files/{fileId}/extract-accounts
