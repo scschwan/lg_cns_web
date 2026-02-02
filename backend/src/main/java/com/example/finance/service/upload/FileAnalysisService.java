@@ -65,6 +65,99 @@ public class FileAnalysisService {
     }
 
     /**
+     * [신규] 단일 파일 컬럼 데이터 분석 및 통계 계산
+     * 사용자가 '대계정', '금액' 컬럼을 선택했을 때 호출됨
+     */
+    public FileStats calculateFileStats(UploadedFileInfo fileInfo, String accountColName, String amountColName) {
+        log.info("파일 통계 계산 시작: fileId={}, account={}, amount={}",
+                fileInfo.getFileId(), accountColName, amountColName);
+
+        double totalAmount = 0.0;
+        Set<String> accountContents = new HashSet<>();
+
+        try {
+            // 1. S3에서 파일 다운로드
+            byte[] fileBytes = s3Service.downloadFile(fileInfo.getS3Key());
+
+            // 2. Excel 파싱
+            try (ByteArrayInputStream bis = new ByteArrayInputStream(fileBytes);
+                 Workbook workbook = new XSSFWorkbook(bis)) {
+
+                Sheet sheet = workbook.getSheetAt(0);
+                Row headerRow = sheet.getRow(0); // 헤더는 첫 번째 행 가정
+
+                if (headerRow == null) {
+                    throw new BusinessException("INVALID_FILE", "헤더가 없는 파일입니다.");
+                }
+
+                // 3. 컬럼 인덱스 찾기
+                int accountIdx = findColumnIndex(headerRow, accountColName);
+                int amountIdx = findColumnIndex(headerRow, amountColName);
+
+                // 4. 데이터 순회 및 집계 (1행부터 시작)
+                for (int i = 1; i <= sheet.getLastRowNum(); i++) {
+                    Row row = sheet.getRow(i);
+                    if (row == null) continue;
+
+                    // 계정명 수집 (선택된 경우)
+                    if (accountIdx != -1) {
+                        Cell cell = row.getCell(accountIdx);
+                        String val = getCellValueAsString(cell);
+                        if (val != null && !val.trim().isEmpty()) {
+                            accountContents.add(val.trim());
+                        }
+                    }
+
+                    // 금액 합산 (선택된 경우)
+                    if (amountIdx != -1) {
+                        Cell cell = row.getCell(amountIdx);
+                        double val = getCellValueAsNumeric(cell);
+                        totalAmount += val;
+                    }
+                }
+            }
+
+        } catch (IOException e) {
+            log.error("파일 분석 중 오류: {}", e.getMessage());
+            throw new BusinessException("FILE_ANALYSIS_FAILED", "파일 분석 실패");
+        }
+
+        return FileStats.builder()
+                .totalAmount((long) totalAmount)
+                .accountContents(new ArrayList<>(accountContents))
+                .build();
+    }
+
+    /**
+     * Cell 값을 숫자로 변환 (금액 계산용)
+     */
+    private double getCellValueAsNumeric(Cell cell) {
+        if (cell == null) return 0.0;
+
+        try {
+            switch (cell.getCellType()) {
+                case NUMERIC:
+                    return cell.getNumericCellValue();
+                case STRING:
+                    // 문자열로 된 숫자 처리 ("1,000" 등)
+                    String strVal = cell.getStringCellValue().replaceAll(",", "").trim();
+                    return strVal.isEmpty() ? 0.0 : Double.parseDouble(strVal);
+                case FORMULA:
+                    // 수식일 경우 계산된 결과 반환 시도 (간단한 경우)
+                    try {
+                        return cell.getNumericCellValue();
+                    } catch (Exception e) {
+                        return 0.0;
+                    }
+                default:
+                    return 0.0;
+            }
+        } catch (Exception e) {
+            return 0.0; // 파싱 실패 시 0 처리
+        }
+    }
+
+    /**
      * 업로드된 파일 정보 조회
      */
     private List<UploadedFileInfo> getUploadedFiles(String projectId, List<String> fileIds) {
@@ -277,5 +370,14 @@ public class FileAnalysisService {
         private String fileName;
         private List<String> accountNames;
         private String accountColumnName;
+    }
+
+
+    // 내부 DTO (필요시 별도 클래스로 분리)
+    @lombok.Data
+    @lombok.Builder
+    public static class FileStats {
+        private Long totalAmount;
+        private List<String> accountContents;
     }
 }

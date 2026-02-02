@@ -39,6 +39,7 @@ public class UploadService {
     private final StringRedisTemplate redisTemplate;
     private final UploadSessionRepository uploadSessionRepository;
     private final FileSessionRepository fileSessionRepository;
+    private final FileAnalysisService fileAnalysisService; // 주입 필요
     private final S3Service s3Service;
 
     // Lambda와 공유하는 Redis Key Prefix
@@ -544,57 +545,50 @@ public class UploadService {
      * ⭐ 선택 시 자동으로 계정명 추출 & 금액 계산 & 저장
      */
     @Transactional
-    public UploadedFileInfo setFileColumns(
-            String projectId, String fileId, SetFileColumnsRequest request) {
+    public UploadedFileInfo updateFileColumns( // 메서드 이름 변경
+                                               String projectId, String fileId, SetFileColumnsRequest request) {
 
-        log.info("파일 컬럼 설정: projectId={}, fileId={}, accountColumn={}, amountColumn={}",
+        log.info("파일 컬럼 분석 및 업데이트: projectId={}, fileId={}, account={}, amount={}",
                 projectId, fileId, request.getAccountColumnName(), request.getAmountColumnName());
 
-        // FileSession에서 파일 찾기
+        // 1. 파일 세션 및 파일 정보 조회
         FileSession fileSession = fileSessionRepository.findByUploadedFilesFileId(fileId)
-                .orElseThrow(() -> new BusinessException(
-                        "FILE_NOT_FOUND", "파일을 찾을 수 없습니다: " + fileId));
+                .orElseThrow(() -> new BusinessException("FILE_NOT_FOUND", "파일을 찾을 수 없습니다: " + fileId));
 
-        // 파일 정보 업데이트
         UploadedFileInfo fileInfo = fileSession.getUploadedFiles().stream()
                 .filter(f -> f.getFileId().equals(fileId))
                 .findFirst()
-                .orElseThrow(() -> new BusinessException(
-                        "FILE_NOT_FOUND", "파일을 찾을 수 없습니다: " + fileId));
+                .orElseThrow(() -> new BusinessException("FILE_NOT_FOUND", "파일을 찾을 수 없습니다: " + fileId));
 
-        // ⭐ accountColumnName 설정 시 → 계정명 자동 추출 & 저장
+        // 2. 계정명 컬럼이 선택된 경우 -> 데이터 추출 및 저장
         if (request.getAccountColumnName() != null) {
             fileInfo.setAccountColumnName(request.getAccountColumnName());
 
-            // S3에서 파일 다운로드 & 계정명 추출
+            // S3 다운로드 -> 엑셀 파싱 -> 중복제거된 리스트 반환
             List<String> accountValues = extractAccountValuesInternal(
                     fileInfo.getS3Key(),
                     request.getAccountColumnName()
             );
-            fileInfo.setAccountContents(accountValues);
-
-            log.info("계정명 추출 완료: {} 개", accountValues.size());
+            fileInfo.setAccountContents(accountValues); // DB 저장용 필드 업데이트
+            log.info("계정명 그룹핑 완료: {} 개 항목", accountValues.size());
         }
 
-        // ⭐ amountColumnName 설정 시 → 금액 자동 계산 & 저장
+        // 3. 금액 컬럼이 선택된 경우 -> 합계 계산 및 저장
         if (request.getAmountColumnName() != null) {
             fileInfo.setAmountColumnName(request.getAmountColumnName());
 
-            // S3에서 파일 다운로드 & 금액 계산
+            // S3 다운로드 -> 엑셀 파싱 -> 합계 반환
             Double totalAmount = calculateTotalAmountInternal(
                     fileInfo.getS3Key(),
                     request.getAmountColumnName()
             );
-            fileInfo.setTotalAmount(totalAmount);
-
+            fileInfo.setTotalAmount(totalAmount); // DB 저장용 필드 업데이트
             log.info("금액 합산 완료: {}", totalAmount);
         }
 
-        // ⭐ MongoDB 저장
+        // 4. 변경사항 저장
         fileSession.setUpdatedAt(LocalDateTime.now());
         fileSessionRepository.save(fileSession);
-
-        log.info("파일 컬럼 설정 완료: fileId={}", fileId);
 
         return fileInfo;
     }
