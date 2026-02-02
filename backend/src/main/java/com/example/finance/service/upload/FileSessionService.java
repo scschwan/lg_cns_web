@@ -918,19 +918,20 @@ public class FileSessionService {
                 log.info("파티션 처리 중: accountName={}, fileIds={}",
                         partition.getAccountName(), partition.getFileIds());
 
-                // 2-1. FileSession에서 파일 정보 조회
-                List<UploadedFileInfo> uploadedFiles = new ArrayList<>();
-
-                // ⭐ [NPE 방지] fileIds가 null일 경우 안전하게 처리
+                // 🚨 [수정] NPE 방지 로직: fileIds가 없으면 fileId(단일)라도 사용하도록 처리
                 List<String> targetFileIds = partition.getFileIds();
-                if (targetFileIds == null) {
+
+                if (targetFileIds == null || targetFileIds.isEmpty()) {
                     if (partition.getFileId() != null) {
+                        // 단일 fileId를 리스트로 변환하여 사용
                         targetFileIds = Collections.singletonList(partition.getFileId());
                     } else {
-                        log.warn("파일 ID가 없는 파티션 건너뜀: {}", partition.getAccountName());
+                        log.warn("파일 ID 정보가 없어 파티션을 건너뜁니다: accountName={}", partition.getAccountName());
                         continue;
                     }
                 }
+
+                List<UploadedFileInfo> uploadedFiles = new ArrayList<>();
 
                 for (String fileId : targetFileIds) {
                     // FileSession에서 fileId로 파일 찾기
