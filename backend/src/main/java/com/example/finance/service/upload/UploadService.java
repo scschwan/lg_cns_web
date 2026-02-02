@@ -1,7 +1,9 @@
 package com.example.finance.service.upload;
 
+import com.example.finance.dto.request.upload.AccountPartition;
 import com.example.finance.dto.request.upload.SetFileColumnsRequest;
 import com.example.finance.dto.request.upload.UploadFileRequest;
+import com.example.finance.dto.response.upload.PartitionAnalysisResponse;
 import com.example.finance.dto.response.upload.UploadFileResponse;
 import com.example.finance.exception.BusinessException;
 import com.example.finance.model.session.FileSession;
@@ -345,7 +347,7 @@ public class UploadService {
         log.info("계정명 추출: projectId={}, fileId={}, columnName={}", projectId, fileId, columnName);
 
         // 1. 파일 정보 조회
-        FileSession fileSession = fileSessionRepository.findByUploadedFilesFileId(fileId)
+        FileSession fileSession = fileSessionRepository.findFirstByUploadedFilesFileId(fileId)
                 .orElseThrow(() -> new BusinessException(
                         "FILE_NOT_FOUND", "파일을 찾을 수 없습니다: " + fileId));
 
@@ -418,7 +420,7 @@ public class UploadService {
         log.info("금액 합산: projectId={}, fileId={}, columnName={}", projectId, fileId, columnName);
 
         // 1. 파일 정보 조회
-        FileSession fileSession = fileSessionRepository.findByUploadedFilesFileId(fileId)
+        FileSession fileSession = fileSessionRepository.findFirstByUploadedFilesFileId(fileId)
                 .orElseThrow(() -> new BusinessException(
                         "FILE_NOT_FOUND", "파일을 찾을 수 없습니다: " + fileId));
 
@@ -495,7 +497,7 @@ public class UploadService {
         log.info("파일 삭제: projectId={}, fileId={}", projectId, fileId);
 
         // 1. 파일이 속한 세션 조회
-        FileSession fileSession = fileSessionRepository.findByUploadedFilesFileId(fileId)
+        FileSession fileSession = fileSessionRepository.findFirstByUploadedFilesFileId(fileId)
                 .orElseThrow(() -> new BusinessException(
                         "FILE_NOT_FOUND", "파일을 찾을 수 없습니다: " + fileId));
 
@@ -552,7 +554,7 @@ public class UploadService {
                 projectId, fileId, request.getAccountColumnName(), request.getAmountColumnName());
 
         // 1. 파일 세션 및 파일 정보 조회
-        FileSession fileSession = fileSessionRepository.findByUploadedFilesFileId(fileId)
+        FileSession fileSession = fileSessionRepository.findFirstByUploadedFilesFileId(fileId)
                 .orElseThrow(() -> new BusinessException("FILE_NOT_FOUND", "파일을 찾을 수 없습니다: " + fileId));
 
         UploadedFileInfo fileInfo = fileSession.getUploadedFiles().stream()
@@ -802,6 +804,124 @@ public class UploadService {
 
         // Map의 값들만 리스트로 반환
         return new ArrayList<>(uniqueFilesMap.values());
+    }
+
+
+    /**
+     * [신규] 파티션 분석 (계정별로 데이터 분리 및 집계)
+     * Issue 2 해결: 파일 내 계정명 별로 행을 나누어 통계 계산
+     */
+    public PartitionAnalysisResponse analyzePartitions(String projectId, List<String> fileIds) {
+        // 1. 내부 리스트 생성 (AccountPartition을 담을 리스트)
+        List<AccountPartition> partitionList = new ArrayList<>();
+
+        for (String fileId : fileIds) {
+            // 1) 파일 정보 조회 (Repository 수정 반영: findFirstBy...)
+            FileSession session = fileSessionRepository.findFirstByUploadedFilesFileId(fileId)
+                    .orElseThrow(() -> new BusinessException("FILE_NOT_FOUND", "파일 세션을 찾을 수 없습니다."));
+
+            UploadedFileInfo fileInfo = session.getUploadedFiles().stream()
+                    .filter(f -> f.getFileId().equals(fileId))
+                    .findFirst()
+                    .orElseThrow(() -> new BusinessException("FILE_NOT_FOUND", "파일 정보가 없습니다."));
+
+            // 2) 엑셀 파싱 및 그룹핑 (계정명 기준)
+            Map<String, PartitionStats> statsMap = groupFileByAccount(fileInfo);
+
+            // 3) 결과 DTO 생성 (AccountPartition 생성)
+            for (Map.Entry<String, PartitionStats> entry : statsMap.entrySet()) {
+                String accountName = entry.getKey();
+                PartitionStats stats = entry.getValue();
+
+                // ⭐ [수정됨] PartitionAnalysisResponse가 아니라 AccountPartition을 빌드해야 함
+                partitionList.add(AccountPartition.builder()
+                        .fileId(fileInfo.getFileId())
+                        .fileName(fileInfo.getFileName())
+                        .accountName(accountName)  // 분리된 계정명
+                        .rowCount(stats.getCount())     // 해당 계정의 행 수 (lombok @Getter 활용)
+                        .totalAmount(stats.getAmount()) // 해당 계정의 합계 금액
+                        .build());
+            }
+        }
+
+        // 4. 최종적으로 Wrapper DTO에 담아서 반환
+        return PartitionAnalysisResponse.builder()
+                .partitions(partitionList)
+                .build();
+    }
+
+    // --- 내부 헬퍼 클래스 및 메서드 ---
+
+    @lombok.Data
+    private static class PartitionStats {
+        long count = 0;
+        double amount = 0.0;
+    }
+
+    /**
+     * 엑셀을 읽어 계정명 별로 통계를 냄
+     */
+    private Map<String, PartitionStats> groupFileByAccount(UploadedFileInfo fileInfo) {
+        Map<String, PartitionStats> statsMap = new HashMap<>();
+        String accountColName = fileInfo.getAccountColumnName();
+        String amountColName = fileInfo.getAmountColumnName();
+
+        if (accountColName == null) return statsMap; // 계정 컬럼 미지정 시 빈 맵 반환
+
+        try {
+            byte[] fileBytes = s3Service.downloadFile(fileInfo.getS3Key());
+            try (ByteArrayInputStream bis = new ByteArrayInputStream(fileBytes);
+                 Workbook workbook = new XSSFWorkbook(bis)) {
+
+                Sheet sheet = workbook.getSheetAt(0);
+                Row headerRow = sheet.getRow(0);
+
+                int accIdx = findColumnIndex(headerRow, accountColName);
+                int amtIdx = findColumnIndex(headerRow, amountColName); // 금액 컬럼 없으면 -1
+
+                for (int i = 1; i <= sheet.getLastRowNum(); i++) {
+                    Row row = sheet.getRow(i);
+                    if (row == null) continue;
+
+                    // 계정명 추출
+                    String account = "";
+                    if (accIdx != -1) {
+                        account = getCellValueAsString(row.getCell(accIdx));
+                        if (account == null) account = "Unknown";
+                        account = account.trim();
+                    }
+                    if (account.isEmpty()) continue;
+
+                    // 금액 추출
+                    double amount = 0.0;
+                    if (amtIdx != -1) {
+                        amount = getCellValueAsNumeric(row.getCell(amtIdx));
+                    }
+
+                    // 집계
+                    PartitionStats stats = statsMap.getOrDefault(account, new PartitionStats());
+                    stats.count++;
+                    stats.amount += amount;
+                    statsMap.put(account, stats);
+                }
+            }
+        } catch (Exception e) {
+            log.error("파티션 분석 중 엑셀 파싱 오류: {}", e.getMessage());
+        }
+        return statsMap;
+    }
+
+    // getCellValueAsNumeric 헬퍼 (기존 코드에 없다면 추가)
+    private double getCellValueAsNumeric(Cell cell) {
+        if (cell == null) return 0.0;
+        try {
+            if (cell.getCellType() == CellType.NUMERIC) return cell.getNumericCellValue();
+            if (cell.getCellType() == CellType.STRING) {
+                String val = cell.getStringCellValue().replaceAll(",", "").trim();
+                return val.isEmpty() ? 0.0 : Double.parseDouble(val);
+            }
+        } catch (Exception e) { return 0.0; }
+        return 0.0;
     }
 
 

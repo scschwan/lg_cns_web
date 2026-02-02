@@ -1,22 +1,14 @@
-// backend/src/main/java/com/example/finance/dto/upload/AccountPartition.java
-
 package com.example.finance.dto.request.upload;
 
-import com.example.finance.model.session.UploadedFileInfo;
+import lombok.Builder;
 import lombok.Data;
-import java.math.BigDecimal;
-import java.util.List;
 
 @Data
+@Builder
 public class AccountPartition {
-    private String accountName;
-    private String sessionName;
-    private List<UploadedFileInfo> files;
-    private Integer fileCount;
-    private Long totalRows;
-    private BigDecimal totalAmount;
-
-    public Integer getFileCount() {
-        return files != null ? files.size() : 0;
-    }
+    private String fileId;
+    private String fileName;
+    private String accountName;  // 대계정명 (예: 지급수수료)
+    private long rowCount;       // 해당 계정의 행 수
+    private double totalAmount;  // 해당 계정의 금액 합계
 }

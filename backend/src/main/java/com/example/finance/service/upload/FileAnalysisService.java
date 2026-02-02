@@ -165,7 +165,7 @@ public class FileAnalysisService {
 
         for (String fileId : fileIds) {
             // FileSession에서 파일 정보 조회
-            FileSession session = fileSessionRepository.findByUploadedFilesFileId(fileId)
+            FileSession session = fileSessionRepository.findFirstByUploadedFilesFileId(fileId)
                     .orElseThrow(() -> new BusinessException(
                             "FILE_NOT_FOUND", "파일을 찾을 수 없습니다: " + fileId));
 

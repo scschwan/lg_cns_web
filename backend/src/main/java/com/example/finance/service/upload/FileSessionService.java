@@ -343,95 +343,90 @@ public class FileSessionService {
 
     /**
      * 파일 세션 생성
-     *
-     * @param userId 사용자 ID
-     * @param request 세션 생성 요청
-     * @return 생성된 세션
+     * 역할: 선택된 파일들을 묶어 새로운 작업 세션을 생성하고, 통계 정보를 합산하여 저장함.
      */
     @Transactional
     public FileSession createFileSession(String userId, CreateFileSessionRequest request) {
-        log.info("파일 세션 생성: userId={}, projectId={}, sessionName={}",
-                userId, request.getProjectId(), request.getSessionName());
+        log.info("세션 생성 요청: projectId={}, sessionName={}, files={}",
+                request.getProjectId(), request.getSessionName(), request.getFileIds());
 
-        // 1. 프로젝트 존재 확인
-        Project project = projectRepository.findByProjectId(request.getProjectId())
-                .orElseThrow(() -> new ProjectNotFoundException("프로젝트를 찾을 수 없습니다"));
-
-        // 2. 프로젝트 멤버 확인
-        boolean isMember = project.getMembers().stream()
-                .anyMatch(m -> m.getUserId().equals(userId));
-
-        if (!isMember) {
-            throw new RuntimeException("프로젝트에 접근할 권한이 없습니다");
+        if (request.getFileIds() == null || request.getFileIds().isEmpty()) {
+            throw new BusinessException("INVALID_REQUEST", "최소 하나 이상의 파일을 선택해야 합니다.");
         }
 
-        // 3. 세션명 중복 확인
-        if (fileSessionRepository.existsByProjectIdAndSessionNameAndIsDeletedFalse(
-                request.getProjectId(), request.getSessionName())) {
-            throw new RuntimeException("이미 존재하는 세션명입니다");
+        List<UploadedFileInfo> sessionFiles = new ArrayList<>();
+        long sessionTotalRows = 0;
+        double sessionTotalAmount = 0.0;
+        Set<String> sessionAccounts = new HashSet<>();
+        Set<String> processedFileIds = new HashSet<>(); // 중복 처리 방지용
+
+        // 1. 선택된 파일 정보 수집 및 통계 합산
+        for (String fileId : request.getFileIds()) {
+            if (processedFileIds.contains(fileId)) continue; // 이미 처리한 파일이면 패스
+
+            // [중요] 500 에러 방지를 위해 findFirstBy... 사용 (Repository에 메서드 정의 필요)
+            FileSession originSession = fileSessionRepository.findFirstByUploadedFilesFileId(fileId)
+                    .orElseThrow(() -> new BusinessException("FILE_NOT_FOUND", "파일을 찾을 수 없습니다: " + fileId));
+
+            // 해당 세션 내에서 fileId에 해당하는 파일 정보 추출
+            UploadedFileInfo fileInfo = originSession.getUploadedFiles().stream()
+                    .filter(f -> f.getFileId().equals(fileId))
+                    .findFirst()
+                    .orElse(null);
+
+            if (fileInfo != null) {
+                // 파일 리스트에 추가
+                sessionFiles.add(fileInfo);
+                processedFileIds.add(fileId);
+
+                // --- [Issue 1 해결] 통계 정보 합산 ---
+                // 행 수 합산 (null 체크)
+                if (fileInfo.getRowCount() != null) {
+                    sessionTotalRows += fileInfo.getRowCount();
+                }
+
+                // 금액 합산 (null 체크)
+                if (fileInfo.getTotalAmount() != null) {
+                    sessionTotalAmount += fileInfo.getTotalAmount();
+                }
+
+                // 계정명 수집 (리스트 병합)
+                if (fileInfo.getAccountContents() != null) {
+                    sessionAccounts.addAll(fileInfo.getAccountContents());
+                }
+            } else {
+                log.warn("세션 내에서 파일 정보를 찾을 수 없음: fileId={}", fileId);
+            }
         }
 
-        // 4. 선택한 파일들의 메타데이터 조회
-        List<UploadSession> uploadSessions = uploadSessionRepository
-                .findAllById(request.getFileIds());
-
-        if (uploadSessions.size() != request.getFileIds().size()) {
-            throw new RuntimeException("일부 파일을 찾을 수 없습니다");
+        if (sessionFiles.isEmpty()) {
+            throw new BusinessException("FILE_NOT_FOUND", "유효한 파일 정보를 찾을 수 없습니다.");
         }
 
-        // 5. UploadedFileInfo 생성
-        List<UploadedFileInfo> uploadedFiles = uploadSessions.stream()
-                .map(us -> UploadedFileInfo.builder()
-                        .fileId(us.getId())
-                        .fileName(us.getFileName())
-                        .fileSize(us.getFileSize())
-                        .s3Key(us.getS3Key())
-                        .rowCount(us.getTotalRows() != null ? us.getTotalRows().longValue() : 0L)
-                        .uploadedAt(us.getCreatedAt())
-                        .detectedColumns(new ArrayList<>())  // Lambda에서 추출된 컬럼 정보
-                        .accountContents(new ArrayList<>())
-                        .build())
-                .collect(Collectors.toList());
-
-        // 6. 통계 계산
-        long totalRowCount = uploadedFiles.stream()
-                .mapToLong(UploadedFileInfo::getRowCount)
-                .sum();
-
-        // 7. FileSession 생성
-        FileSession fileSession = FileSession.builder()
+        // 2. 세션 객체 생성
+        FileSession newSession = FileSession.builder()
                 .sessionId(UUID.randomUUID().toString())
                 .projectId(request.getProjectId())
                 .sessionName(request.getSessionName())
-                .workerName(request.getWorkerName() != null ? request.getWorkerName() : "")
+                .uploadedFiles(sessionFiles) // 선택된 파일 목록
                 .createdBy(userId)
                 .createdAt(LocalDateTime.now())
-                .updatedAt(LocalDateTime.now())
-                .lastAccessedAt(LocalDateTime.now())
-                .uploadedFiles(uploadedFiles)
-                .totalFiles(uploadedFiles.size())
-                .totalRowCount(totalRowCount)
-                .totalAmount(0L)
-                .currentStep(null)
-                .progressPercentage(0)
-                .stepHistory(new ArrayList<>())
+
+                // [중요] 합산된 통계 정보 저장
+                .totalRowCount(sessionTotalRows)
+                .totalAmount((long) sessionTotalAmount) // long으로 변환하여 저장 (필요시 Double로 변경 고려)
+                .accountNames(new ArrayList<>(sessionAccounts)) // 중복 제거된 계정명 목록
+
                 .isCompleted(false)
-                .accountNames(new ArrayList<>())
-                .accountColumnNames(new ArrayList<>())
                 .isDeleted(false)
                 .build();
 
-        fileSession = fileSessionRepository.save(fileSession);
+        // 3. DB 저장
+        FileSession savedSession = fileSessionRepository.save(newSession);
+        log.info("세션 생성 완료: sessionId={}, totalRows={}, totalAmount={}",
+                savedSession.getSessionId(), savedSession.getTotalRowCount(), savedSession.getTotalAmount());
 
-        // 8. 프로젝트 세션 수 업데이트
-        project.setTotalSessions(project.getTotalSessions() + 1);
-        project.setTotalFiles(project.getTotalFiles() + uploadedFiles.size());
-        project.setUpdatedAt(LocalDateTime.now());
-        projectRepository.save(project);
-
-        log.info("파일 세션 생성 완료: sessionId={}", fileSession.getSessionId());
-
-        return fileSession;
+        return savedSession;
     }
 
     /**
@@ -869,7 +864,7 @@ public class FileSessionService {
         // 3. 파일 정보 조회 및 추가
         for (String fileId : fileIds) {
             // 다른 세션에서 파일 정보 조회
-            FileSession sourceSession = fileSessionRepository.findByUploadedFilesFileId(fileId)
+            FileSession sourceSession = fileSessionRepository.findFirstByUploadedFilesFileId(fileId)
                     .orElseThrow(() -> new BusinessException(
                             "FILE_NOT_FOUND", "파일을 찾을 수 없습니다: " + fileId));
 
@@ -938,7 +933,7 @@ public class FileSessionService {
 
                 for (String fileId : partition.getFileIds()) {
                     // FileSession에서 fileId로 파일 찾기
-                    Optional<FileSession> sessionOpt = fileSessionRepository.findByUploadedFilesFileId(fileId);
+                    Optional<FileSession> sessionOpt = fileSessionRepository.findFirstByUploadedFilesFileId(fileId);
 
                     if (sessionOpt.isPresent()) {
                         FileSession existingSession = sessionOpt.get();

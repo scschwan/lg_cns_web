@@ -59,7 +59,10 @@ public interface FileSessionRepository extends MongoRepository<FileSession, Stri
      *
      * uploadedFiles 배열의 fileId를 검색
      */
-    Optional<FileSession> findByUploadedFilesFileId(String fileId);
+    //Optional<FileSession> findByUploadedFilesFileId(String fileId);
+
+    // [수정] 중복된 데이터가 있어도 첫 번째 것만 가져오도록 수정 (안전장치)
+    Optional<FileSession> findFirstByUploadedFilesFileId(String fileId);
 
     /**
      * 프로젝트 ID로 삭제되지 않은 세션 목록 조회
