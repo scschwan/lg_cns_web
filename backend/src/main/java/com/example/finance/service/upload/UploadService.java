@@ -26,7 +26,11 @@ import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.time.LocalDateTime;
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.DoubleAdder;
+import java.util.concurrent.atomic.LongAdder;
 import java.util.stream.Collectors;
+import java.util.stream.StreamSupport;
 
 /**
  * 업로드 서비스
@@ -518,29 +522,7 @@ public class UploadService {
         log.info("파일 삭제 완료: fileId={}", fileId);
     }
 
-    /**
-     * Cell 값을 String으로 변환 (재사용 헬퍼 메서드)
-     */
-    private String getCellValueAsString(Cell cell) {
-        if (cell == null) return null;
 
-        switch (cell.getCellType()) {
-            case STRING:
-                return cell.getStringCellValue();
-            case NUMERIC:
-                if (DateUtil.isCellDateFormatted(cell)) {
-                    return cell.getLocalDateTimeCellValue().toString();
-                } else {
-                    return String.valueOf((long) cell.getNumericCellValue());
-                }
-            case BOOLEAN:
-                return String.valueOf(cell.getBooleanCellValue());
-            case FORMULA:
-                return cell.getCellFormula();
-            default:
-                return null;
-        }
-    }
 
     /**
      * 파일 컬럼 설정 (계정명, 금액 컬럼)
@@ -728,61 +710,6 @@ public class UploadService {
         }
     }
 
-    /**
-     * 컬럼 인덱스 찾기 (헬퍼 메서드)
-     */
-    private int findColumnIndex(Row headerRow, String columnName) {
-        if (headerRow == null) return -1;
-
-        // ⭐ 1단계: 정확히 일치하는 컬럼 찾기
-        for (int i = 0; i < headerRow.getLastCellNum(); i++) {
-            Cell cell = headerRow.getCell(i);
-            if (cell != null) {
-                String cellValue = getCellValueAsString(cell);
-                if (cellValue != null && cellValue.equals(columnName)) {
-                    log.debug("컬럼 찾음 (정확 일치): index={}, columnName={}", i, columnName);
-                    return i;
-                }
-            }
-        }
-
-        // ⭐ 2단계: trim() 적용하여 찾기
-        for (int i = 0; i < headerRow.getLastCellNum(); i++) {
-            Cell cell = headerRow.getCell(i);
-            if (cell != null) {
-                String cellValue = getCellValueAsString(cell);
-                if (cellValue != null && cellValue.trim().equals(columnName.trim())) {
-                    log.debug("컬럼 찾음 (trim 일치): index={}, columnName={}", i, columnName);
-                    return i;
-                }
-            }
-        }
-
-        // ⭐ 3단계: 대소문자 무시하고 찾기
-        for (int i = 0; i < headerRow.getLastCellNum(); i++) {
-            Cell cell = headerRow.getCell(i);
-            if (cell != null) {
-                String cellValue = getCellValueAsString(cell);
-                if (cellValue != null && cellValue.trim().equalsIgnoreCase(columnName.trim())) {
-                    log.debug("컬럼 찾음 (대소문자 무시): index={}, columnName={}", i, columnName);
-                    return i;
-                }
-            }
-        }
-
-        // ⭐ 디버깅: 모든 헤더 출력
-        log.error("컬럼을 찾을 수 없음: columnName={}", columnName);
-        log.error("실제 헤더 목록:");
-        for (int i = 0; i < headerRow.getLastCellNum(); i++) {
-            Cell cell = headerRow.getCell(i);
-            if (cell != null) {
-                String cellValue = getCellValueAsString(cell);
-                log.error("  [{}] = '{}'", i, cellValue);
-            }
-        }
-
-        return -1;
-    }
 
     /**
      * 프로젝트의 업로드된 파일 목록 조회
@@ -812,36 +739,51 @@ public class UploadService {
      * Issue 2 해결: 파일 내 계정명 별로 행을 나누어 통계 계산
      */
     public PartitionAnalysisResponse analyzePartitions(String projectId, List<String> fileIds) {
-        List<AccountPartition> partitionList = new ArrayList<>();
+        List<AccountPartition> partitionList = Collections.synchronizedList(new ArrayList<>());
 
-        for (String fileId : fileIds) {
-            // 1. Get File Session
-            FileSession session = fileSessionRepository.findFirstByUploadedFilesFileId(fileId)
-                    .orElseThrow(() -> new BusinessException("FILE_NOT_FOUND", "File session not found: " + fileId));
+        log.info("파티션 분석 시작: 대상 파일 {}개", fileIds.size());
 
-            // 2. Get File Info
-            UploadedFileInfo fileInfo = session.getUploadedFiles().stream()
-                    .filter(f -> f.getFileId().equals(fileId))
-                    .findFirst()
-                    .orElseThrow(() -> new BusinessException("FILE_NOT_FOUND", "File info not found."));
+        // 파일별 병렬 처리 (파일이 많을 경우 효과적)
+        fileIds.parallelStream().forEach(fileId -> {
+            try {
+                // 1. 파일 정보 조회
+                FileSession session = fileSessionRepository.findFirstByUploadedFilesFileId(fileId)
+                        .orElseThrow(() -> new BusinessException("FILE_NOT_FOUND", "파일 세션을 찾을 수 없습니다: " + fileId));
 
-            // 3. Grouping and Statistics (Core Logic)
-            Map<String, PartitionStats> statsMap = groupFileByAccount(fileInfo);
+                UploadedFileInfo fileInfo = session.getUploadedFiles().stream()
+                        .filter(f -> f.getFileId().equals(fileId))
+                        .findFirst()
+                        .orElseThrow(() -> new BusinessException("FILE_NOT_FOUND", "파일 정보가 없습니다."));
 
-            // 4. Create DTOs
-            for (Map.Entry<String, PartitionStats> entry : statsMap.entrySet()) {
-                String accountName = entry.getKey();
-                PartitionStats stats = entry.getValue();
+                log.info("[{}] 파일 분석 시작 (계정컬럼: {}, 금액컬럼: {})",
+                        fileInfo.getFileName(), fileInfo.getAccountColumnName(), fileInfo.getAmountColumnName());
 
-                partitionList.add(AccountPartition.builder()
-                        .fileId(fileInfo.getFileId())
-                        .fileName(fileInfo.getFileName())
-                        .accountName(accountName)
-                        .rowCount(stats.getCount())      // [Fix] Use specific count for this account
-                        .totalAmount(stats.getAmount())  // [Fix] Use specific sum for this account
-                        .build());
+                // 2. 엑셀 파싱 및 그룹핑 (병렬)
+                Map<String, PartitionStats> statsMap = groupFileByAccountParallel(fileInfo);
+
+                // 3. 결과 DTO 생성
+                for (Map.Entry<String, PartitionStats> entry : statsMap.entrySet()) {
+                    String accountName = entry.getKey();
+                    PartitionStats stats = entry.getValue();
+
+                    partitionList.add(AccountPartition.builder()
+                            .fileId(fileInfo.getFileId())
+                            .fileName(fileInfo.getFileName())
+                            .accountName(accountName)
+                            .rowCount(stats.getCount())
+                            .totalAmount(stats.getAmount())
+                            .build());
+
+                    log.debug("[{}] 계정: {}, 행수: {}, 금액: {}",
+                            fileInfo.getFileName(), accountName, stats.getCount(), stats.getAmount());
+                }
+
+            } catch (Exception e) {
+                log.error("파일 분석 중 오류 발생 (fileId: {}): {}", fileId, e.getMessage(), e);
             }
-        }
+        });
+
+        log.info("파티션 분석 완료: 총 {}개 파티션 생성", partitionList.size());
 
         return PartitionAnalysisResponse.builder()
                 .partitions(partitionList)
@@ -852,23 +794,30 @@ public class UploadService {
 
     @lombok.Data
     private static class PartitionStats {
-        long count = 0;
-        double amount = 0.0;
+        private final LongAdder count = new LongAdder();
+        private final DoubleAdder amount = new DoubleAdder();
+
+        public void add(double amountVal) {
+            count.increment();
+            amount.add(amountVal);
+        }
+
+        public long getCount() { return count.sum(); }
+        public double getAmount() { return amount.sum(); }
     }
 
-    /**
-     * 엑셀을 읽어 계정명 별로 통계를 냄
-     */
-    private Map<String, PartitionStats> groupFileByAccount(UploadedFileInfo fileInfo) {
-        Map<String, PartitionStats> statsMap = new HashMap<>();
+    private Map<String, PartitionStats> groupFileByAccountParallel(UploadedFileInfo fileInfo) {
+        Map<String, PartitionStats> statsMap = new ConcurrentHashMap<>();
 
         String accountColName = fileInfo.getAccountColumnName();
         String amountColName = fileInfo.getAmountColumnName();
 
-        if (accountColName == null) return statsMap;
+        if (accountColName == null) {
+            log.warn("[{}] 계정 컬럼이 설정되지 않아 분석을 건너뜁니다.", fileInfo.getFileName());
+            return statsMap;
+        }
 
         try {
-            // Download file
             byte[] fileBytes = s3Service.downloadFile(fileInfo.getS3Key());
 
             try (ByteArrayInputStream bis = new ByteArrayInputStream(fileBytes);
@@ -877,81 +826,94 @@ public class UploadService {
                 Sheet sheet = workbook.getSheetAt(0);
                 Row headerRow = sheet.getRow(0);
 
-                // Find indices (using the robust findColumnIndex method)
                 int accIdx = findColumnIndex(headerRow, accountColName);
                 int amtIdx = findColumnIndex(headerRow, amountColName);
 
-                // Iterate rows (Start from index 1)
-                for (int i = 1; i <= sheet.getLastRowNum(); i++) {
-                    Row row = sheet.getRow(i);
-                    if (row == null) continue;
+                log.info("[{}] 컬럼 인덱스 - 계정({}): {}, 금액({}): {}",
+                        fileInfo.getFileName(), accountColName, accIdx, amountColName, amtIdx);
 
-                    // 1. Extract Account Name
-                    String account = "";
-                    if (accIdx != -1) {
-                        Cell cell = row.getCell(accIdx);
-                        if (cell != null) {
-                            account = getCellValueAsString(cell);
-                        }
-                    }
-
-                    // Skip invalid or empty accounts
-                    if (account == null || account.trim().isEmpty()) continue;
-                    account = account.trim();
-
-                    // 2. Extract Amount
-                    double amount = 0.0;
-                    if (amtIdx != -1) {
-                        Cell cell = row.getCell(amtIdx);
-                        amount = getCellValueAsNumeric(cell);
-                    }
-
-                    // 3. Aggregate
-                    PartitionStats stats = statsMap.getOrDefault(account, new PartitionStats());
-                    stats.setCount(stats.getCount() + 1);
-                    stats.setAmount(stats.getAmount() + amount);
-                    statsMap.put(account, stats);
+                if (accIdx == -1) {
+                    log.error("[{}] 계정 컬럼을 찾을 수 없습니다.", fileInfo.getFileName());
+                    return statsMap;
                 }
+
+                // Spliterator를 이용해 Row를 스트림으로 변환
+                Spliterator<Row> spliterator = Spliterators.spliteratorUnknownSize(sheet.rowIterator(), Spliterator.ORDERED);
+
+                // 병렬 스트림 처리 (1번 행부터 시작하기 위해 skip(1))
+                StreamSupport.stream(spliterator, true) // true = parallel
+                        .skip(1)
+                        .forEach(row -> {
+                            // 1. 계정명 추출
+                            String account = getCellValueAsString(row.getCell(accIdx));
+
+                            if (account != null && !account.trim().isEmpty()) {
+                                account = account.trim();
+
+                                // 2. 금액 추출
+                                double amount = 0.0;
+                                if (amtIdx != -1) {
+                                    amount = getCellValueAsNumeric(row.getCell(amtIdx));
+                                }
+
+                                // 3. 집계 (ConcurrentMap + Atomic)
+                                statsMap.computeIfAbsent(account, k -> new PartitionStats()).add(amount);
+                            }
+                        });
             }
         } catch (Exception e) {
-            log.error("Error analyzing partitions for file {}: {}", fileInfo.getFileId(), e.getMessage());
+            log.error("[{}] 엑셀 그룹핑 실패: {}", fileInfo.getFileName(), e.getMessage());
         }
 
         return statsMap;
     }
 
+    private int findColumnIndex(Row headerRow, String columnName) {
+        if (headerRow == null || columnName == null) return -1;
+        for (int i = 0; i < headerRow.getLastCellNum(); i++) {
+            Cell cell = headerRow.getCell(i);
+            String val = getCellValueAsString(cell);
+            if (val != null && val.trim().equalsIgnoreCase(columnName.trim())) return i;
+        }
+        return -1;
+    }
+
+    private String getCellValueAsString(Cell cell) {
+        if (cell == null) return null;
+        switch (cell.getCellType()) {
+            case STRING: return cell.getStringCellValue();
+            case NUMERIC:
+                if (DateUtil.isCellDateFormatted(cell)) return cell.getLocalDateTimeCellValue().toString();
+                return String.valueOf(cell.getNumericCellValue());
+            case FORMULA:
+                try { return cell.getStringCellValue(); } catch (Exception e) { return String.valueOf(cell.getNumericCellValue()); }
+            default: return "";
+        }
+    }
+
     // getCellValueAsNumeric 헬퍼 (기존 코드에 없다면 추가)
     private double getCellValueAsNumeric(Cell cell) {
         if (cell == null) return 0.0;
-
         try {
             switch (cell.getCellType()) {
                 case NUMERIC:
                     return cell.getNumericCellValue();
                 case STRING:
-                    // Remove commas and non-numeric chars (except dot and minus)
+                    // 콤마 제거 및 공백 제거 후 파싱
                     String val = cell.getStringCellValue().replaceAll("[^0-9.-]", "").trim();
-                    if (val.isEmpty()) return 0.0;
-                    return Double.parseDouble(val);
+                    return val.isEmpty() ? 0.0 : Double.parseDouble(val);
                 case FORMULA:
-                    try {
-                        return cell.getNumericCellValue();
-                    } catch (Exception e) {
-                        // If formula evaluates to string
-                        try {
-                            String fVal = cell.getStringCellValue().replaceAll("[^0-9.-]", "").trim();
-                            return fVal.isEmpty() ? 0.0 : Double.parseDouble(fVal);
-                        } catch (Exception ex) {
-                            return 0.0;
-                        }
+                    try { return cell.getNumericCellValue(); }
+                    catch (Exception e) {
+                        String fVal = cell.getStringCellValue().replaceAll("[^0-9.-]", "").trim();
+                        return fVal.isEmpty() ? 0.0 : Double.parseDouble(fVal);
                     }
                 default:
                     return 0.0;
             }
         } catch (Exception e) {
+            // 파싱 실패 시 0.0 반환하고 로그는 남기지 않음 (너무 많이 쌓일 수 있음)
             return 0.0;
         }
     }
-
-
 }

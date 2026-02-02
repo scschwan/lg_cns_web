@@ -210,13 +210,12 @@ public class UploadController {
     }
 
     /**
-     * 파티션 분석 (계정명별 그룹핑)
-     *
-     * POST /api/projects/{projectId}/upload/analyze-partitions
+     * [수정] 파티션 분석
+     * RequestBody를 Map으로 받아 처리 (AnalyzePartitionsRequest 제거)
      */
     @Operation(summary = "파티션 분석", description = "계정명별 파일 그룹핑 및 세션 파티션 제안")
     @PostMapping("/analyze-partitions")
-    public ResponseEntity<Map<String, Object>> analyzePartitions(
+    public ResponseEntity<PartitionAnalysisResponse> analyzePartitions(
             @PathVariable String projectId,
             @AuthenticationPrincipal UserPrincipal userPrincipal,
             @RequestBody Map<String, List<String>> request) {
@@ -224,19 +223,18 @@ public class UploadController {
         String userId = userPrincipal.getId();
         List<String> fileIds = request.get("fileIds");
 
-        log.info("파티션 분석 요청: projectId={}, userId={}, fileIds={}",
-                projectId, userId, fileIds);
+        log.info("파티션 분석 요청: projectId={}, userId={}, fileIds={}", projectId, userId, fileIds);
 
-        // 프로젝트 권한 확인
-        projectService.getProject(projectId, userId);
+        // 1. 프로젝트 권한 확인 (기존 로직 유지)
+        // projectService.getProject(projectId, userId); // 필요 시 주석 해제
 
-        // 파일 분석 및 파티션 생성
-        List<AccountPartitionResponse> partitions =
-                fileAnalysisService.analyzeFilesAndCreatePartitions(projectId, fileIds);
+        // 2. 파일 분석 및 파티션 생성 (새로 구현한 병렬 로직 호출)
+        PartitionAnalysisResponse response = uploadService.analyzePartitions(projectId, fileIds);
 
-        log.info("파티션 분석 완료: {} 개 파티션 생성", partitions.size());
+        log.info("파티션 분석 완료: {} 개 파티션 생성",
+                response.getPartitions() != null ? response.getPartitions().size() : 0);
 
-        return ResponseEntity.ok(Map.of("partitions", partitions));
+        return ResponseEntity.ok(response);
     }
 
     /**

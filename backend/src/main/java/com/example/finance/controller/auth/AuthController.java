@@ -72,6 +72,11 @@ public class AuthController {
      */
     @GetMapping("/me")
     public ResponseEntity<Map<String, Object>> getCurrentUser(@CurrentUser UserPrincipal userPrincipal) {
+        // UserPrincipal이 null인 경우 (토큰이 없거나 유효하지 않은 경우)
+        if (userPrincipal == null) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+        }
+
         log.info("현재 사용자 조회: userId={}", userPrincipal.getId());
 
         Map<String, Object> response = authService.getCurrentUserInfo(userPrincipal.getId());
