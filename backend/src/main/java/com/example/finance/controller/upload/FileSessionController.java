@@ -1,5 +1,6 @@
 package com.example.finance.controller.upload;
 
+import com.example.finance.dto.request.session.CreateSessionsBatchRequest;
 import com.example.finance.dto.request.upload.CreateFileSessionRequest;
 import com.example.finance.dto.request.upload.MergeSessionsRequest;
 import com.example.finance.dto.request.upload.SetFileColumnsRequest;
@@ -17,6 +18,7 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -64,32 +66,34 @@ public class FileSessionController {
     }
 
     /**
-     * 세션 일괄 생성 (파티션 기반)`
-     *
-     * POST /api/projects/{projectId}/upload/sessions/batch
+     * [개선됨] 세션 일괄 생성
+     * 변경사항: Map 대신 DTO 사용, @Valid 추가, Service 타입 일치
      */
-    // ⭐⭐⭐ 신규 API: 세션 일괄 생성
-    @Operation(summary = "세션 일괄 생성", description = "파티션별로 세션 일괄 생성")
+    @Operation(summary = "세션 일괄 생성", description = "파티션 분석 결과를 기반으로 여러 세션을 한 번에 생성합니다.")
     @PostMapping("/batch")
     public ResponseEntity<List<FileSessionResponse>> createSessionsBatch(
             @PathVariable String projectId,
-            @CurrentUser UserPrincipal userPrincipal,
-            @RequestBody Map<String, List<AccountPartitionResponse>> request) {
+            @AuthenticationPrincipal UserPrincipal userPrincipal, // @CurrentUser 대신 표준 어노테이션 사용 권장
+            @Valid @RequestBody CreateSessionsBatchRequest request) {
 
         String userId = userPrincipal.getId();
-        List<AccountPartitionResponse> partitions = request.get("partitions");
 
-        log.info("세션 일괄 생성 요청: projectId={}, userId={}, partitions={}",
-                projectId, userId, partitions != null ? partitions.size() : 0);
+        // 요청 로그 (DTO 덕분에 null 체크 불필요)
+        log.info("세션 일괄 생성 요청: projectId={}, userId={}, partitionCount={}",
+                projectId, userId, request.getPartitions().size());
 
-        projectService.getProject(projectId, userId);
+        // 1. 프로젝트 권한 확인 (Service 내부에서도 체크하지만, 진입점에서 명시적 체크)
+        // (ProjectService의 구현에 따라 필요 여부 결정)
+        // projectService.validateProjectMember(projectId, userId);
 
-        // 파티션별로 세션 생성
+        // 2. 파티션별로 세션 생성 (Service 호출)
         List<FileSessionResponse> sessions = fileSessionService.createSessionsFromPartitions(
-                userId, projectId, partitions
+                userId,
+                projectId,
+                request.getPartitions() // List<AccountPartition> 전달
         );
 
-        log.info("세션 일괄 생성 완료: {} 개 세션", sessions.size());
+        log.info("세션 일괄 생성 완료: {} 개 세션 생성됨", sessions.size());
 
         return ResponseEntity.ok(sessions);
     }

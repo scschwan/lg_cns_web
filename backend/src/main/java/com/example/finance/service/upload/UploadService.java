@@ -768,6 +768,7 @@ public class UploadService {
 
                     partitionList.add(AccountPartition.builder()
                             .fileId(fileInfo.getFileId())
+                            .fileIds(Collections.singletonList(fileInfo.getFileId())) // ⭐ [수정] 리스트에도 추가
                             .fileName(fileInfo.getFileName())
                             .accountName(accountName)
                             .rowCount(stats.getCount())
