@@ -809,21 +809,15 @@ function MultiFileUploadPage() {
                                                                 }}
                                                             />
                                                         </TableCell>
-                                                        <TableCell>
+                                                         <TableCell>
                                                             {editingSession === session.sessionId ? (
                                                                 <Input
                                                                     value={session.sessionName}
                                                                     onChange={(e) =>
                                                                         setSessions((prev) =>
                                                                             prev.map((s) =>
-                                                                                s.sessionId ===
-                                                                                session.sessionId
-                                                                                    ? {
-                                                                                          ...s,
-                                                                                          sessionName:
-                                                                                              e.target
-                                                                                                  .value,
-                                                                                      }
+                                                                                s.sessionId === session.sessionId
+                                                                                    ? { ...s, sessionName: e.target.value }
                                                                                     : s
                                                                             )
                                                                         )
@@ -852,62 +846,97 @@ function MultiFileUploadPage() {
                                                             ) : (
                                                                 <div
                                                                     className="cursor-pointer hover:text-primary truncate"
-                                                                    onDoubleClick={() =>
-                                                                        setEditingSession(
-                                                                            session.sessionId
-                                                                        )
+                                                                    onClick={() =>
+                                                                        setEditingSession(session.sessionId)
                                                                     }
-                                                                    title={session.sessionName}
+                                                                    title="클릭하여 편집"
                                                                 >
                                                                     {session.sessionName}
                                                                 </div>
                                                             )}
                                                         </TableCell>
-                                                        <TableCell className="truncate">
-                                                            {session.workerName || '-'}
-                                                        </TableCell>
-                                                        <TableCell className="truncate">
-                                                            {Array.isArray(session.accountNames)
-                                                                ? session.accountNames[0]
-                                                                : session.accountName || '-'}
-                                                        </TableCell>
-                                                        <TableCell className="text-center">
-                                                            {session.totalFiles ||
-                                                                session.uploadedFiles?.length ||
-                                                                0}
-                                                        </TableCell>
-                                                        <TableCell className="text-center">
-                                                            {(session.totalRows || 0).toLocaleString()}
-                                                        </TableCell>
-                                                        <TableCell className="truncate">
-                                                            {session.totalAmount
-                                                                ? `${session.totalAmount.toLocaleString()} 원`
-                                                                : '0 원'}
-                                                        </TableCell>
-                                                        <TableCell className="text-center">
-                                                            {session.isCompleted ? (
-                                                                <Badge>완료</Badge>
-                                                            ) : (
-                                                                <Badge variant="outline">
-                                                                    진행중
-                                                                </Badge>
-                                                            )}
-                                                        </TableCell>
+                                                        {/* 작업자 - 인라인 편집 (항상 Input) */}
                                                         <TableCell>
-                                                            <Button
-                                                                variant="ghost"
-                                                                size="icon"
-                                                                disabled={
-                                                                    !session.isCompleted ||
-                                                                    !session.exportPath
+                                                            <Input
+                                                                value={session.workerName || ''}
+                                                                placeholder="작업자명"
+                                                                onChange={(e) =>
+                                                                    setSessions((prev) =>
+                                                                        prev.map((s) =>
+                                                                            s.sessionId === session.sessionId
+                                                                                ? { ...s, workerName: e.target.value }
+                                                                                : s
+                                                                        )
+                                                                    )
                                                                 }
-                                                                onClick={() =>
-                                                                    handleDownload(session.sessionId)
-                                                                }
-                                                            >
-                                                                <Download className="h-4 w-4" />
-                                                            </Button>
+                                                                onBlur={() => {
+                                                                    handleSessionEdit(
+                                                                        session.sessionId,
+                                                                        'workerName',
+                                                                        session.workerName || ''
+                                                                    );
+                                                                }}
+                                                                onKeyDown={(e) => {
+                                                                    if (e.key === 'Enter') {
+                                                                        handleSessionEdit(
+                                                                            session.sessionId,
+                                                                            'workerName',
+                                                                            session.workerName || ''
+                                                                        );
+                                                                        e.target.blur();
+                                                                    }
+                                                                }}
+                                                                className="h-8"
+                                                            />
                                                         </TableCell>
+                                                       {/* 대계정 */}
+                                                       <TableCell className="truncate">
+                                                           {Array.isArray(session.accountNames) && session.accountNames.length > 0
+                                                               ? session.accountNames.join(', ')
+                                                               : session.accountName || '-'}
+                                                       </TableCell>
+                                                       {/* 파일 수 */}
+                                                       <TableCell className="text-center">
+                                                           {session.totalFiles ||
+                                                               session.uploadedFiles?.length ||
+                                                               0}
+                                                       </TableCell>
+                                                       {/* 행수 - totalRowCount 우선 사용 */}
+                                                       <TableCell className="text-center">
+                                                           {(session.totalRowCount || session.totalRows || 0).toLocaleString()}
+                                                       </TableCell>
+                                                       {/* 합산금액 */}
+                                                       <TableCell className="truncate">
+                                                           {session.totalAmount
+                                                               ? `${session.totalAmount.toLocaleString()} 원`
+                                                               : '0 원'}
+                                                       </TableCell>
+                                                       {/* 완료 상태 */}
+                                                       <TableCell className="text-center">
+                                                           {session.isCompleted ? (
+                                                               <Badge>완료</Badge>
+                                                           ) : (
+                                                               <Badge variant="outline">
+                                                                   진행중
+                                                               </Badge>
+                                                           )}
+                                                       </TableCell>
+                                                       {/* 다운로드 */}
+                                                       <TableCell>
+                                                           <Button
+                                                               variant="ghost"
+                                                               size="icon"
+                                                               disabled={
+                                                                   !session.isCompleted ||
+                                                                   !session.exportPath
+                                                               }
+                                                               onClick={() =>
+                                                                   handleDownload(session.sessionId)
+                                                               }
+                                                           >
+                                                               <Download className="h-4 w-4" />
+                                                           </Button>
+                                                       </TableCell>
                                                     </TableRow>
                                                 ))}
                                             </TableBody>

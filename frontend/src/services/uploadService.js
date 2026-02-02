@@ -188,7 +188,7 @@ const uploadService = {
     updateSession: async (projectId, sessionId, data) => {
         // data는 { sessionName: "...", workerName: "..." } 형태여야 함
         const response = await api.put(
-            `/projects/${projectId}/upload/sessions/${sessionId}`,
+            `/api/projects/${projectId}/upload/sessions/${sessionId}`,
             data
         );
         return response.data;
@@ -484,7 +484,7 @@ const uploadService = {
     deleteSessions: async (projectId, sessionIds) => {
         // 백엔드 FileSessionController: @PostMapping("/delete-batch")
         const response = await api.post(
-            `/projects/${projectId}/upload/sessions/delete-batch`, // 경로 수정
+            `/api/projects/${projectId}/upload/sessions/delete-batch`, // 경로 수정
             { sessionIds } // Body: { sessionIds: ["...", "..."] }
         );
         return response.data;
