@@ -261,7 +261,7 @@ public class UploadController {
         projectService.getProject(projectId, userId);
 
         // 컬럼 설정
-        UploadedFileInfo fileInfo = uploadService.setFileColumns(projectId, fileId, request);
+        UploadedFileInfo fileInfo = uploadService.updateFileColumns(projectId, fileId, request);
 
         return ResponseEntity.ok(fileInfo);
     }
