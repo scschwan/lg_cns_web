@@ -33,6 +33,12 @@ import java.util.concurrent.atomic.LongAdder;
 import java.util.stream.Collectors;
 import java.util.stream.StreamSupport;
 
+import org.springframework.data.mongodb.core.MongoTemplate;
+import org.springframework.data.mongodb.core.aggregation.Aggregation;
+import org.springframework.data.mongodb.core.query.Criteria;
+import org.bson.Document;
+import java.time.Duration;
+
 /**
  * 업로드 서비스
  *
@@ -48,6 +54,7 @@ public class UploadService {
     private final FileSessionRepository fileSessionRepository;
     private final FileAnalysisService fileAnalysisService; // 주입 필요
     private final S3Service s3Service;
+    private final MongoTemplate mongoTemplate;  // ← 추가
 
     // Lambda와 공유하는 Redis Key Prefix
     private static final String UPLOAD_STATUS_KEY_PREFIX = "upload:status:";
@@ -624,6 +631,60 @@ public class UploadService {
      * 계정명 추출 (내부 메서드)
      */
     private List<String> extractAccountValuesInternal(String s3Key, String columnName) {
+        String uploadId = extractUploadIdFromS3Key(s3Key);
+
+        if (uploadId == null) {
+            log.warn("s3Key에서 uploadId 추출 실패, S3 다운로드 fallback: {}", s3Key);
+            return extractAccountValuesFromExcel(s3Key, columnName);
+        }
+
+        // Redis 캐시 확인
+        String cacheKey = "accounts:" + uploadId + ":" + columnName;
+        String cached = redisTemplate.opsForValue().get(cacheKey);
+        if (cached != null) {
+            log.info("계정명 Redis 캐시 hit: uploadId={}, column={}", uploadId, columnName);
+            return Arrays.asList(cached.split("\\|\\|"));
+        }
+
+        try {
+            // raw_data에서 MongoDB aggregation으로 직접 추출
+            String fieldPath = "data." + columnName;
+
+            Aggregation agg = Aggregation.newAggregation(
+                    Aggregation.match(Criteria.where("upload_id").is(uploadId)),
+                    Aggregation.group(fieldPath),
+                    Aggregation.sort(org.springframework.data.domain.Sort.Direction.ASC, "_id")
+            );
+
+            List<Document> results = mongoTemplate.aggregate(agg, "raw_data", Document.class)
+                    .getMappedResults();
+
+            List<String> values = results.stream()
+                    .map(doc -> {
+                        Object id = doc.get("_id");
+                        return id != null ? id.toString() : null;
+                    })
+                    .filter(v -> v != null && !v.trim().isEmpty())
+                    .collect(Collectors.toList());
+
+            // Redis 캐시 저장 (10분)
+            if (!values.isEmpty()) {
+                redisTemplate.opsForValue().set(cacheKey, String.join("||", values),
+                        Duration.ofMinutes(10));
+            }
+
+            log.info("계정명 raw_data aggregation 완료: uploadId={}, column={}, {}개",
+                    uploadId, columnName, values.size());
+            return values;
+
+        } catch (Exception e) {
+            log.error("raw_data aggregation 실패, S3 다운로드 fallback: {}", e.getMessage());
+            return extractAccountValuesFromExcel(s3Key, columnName);
+        }
+    }
+
+    // 기존 로직을 fallback용으로 이름만 변경
+    private List<String> extractAccountValuesFromExcel(String s3Key, String columnName) {
         File tempFile = null;
         try {
             tempFile = s3Service.downloadFileToTemp(s3Key);
@@ -639,10 +700,68 @@ public class UploadService {
     }
 
 
+
     /**
      * 금액 합산 (내부 메서드)
      */
     private Double calculateTotalAmountInternal(String s3Key, String columnName) {
+        String uploadId = extractUploadIdFromS3Key(s3Key);
+
+        if (uploadId == null) {
+            log.warn("s3Key에서 uploadId 추출 실패, S3 다운로드 fallback: {}", s3Key);
+            return calculateTotalAmountFromExcel(s3Key, columnName);
+        }
+
+        // Redis 캐시 확인
+        String cacheKey = "amount:" + uploadId + ":" + columnName;
+        String cached = redisTemplate.opsForValue().get(cacheKey);
+        if (cached != null) {
+            log.info("금액 Redis 캐시 hit: uploadId={}, column={}", uploadId, columnName);
+            return Double.parseDouble(cached);
+        }
+
+        try {
+            // raw_data에서 MongoDB aggregation으로 금액 합산
+            String fieldPath = "data." + columnName;
+
+            // data 필드 내 금액값은 String일 수 있으므로 toDouble 변환
+            Aggregation agg = Aggregation.newAggregation(
+                    Aggregation.match(Criteria.where("upload_id").is(uploadId)
+                            .and(fieldPath).exists(true)),
+                    Aggregation.project()
+                            .and(context -> new Document("$toDouble",
+                                    new Document("$ifNull", Arrays.asList("$" + fieldPath, 0))))
+                            .as("amount"),
+                    Aggregation.group().sum("amount").as("total")
+            );
+
+            Document result = mongoTemplate.aggregate(agg, "raw_data", Document.class)
+                    .getUniqueMappedResult();
+
+            double total = 0.0;
+            if (result != null) {
+                Object totalObj = result.get("total");
+                if (totalObj instanceof Number) {
+                    total = ((Number) totalObj).doubleValue();
+                }
+            }
+
+            // Redis 캐시 저장 (10분)
+            redisTemplate.opsForValue().set(cacheKey, String.valueOf(total),
+                    Duration.ofMinutes(10));
+
+            log.info("금액 raw_data aggregation 완료: uploadId={}, column={}, total={}",
+                    uploadId, columnName, total);
+            return total;
+
+        } catch (Exception e) {
+            log.error("raw_data aggregation 실패, S3 다운로드 fallback: {}", e.getMessage());
+            return calculateTotalAmountFromExcel(s3Key, columnName);
+        }
+    }
+
+    // 기존 로직을 fallback용으로 이름만 변경
+    private Double calculateTotalAmountFromExcel(String s3Key, String columnName) {
         File tempFile = null;
         try {
             tempFile = s3Service.downloadFileToTemp(s3Key);
@@ -655,6 +774,16 @@ public class UploadService {
                 tempFile.delete();
             }
         }
+    }
+
+    private String extractUploadIdFromS3Key(String s3Key) {
+        if (s3Key == null) return null;
+        String[] parts = s3Key.split("/");
+        // projects/{projectId}/sessions/{sessionId}/uploads/{uploadId}/{fileName}
+        if (parts.length >= 6) {
+            return parts[5];
+        }
+        return null;
     }
 
 
