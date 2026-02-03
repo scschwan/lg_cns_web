@@ -35,68 +35,89 @@ public class SessionDataService {
 
     /**
      * 계정 분석 시작 - raw_data → session_data 복사
-     *
-     * @param sessionId 대상 세션 ID
-     * @return 복사된 총 문서 수
+     * 이미 동일 session_id 데이터가 있으면 복사를 건너뛰고 기존 데이터 활용
      */
-    public long startAccountAnalysis(String sessionId) {
+    public Map<String, Object> startAccountAnalysis(String sessionId) {
         log.info("계정 분석 시작: sessionId={}", sessionId);
-        long startTime = System.currentTimeMillis();
 
-        // 1. 세션 정보 조회
         FileSession session = fileSessionRepository.findBySessionId(sessionId)
                 .orElseThrow(() -> new BusinessException(
                         "SESSION_NOT_FOUND", "세션을 찾을 수 없습니다: " + sessionId));
 
-        // 2. 기존 session_data 가 있으면 삭제 (재분석 대응)
-        if (sessionDataRepository.existsBySessionId(sessionId)) {
-            log.info("기존 session_data 삭제: sessionId={}", sessionId);
-            sessionDataRepository.deleteBySessionId(sessionId);
+        Map<String, Object> result = new HashMap<>();
+        result.put("sessionId", sessionId);
+
+        // 이미 session_data가 존재하면 복사 skip
+        long existingCount = sessionDataRepository.countBySessionId(sessionId);
+        if (existingCount > 0) {
+            log.info("기존 session_data 존재: sessionId={}, count={} → 복사 건너뜀",
+                    sessionId, existingCount);
+            result.put("copiedCount", existingCount);
+            result.put("skipped", true);
+            result.put("currentStep", session.getCurrentStep() != null
+                    ? session.getCurrentStep().name() : "START_ANALYSIS");
+            return result;
         }
 
-        // 3. 파일별 복사 작업 생성
+        // 파일/계정 검증
         List<UploadedFileInfo> files = session.getUploadedFiles();
         if (files == null || files.isEmpty()) {
-            log.warn("세션에 파일이 없습니다: sessionId={}", sessionId);
-            return 0;
+            throw new BusinessException("NO_FILES", "세션에 파일이 없습니다.");
         }
 
-        // 4. 세션의 계정명 목록
         List<String> accountNames = session.getAccountNames();
         if (accountNames == null || accountNames.isEmpty()) {
-            log.warn("세션에 계정명이 없습니다: sessionId={}", sessionId);
-            return 0;
+            throw new BusinessException("NO_ACCOUNTS", "세션에 계정명이 없습니다.");
         }
 
-        // 5. 병렬 스레드풀 생성
+        // 병렬 복사 실행
+        long startTime = System.currentTimeMillis();
+        long copiedCount = executeCopy(session, files, accountNames);
+        long elapsed = System.currentTimeMillis() - startTime;
+
+        log.info("계정 분석 완료: sessionId={}, 복사={}건, 소요={}ms",
+                sessionId, copiedCount, elapsed);
+
+        // 세션 상태 업데이트
+        session.setCurrentStep(ProcessStep.START_ANALYSIS);
+        session.setUpdatedAt(LocalDateTime.now());
+        fileSessionRepository.save(session);
+
+        result.put("copiedCount", copiedCount);
+        result.put("skipped", false);
+        result.put("currentStep", "START_ANALYSIS");
+        return result;
+    }
+
+    /**
+     * 병렬 복사 실행 (기존 코드에서 분리)
+     */
+    private long executeCopy(FileSession session, List<UploadedFileInfo> files,
+                             List<String> accountNames) {
         ExecutorService executor = Executors.newFixedThreadPool(
                 Math.min(THREAD_POOL_SIZE, files.size()));
-
         AtomicLong totalCopied = new AtomicLong(0);
 
         try {
-            // 6. 파일별 병렬 복사 작업 제출
             List<CompletableFuture<Long>> futures = files.stream()
                     .map(file -> CompletableFuture.supplyAsync(
                             () -> copyFileDataToSession(
                                     session.getProjectId(),
-                                    sessionId,
+                                    session.getSessionId(),
                                     file,
                                     accountNames),
                             executor))
                     .collect(Collectors.toList());
 
-            // 7. 모든 작업 완료 대기 + 결과 집계
             CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
 
             for (CompletableFuture<Long> future : futures) {
                 try {
                     totalCopied.addAndGet(future.get());
                 } catch (ExecutionException e) {
-                    log.error("파일 복사 작업 실패: {}", e.getCause().getMessage(), e.getCause());
+                    log.error("파일 복사 실패: {}", e.getCause().getMessage(), e.getCause());
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
-                    log.error("파일 복사 작업 인터럽트", e);
                 }
             }
         } finally {
@@ -110,16 +131,6 @@ public class SessionDataService {
                 Thread.currentThread().interrupt();
             }
         }
-
-        long elapsed = System.currentTimeMillis() - startTime;
-        log.info("계정 분석 완료: sessionId={}, 복사된 문서 수={}, 소요시간={}ms",
-                sessionId, totalCopied.get(), elapsed);
-
-        // 8. 세션 상태 업데이트
-        session.setCurrentStep(ProcessStep.FILE_LOAD);
-
-        session.setUpdatedAt(LocalDateTime.now());
-        fileSessionRepository.save(session);
 
         return totalCopied.get();
     }
@@ -212,10 +223,45 @@ public class SessionDataService {
     }
 
     /**
-     * 세션의 session_data 건수 조회
+     * session_data 페이징 조회 + 동적 컬럼 추출
      */
-    public long getSessionDataCount(String sessionId) {
-        return sessionDataRepository.countBySessionId(sessionId);
+    public Map<String, Object> getSessionData(String sessionId, int page, int size) {
+        long totalCount = sessionDataRepository.countBySessionId(sessionId);
+
+        Query query = new Query(Criteria.where("session_id").is(sessionId))
+                .with(org.springframework.data.domain.Sort.by("row_number"))
+                .skip((long) page * size)
+                .limit(size);
+
+        List<Document> documents = mongoTemplate.find(query, Document.class, "session_data");
+
+        // data 오브젝트의 모든 key를 컬럼으로 추출
+        Set<String> columnSet = new LinkedHashSet<>();
+        List<Map<String, Object>> rows = new ArrayList<>();
+
+        for (Document doc : documents) {
+            @SuppressWarnings("unchecked")
+            Map<String, Object> data = (Map<String, Object>) doc.get("data");
+            if (data != null) {
+                columnSet.addAll(data.keySet());
+
+                Map<String, Object> row = new LinkedHashMap<>();
+                row.put("_id", doc.getObjectId("_id").toString());
+                row.put("row_number", doc.getInteger("row_number"));
+                row.putAll(data);
+                rows.add(row);
+            }
+        }
+
+        Map<String, Object> result = new HashMap<>();
+        result.put("columns", new ArrayList<>(columnSet));
+        result.put("data", rows);
+        result.put("totalCount", totalCount);
+        result.put("page", page);
+        result.put("size", size);
+        result.put("totalPages", (int) Math.ceil((double) totalCount / size));
+
+        return result;
     }
 
     /**

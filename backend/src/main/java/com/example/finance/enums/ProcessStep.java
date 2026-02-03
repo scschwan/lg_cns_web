@@ -7,7 +7,8 @@ package com.example.finance.enums;
  */
 public enum ProcessStep {
     UPLOAD(1, "Multi File Upload", "/api/upload", "파일 업로드 및 세션 관리"),
-    FILE_LOAD(2, "File Load", "/api/fileload", "Excel 파싱 및 데이터 로드"),
+    //FILE_LOAD(2, "File Load", "/api/fileload", "Excel 파싱 및 데이터 로드"),
+    START_ANALYSIS(2, "Start Analysis", "/api/startanalysis", "계정 분석 시작"),
     PREPROCESSING(3, "Preprocessing", "/api/preprocessing", "데이터 전처리 및 검증"),
     TRANSFORM(4, "Data Transform", "/api/transform", "데이터 집계 및 변환"),
     CLUSTERING(5, "Clustering", "/api/clustering", "K-Means 클러스터링"),

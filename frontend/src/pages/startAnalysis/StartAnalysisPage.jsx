@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { ChevronRight, Home, Search, Plus, Trash2, RotateCcw, ChevronDown, ChevronUp } from 'lucide-react';
+import uploadService from '../../services/uploadService';
 
 // shadcn/ui components
 import {
@@ -37,7 +38,7 @@ import {
 // API 서비스 (추후 구현)
 // import sessionDataAPI from '@/services/sessionDataAPI';
 
-function FileLoadPage() {
+export default function StartAnalysisPage() {
   const { projectId, sessionId } = useParams();
   const navigate = useNavigate();
 
@@ -57,9 +58,12 @@ function FileLoadPage() {
   const [isOriginalCollapsed, setIsOriginalCollapsed] = useState(false);
 
   // 페이지네이션
-  const [currentPage, setCurrentPage] = useState(1);
+  const [currentPage, setCurrentPage] = useState(0);  // 0-based
   const [pageSize, setPageSize] = useState(1000);
-  const [totalRows, setTotalRows] = useState(6270);
+  const [totalRows, setTotalRows] = useState(0);
+  const [totalPages, setTotalPages] = useState(0);
+
+  const [loading, setLoading] = useState(false);
 
   // 탭 상태
   const [activeTab, setActiveTab] = useState('remove-columns');
@@ -109,57 +113,36 @@ function FileLoadPage() {
     target: '이름',
   });
 
-  // ===== Mock 데이터 생성 =====
-  const generateMockData = () => {
-    const data = [];
-    for (let i = 1; i <= 30; i++) {
-      data.push({
-        id: i,
-        연도: '2019',
-        세그먼트: (7000 + Math.floor(Math.random() * 2000)).toString(),
-        전기일: (43000 + Math.floor(Math.random() * 1000)).toString(),
-        문서번호: (134000000 + Math.floor(Math.random() * 1000000)).toString(),
-        원가요소: '51213200',
-        계정명: '지급수수료',
-        원가요소이름: '지급수수료',
-        'CO 오브젝트이름': '인터넷몰 더데이걸',
-        상계계정이름: '지급수수료(물류용역)',
-        'Val.in RC': Math.floor(Math.random() * 10000000),
-        이름: '이커머스 실비 안분_지급수수료',
-      });
-    }
-    return data;
-  };
+
 
   // ===== useEffect - 초기 데이터 로드 =====
-  useEffect(() => {
-    loadSessionData();
-    loadColumns();
-  }, [sessionId, currentPage, pageSize]);
+
 
   // ===== 데이터 로드 =====
   const loadSessionData = async () => {
-    try {
-      // TODO: API 호출
-      const mockData = generateMockData();
-      setOriginalData(mockData); // 원본 (불변)
-      setSessionData(mockData);  // 변경본 (수정 가능)
-    } catch (error) {
-      console.error('세션 데이터 로드 실패:', error);
-    }
-  };
+          setLoading(true);
+          try {
+              const result = await uploadService.getSessionData(
+                  projectId, sessionId, currentPage, pageSize
+              );
 
-  const loadColumns = async () => {
-    try {
-      // Mock 컬럼
-      setColumns([
-        '연도', '세그먼트', '전기일', '문서번호', '원가요소', '계정명',
-        '원가요소이름', 'CO 오브젝트이름', '상계계정이름', 'Val.in RC', '이름'
-      ]);
-    } catch (error) {
-      console.error('컬럼 정보 로드 실패:', error);
-    }
-  };
+              setColumns(result.columns || []);
+              setOriginalData(result.data || []);
+              setSessionData(result.data || []);
+              setTotalRows(result.totalCount || 0);
+              setTotalPages(result.totalPages || 0);
+          } catch (error) {
+              console.error('세션 데이터 로드 실패:', error);
+          } finally {
+              setLoading(false);
+          }
+      };
+
+   useEffect(() => {
+      loadSessionData();
+      loadColumns();
+    }, [sessionId, currentPage, pageSize]);
+
 
   // ===== 핸들러 함수 =====
   const handleDataRestore = () => {
@@ -215,7 +198,7 @@ function FileLoadPage() {
               </BreadcrumbSeparator>
               <BreadcrumbItem>
                 <BreadcrumbPage className="font-semibold">
-                  Step 2: File Load
+                  Step 2: Start Analysis
                 </BreadcrumbPage>
               </BreadcrumbItem>
             </BreadcrumbList>
@@ -346,14 +329,22 @@ function FileLoadPage() {
                       <Button variant="outline" size="sm" className="h-8 px-2" onClick={() => setCurrentPage(1)} disabled={currentPage === 1}>
                         처음
                       </Button>
-                      <Button variant="outline" size="sm" className="h-8 px-2" onClick={() => setCurrentPage((prev) => Math.max(1, prev - 1))} disabled={currentPage === 1}>
-                        이전
+                      <Button
+                          variant="outline" size="sm"
+                          onClick={() => setCurrentPage(prev => Math.max(0, prev - 1))}
+                          disabled={currentPage === 0}
+                      >
+                          이전
                       </Button>
-                      <span className="flex items-center px-2 text-xs font-medium">
-                        {currentPage} / {totalPages}
+                      <span className="text-sm text-muted-foreground">
+                          {currentPage + 1} / {totalPages}
                       </span>
-                      <Button variant="outline" size="sm" className="h-8 px-2" onClick={() => setCurrentPage((prev) => Math.min(totalPages, prev + 1))} disabled={currentPage === totalPages}>
-                        다음
+                      <Button
+                          variant="outline" size="sm"
+                          onClick={() => setCurrentPage(prev => Math.min(totalPages - 1, prev + 1))}
+                          disabled={currentPage >= totalPages - 1}
+                      >
+                          다음
                       </Button>
                       <Button variant="outline" size="sm" className="h-8 px-2" onClick={() => setCurrentPage(totalPages)} disabled={currentPage === totalPages}>
                         마지막

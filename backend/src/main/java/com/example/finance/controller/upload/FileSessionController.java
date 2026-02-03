@@ -348,19 +348,31 @@ public class FileSessionController {
         String userId = userPrincipal.getId();
         log.info("계정 분석 시작 요청: projectId={}, sessionId={}", projectId, sessionId);
 
-        // 프로젝트 권한 확인
         projectService.getProject(projectId, userId);
 
-        long copiedCount = sessionDataService.startAccountAnalysis(sessionId);
+        Map<String, Object> result = sessionDataService.startAccountAnalysis(sessionId);
+        result.put("success", true);
 
-        Map<String, Object> response = new HashMap<>();
-        response.put("success", true);
-        response.put("sessionId", sessionId);
-        response.put("copiedCount", copiedCount);
-        response.put("message", copiedCount + "건의 데이터가 복사되었습니다.");
-
-        return ResponseEntity.ok(response);
+        return ResponseEntity.ok(result);
     }
+
+    @Operation(summary = "세션 데이터 조회", description = "session_data 컬렉션 페이징 조회")
+    @GetMapping("/{sessionId}/data")
+    public ResponseEntity<Map<String, Object>> getSessionData(
+            @PathVariable String projectId,
+            @PathVariable String sessionId,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "1000") int size,
+            @CurrentUser UserPrincipal userPrincipal) {
+
+        String userId = userPrincipal.getId();
+        projectService.getProject(projectId, userId);
+
+        Map<String, Object> result = sessionDataService.getSessionData(sessionId, page, size);
+        return ResponseEntity.ok(result);
+    }
+
+
 
     /**
      * 세션 완료 처리 (Step 2 진입)

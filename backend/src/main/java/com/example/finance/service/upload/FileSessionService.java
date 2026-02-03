@@ -591,11 +591,11 @@ public class FileSessionService {
         }
 
         // Step 2 (FileLoad) 진입
-        fileSession.setCurrentStep(ProcessStep.FILE_LOAD);
+        fileSession.setCurrentStep(ProcessStep.START_ANALYSIS);
         fileSession.setProgressPercentage(0);
 
         StepHistory stepHistory = StepHistory.builder()
-                .step(ProcessStep.FILE_LOAD)
+                .step(ProcessStep.START_ANALYSIS)
                 .startedAt(LocalDateTime.now())
                 .status("in_progress")
                 .build();
@@ -1170,7 +1170,7 @@ public class FileSessionService {
         }
 
         // 6. 현재 단계 업데이트
-        session.setCurrentStep(ProcessStep.FILE_LOAD);
+        session.setCurrentStep(ProcessStep.START_ANALYSIS);
         session.setUpdatedAt(LocalDateTime.now());
         fileSessionRepository.save(session);
 
