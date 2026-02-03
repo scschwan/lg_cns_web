@@ -28,6 +28,7 @@ import java.io.File;
 import java.io.IOException;
 import java.time.LocalDateTime;
 import java.util.*;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.DoubleAdder;
 import java.util.concurrent.atomic.LongAdder;
@@ -208,23 +209,15 @@ public class UploadService {
     public UploadFileResponse completeFileUpload(
             String projectId, String userId, UploadFileRequest request) {
 
-        log.info("파일 업로드 완료 처리: projectId={}, uploadId={}, fileName={}",
-                projectId, request.getUploadId(), request.getFileName());
-
-        // FileSession 조회
         FileSession fileSession = fileSessionRepository.findBySessionId(request.getSessionId())
                 .orElseThrow(() -> new BusinessException(
                         "SESSION_NOT_FOUND", "세션을 찾을 수 없습니다: " + request.getSessionId()));
 
-        // 권한 확인
         if (!fileSession.getCreatedBy().equals(userId)) {
             throw new BusinessException("FORBIDDEN", "세션에 대한 권한이 없습니다");
         }
 
-        // ⭐ Excel 헤더 & rowCount 자동 감지
-        ExcelMetadata metadata = detectExcelMetadata(request.getS3Key());
-
-        // UploadedFileInfo 생성
+        // ★ 메타데이터 조회 없이 즉시 응답 - raw_data 대기 안 함
         String fileId = new ObjectId().toString();
 
         UploadedFileInfo fileInfo = UploadedFileInfo.builder()
@@ -232,33 +225,62 @@ public class UploadService {
                 .fileName(request.getFileName())
                 .fileSize(request.getFileSize())
                 .s3Key(request.getS3Key())
-                .rowCount(metadata.rowCount)  // ⭐ rowCount 저장
+                .rowCount(0L)  // 나중에 채워짐
                 .uploadedAt(LocalDateTime.now())
-                .detectedColumns(metadata.columns)
+                .detectedColumns(new ArrayList<>())  // 나중에 채워짐
                 .accountContents(new ArrayList<>())
                 .build();
 
-        // FileSession에 파일 추가
         fileSession.getUploadedFiles().add(fileInfo);
         fileSession.setTotalFiles(fileSession.getUploadedFiles().size());
         fileSession.setUpdatedAt(LocalDateTime.now());
-
         fileSessionRepository.save(fileSession);
 
-        log.info("파일 업로드 완료: fileId={}, rowCount={}, detectedColumns={}",
-                fileId, metadata.rowCount, metadata.columns.size());
+        // ★ 비동기로 메타데이터 조회 후 업데이트
+        CompletableFuture.runAsync(() -> updateFileMetadataAsync(
+                fileSession.getSessionId(), fileId, request.getS3Key()));
 
-        // 응답 생성
+        log.info("파일 업로드 완료 (메타데이터 비동기 처리): fileId={}", fileId);
+
         return UploadFileResponse.builder()
                 .fileId(fileId)
                 .fileName(request.getFileName())
                 .fileSize(request.getFileSize())
                 .s3Key(request.getS3Key())
                 .uploadedAt(LocalDateTime.now())
-                .detectedColumns(metadata.columns)
-                .rowCount(metadata.rowCount)  // ⭐ 응답에도 포함
-                .status("UPLOADED")
+                .detectedColumns(new ArrayList<>())
+                .rowCount(0L)
+                .status("PROCESSING")  // ★ 처리중 상태
                 .build();
+    }
+
+    /**
+            * 비동기 메타데이터 업데이트
+    */
+    private void updateFileMetadataAsync(String sessionId, String fileId, String s3Key) {
+        try {
+            ExcelMetadata metadata = detectExcelMetadata(s3Key);
+
+            FileSession session = fileSessionRepository.findBySessionId(sessionId).orElse(null);
+            if (session == null) return;
+
+            session.getUploadedFiles().stream()
+                    .filter(f -> f.getFileId().equals(fileId))
+                    .findFirst()
+                    .ifPresent(file -> {
+                        file.setDetectedColumns(metadata.columns);
+                        file.setRowCount(metadata.rowCount);
+                    });
+
+            session.setUpdatedAt(LocalDateTime.now());
+            fileSessionRepository.save(session);
+
+            log.info("메타데이터 비동기 업데이트 완료: fileId={}, rowCount={}, columns={}",
+                    fileId, metadata.rowCount, metadata.columns.size());
+
+        } catch (Exception e) {
+            log.error("메타데이터 비동기 업데이트 실패: fileId={}", fileId, e);
+        }
     }
 
     /**
@@ -686,49 +708,34 @@ public class UploadService {
      */
     private List<String> extractAccountValuesInternal(String s3Key, String columnName) {
         String uploadId = extractUploadIdFromS3Key(s3Key);
-        log.info("extractAccountValues: s3Key={}, uploadId={}, columnName={}", s3Key, uploadId, columnName);
-
-        if (uploadId == null) {
-            log.warn("uploadId 추출 실패, Excel fallback 사용");
-            return extractAccountValuesFromExcel(s3Key, columnName);
-        }
+        if (uploadId == null) return extractAccountValuesFromExcel(s3Key, columnName);
 
         String cacheKey = "accounts:" + uploadId + ":" + columnName;
         String cached = redisTemplate.opsForValue().get(cacheKey);
-        if (cached != null) {
-            return Arrays.asList(cached.split("\\|\\|"));
-        }
+        if (cached != null) return Arrays.asList(cached.split("\\|\\|"));
 
         try {
-            String fieldPath = "data." + columnName;
+            Set<String> valueSet = new TreeSet<>();
 
-            // raw_data에서 해당 upload_id의 데이터 수 확인
-            long count = mongoTemplate.getCollection("raw_data")
-                    .countDocuments(new Document("upload_id", uploadId));
-            log.info("raw_data count for uploadId={}: {}", uploadId, count);
+            try (var cursor = mongoTemplate.getCollection("raw_data")
+                    .find(new org.bson.Document("upload_id", uploadId))
+                    .projection(new org.bson.Document("data", 1))
+                    .batchSize(5000).cursor()) {
 
-            if (count == 0) {
-                log.warn("raw_data에 데이터 없음, Excel fallback 사용");
-                return extractAccountValuesFromExcel(s3Key, columnName);
+                while (cursor.hasNext()) {
+                    org.bson.Document doc = cursor.next();
+                    org.bson.Document data = doc.get("data", org.bson.Document.class);
+                    if (data == null) continue;
+
+                    Object val = data.get(columnName);
+                    if (val != null && !val.toString().trim().isEmpty()) {
+                        valueSet.add(val.toString().trim());
+                    }
+                }
             }
 
-            Aggregation agg = Aggregation.newAggregation(
-                    Aggregation.match(Criteria.where("upload_id").is(uploadId)),
-                    Aggregation.group(fieldPath),
-                    Aggregation.sort(Sort.Direction.ASC, "_id")
-            );
-            List<Document> results = mongoTemplate.aggregate(agg, "raw_data", Document.class)
-                    .getMappedResults();
-
-            List<String> values = results.stream()
-                    .map(doc -> {
-                        Object id = doc.get("_id");
-                        return id != null ? id.toString() : null;
-                    })
-                    .filter(v -> v != null && !v.trim().isEmpty())
-                    .collect(Collectors.toList());
-
-            log.info("raw_data aggregation 결과: {} 건", values.size());
+            List<String> values = new ArrayList<>(valueSet);
+            log.info("계정명 추출 완료: uploadId={}, column={}, count={}", uploadId, columnName, values.size());
 
             if (!values.isEmpty()) {
                 redisTemplate.opsForValue().set(cacheKey, String.join("||", values), Duration.ofMinutes(10));
@@ -736,10 +743,11 @@ public class UploadService {
             return values;
 
         } catch (Exception e) {
-            log.error("raw_data aggregation 실패, Excel fallback 사용", e);
+            log.error("raw_data 계정명 추출 실패: uploadId={}", uploadId, e);
             return extractAccountValuesFromExcel(s3Key, columnName);
         }
     }
+
 
 
     // 기존 로직을 fallback용으로 이름만 변경
@@ -778,9 +786,8 @@ public class UploadService {
             long failCount = 0;
 
             try (var cursor = mongoTemplate.getCollection("raw_data")
-                    .find(new org.bson.Document("upload_id", uploadId)
-                            .append(fieldPath, new org.bson.Document("$exists", true)))
-                    .projection(new org.bson.Document(fieldPath, 1))
+                    .find(new org.bson.Document("upload_id", uploadId))
+                    .projection(new org.bson.Document("data", 1))
                     .batchSize(5000).cursor()) {
 
                 while (cursor.hasNext()) {
@@ -788,6 +795,7 @@ public class UploadService {
                     org.bson.Document data = doc.get("data", org.bson.Document.class);
                     if (data == null) continue;
 
+                    // ★ data.get(columnName)으로 직접 접근 - 점 포함 키도 정상 동작
                     Object val = data.get(columnName);
                     if (val == null) continue;
 
