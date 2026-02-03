@@ -1,5 +1,7 @@
 FROM eclipse-temurin:21-jre-alpine
 
+RUN apk add --no-cache curl
+
 WORKDIR /app
 
 # JAR 파일 복사

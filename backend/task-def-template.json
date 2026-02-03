@@ -1,0 +1,55 @@
+{
+  "family": "finance-backend-task",
+  "networkMode": "awsvpc",
+  "requiresCompatibilities": ["FARGATE"],
+  "cpu": "512",
+  "memory": "1024",
+  "executionRoleArn": "arn:aws:iam::659002796326:role/finance-ecs-task-execution-role",
+  "taskRoleArn": "arn:aws:iam::659002796326:role/finance-ecs-task-role",
+  "runtimePlatform": {
+    "cpuArchitecture": "X86_64",
+    "operatingSystemFamily": "LINUX"
+  },
+  "containerDefinitions": [
+    {
+      "name": "finance-backend",
+      "image": "PLACEHOLDER_IMAGE",
+      "essential": true,
+      "cpu": 0,
+      "portMappings": [
+        {
+          "containerPort": 8080,
+          "hostPort": 8080,
+          "protocol": "tcp",
+          "name": "finance-backend-8080-tcp",
+          "appProtocol": "http"
+        }
+      ],
+      "healthCheck": {
+        "command": ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:8080/actuator/health || exit 1"],
+        "interval": 30,
+        "timeout": 10,
+        "retries": 3,
+        "startPeriod": 120
+      },
+      "environment": [
+        {"name": "SPRING_PROFILES_ACTIVE", "value": "prod"},
+        {"name": "AWS_REGION", "value": "ap-northeast-2"},
+        {"name": "AWS_ACCOUNT_ID", "value": "659002796326"},
+        {"name": "S3_BUCKET", "value": "finance-excel-uploads"},
+        {"name": "REDIS_HOST", "value": "finance-redis-cluster.1kdayr.0001.apn2.cache.amazonaws.com"},
+        {"name": "REDIS_PORT", "value": "6379"},
+        {"name": "MONGODB_URI", "value": "mongodb://dmillion:admin240401!@finance-docdb-cluster.cluster-c1ue6aayyxjn.ap-northeast-2.docdb.amazonaws.com:27017/?replicaSet=rs0&readPreference=secondaryPreferred&retryWrites=false"}
+      ],
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/ecs/finance-backend-task",
+          "awslogs-create-group": "true",
+          "awslogs-region": "ap-northeast-2",
+          "awslogs-stream-prefix": "ecs"
+        }
+      }
+    }
+  ]
+}
