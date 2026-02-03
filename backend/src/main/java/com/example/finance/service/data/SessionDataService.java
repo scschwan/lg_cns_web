@@ -13,29 +13,65 @@ import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.stereotype.Service;
 
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Collectors;
 import com.example.finance.enums.ProcessStep;
+import com.example.finance.service.common.RedisService;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import org.springframework.beans.factory.annotation.Value;
+import software.amazon.awssdk.services.sqs.SqsClient;
+import software.amazon.awssdk.services.sqs.model.SendMessageRequest;
 
 @Slf4j
 @Service
-@RequiredArgsConstructor
 public class SessionDataService {
 
     private final MongoTemplate mongoTemplate;
     private final FileSessionRepository fileSessionRepository;
     private final SessionDataRepository sessionDataRepository;
+    private final RedisService redisService;
+    private final ObjectMapper objectMapper;
+    private final SqsClient sqsClient;
+
+    @Value("${aws.sqs.analysis-queue-url:}")
+    private String analysisQueueUrl;
 
     private static final int BATCH_SIZE = 10_000;
     private static final int THREAD_POOL_SIZE = 4;
     private static final int CURSOR_BATCH_SIZE = 5_000;
+    private static final String SESSION_DATA_CACHE_PREFIX = "session_data:";
+    private static final Duration SESSION_DATA_CACHE_TTL = Duration.ofMinutes(30);
+    private static final String ANALYSIS_STATUS_PREFIX = "analysis:status:";
+    private static final Duration ANALYSIS_STATUS_TTL = Duration.ofHours(2);
+
+    public SessionDataService(MongoTemplate mongoTemplate,
+                               FileSessionRepository fileSessionRepository,
+                               SessionDataRepository sessionDataRepository,
+                               RedisService redisService,
+                               ObjectMapper objectMapper,
+                               @org.springframework.context.annotation.Lazy SqsClient sqsClient) {
+        this.mongoTemplate = mongoTemplate;
+        this.fileSessionRepository = fileSessionRepository;
+        this.sessionDataRepository = sessionDataRepository;
+        this.redisService = redisService;
+        this.objectMapper = objectMapper;
+        this.sqsClient = sqsClient;
+    }
 
     /**
      * 계정 분석 시작 - raw_data → session_data 복사
-     * 이미 동일 session_id 데이터가 있으면 복사를 건너뛰고 기존 데이터 활용
+     *
+     * ⭐ 4단계 최적화: SQS + 비동기 처리
+     *    - 기존: 동기 대기 28초
+     *    - 변경: SQS 메시지 발행 → 즉시 응답 (1초)
+     *    - 진행 상태는 Redis로 추적, 클라이언트가 폴링
+     *
+     * SQS 큐 미설정 시 fallback으로 @Async 스레드풀 사용
      */
     public Map<String, Object> startAccountAnalysis(String sessionId) {
         log.info("계정 분석 시작: sessionId={}", sessionId);
@@ -54,6 +90,7 @@ public class SessionDataService {
                     sessionId, existingCount);
             result.put("copiedCount", existingCount);
             result.put("skipped", true);
+            result.put("status", "COMPLETED");
             result.put("currentStep", session.getCurrentStep() != null
                     ? session.getCurrentStep().name() : "START_ANALYSIS");
             return result;
@@ -70,23 +107,147 @@ public class SessionDataService {
             throw new BusinessException("NO_ACCOUNTS", "세션에 계정명이 없습니다.");
         }
 
-        // 병렬 복사 실행
-        long startTime = System.currentTimeMillis();
-        long copiedCount = executeCopy(session, files, accountNames);
-        long elapsed = System.currentTimeMillis() - startTime;
+        // Redis 상태 초기화
+        setAnalysisStatus(sessionId, "PROCESSING", 0, 0, null);
 
-        log.info("계정 분석 완료: sessionId={}, 복사={}건, 소요={}ms",
-                sessionId, copiedCount, elapsed);
+        // ★ SQS 큐가 설정되어 있으면 SQS로 발행, 아니면 비동기 스레드로 실행
+        if (analysisQueueUrl != null && !analysisQueueUrl.isEmpty()) {
+            sendToSqs(sessionId, session.getProjectId());
+            log.info("SQS 메시지 발행 완료: sessionId={}", sessionId);
+        } else {
+            // Fallback: 비동기 스레드 실행
+            CompletableFuture.runAsync(() -> executeAnalysisAsync(sessionId));
+            log.info("비동기 스레드 실행 시작: sessionId={}", sessionId);
+        }
 
-        // 세션 상태 업데이트
-        session.setCurrentStep(ProcessStep.START_ANALYSIS);
-        session.setUpdatedAt(LocalDateTime.now());
-        fileSessionRepository.save(session);
-
-        result.put("copiedCount", copiedCount);
+        result.put("status", "PROCESSING");
+        result.put("message", "분석이 시작되었습니다. 상태 조회 API로 진행률을 확인하세요.");
         result.put("skipped", false);
-        result.put("currentStep", "START_ANALYSIS");
         return result;
+    }
+
+    /**
+     * ⭐ 분석 상태 조회 (폴링용)
+     */
+    public Map<String, Object> getAnalysisStatus(String sessionId) {
+        String statusKey = ANALYSIS_STATUS_PREFIX + sessionId;
+        Map<String, Object> result = new HashMap<>();
+        result.put("sessionId", sessionId);
+
+        try {
+            Map<Object, Object> status = redisService.hGetAll(statusKey);
+            if (status != null && !status.isEmpty()) {
+                result.put("status", status.getOrDefault("status", "UNKNOWN"));
+                result.put("copiedCount", Long.parseLong(status.getOrDefault("copiedCount", "0").toString()));
+                result.put("totalFiles", Integer.parseInt(status.getOrDefault("totalFiles", "0").toString()));
+                if (status.containsKey("error")) {
+                    result.put("error", status.get("error"));
+                }
+                return result;
+            }
+        } catch (Exception e) {
+            log.warn("분석 상태 조회 실패: {}", e.getMessage());
+        }
+
+        // Redis에 상태가 없으면 session_data 존재 여부로 판단
+        long count = sessionDataRepository.countBySessionId(sessionId);
+        if (count > 0) {
+            result.put("status", "COMPLETED");
+            result.put("copiedCount", count);
+        } else {
+            result.put("status", "NOT_STARTED");
+            result.put("copiedCount", 0L);
+        }
+        return result;
+    }
+
+    /**
+     * 비동기 분석 실행 (SQS Lambda 또는 fallback 스레드에서 호출)
+     */
+    public void executeAnalysisAsync(String sessionId) {
+        try {
+            FileSession session = fileSessionRepository.findBySessionId(sessionId)
+                    .orElseThrow(() -> new BusinessException(
+                            "SESSION_NOT_FOUND", "세션을 찾을 수 없습니다: " + sessionId));
+
+            List<UploadedFileInfo> files = session.getUploadedFiles();
+            List<String> accountNames = session.getAccountNames();
+
+            setAnalysisStatus(sessionId, "PROCESSING", 0, files.size(), null);
+
+            long startTime = System.currentTimeMillis();
+            long copiedCount = executeCopy(session, files, accountNames);
+            long elapsed = System.currentTimeMillis() - startTime;
+
+            log.info("계정 분석 완료: sessionId={}, 복사={}건, 소요={}ms",
+                    sessionId, copiedCount, elapsed);
+
+            // 세션 상태 업데이트
+            session.setCurrentStep(ProcessStep.START_ANALYSIS);
+            session.setUpdatedAt(LocalDateTime.now());
+            fileSessionRepository.save(session);
+
+            // Redis 상태 → 완료
+            setAnalysisStatus(sessionId, "COMPLETED", copiedCount, files.size(), null);
+
+            // session_data 캐시 무효화 (새로 복사되었으므로)
+            invalidateSessionDataCache(sessionId);
+
+        } catch (Exception e) {
+            log.error("비동기 계정 분석 실패: sessionId={}", sessionId, e);
+            setAnalysisStatus(sessionId, "FAILED", 0, 0, e.getMessage());
+        }
+    }
+
+    /**
+     * SQS 메시지 발행
+     */
+    private void sendToSqs(String sessionId, String projectId) {
+        try {
+            Map<String, String> messageBody = new HashMap<>();
+            messageBody.put("type", "ACCOUNT_ANALYSIS");
+            messageBody.put("sessionId", sessionId);
+            messageBody.put("projectId", projectId);
+
+            String body = objectMapper.writeValueAsString(messageBody);
+
+            sqsClient.sendMessage(SendMessageRequest.builder()
+                    .queueUrl(analysisQueueUrl)
+                    .messageBody(body)
+                    .build());
+
+        } catch (Exception e) {
+            log.error("SQS 메시지 발행 실패, 비동기 스레드 fallback: sessionId={}", sessionId, e);
+            CompletableFuture.runAsync(() -> executeAnalysisAsync(sessionId));
+        }
+    }
+
+    /**
+     * Redis 분석 상태 설정
+     */
+    private void setAnalysisStatus(String sessionId, String status, long copiedCount, int totalFiles, String error) {
+        try {
+            String key = ANALYSIS_STATUS_PREFIX + sessionId;
+            Map<String, String> statusMap = new HashMap<>();
+            statusMap.put("status", status);
+            statusMap.put("copiedCount", String.valueOf(copiedCount));
+            statusMap.put("totalFiles", String.valueOf(totalFiles));
+            statusMap.put("updatedAt", LocalDateTime.now().toString());
+            if (error != null) {
+                statusMap.put("error", error);
+            }
+
+            redisService.hSet(key, "status", status);
+            redisService.hSet(key, "copiedCount", String.valueOf(copiedCount));
+            redisService.hSet(key, "totalFiles", String.valueOf(totalFiles));
+            redisService.hSet(key, "updatedAt", LocalDateTime.now().toString());
+            if (error != null) {
+                redisService.hSet(key, "error", error);
+            }
+            redisService.expire(key, ANALYSIS_STATUS_TTL);
+        } catch (Exception e) {
+            log.warn("분석 상태 저장 실패 (무시): {}", e.getMessage());
+        }
     }
 
     /**
@@ -221,11 +382,31 @@ public class SessionDataService {
 
     /**
      * session_data 페이징 조회 + 동적 컬럼 추출
+     *
+     * ⭐ 3단계 최적화: Redis 캐싱 적용 (30분 TTL)
+     *    - 기존: 매번 MongoDB 조회 (9초)
+     *    - 변경: Redis 캐시 히트 시 < 100ms
      */
     public Map<String, Object> getSessionData(String sessionId, int page, int size) {
+        // 1. Redis 캐시 확인
+        String cacheKey = SESSION_DATA_CACHE_PREFIX + sessionId + ":page:" + page + ":size:" + size;
+        try {
+            Object cached = redisService.get(cacheKey);
+            if (cached != null) {
+                log.debug("session_data 캐시 히트: sessionId={}, page={}", sessionId, page);
+                if (cached instanceof Map) {
+                    return (Map<String, Object>) cached;
+                }
+                return objectMapper.convertValue(cached, new TypeReference<Map<String, Object>>() {});
+            }
+        } catch (Exception e) {
+            log.warn("session_data 캐시 조회 실패 (무시): {}", e.getMessage());
+        }
+
+        // 2. MongoDB 조회
+        long startTime = System.currentTimeMillis();
         long totalCount = sessionDataRepository.countBySessionId(sessionId);
 
-        // skip/limit 사용하되, sort는 _id로 (인덱스 기본 보장)
         Query query = new Query(Criteria.where("session_id").is(sessionId))
                 .with(org.springframework.data.domain.Sort.by("_id"))
                 .skip((long) page * size)
@@ -258,6 +439,17 @@ public class SessionDataService {
         result.put("size", size);
         result.put("totalPages", (int) Math.ceil((double) totalCount / size));
 
+        long elapsed = System.currentTimeMillis() - startTime;
+        log.info("session_data 조회: sessionId={}, page={}, rows={}, {}ms",
+                sessionId, page, rows.size(), elapsed);
+
+        // 3. Redis 캐시 저장
+        try {
+            redisService.set(cacheKey, result, SESSION_DATA_CACHE_TTL);
+        } catch (Exception e) {
+            log.warn("session_data 캐시 저장 실패 (무시): {}", e.getMessage());
+        }
+
         return result;
     }
 
@@ -265,9 +457,27 @@ public class SessionDataService {
 
     /**
      * 세션의 session_data 삭제 (재분석 또는 세션 삭제 시)
+     * + Redis 캐시 무효화
      */
     public void deleteSessionData(String sessionId) {
         log.info("session_data 삭제: sessionId={}", sessionId);
         sessionDataRepository.deleteBySessionId(sessionId);
+        invalidateSessionDataCache(sessionId);
+    }
+
+    /**
+     * session_data Redis 캐시 무효화
+     */
+    private void invalidateSessionDataCache(String sessionId) {
+        try {
+            String pattern = SESSION_DATA_CACHE_PREFIX + sessionId + ":*";
+            Set<String> keys = redisService.keys(pattern);
+            if (keys != null && !keys.isEmpty()) {
+                Long deleted = redisService.delete(keys);
+                log.info("session_data 캐시 무효화: sessionId={}, {}개 키 삭제", sessionId, deleted);
+            }
+        } catch (Exception e) {
+            log.warn("session_data 캐시 무효화 실패 (무시): {}", e.getMessage());
+        }
     }
 }

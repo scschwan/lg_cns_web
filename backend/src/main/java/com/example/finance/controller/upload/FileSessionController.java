@@ -356,6 +356,25 @@ public class FileSessionController {
         return ResponseEntity.ok(result);
     }
 
+    /**
+     * ⭐ 4단계: 계정 분석 상태 조회 (폴링용)
+     *
+     * GET /api/projects/{projectId}/upload/sessions/{sessionId}/analyze/status
+     */
+    @Operation(summary = "분석 상태 조회", description = "계정 분석 진행 상태 폴링")
+    @GetMapping("/{sessionId}/analyze/status")
+    public ResponseEntity<Map<String, Object>> getAnalysisStatus(
+            @PathVariable String projectId,
+            @PathVariable String sessionId,
+            @CurrentUser UserPrincipal userPrincipal) {
+
+        String userId = userPrincipal.getId();
+        projectService.getProject(projectId, userId);
+
+        Map<String, Object> status = sessionDataService.getAnalysisStatus(sessionId);
+        return ResponseEntity.ok(status);
+    }
+
     @Operation(summary = "세션 데이터 조회", description = "session_data 컬렉션 페이징 조회")
     @GetMapping("/{sessionId}/data")
     public ResponseEntity<Map<String, Object>> getSessionData(
