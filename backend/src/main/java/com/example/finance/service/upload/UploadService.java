@@ -226,29 +226,39 @@ public class UploadService {
             throw new BusinessException("FORBIDDEN", "세션에 대한 권한이 없습니다");
         }
 
-        // ★ raw_data에서 즉시 조회 시도 (대기 없이)
         String uploadId = extractUploadIdFromS3Key(request.getS3Key());
         ExcelMetadata metadata = null;
 
         if (uploadId != null) {
-            long rowCount = mongoTemplate.getCollection("raw_data")
-                    .countDocuments(new org.bson.Document("upload_id", uploadId));
+            // ★ 즉시 조회 + 없으면 최대 10초 대기 (소량 데이터 대응)
+            for (int retry = 0; retry < 5; retry++) {
+                long rowCount = mongoTemplate.getCollection("raw_data")
+                        .countDocuments(new org.bson.Document("upload_id", uploadId));
 
-            if (rowCount > 0) {
-                org.bson.Document rawDoc = mongoTemplate.getCollection("raw_data")
-                        .find(new org.bson.Document("upload_id", uploadId))
-                        .limit(1)
-                        .first();
+                if (rowCount > 0) {
+                    org.bson.Document rawDoc = mongoTemplate.getCollection("raw_data")
+                            .find(new org.bson.Document("upload_id", uploadId))
+                            .limit(1)
+                            .first();
 
-                List<String> columns = new ArrayList<>();
-                if (rawDoc != null) {
-                    Object dataObj = rawDoc.get("data");
-                    if (dataObj instanceof org.bson.Document dataDoc) {
-                        columns.addAll(dataDoc.keySet());
+                    List<String> columns = new ArrayList<>();
+                    if (rawDoc != null) {
+                        Object dataObj = rawDoc.get("data");
+                        if (dataObj instanceof org.bson.Document dataDoc) {
+                            columns.addAll(dataDoc.keySet());
+                        }
+                    }
+                    metadata = new ExcelMetadata(columns, rowCount);
+                    log.info("raw_data 조회 성공: uploadId={}, rows={}, retry={}", uploadId, rowCount, retry);
+                    break;
+                }
+
+                if (retry < 4) {
+                    try { Thread.sleep(2000); } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                        break;
                     }
                 }
-                metadata = new ExcelMetadata(columns, rowCount);
-                log.info("raw_data 즉시 조회 성공: uploadId={}, rows={}", uploadId, rowCount);
             }
         }
 
@@ -271,13 +281,14 @@ public class UploadService {
         fileSession.setUpdatedAt(LocalDateTime.now());
         fileSessionRepository.save(fileSession);
 
-        // ★ 메타데이터가 없을 때만 전용 스레드풀에서 비동기 처리
+        // 대용량만 비동기 처리
         if (!metadataReady) {
             metadataExecutor.submit(() -> updateFileMetadataAsync(
                     fileSession.getSessionId(), fileId, request.getS3Key()));
         }
 
-        log.info("파일 업로드 완료: fileId={}, metadataReady={}", fileId, metadataReady);
+        log.info("파일 업로드 완료: fileId={}, metadataReady={}, rowCount={}",
+                fileId, metadataReady, metadataReady ? metadata.rowCount : 0);
 
         return UploadFileResponse.builder()
                 .fileId(fileId)
@@ -290,6 +301,7 @@ public class UploadService {
                 .status(metadataReady ? "UPLOADED" : "PROCESSING")
                 .build();
     }
+
 
     /**
      * 비동기 메타데이터 업데이트 (전용 스레드풀에서 실행)
@@ -925,14 +937,22 @@ public class UploadService {
 
     private String extractUploadIdFromS3Key(String s3Key) {
         if (s3Key == null) return null;
-        // uploads/upload-xxxx/ 패턴에서 upload-xxxx 추출
         int uploadsIdx = s3Key.indexOf("uploads/");
-        if (uploadsIdx == -1) return null;
+        if (uploadsIdx == -1) {
+            log.warn("uploads/ 경로를 찾을 수 없음: s3Key={}", s3Key);
+            return null;
+        }
         String afterUploads = s3Key.substring(uploadsIdx + "uploads/".length());
         int slashIdx = afterUploads.indexOf("/");
-        if (slashIdx == -1) return null;
-        return afterUploads.substring(0, slashIdx);
+        if (slashIdx == -1) {
+            log.warn("upload ID 추출 실패: s3Key={}", s3Key);
+            return null;
+        }
+        String uploadId = afterUploads.substring(0, slashIdx);
+        log.info("uploadId 추출: s3Key={} → uploadId={}", s3Key, uploadId);
+        return uploadId;
     }
+
 
 
 

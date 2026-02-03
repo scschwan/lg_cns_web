@@ -128,61 +128,67 @@ function MultiFileUploadPage() {
         }
     };
 
-    const handleFileUpload = async (event) => {
-        if (!event.target.files || event.target.files.length === 0) {
-            alert('파일을 선택해주세요.');
-            return;
-        }
+   const handleFileUpload = async (event) => {
+       if (!event.target.files || event.target.files.length === 0) {
+           alert('파일을 선택해주세요.');
+           return;
+       }
 
-        const uploadedFiles = Array.from(event.target.files);
-        const excelFiles = uploadedFiles.filter(
-            (f) => f.name.endsWith('.xlsx') || f.name.endsWith('.xls')
-        );
+       const selectedFiles = Array.from(event.target.files);
+       const excelFiles = selectedFiles.filter(
+           (f) => f.name.endsWith('.xlsx') || f.name.endsWith('.xls')
+       );
 
-        if (excelFiles.length === 0) {
-            alert('Excel 파일(.xlsx, .xls)을 선택해주세요.');
-            return;
-        }
+       if (excelFiles.length === 0) {
+           alert('Excel 파일(.xlsx, .xls)을 선택해주세요.');
+           return;
+       }
 
-        setProgressDialogOpen(true);
-        setProgressValue(0);
-        setProgressMessage('파일 업로드 시작...');
+       setProgressDialogOpen(true);
+       setProgressValue(0);
+       setProgressMessage('파일 업로드 시작...');
 
-        try {
-            for (let i = 0; i < excelFiles.length; i++) {
-                const file = excelFiles[i];
+       try {
+           const uploadResults = [];
 
-                setProgressValue(((i + 1) / excelFiles.length) * 90);
-                setProgressMessage(`파일 처리 중... (${i + 1}/${excelFiles.length})`);
+           for (let i = 0; i < excelFiles.length; i++) {
+               const file = excelFiles[i];
 
-                const excelData = await analyzeExcelColumns(file);
+               setProgressValue(((i + 1) / excelFiles.length) * 80);
+               setProgressMessage(`파일 처리 중... (${i + 1}/${excelFiles.length})`);
 
-                const { presignedUrl, uploadId, sessionId, s3Key } =
-                    await uploadService.getPresignedUrl(projectId, file.name, file.size);
+               const { presignedUrl, uploadId, sessionId, s3Key } =
+                   await uploadService.getPresignedUrl(projectId, file.name, file.size);
 
-                await uploadService.uploadToS3(presignedUrl, file);
+               await uploadService.uploadToS3(presignedUrl, file);
 
-                await uploadService.completeFileUpload(projectId, {
-                    uploadId,
-                    sessionId,
-                    fileName: file.name,
-                    fileSize: file.size,
-                    s3Key,
-                });
-            }
+               const result = await uploadService.completeFileUpload(projectId, {
+                   uploadId,
+                   sessionId,
+                   fileName: file.name,
+                   fileSize: file.size,
+                   s3Key,
+               });
 
-            setProgressValue(100);
-            setProgressMessage('완료');
-            setTimeout(() => setProgressDialogOpen(false), 500);
+               uploadResults.push(result);
+           }
 
-            alert(`${excelFiles.length}개의 파일이 성공적으로 업로드되었습니다.`);
-            loadFiles();
-        } catch (error) {
-            console.error('파일 업로드 실패:', error);
-            alert(`파일 업로드 중 오류가 발생했습니다: ${error.message}`);
-            setProgressDialogOpen(false);
-        }
-    };
+           setProgressValue(100);
+           setProgressMessage('완료');
+           setTimeout(() => setProgressDialogOpen(false), 500);
+
+           // 업로드 완료 후 파일 목록 새로고침
+           alert(`${excelFiles.length}개의 파일이 성공적으로 업로드되었습니다.`);
+           loadFiles();
+
+       } catch (error) {
+           console.error('파일 업로드 실패:', error);
+           alert(`파일 업로드 중 오류가 발생했습니다: ${error.message}`);
+           setProgressDialogOpen(false);
+       }
+   };
+
+
 
     const analyzeExcelColumns = async (file) => {
         return new Promise((resolve, reject) => {
@@ -445,9 +451,11 @@ function MultiFileUploadPage() {
         const confirmed = window.confirm('파일을 삭제하시겠습니까?');
         if (!confirmed) return;
 
+        setFiles((prev) => prev.filter((f) => f.fileId !== fileId));
+
         try {
             await uploadService.deleteFile(projectId, fileId);
-            setFiles((prev) => prev.filter((f) => f.fileId !== fileId));
+
         } catch (error) {
             console.error('파일 삭제 실패:', error);
             alert('파일 삭제 중 오류가 발생했습니다.');
