@@ -30,6 +30,8 @@ import java.time.LocalDateTime;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.DoubleAdder;
 import java.util.concurrent.atomic.LongAdder;
 import java.util.stream.Collectors;
@@ -57,6 +59,14 @@ public class UploadService {
     private final FileAnalysisService fileAnalysisService; // 주입 필요
     private final S3Service s3Service;
     private final MongoTemplate mongoTemplate;  // ← 추가
+    // ★ 클래스 필드에 전용 스레드풀 추가
+    private final ExecutorService metadataExecutor = Executors.newFixedThreadPool(2,
+            r -> {
+                Thread t = new Thread(r, "metadata-worker");
+                t.setDaemon(true);
+                return t;
+            });
+
 
     // Lambda와 공유하는 Redis Key Prefix
     private static final String UPLOAD_STATUS_KEY_PREFIX = "upload:status:";
@@ -201,13 +211,12 @@ public class UploadService {
         }
     }
 
-    /**
-     * 파일 업로드 완료 처리
-     * ⭐ rowCount 계산 추가
-     */
     @Transactional
     public UploadFileResponse completeFileUpload(
             String projectId, String userId, UploadFileRequest request) {
+
+        log.info("파일 업로드 완료 처리: projectId={}, uploadId={}, fileName={}",
+                projectId, request.getUploadId(), request.getFileName());
 
         FileSession fileSession = fileSessionRepository.findBySessionId(request.getSessionId())
                 .orElseThrow(() -> new BusinessException(
@@ -217,17 +226,43 @@ public class UploadService {
             throw new BusinessException("FORBIDDEN", "세션에 대한 권한이 없습니다");
         }
 
-        // ★ 메타데이터 조회 없이 즉시 응답 - raw_data 대기 안 함
+        // ★ raw_data에서 즉시 조회 시도 (대기 없이)
+        String uploadId = extractUploadIdFromS3Key(request.getS3Key());
+        ExcelMetadata metadata = null;
+
+        if (uploadId != null) {
+            long rowCount = mongoTemplate.getCollection("raw_data")
+                    .countDocuments(new org.bson.Document("upload_id", uploadId));
+
+            if (rowCount > 0) {
+                org.bson.Document rawDoc = mongoTemplate.getCollection("raw_data")
+                        .find(new org.bson.Document("upload_id", uploadId))
+                        .limit(1)
+                        .first();
+
+                List<String> columns = new ArrayList<>();
+                if (rawDoc != null) {
+                    Object dataObj = rawDoc.get("data");
+                    if (dataObj instanceof org.bson.Document dataDoc) {
+                        columns.addAll(dataDoc.keySet());
+                    }
+                }
+                metadata = new ExcelMetadata(columns, rowCount);
+                log.info("raw_data 즉시 조회 성공: uploadId={}, rows={}", uploadId, rowCount);
+            }
+        }
+
         String fileId = new ObjectId().toString();
+        boolean metadataReady = (metadata != null && metadata.rowCount > 0);
 
         UploadedFileInfo fileInfo = UploadedFileInfo.builder()
                 .fileId(fileId)
                 .fileName(request.getFileName())
                 .fileSize(request.getFileSize())
                 .s3Key(request.getS3Key())
-                .rowCount(0L)  // 나중에 채워짐
+                .rowCount(metadataReady ? metadata.rowCount : 0L)
                 .uploadedAt(LocalDateTime.now())
-                .detectedColumns(new ArrayList<>())  // 나중에 채워짐
+                .detectedColumns(metadataReady ? metadata.columns : new ArrayList<>())
                 .accountContents(new ArrayList<>())
                 .build();
 
@@ -236,11 +271,13 @@ public class UploadService {
         fileSession.setUpdatedAt(LocalDateTime.now());
         fileSessionRepository.save(fileSession);
 
-        // ★ 비동기로 메타데이터 조회 후 업데이트
-        CompletableFuture.runAsync(() -> updateFileMetadataAsync(
-                fileSession.getSessionId(), fileId, request.getS3Key()));
+        // ★ 메타데이터가 없을 때만 전용 스레드풀에서 비동기 처리
+        if (!metadataReady) {
+            metadataExecutor.submit(() -> updateFileMetadataAsync(
+                    fileSession.getSessionId(), fileId, request.getS3Key()));
+        }
 
-        log.info("파일 업로드 완료 (메타데이터 비동기 처리): fileId={}", fileId);
+        log.info("파일 업로드 완료: fileId={}, metadataReady={}", fileId, metadataReady);
 
         return UploadFileResponse.builder()
                 .fileId(fileId)
@@ -248,19 +285,53 @@ public class UploadService {
                 .fileSize(request.getFileSize())
                 .s3Key(request.getS3Key())
                 .uploadedAt(LocalDateTime.now())
-                .detectedColumns(new ArrayList<>())
-                .rowCount(0L)
-                .status("PROCESSING")  // ★ 처리중 상태
+                .detectedColumns(metadataReady ? metadata.columns : new ArrayList<>())
+                .rowCount(metadataReady ? metadata.rowCount : 0L)
+                .status(metadataReady ? "UPLOADED" : "PROCESSING")
                 .build();
     }
 
     /**
-            * 비동기 메타데이터 업데이트
-    */
+     * 비동기 메타데이터 업데이트 (전용 스레드풀에서 실행)
+     */
     private void updateFileMetadataAsync(String sessionId, String fileId, String s3Key) {
-        try {
-            ExcelMetadata metadata = detectExcelMetadata(s3Key);
+        String uploadId = extractUploadIdFromS3Key(s3Key);
+        if (uploadId == null) return;
 
+        try {
+            // raw_data 대기 - 최대 2분
+            long rowCount = 0;
+            for (int retry = 0; retry < 40; retry++) {
+                rowCount = mongoTemplate.getCollection("raw_data")
+                        .countDocuments(new org.bson.Document("upload_id", uploadId));
+                if (rowCount > 0) break;
+                Thread.sleep(3000);
+                log.debug("raw_data 대기: uploadId={}, retry={}", uploadId, retry + 1);
+            }
+
+            if (rowCount == 0) {
+                log.warn("raw_data 대기 타임아웃: uploadId={}", uploadId);
+                return;
+            }
+
+            // 컬럼 추출
+            org.bson.Document rawDoc = mongoTemplate.getCollection("raw_data")
+                    .find(new org.bson.Document("upload_id", uploadId))
+                    .limit(1)
+                    .first();
+
+            List<String> columns = new ArrayList<>();
+            if (rawDoc != null) {
+                Object dataObj = rawDoc.get("data");
+                if (dataObj instanceof org.bson.Document dataDoc) {
+                    columns.addAll(dataDoc.keySet());
+                }
+            }
+
+            final long finalRowCount = rowCount;
+            final List<String> finalColumns = columns;
+
+            // DB 업데이트
             FileSession session = fileSessionRepository.findBySessionId(sessionId).orElse(null);
             if (session == null) return;
 
@@ -268,20 +339,23 @@ public class UploadService {
                     .filter(f -> f.getFileId().equals(fileId))
                     .findFirst()
                     .ifPresent(file -> {
-                        file.setDetectedColumns(metadata.columns);
-                        file.setRowCount(metadata.rowCount);
+                        file.setDetectedColumns(finalColumns);
+                        file.setRowCount(finalRowCount);
                     });
 
             session.setUpdatedAt(LocalDateTime.now());
             fileSessionRepository.save(session);
 
             log.info("메타데이터 비동기 업데이트 완료: fileId={}, rowCount={}, columns={}",
-                    fileId, metadata.rowCount, metadata.columns.size());
+                    fileId, rowCount, columns.size());
 
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
         } catch (Exception e) {
             log.error("메타데이터 비동기 업데이트 실패: fileId={}", fileId, e);
         }
     }
+
 
     /**
      * Excel 메타데이터 감지 - raw_data 우선, fallback으로 Excel
