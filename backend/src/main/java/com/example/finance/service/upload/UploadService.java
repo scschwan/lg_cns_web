@@ -1141,34 +1141,13 @@ public class UploadService {
 
             if (amountColName != null) {
                 String amountField = "data." + amountColName;
-                // $toDouble 변환으로 문자열 금액도 처리
+                // DocumentDB 호환: $convert로 숫자/문자열 모두 안전하게 double 변환
                 groupFields.append("totalAmount", new org.bson.Document("$sum",
-                        new org.bson.Document("$cond", Arrays.asList(
-                                new org.bson.Document("$isNumber", "$" + amountField),
-                                "$" + amountField,
-                                new org.bson.Document("$toDouble",
-                                        new org.bson.Document("$cond", Arrays.asList(
-                                                new org.bson.Document("$eq", Arrays.asList(
-                                                        new org.bson.Document("$type", "$" + amountField), "string")),
-                                                new org.bson.Document("$cond", Arrays.asList(
-                                                        new org.bson.Document("$regexMatch",
-                                                                new org.bson.Document("input", "$" + amountField)
-                                                                        .append("regex", "^[\\-\\d.,\\s₩\\\\]+$")),
-                                                        new org.bson.Document("$replaceAll",
-                                                                new org.bson.Document("input",
-                                                                        new org.bson.Document("$replaceAll",
-                                                                                new org.bson.Document("input",
-                                                                                        new org.bson.Document("$replaceAll",
-                                                                                                new org.bson.Document("input", "$" + amountField)
-                                                                                                        .append("find", ",")
-                                                                                                        .append("replacement", "")))
-                                                                                        .append("find", " ")
-                                                                                        .append("replacement", "")))
-                                                                        .append("find", "₩")
-                                                                        .append("replacement", "")),
-                                                        "0")),
-                                                "0")))
-                        ))));
+                        new org.bson.Document("$convert",
+                                new org.bson.Document("input", "$" + amountField)
+                                        .append("to", "double")
+                                        .append("onError", 0.0)
+                                        .append("onNull", 0.0))));
             }
 
             pipeline.add(new org.bson.Document("$group", groupFields));
