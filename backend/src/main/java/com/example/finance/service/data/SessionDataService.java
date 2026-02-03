@@ -225,18 +225,14 @@ public class SessionDataService {
     public Map<String, Object> getSessionData(String sessionId, int page, int size) {
         long totalCount = sessionDataRepository.countBySessionId(sessionId);
 
-        // row_number 기반 range 쿼리 (skip 사용 안 함)
-        int startRow = page * size + 1;
-        int endRow = startRow + size;
-
-        Query query = new Query(
-                Criteria.where("session_id").is(sessionId)
-                        .and("row_number").gte(startRow).lt(endRow)
-        ).with(org.springframework.data.domain.Sort.by("row_number"));
+        // skip/limit 사용하되, sort는 _id로 (인덱스 기본 보장)
+        Query query = new Query(Criteria.where("session_id").is(sessionId))
+                .with(org.springframework.data.domain.Sort.by("_id"))
+                .skip((long) page * size)
+                .limit(size);
 
         List<Document> documents = mongoTemplate.find(query, Document.class, "session_data");
 
-        // data 오브젝트의 모든 key를 컬럼으로 추출
         Set<String> columnSet = new LinkedHashSet<>();
         List<Map<String, Object>> rows = new ArrayList<>();
 
@@ -264,6 +260,7 @@ public class SessionDataService {
 
         return result;
     }
+
 
 
     /**
