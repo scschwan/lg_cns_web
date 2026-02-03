@@ -248,15 +248,26 @@ export default function StartAnalysisPage() {
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {originalData.map((row) => (
-                          <TableRow key={row.id} className="hover:bg-muted/50">
-                            {columns.map((col) => (
-                              <TableCell key={col} className="text-xs whitespace-nowrap">
-                                {row[col]}
-                              </TableCell>
-                            ))}
-                          </TableRow>
-                        ))}
+                        {loading ? (
+                                <TableRow>
+                                    <TableCell colSpan={columns.length} className="text-center py-4">
+                                        <div className="flex items-center justify-center gap-2 text-muted-foreground text-xs">
+                                            <div className="animate-spin h-3 w-3 border-2 border-primary border-t-transparent rounded-full" />
+                                            로딩 중...
+                                        </div>
+                                    </TableCell>
+                                </TableRow>
+                            ) : (
+                                originalData.map((row, idx) => (
+                                    <TableRow key={row._id || idx} className="hover:bg-muted/50">
+                                        {columns.map((col) => (
+                                            <TableCell key={col} className="text-xs whitespace-nowrap">
+                                                {row[col] ?? ''}
+                                            </TableCell>
+                                        ))}
+                                    </TableRow>
+                                ))
+                            )}
                       </TableBody>
                     </Table>
                   </div>
@@ -284,15 +295,26 @@ export default function StartAnalysisPage() {
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {sessionData.map((row) => (
-                        <TableRow key={row.id} className="hover:bg-muted/50">
-                          {columns.map((col) => (
-                            <TableCell key={col} className="text-xs whitespace-nowrap">
-                              {row[col]}
-                            </TableCell>
-                          ))}
-                        </TableRow>
-                      ))}
+                      {loading ? (
+                              <TableRow>
+                                  <TableCell colSpan={columns.length} className="text-center py-8">
+                                      <div className="flex items-center justify-center gap-2 text-muted-foreground">
+                                          <div className="animate-spin h-4 w-4 border-2 border-primary border-t-transparent rounded-full" />
+                                          데이터 로딩 중...
+                                      </div>
+                                  </TableCell>
+                              </TableRow>
+                          ) : (
+                              sessionData.map((row, idx) => (
+                                  <TableRow key={row._id || idx} className="hover:bg-muted/50">
+                                      {columns.map((col) => (
+                                          <TableCell key={col} className="text-xs whitespace-nowrap">
+                                              {row[col] ?? ''}
+                                          </TableCell>
+                                      ))}
+                                  </TableRow>
+                              ))
+                          )}
                     </TableBody>
                   </Table>
                 </div>
@@ -302,7 +324,7 @@ export default function StartAnalysisPage() {
               <div className="p-3 border-t bg-white flex-shrink-0">
                 <div className="flex items-center justify-between text-xs">
                   <div className="text-muted-foreground hidden sm:block">
-                    {startRow} - {endRow} / 총 {totalRows.toLocaleString()}건
+                      {(currentPage * pageSize + 1).toLocaleString()} - {Math.min((currentPage + 1) * pageSize, totalRows).toLocaleString()} / 총 {totalRows.toLocaleString()}건
                   </div>
 
                   <div className="flex items-center gap-2 w-full sm:w-auto justify-between sm:justify-end">
@@ -335,7 +357,7 @@ export default function StartAnalysisPage() {
                       >
                           이전
                       </Button>
-                      <span className="text-sm text-muted-foreground">
+                      <span className="flex items-center px-2 text-xs font-medium">
                           {currentPage + 1} / {totalPages}
                       </span>
                       <Button
