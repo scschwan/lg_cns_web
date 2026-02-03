@@ -1,4 +1,4 @@
-// frontend/src/pages/fileload/FileLoadPage.jsx
+// frontend/src/pages/Startanalysis/StartAnalysisPage.jsx
 
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
@@ -140,7 +140,6 @@ export default function StartAnalysisPage() {
 
    useEffect(() => {
       loadSessionData();
-      loadColumns();
     }, [sessionId, currentPage, pageSize]);
 
 
@@ -167,9 +166,9 @@ export default function StartAnalysisPage() {
   };
 
   // ===== 페이지네이션 =====
-  const totalPages = Math.ceil(totalRows / pageSize);
-  const startRow = (currentPage - 1) * pageSize + 1;
-  const endRow = Math.min(currentPage * pageSize, totalRows);
+  //const totalPages = Math.ceil(totalRows / pageSize);
+  //const startRow = (currentPage - 1) * pageSize + 1;
+  //const endRow = Math.min(currentPage * pageSize, totalRows);
 
   return (
     // [Layout Fix] h-full로 DashboardLayout 영역 꽉 채우기
@@ -526,5 +525,3 @@ export default function StartAnalysisPage() {
     </div>
   );
 }
-
-export default FileLoadPage;

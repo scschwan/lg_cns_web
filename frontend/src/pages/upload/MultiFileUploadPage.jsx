@@ -395,40 +395,35 @@ function MultiFileUploadPage() {
         }
     };
 
-    const handleComplete = async () => {
-        if (selectedSessions.length !== 1) {
-            alert('처리할 세션을 1개만 선택해주세요.');
-            return;
-        }
+   const handleStartAnalysis = async () => {
+       if (selectedSessions.length !== 1) return;
 
-        const confirmed = window.confirm(
-            '선택된 세션을 처리하시겠습니까?\n\n' +
-                '처리 내용:\n' +
-                '• 기존 raw_data, process_data 컬렉션 초기화\n' +
-                '• 세션별 계정명 데이터 추출 및 raw_data 저장\n' +
-                '• 자동으로 파일 로드 화면으로 이동\n\n' +
-                '※ 이 작업은 취소할 수 없습니다.'
-        );
+       const sessionId = selectedSessions[0];  // 선택된 세션 ID 추출
 
-        if (!confirmed) return;
+       try {
+           setProgressDialogOpen(true);
+           setProgressMessage('계정 분석을 시작합니다...');
 
-        setProgressDialogOpen(true);
-        setProgressMessage('계정 분석 시작 중...');
+           const result = await uploadService.startAccountAnalysis(projectId, sessionId);
 
-        try {
-            const sessionId = selectedSessions[0];
-            await uploadService.completeSession(projectId, sessionId);
+           setProgressDialogOpen(false);
 
-            setProgressDialogOpen(false);
-            alert('계정 분석이 시작되었습니다. 파일 로드 화면으로 이동합니다.');
+           if (result.success) {
+               if (result.skipped) {
+                   alert(`기존 분석 데이터(${result.copiedCount}건)가 있습니다. 분석 페이지로 이동합니다.`);
+               } else {
+                   alert(`${result.copiedCount}건의 데이터가 복사되었습니다.`);
+               }
+               navigate(`/projects/${projectId}/sessions/${sessionId}/startanalysis`);
+           }
+       } catch (error) {
+           console.error('계정 분석 시작 실패:', error);
+           setProgressDialogOpen(false);
+           alert('계정 분석 시작 중 오류가 발생했습니다.');
+       }
+   };
 
-            navigate(`/projects/${projectId}/sessions/${sessionId}/fileload`);
-        } catch (error) {
-            console.error('완료 처리 실패:', error);
-            alert('완료 처리 중 오류가 발생했습니다.');
-            setProgressDialogOpen(false);
-        }
-    };
+
 
     const handleSessionEdit = async (sessionId, field, value) => {
         try {
@@ -547,7 +542,7 @@ function MultiFileUploadPage() {
                                     세션 삭제
                                 </Button>
                                 <Button
-                                    onClick={handleComplete}
+                                    onClick={handleStartAnalysis}
                                     disabled={selectedSessions.length !== 1}
                                     className="bg-green-600 hover:bg-green-700"
                                 >

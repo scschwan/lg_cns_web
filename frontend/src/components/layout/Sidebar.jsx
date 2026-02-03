@@ -30,9 +30,9 @@ const Sidebar = () => {
     },
     {
       id: 2,
-      name: 'File Load',
-      description: '파일 로드 & 확인',
-      path: sessionId ? `/projects/${projectId}/sessions/${sessionId}/fileload` : null,
+      name: 'Start Analysis',
+      description: '계정 분석 시작',
+      path: sessionId ? `/projects/${projectId}/sessions/${sessionId}/startanalysis` : null,
       icon: FileText,
       requiresSession: true
     },

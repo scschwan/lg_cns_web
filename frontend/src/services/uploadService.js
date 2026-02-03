@@ -520,7 +520,7 @@ const uploadService = {
             `/api/projects/${projectId}/upload/sessions/${sessionId}/download`
         );
         return response.data.downloadUrl;
-    }
+    },
 
     /**
      * 계정 분석 시작
@@ -531,7 +531,20 @@ const uploadService = {
             `/api/projects/${projectId}/upload/sessions/${sessionId}/analyze`
         );
         return response.data;
-    }
+    },
+
+    /**
+     * 세션 데이터 조회 (session_data 컬렉션)
+     * GET /api/projects/{projectId}/upload/sessions/{sessionId}/data
+     */
+    getSessionData: async (projectId, sessionId, page = 0, size = 1000) => {
+        const response = await api.get(
+            `/api/projects/${projectId}/upload/sessions/${sessionId}/data`,
+            { params: { page, size } }
+        );
+        return response.data;
+    },
+
 
 };
 

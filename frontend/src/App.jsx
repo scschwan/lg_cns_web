@@ -18,7 +18,7 @@ import ProjectSettingsPage from './pages/project/ProjectSettingsPage';
 
 // Step 1-7 Pages
 import MultiFileUploadPage from './pages/upload/MultiFileUploadPage';
-import FileLoadPage from './pages/fileload/FileLoadPage';
+import StartAnalysisPage from './pages/startAnalysis/StartAnalysisPage';
 import PreprocessingPage from './pages/preprocessing/PreprocessingPage';
 import DataTransformPage from './pages/transform/DataTransformPage';
 import ClusteringPage from './pages/clustering/ClusteringPage';
@@ -93,14 +93,14 @@ function App() {
             }
           />
 
-          {/* Step 2: File Load */}
+          {/* Step 2: Start Analysis */}
           <Route
-            path="/projects/:projectId/sessions/:sessionId/fileload"
+            path="/projects/:projectId/sessions/:sessionId/startanalysis"
             element={
               <PrivateRoute>
                 <LayoutWrapper>
                   <DashboardLayout>
-                    <FileLoadPage />
+                    <StartAnalysisPage />
                   </DashboardLayout>
                 </LayoutWrapper>
               </PrivateRoute>
