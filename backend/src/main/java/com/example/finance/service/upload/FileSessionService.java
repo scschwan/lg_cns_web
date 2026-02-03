@@ -19,6 +19,7 @@ import com.example.finance.repository.data.RawDataRepository;
 import com.example.finance.repository.project.ProjectRepository;
 import com.example.finance.repository.session.FileSessionRepository;
 import com.example.finance.repository.upload.UploadSessionRepository;
+import com.example.finance.service.data.SessionDataService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -55,6 +56,7 @@ public class FileSessionService {
     private final RawDataRepository rawDataRepository;
     private final ProcessDataRepository processDataRepository;
     private final ClusteringResultRepository clusteringResultRepository;
+    private final SessionDataService sessionDataService;
 
     // 클래스 상단에 추가
     private final MongoTemplate mongoTemplate;
@@ -644,6 +646,10 @@ public class FileSessionService {
         clusteringResultRepository.deleteByProjectIdAndSessionId(projectId, sessionId);
         log.info("clustering_results 삭제 완료");
 
+        // 3-1. session_data 삭제
+        sessionDataService.deleteSessionData(sessionId);
+        log.info("session_data 삭제 완료: sessionId={}", sessionId);
+
         // 4. 세션 상태 초기화
         fileSession.setCurrentStep(null);
         fileSession.setProgressPercentage(0);
@@ -681,6 +687,10 @@ public class FileSessionService {
         if (!isMember) {
             throw new RuntimeException("세션을 삭제할 권한이 없습니다");
         }
+
+        // session_data 삭제
+        sessionDataService.deleteSessionData(sessionId);
+        log.info("session_data 삭제 완료: sessionId={}", sessionId);
 
         // 완전 삭제
         fileSessionRepository.delete(fileSession);
@@ -1090,6 +1100,9 @@ public class FileSessionService {
             if (!session.getProjectId().equals(projectId)) {
                 throw new BusinessException("FORBIDDEN", "프로젝트 세션이 아닙니다");
             }
+
+            // session_data 삭제
+            sessionDataService.deleteSessionData(sessionId);
 
             // 완전 삭제
             fileSessionRepository.delete(session);

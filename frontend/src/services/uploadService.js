@@ -534,6 +534,17 @@ const uploadService = {
     },
 
     /**
+     * 계정 분석 상태 조회 (폴링용)
+     * GET /api/projects/{projectId}/upload/sessions/{sessionId}/analyze/status
+     */
+    getAnalysisStatus: async (projectId, sessionId) => {
+        const response = await api.get(
+            `/api/projects/${projectId}/upload/sessions/${sessionId}/analyze/status`
+        );
+        return response.data;
+    },
+
+    /**
      * 세션 데이터 조회 (session_data 컬렉션)
      * GET /api/projects/{projectId}/upload/sessions/{sessionId}/data
      */

@@ -404,24 +404,69 @@ function MultiFileUploadPage() {
    const handleStartAnalysis = async () => {
        if (selectedSessions.length !== 1) return;
 
-       const sessionId = selectedSessions[0];  // 선택된 세션 ID 추출
+       const sessionId = selectedSessions[0];
 
        try {
            setProgressDialogOpen(true);
+           setProgressValue(0);
            setProgressMessage('계정 분석을 시작합니다...');
 
            const result = await uploadService.startAccountAnalysis(projectId, sessionId);
 
-           setProgressDialogOpen(false);
-
-           if (result.success) {
-               if (result.skipped) {
-                   alert(`기존 분석 데이터(${result.copiedCount}건)가 있습니다. 분석 페이지로 이동합니다.`);
-               } else {
-                   alert(`${result.copiedCount}건의 데이터가 복사되었습니다.`);
-               }
+           // 이미 완료된 경우 (기존 데이터 존재)
+           if (result.status === 'COMPLETED' || result.skipped) {
+               setProgressValue(100);
+               setProgressMessage('완료');
+               setProgressDialogOpen(false);
+               alert(`기존 분석 데이터(${result.copiedCount}건)가 있습니다. 분석 페이지로 이동합니다.`);
                navigate(`/projects/${projectId}/sessions/${sessionId}/startanalysis`);
+               return;
            }
+
+           // 비동기 처리 중 → 폴링으로 상태 추적
+           setProgressMessage('데이터 복사 중...');
+           setProgressValue(10);
+
+           let attempts = 0;
+           const maxAttempts = 300; // 최대 5분 (1초 간격)
+
+           while (attempts < maxAttempts) {
+               await new Promise(resolve => setTimeout(resolve, 1000));
+               attempts++;
+
+               try {
+                   const status = await uploadService.getAnalysisStatus(projectId, sessionId);
+
+                   if (status.status === 'COMPLETED') {
+                       setProgressValue(100);
+                       setProgressMessage(`${status.copiedCount}건 복사 완료`);
+                       await new Promise(resolve => setTimeout(resolve, 500));
+                       setProgressDialogOpen(false);
+                       navigate(`/projects/${projectId}/sessions/${sessionId}/startanalysis`);
+                       return;
+                   }
+
+                   if (status.status === 'FAILED') {
+                       setProgressDialogOpen(false);
+                       alert(`분석 실패: ${status.error || '알 수 없는 오류'}`);
+                       return;
+                   }
+
+                   // 진행률 표시 (10% ~ 95%)
+                   const progress = Math.min(10 + (attempts / maxAttempts) * 85, 95);
+                   setProgressValue(Math.round(progress));
+                   setProgressMessage(
+                       `데이터 복사 중... ${status.copiedCount || 0}건 처리됨`
+                   );
+               } catch (pollError) {
+                   console.warn('상태 조회 실패, 재시도...', pollError);
+               }
+           }
+
+           // 타임아웃
+           setProgressDialogOpen(false);
+           alert('분석 처리 시간이 초과되었습니다. 잠시 후 다시 시도해주세요.');
+
        } catch (error) {
            console.error('계정 분석 시작 실패:', error);
            setProgressDialogOpen(false);
