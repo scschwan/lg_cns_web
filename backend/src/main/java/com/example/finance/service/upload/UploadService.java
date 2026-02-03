@@ -982,6 +982,10 @@ public class UploadService {
     /**
      * [신규] 파티션 분석 (계정별로 데이터 분리 및 집계)
      * Issue 2 해결: 파일 내 계정명 별로 행을 나누어 통계 계산
+     *
+     * ⭐ 2단계 최적화: S3 다운로드 제거 → raw_data MongoDB aggregation + Redis 캐싱
+     *    - 기존: S3 다운로드 → Excel SAX 파싱 (15초+)
+     *    - 변경: raw_data aggregation pipeline (1~2초)
      */
     public PartitionAnalysisResponse analyzePartitions(String projectId, List<String> fileIds) {
         List<AccountPartition> partitionList = Collections.synchronizedList(new ArrayList<>());
@@ -1003,7 +1007,7 @@ public class UploadService {
                 log.info("[{}] 파일 분석 시작 (계정컬럼: {}, 금액컬럼: {})",
                         fileInfo.getFileName(), fileInfo.getAccountColumnName(), fileInfo.getAmountColumnName());
 
-                // 2. 엑셀 파싱 및 그룹핑 (병렬)
+                // 2. raw_data aggregation 우선 → fallback으로 Excel 파싱
                 Map<String, ExcelStreamingParser.PartitionStats> statsMap = groupFileByAccountParallel(fileInfo);
 
                 for (Map.Entry<String, ExcelStreamingParser.PartitionStats> entry : statsMap.entrySet()) {
@@ -1012,7 +1016,7 @@ public class UploadService {
 
                     partitionList.add(AccountPartition.builder()
                             .fileId(fileInfo.getFileId())
-                            .fileIds(Collections.singletonList(fileInfo.getFileId())) // ⭐ [수정] 리스트에도 추가
+                            .fileIds(Collections.singletonList(fileInfo.getFileId()))
                             .fileName(fileInfo.getFileName())
                             .accountName(accountName)
                             .rowCount(stats.getCount())
@@ -1051,6 +1055,13 @@ public class UploadService {
         public double getAmount() { return amount.sum(); }
     }
 
+    /**
+     * ⭐ 2단계 최적화: raw_data MongoDB aggregation 우선, fallback으로 S3/Excel
+     *
+     * 변경 전: S3 다운로드 → 임시파일 → ExcelStreamingParser SAX 파싱 (15초+)
+     * 변경 후: MongoDB aggregation pipeline으로 계정별 그룹핑 (1~2초)
+     *         + Redis 캐싱 (10분 TTL)
+     */
     private Map<String, ExcelStreamingParser.PartitionStats> groupFileByAccountParallel(UploadedFileInfo fileInfo) {
         String accountColName = fileInfo.getAccountColumnName();
         String amountColName = fileInfo.getAmountColumnName();
@@ -1060,10 +1071,180 @@ public class UploadService {
             return new ConcurrentHashMap<>();
         }
 
+        // ★ raw_data aggregation 시도
+        String uploadId = extractUploadIdFromS3Key(fileInfo.getS3Key());
+        if (uploadId != null) {
+            Map<String, ExcelStreamingParser.PartitionStats> result = groupByAccountFromRawData(uploadId, accountColName, amountColName, fileInfo.getFileName());
+            if (result != null) {
+                return result;
+            }
+        }
+
+        // ★ Fallback: S3 다운로드 → Excel 파싱 (raw_data 없을 경우)
+        log.warn("[{}] raw_data 없음, S3/Excel fallback 사용", fileInfo.getFileName());
+        return groupByAccountFromExcel(fileInfo);
+    }
+
+    /**
+     * ⭐ raw_data MongoDB aggregation으로 계정별 그룹핑
+     *    - S3 다운로드 없이 DB에서 직접 집계
+     *    - Redis 캐싱 적용 (10분 TTL)
+     *
+     * @return 집계 결과 Map, raw_data가 없으면 null (fallback 유도)
+     */
+    private Map<String, ExcelStreamingParser.PartitionStats> groupByAccountFromRawData(
+            String uploadId, String accountColName, String amountColName, String fileName) {
+
+        // 1. Redis 캐시 확인
+        String cacheKey = "partition:" + uploadId + ":" + accountColName + ":" + (amountColName != null ? amountColName : "none");
+        try {
+            Map<Object, Object> cached = redisTemplate.opsForHash().entries(cacheKey);
+            if (!cached.isEmpty()) {
+                Map<String, ExcelStreamingParser.PartitionStats> result = new ConcurrentHashMap<>();
+                for (Map.Entry<Object, Object> entry : cached.entrySet()) {
+                    String accountName = entry.getKey().toString();
+                    String[] parts = entry.getValue().toString().split("\\|");
+                    long count = Long.parseLong(parts[0]);
+                    double amount = Double.parseDouble(parts[1]);
+                    result.put(accountName, createPartitionStats(count, amount));
+                }
+                log.info("[{}] 파티션 분석 Redis 캐시 히트: uploadId={}, 파티션 {}개", fileName, uploadId, result.size());
+                return result;
+            }
+        } catch (Exception e) {
+            log.warn("Redis 캐시 조회 실패 (무시): {}", e.getMessage());
+        }
+
+        // 2. raw_data 존재 확인
+        long rawDataCount = mongoTemplate.getCollection("raw_data")
+                .countDocuments(new org.bson.Document("upload_id", uploadId));
+
+        if (rawDataCount == 0) {
+            log.info("[{}] raw_data 없음: uploadId={}", fileName, uploadId);
+            return null; // fallback 유도
+        }
+
+        // 3. MongoDB Aggregation Pipeline
+        try {
+            long startTime = System.currentTimeMillis();
+
+            String accountField = "data." + accountColName;
+            List<org.bson.Document> pipeline = new ArrayList<>();
+
+            // Stage 1: uploadId로 필터링
+            pipeline.add(new org.bson.Document("$match",
+                    new org.bson.Document("upload_id", uploadId)));
+
+            // Stage 2: 계정명으로 그룹핑 + 행 수 카운트 + 금액 합산
+            org.bson.Document groupFields = new org.bson.Document("_id", "$" + accountField)
+                    .append("count", new org.bson.Document("$sum", 1));
+
+            if (amountColName != null) {
+                String amountField = "data." + amountColName;
+                // $toDouble 변환으로 문자열 금액도 처리
+                groupFields.append("totalAmount", new org.bson.Document("$sum",
+                        new org.bson.Document("$cond", Arrays.asList(
+                                new org.bson.Document("$isNumber", "$" + amountField),
+                                "$" + amountField,
+                                new org.bson.Document("$toDouble",
+                                        new org.bson.Document("$cond", Arrays.asList(
+                                                new org.bson.Document("$eq", Arrays.asList(
+                                                        new org.bson.Document("$type", "$" + amountField), "string")),
+                                                new org.bson.Document("$cond", Arrays.asList(
+                                                        new org.bson.Document("$regexMatch",
+                                                                new org.bson.Document("input", "$" + amountField)
+                                                                        .append("regex", "^[\\-\\d.,\\s₩\\\\]+$")),
+                                                        new org.bson.Document("$replaceAll",
+                                                                new org.bson.Document("input",
+                                                                        new org.bson.Document("$replaceAll",
+                                                                                new org.bson.Document("input",
+                                                                                        new org.bson.Document("$replaceAll",
+                                                                                                new org.bson.Document("input", "$" + amountField)
+                                                                                                        .append("find", ",")
+                                                                                                        .append("replacement", "")))
+                                                                                        .append("find", " ")
+                                                                                        .append("replacement", "")))
+                                                                        .append("find", "₩")
+                                                                        .append("replacement", "")),
+                                                        "0")),
+                                                "0")))
+                        ))));
+            }
+
+            pipeline.add(new org.bson.Document("$group", groupFields));
+
+            // Stage 3: 계정명 정렬
+            pipeline.add(new org.bson.Document("$sort", new org.bson.Document("_id", 1)));
+
+            // 실행
+            List<org.bson.Document> results = mongoTemplate.getCollection("raw_data")
+                    .aggregate(pipeline)
+                    .into(new ArrayList<>());
+
+            long elapsed = System.currentTimeMillis() - startTime;
+
+            // 4. 결과 변환
+            Map<String, ExcelStreamingParser.PartitionStats> statsMap = new ConcurrentHashMap<>();
+            Map<String, String> cacheData = new HashMap<>();
+
+            for (org.bson.Document doc : results) {
+                Object idObj = doc.get("_id");
+                if (idObj == null) continue;
+
+                String accountName = idObj.toString().trim();
+                if (accountName.isEmpty()) continue;
+
+                long count = doc.getInteger("count", 0);
+                double amount = amountColName != null ? doc.getDouble("totalAmount") != null ? doc.getDouble("totalAmount") : 0.0 : 0.0;
+
+                statsMap.put(accountName, createPartitionStats(count, amount));
+                cacheData.put(accountName, count + "|" + amount);
+            }
+
+            log.info("[{}] raw_data aggregation 완료: uploadId={}, 파티션 {}개, {}ms",
+                    fileName, uploadId, statsMap.size(), elapsed);
+
+            // 5. Redis 캐시 저장 (10분 TTL)
+            if (!cacheData.isEmpty()) {
+                try {
+                    redisTemplate.opsForHash().putAll(cacheKey, cacheData);
+                    redisTemplate.expire(cacheKey, Duration.ofMinutes(10));
+                } catch (Exception e) {
+                    log.warn("Redis 캐시 저장 실패 (무시): {}", e.getMessage());
+                }
+            }
+
+            return statsMap;
+
+        } catch (Exception e) {
+            log.error("[{}] raw_data aggregation 실패: uploadId={}", fileName, uploadId, e);
+            return null; // fallback 유도
+        }
+    }
+
+    /**
+     * PartitionStats 생성 헬퍼 (count, amount 직접 설정)
+     */
+    private ExcelStreamingParser.PartitionStats createPartitionStats(long count, double totalAmount) {
+        ExcelStreamingParser.PartitionStats stats = new ExcelStreamingParser.PartitionStats();
+        // count 횟수만큼 호출하되, 마지막에만 실제 금액 추가
+        if (count > 0) {
+            for (long i = 0; i < count - 1; i++) {
+                stats.add(0);
+            }
+            stats.add(totalAmount);
+        }
+        return stats;
+    }
+
+    /**
+     * Fallback: S3 다운로드 → Excel SAX 파싱 (기존 로직)
+     */
+    private Map<String, ExcelStreamingParser.PartitionStats> groupByAccountFromExcel(UploadedFileInfo fileInfo) {
         File tempFile = null;
         try {
             tempFile = s3Service.downloadFileToTemp(fileInfo.getS3Key());
-            return ExcelStreamingParser.groupByAccount(tempFile, accountColName, amountColName);
+            return ExcelStreamingParser.groupByAccount(tempFile, fileInfo.getAccountColumnName(), fileInfo.getAmountColumnName());
         } catch (Exception e) {
             log.error("[{}] 엑셀 그룹핑 실패: {}", fileInfo.getFileName(), e.getMessage());
             return new ConcurrentHashMap<>();
