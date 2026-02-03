@@ -2,6 +2,21 @@
 @tailwind components;
 @tailwind utilities;
 
+/* 가로 스크롤바만 숨기기 (세로 스크롤바는 유지) */
+.hide-horizontal-scrollbar {
+    scrollbar-gutter: stable;
+}
+.hide-horizontal-scrollbar::-webkit-scrollbar:horizontal {
+    height: 0px;
+    display: none;
+}
+/* Firefox */
+@supports (scrollbar-width: thin) {
+    .hide-horizontal-scrollbar {
+        scrollbar-width: thin;
+    }
+}
+
 @layer base {
   :root {
     --background: 0 0% 100%;

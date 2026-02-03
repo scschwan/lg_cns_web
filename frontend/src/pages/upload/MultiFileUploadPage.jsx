@@ -1,6 +1,6 @@
 // frontend/src/pages/upload/MultiFileUploadPage.jsx
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
     Upload,
@@ -53,6 +53,21 @@ import uploadService from '../../services/uploadService';
 import PartitionDialog from '../../components/upload/PartitionDialog';
 import ProgressDialog from '../../components/common/ProgressDialog';
 
+/**
+ * 가로 스크롤 동기화 테이블 래퍼
+ * - 테이블 본체: 세로 스크롤 + 가로 스크롤(스크롤바 숨김)
+ * - 바깥 스크롤바: 테이블 아래 고정, 양방향 동기화
+ */
+function ScrollSyncTable({ children, minWidth = '1200px', maxHeight = '700px' }) {
+    return (
+        <div className="border-t overflow-auto" style={{ maxHeight }}>
+            <div style={{ minWidth }}>
+                {children}
+            </div>
+        </div>
+    );
+}
+
 function MultiFileUploadPage() {
     const { projectId } = useParams();
     const navigate = useNavigate();
@@ -93,18 +108,15 @@ function MultiFileUploadPage() {
 
     const loadFiles = async () => {
         try {
-                const fileList = await uploadService.getProjectFiles(projectId);
-
-                // [중요] 가져온 데이터에 checked: false 속성을 명시적으로 추가
-                const initializedFiles = fileList.map(f => ({
-                    ...f,
-                    checked: false // 초기값 설정
-                }));
-
-                setFiles(initializedFiles);
-            } catch (error) {
-                console.error("파일 로드 실패", error);
-            }
+            const fileList = await uploadService.getProjectFiles(projectId);
+            const initializedFiles = fileList.map(f => ({
+                ...f,
+                checked: false
+            }));
+            setFiles(initializedFiles);
+        } catch (error) {
+            console.error("파일 로드 실패", error);
+        }
     };
 
     const loadSessions = async () => {
@@ -116,7 +128,6 @@ function MultiFileUploadPage() {
         }
     };
 
-    // 파일 업로드
     const handleFileUpload = async (event) => {
         if (!event.target.files || event.target.files.length === 0) {
             alert('파일을 선택해주세요.');
@@ -144,17 +155,13 @@ function MultiFileUploadPage() {
                 setProgressValue(((i + 1) / excelFiles.length) * 90);
                 setProgressMessage(`파일 처리 중... (${i + 1}/${excelFiles.length})`);
 
-                // Excel 분석
                 const excelData = await analyzeExcelColumns(file);
 
-                // Presigned URL 요청
                 const { presignedUrl, uploadId, sessionId, s3Key } =
                     await uploadService.getPresignedUrl(projectId, file.name, file.size);
 
-                // S3 업로드
                 await uploadService.uploadToS3(presignedUrl, file);
 
-                // 업로드 완료 처리
                 await uploadService.completeFileUpload(projectId, {
                     uploadId,
                     sessionId,
@@ -177,7 +184,6 @@ function MultiFileUploadPage() {
         }
     };
 
-    // Excel 컬럼 분석
     const analyzeExcelColumns = async (file) => {
         return new Promise((resolve, reject) => {
             const reader = new FileReader();
@@ -205,12 +211,10 @@ function MultiFileUploadPage() {
     };
 
     const handleColumnSelect = async (fileId, columnType, columnName) => {
-
-        // 이미 처리 중이면 클릭 무시 (Issue 3 방지)
         if (isProcessing) return;
 
         try {
-            setIsProcessing(true); // 로딩 시작
+            setIsProcessing(true);
 
             const params = {};
             if (columnType === 'accountColumnName') {
@@ -247,16 +251,14 @@ function MultiFileUploadPage() {
         } catch (err) {
             console.error('컬럼 선택 실패:', err);
             alert('컬럼 선택에 실패했습니다.');
-        }finally {
-             setIsProcessing(false); // 로딩 종료
-         }
+        } finally {
+            setIsProcessing(false);
+        }
     };
 
-    // [수정/추가] 개별 체크박스 토글 핸들러
     const handleToggleCheck = (fileId) => {
         setFiles((prevFiles) =>
             prevFiles.map((file) =>
-                // 클릭된 파일만 checked 상태를 반전시킴
                 file.fileId === fileId
                     ? { ...file, checked: !file.checked }
                     : file
@@ -264,19 +266,16 @@ function MultiFileUploadPage() {
         );
     };
 
-    // [추가] 전체 선택/해제 핸들러 (헤더 체크박스용)
     const handleToggleAll = (checked) => {
         setFiles((prevFiles) =>
             prevFiles.map((file) => ({
                 ...file,
-                checked: checked // 전체를 true 또는 false로 설정
+                checked: checked
             }))
         );
     };
 
-    // 세션 생성
     const handleCreateSessions = async () => {
-        // 1. 선택된 파일 확인
         const selectedFiles = files.filter(f => f.checked);
         if (selectedFiles.length === 0) {
             alert("세션을 생성할 파일을 선택해주세요.");
@@ -284,31 +283,24 @@ function MultiFileUploadPage() {
         }
 
         try {
-            setIsProcessing(true); // 로딩 시작
+            setIsProcessing(true);
 
-            // 2. 파티션 분석 API 호출
             const fileIds = selectedFiles.map(f => f.fileId);
             const response = await uploadService.analyzePartitions(projectId, fileIds);
 
-            // 3. 백엔드 응답 매핑
             const mappedPartitions = response.partitions.map((p) => ({
                 ...p,
-                // UI용 매핑
                 totalRows: p.rowCount,
                 totalAmount: p.totalAmount,
                 fileCount: p.fileIds ? p.fileIds.length : (p.fileId ? 1 : 0),
-
-                // 백엔드 전송용 데이터 보존
                 fileIds: p.fileIds || [p.fileId],
                 fileId: p.fileId,
-
                 sessionName: p.sessionName || `${p.accountName}_session`,
                 workerName: ''
             }));
 
-            // 🚨 [수정 포인트] 선언된 state 이름에 맞춰 변경
-            setPartitions(mappedPartitions);        // (기존) setSessionPreviewData -> (수정) setPartitions
-            setPartitionDialogOpen(true);           // (기존) setIsSessionDialogOpen -> (수정) setPartitionDialogOpen
+            setPartitions(mappedPartitions);
+            setPartitionDialogOpen(true);
 
         } catch (error) {
             console.error("세션 분석 실패:", error);
@@ -318,7 +310,6 @@ function MultiFileUploadPage() {
         }
     };
 
-    // 세션 생성 승인
     const handlePartitionsApproved = async (approvedItems) => {
         setPartitionDialogOpen(false);
         setProgressDialogOpen(true);
@@ -345,7 +336,6 @@ function MultiFileUploadPage() {
         }
     };
 
-    // 세션 병합
     const handleMergeSessions = async () => {
         if (selectedSessions.length < 2) {
             alert('병합할 세션을 2개 이상 선택해주세요.');
@@ -375,7 +365,6 @@ function MultiFileUploadPage() {
         }
     };
 
-    // 세션 삭제
     const handleDeleteSessions = async () => {
         if (selectedSessions.length === 0) {
             alert('삭제할 세션을 선택해주세요.');
@@ -399,7 +388,6 @@ function MultiFileUploadPage() {
         }
     };
 
-    // 완료 (계정 분석 시작)
     const handleComplete = async () => {
         if (selectedSessions.length !== 1) {
             alert('처리할 세션을 1개만 선택해주세요.');
@@ -435,7 +423,6 @@ function MultiFileUploadPage() {
         }
     };
 
-    // 세션 편집
     const handleSessionEdit = async (sessionId, field, value) => {
         try {
             await uploadService.updateSession(projectId, sessionId, {
@@ -515,7 +502,6 @@ function MultiFileUploadPage() {
                     </CardHeader>
                     <CardContent>
                         <div className="flex flex-wrap gap-3">
-                            {/* 좌측 버튼 그룹 */}
                             <div className="flex gap-2">
                                 <Button asChild>
                                     <label className="cursor-pointer">
@@ -536,7 +522,6 @@ function MultiFileUploadPage() {
                                 </Button>
                             </div>
 
-                            {/* 우측 버튼 그룹 */}
                             <div className="flex gap-2 ml-auto">
                                 <Button
                                     onClick={handleMergeSessions}
@@ -567,9 +552,8 @@ function MultiFileUploadPage() {
                     </CardContent>
                 </Card>
 
-                {/* ⭐ 수정 2: 그리드 비율 조정 (7:5) */}
                 <div className="grid grid-cols-1 xl:grid-cols-12 gap-4">
-                    {/* 좌측: 파일 목록 (58%) */}
+                    {/* 좌측: 파일 목록 */}
                     <div className="xl:col-span-7">
                         <Card>
                             <CardHeader>
@@ -584,18 +568,14 @@ function MultiFileUploadPage() {
                                         </p>
                                     </div>
                                 ) : (
-                                    /* ⭐ 수정 3: 테이블 스크롤 컨테이너 */
-                                    <div className="border-t overflow-x-auto max-h-[700px] overflow-y-auto">
-                                        {/* ⭐ 수정 4: 테이블 min-width 고정 */}
-                                        <Table className="min-w-[1200px]">
+                                    <ScrollSyncTable minWidth="1200px" maxHeight="700px">
+                                        <Table>
                                             <TableHeader className="sticky top-0 bg-background z-10">
                                                 <TableRow>
                                                     <TableHead className="w-12">
                                                         <Checkbox
-                                                                // 모든 파일이 체크되어 있으면 헤더도 체크
-                                                                checked={files.length > 0 && files.every((f) => f.checked)}
-                                                                // 헤더 체크박스 클릭 시 전체 선택/해제
-                                                                onCheckedChange={(checked) => handleToggleAll(checked)}
+                                                            checked={files.length > 0 && files.every((f) => f.checked)}
+                                                            onCheckedChange={(checked) => handleToggleAll(checked)}
                                                         />
                                                     </TableHead>
                                                     <TableHead className="w-[300px]">파일명</TableHead>
@@ -622,9 +602,7 @@ function MultiFileUploadPage() {
                                                     <TableRow key={file.fileId}>
                                                         <TableCell>
                                                             <Checkbox
-                                                                // 파일 객체의 checked 상태 바인딩 (없으면 false)
                                                                 checked={file.checked || false}
-                                                                // 클릭 시 핸들러 호출
                                                                 onCheckedChange={() => handleToggleCheck(file.fileId)}
                                                             />
                                                         </TableCell>
@@ -638,27 +616,16 @@ function MultiFileUploadPage() {
                                                             <Select
                                                                 value={file.accountColumnName || ''}
                                                                 onValueChange={(value) =>
-                                                                    handleColumnSelect(
-                                                                        file.fileId,
-                                                                        'accountColumnName',
-                                                                        value
-                                                                    )
+                                                                    handleColumnSelect(file.fileId, 'accountColumnName', value)
                                                                 }
                                                             >
                                                                 <SelectTrigger className="h-8">
                                                                     <SelectValue placeholder="선택..." />
                                                                 </SelectTrigger>
                                                                 <SelectContent>
-                                                                    {file.detectedColumns?.map(
-                                                                        (col) => (
-                                                                            <SelectItem
-                                                                                key={col}
-                                                                                value={col}
-                                                                            >
-                                                                                {col}
-                                                                            </SelectItem>
-                                                                        )
-                                                                    )}
+                                                                    {file.detectedColumns?.map((col) => (
+                                                                        <SelectItem key={col} value={col}>{col}</SelectItem>
+                                                                    ))}
                                                                 </SelectContent>
                                                             </Select>
                                                         </TableCell>
@@ -666,49 +633,38 @@ function MultiFileUploadPage() {
                                                             <Select
                                                                 value={file.amountColumnName || ''}
                                                                 onValueChange={(value) =>
-                                                                    handleColumnSelect(
-                                                                        file.fileId,
-                                                                        'amountColumnName',
-                                                                        value
-                                                                    )
+                                                                    handleColumnSelect(file.fileId, 'amountColumnName', value)
                                                                 }
                                                             >
                                                                 <SelectTrigger className="h-8">
                                                                     <SelectValue placeholder="선택..." />
                                                                 </SelectTrigger>
                                                                 <SelectContent>
-                                                                    {file.detectedColumns?.map(
-                                                                        (col) => (
-                                                                            <SelectItem
-                                                                                key={col}
-                                                                                value={col}
-                                                                            >
-                                                                                {col}
-                                                                            </SelectItem>
-                                                                        )
-                                                                    )}
+                                                                    {file.detectedColumns?.map((col) => (
+                                                                        <SelectItem key={col} value={col}>{col}</SelectItem>
+                                                                    ))}
                                                                 </SelectContent>
                                                             </Select>
                                                         </TableCell>
-                                                     <TableCell>
-                                                         {file.accountContents?.length > 0 ? (
-                                                             <div className="flex flex-col gap-1">
-                                                                 {/* 개수 표기 추가 */}
-                                                                 <span className="text-xs text-muted-foreground font-medium">
-                                                                     ({file.accountContents.length}개)
-                                                                 </span>
-                                                                 <div className="flex flex-wrap gap-1">
-                                                                     {file.accountContents.map((content, idx) => (
-                                                                         <Badge key={idx} variant="secondary" className="font-normal">
-                                                                             {content}
-                                                                         </Badge>
-                                                                     ))}
-                                                                 </div>
-                                                             </div>
-                                                         ) : (
-                                                             '-'
-                                                         )}
-                                                     </TableCell>
+                                                        <TableCell>
+                                                            {file.accountContents?.length > 0 ? (
+                                                                <div className="flex items-center gap-1">
+                                                                    <Badge variant="secondary" className="font-normal whitespace-nowrap">
+                                                                        {file.accountContents[0]}
+                                                                    </Badge>
+                                                                    {file.accountContents.length > 1 && (
+                                                                        <span
+                                                                            className="text-xs text-muted-foreground whitespace-nowrap cursor-help"
+                                                                            title={file.accountContents.join(', ')}
+                                                                        >
+                                                                            외 {file.accountContents.length - 1}개
+                                                                        </span>
+                                                                    )}
+                                                                </div>
+                                                            ) : (
+                                                                '-'
+                                                            )}
+                                                        </TableCell>
                                                         <TableCell>
                                                             {file.totalAmount
                                                                 ? `${file.totalAmount.toLocaleString()} 원`
@@ -718,9 +674,7 @@ function MultiFileUploadPage() {
                                                             <Button
                                                                 variant="ghost"
                                                                 size="icon"
-                                                                onClick={() =>
-                                                                    handleDeleteFile(file.fileId)
-                                                                }
+                                                                onClick={() => handleDeleteFile(file.fileId)}
                                                             >
                                                                 <Trash2 className="h-4 w-4 text-red-500" />
                                                             </Button>
@@ -729,13 +683,13 @@ function MultiFileUploadPage() {
                                                 ))}
                                             </TableBody>
                                         </Table>
-                                    </div>
+                                    </ScrollSyncTable>
                                 )}
                             </CardContent>
                         </Card>
                     </div>
 
-                    {/* 우측: 세션 목록 (42%) */}
+                    {/* 우측: 세션 목록 */}
                     <div className="xl:col-span-5">
                         <Card>
                             <CardHeader>
@@ -750,24 +704,19 @@ function MultiFileUploadPage() {
                                         </p>
                                     </div>
                                 ) : (
-                                    /* ⭐ 수정 5: 세션 테이블 스크롤 */
-                                    <div className="border-t overflow-x-auto max-h-[700px] overflow-y-auto">
-                                        {/* ⭐ 수정 6: 세션 테이블 min-width */}
-                                        <Table className="min-w-[1200px]">
+                                    <ScrollSyncTable minWidth="1200px" maxHeight="700px">
+                                        <Table>
                                             <TableHeader className="sticky top-0 bg-background z-10">
                                                 <TableRow>
                                                     <TableHead className="w-12">
                                                         <Checkbox
                                                             checked={
-                                                                selectedSessions.length ===
-                                                                    sessions.length &&
+                                                                selectedSessions.length === sessions.length &&
                                                                 sessions.length > 0
                                                             }
                                                             onCheckedChange={(checked) => {
                                                                 if (checked) {
-                                                                    setSelectedSessions(
-                                                                        sessions.map((s) => s.sessionId)
-                                                                    );
+                                                                    setSelectedSessions(sessions.map((s) => s.sessionId));
                                                                 } else {
                                                                     setSelectedSessions([]);
                                                                 }
@@ -789,27 +738,19 @@ function MultiFileUploadPage() {
                                                     <TableRow key={session.sessionId}>
                                                         <TableCell>
                                                             <Checkbox
-                                                                checked={selectedSessions.includes(
-                                                                    session.sessionId
-                                                                )}
+                                                                checked={selectedSessions.includes(session.sessionId)}
                                                                 onCheckedChange={(checked) => {
                                                                     if (checked) {
-                                                                        setSelectedSessions((prev) => [
-                                                                            ...prev,
-                                                                            session.sessionId,
-                                                                        ]);
+                                                                        setSelectedSessions((prev) => [...prev, session.sessionId]);
                                                                     } else {
                                                                         setSelectedSessions((prev) =>
-                                                                            prev.filter(
-                                                                                (id) =>
-                                                                                    id !== session.sessionId
-                                                                            )
+                                                                            prev.filter((id) => id !== session.sessionId)
                                                                         );
                                                                     }
                                                                 }}
                                                             />
                                                         </TableCell>
-                                                         <TableCell>
+                                                        <TableCell>
                                                             {editingSession === session.sessionId ? (
                                                                 <Input
                                                                     value={session.sessionName}
@@ -823,20 +764,12 @@ function MultiFileUploadPage() {
                                                                         )
                                                                     }
                                                                     onBlur={() => {
-                                                                        handleSessionEdit(
-                                                                            session.sessionId,
-                                                                            'sessionName',
-                                                                            session.sessionName
-                                                                        );
+                                                                        handleSessionEdit(session.sessionId, 'sessionName', session.sessionName);
                                                                         setEditingSession(null);
                                                                     }}
                                                                     onKeyDown={(e) => {
                                                                         if (e.key === 'Enter') {
-                                                                            handleSessionEdit(
-                                                                                session.sessionId,
-                                                                                'sessionName',
-                                                                                session.sessionName
-                                                                            );
+                                                                            handleSessionEdit(session.sessionId, 'sessionName', session.sessionName);
                                                                             setEditingSession(null);
                                                                         }
                                                                     }}
@@ -846,16 +779,13 @@ function MultiFileUploadPage() {
                                                             ) : (
                                                                 <div
                                                                     className="cursor-pointer hover:text-primary truncate"
-                                                                    onClick={() =>
-                                                                        setEditingSession(session.sessionId)
-                                                                    }
+                                                                    onClick={() => setEditingSession(session.sessionId)}
                                                                     title="클릭하여 편집"
                                                                 >
                                                                     {session.sessionName}
                                                                 </div>
                                                             )}
                                                         </TableCell>
-                                                        {/* 작업자 - 인라인 편집 (항상 Input) */}
                                                         <TableCell>
                                                             <Input
                                                                 value={session.workerName || ''}
@@ -870,85 +800,61 @@ function MultiFileUploadPage() {
                                                                     )
                                                                 }
                                                                 onBlur={() => {
-                                                                    handleSessionEdit(
-                                                                        session.sessionId,
-                                                                        'workerName',
-                                                                        session.workerName || ''
-                                                                    );
+                                                                    handleSessionEdit(session.sessionId, 'workerName', session.workerName || '');
                                                                 }}
                                                                 onKeyDown={(e) => {
                                                                     if (e.key === 'Enter') {
-                                                                        handleSessionEdit(
-                                                                            session.sessionId,
-                                                                            'workerName',
-                                                                            session.workerName || ''
-                                                                        );
+                                                                        handleSessionEdit(session.sessionId, 'workerName', session.workerName || '');
                                                                         e.target.blur();
                                                                     }
                                                                 }}
                                                                 className="h-8"
                                                             />
                                                         </TableCell>
-                                                       {/* 대계정 */}
-                                                       <TableCell className="truncate">
-                                                           {Array.isArray(session.accountNames) && session.accountNames.length > 0
-                                                               ? session.accountNames.join(', ')
-                                                               : session.accountName || '-'}
-                                                       </TableCell>
-                                                       {/* 파일 수 */}
-                                                       <TableCell className="text-center">
-                                                           {session.totalFiles ||
-                                                               session.uploadedFiles?.length ||
-                                                               0}
-                                                       </TableCell>
-                                                       {/* 행수 - totalRowCount 우선 사용 */}
-                                                       <TableCell className="text-center">
-                                                           {(session.totalRowCount || session.totalRows || 0).toLocaleString()}
-                                                       </TableCell>
-                                                       {/* 합산금액 */}
-                                                       <TableCell className="truncate">
-                                                           {session.totalAmount
-                                                               ? `${session.totalAmount.toLocaleString()} 원`
-                                                               : '0 원'}
-                                                       </TableCell>
-                                                       {/* 완료 상태 */}
-                                                       <TableCell className="text-center">
-                                                           {session.isCompleted ? (
-                                                               <Badge>완료</Badge>
-                                                           ) : (
-                                                               <Badge variant="outline">
-                                                                   진행중
-                                                               </Badge>
-                                                           )}
-                                                       </TableCell>
-                                                       {/* 다운로드 */}
-                                                       <TableCell>
-                                                           <Button
-                                                               variant="ghost"
-                                                               size="icon"
-                                                               disabled={
-                                                                   !session.isCompleted ||
-                                                                   !session.exportPath
-                                                               }
-                                                               onClick={() =>
-                                                                   handleDownload(session.sessionId)
-                                                               }
-                                                           >
-                                                               <Download className="h-4 w-4" />
-                                                           </Button>
-                                                       </TableCell>
+                                                        <TableCell className="truncate">
+                                                            {Array.isArray(session.accountNames) && session.accountNames.length > 0
+                                                                ? session.accountNames.join(', ')
+                                                                : session.accountName || '-'}
+                                                        </TableCell>
+                                                        <TableCell className="text-center">
+                                                            {session.totalFiles || session.uploadedFiles?.length || 0}
+                                                        </TableCell>
+                                                        <TableCell className="text-center">
+                                                            {(session.totalRowCount || session.totalRows || 0).toLocaleString()}
+                                                        </TableCell>
+                                                        <TableCell className="truncate">
+                                                            {session.totalAmount
+                                                                ? `${session.totalAmount.toLocaleString()} 원`
+                                                                : '0 원'}
+                                                        </TableCell>
+                                                        <TableCell className="text-center">
+                                                            {session.isCompleted ? (
+                                                                <Badge>완료</Badge>
+                                                            ) : (
+                                                                <Badge variant="outline">진행중</Badge>
+                                                            )}
+                                                        </TableCell>
+                                                        <TableCell>
+                                                            <Button
+                                                                variant="ghost"
+                                                                size="icon"
+                                                                disabled={!session.isCompleted || !session.exportPath}
+                                                                onClick={() => handleDownload(session.sessionId)}
+                                                            >
+                                                                <Download className="h-4 w-4" />
+                                                            </Button>
+                                                        </TableCell>
                                                     </TableRow>
                                                 ))}
                                             </TableBody>
                                         </Table>
-                                    </div>
+                                    </ScrollSyncTable>
                                 )}
                             </CardContent>
                         </Card>
                     </div>
                 </div>
 
-                {/* Dialogs - 동일 */}
                 <PartitionDialog
                     open={partitionDialogOpen}
                     partitions={partitions}
