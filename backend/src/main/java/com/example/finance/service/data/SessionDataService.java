@@ -154,29 +154,24 @@ public class SessionDataService {
                 file.getFileName(), uploadId, accountColumnName, accountNames);
 
         String dataFieldKey = "data." + accountColumnName;
-
-        Criteria criteria = Criteria.where("upload_id").is(uploadId)
-                .and(dataFieldKey).in(accountNames);
-
-        long copiedCount = 0;
-        int skip = 0;
         LocalDateTime now = LocalDateTime.now();
 
-        while (true) {
-            // CURSOR_BATCH_SIZE 만큼씩 조회
-            Query query = new Query(criteria)
-                    .skip(skip)
-                    .limit(CURSOR_BATCH_SIZE);
+        // MongoDB cursor로 스트리밍 조회 (메모리에 전체 로드 안 함)
+        Document filter = new Document()
+                .append("upload_id", uploadId)
+                .append(dataFieldKey, new Document("$in", accountNames));
 
-            List<Document> rawDocs = mongoTemplate.find(query, Document.class, "raw_data");
+        long copiedCount = 0;
+        List<Document> batch = new ArrayList<>(BATCH_SIZE);
 
-            if (rawDocs.isEmpty()) {
-                break;
-            }
+        try (var cursor = mongoTemplate.getCollection("raw_data")
+                .find(filter)
+                .batchSize(CURSOR_BATCH_SIZE)
+                .cursor()) {
 
-            // 변환 + 배치 insert
-            List<Document> batch = new ArrayList<>(rawDocs.size());
-            for (Document rawDoc : rawDocs) {
+            while (cursor.hasNext()) {
+                Document rawDoc = cursor.next();
+
                 Document sessionDoc = new Document();
                 sessionDoc.put("project_id", projectId);
                 sessionDoc.put("session_id", sessionId);
@@ -186,24 +181,26 @@ public class SessionDataService {
                 sessionDoc.put("data", rawDoc.get("data"));
                 sessionDoc.put("created_at", now);
                 batch.add(sessionDoc);
-            }
 
+                if (batch.size() >= BATCH_SIZE) {
+                    mongoTemplate.getCollection("session_data").insertMany(batch);
+                    copiedCount += batch.size();
+                    log.debug("[{}] 배치 insert: {}건 (누적: {}건)",
+                            file.getFileName(), batch.size(), copiedCount);
+                    batch.clear();
+                }
+            }
+        }
+
+        if (!batch.isEmpty()) {
             mongoTemplate.getCollection("session_data").insertMany(batch);
             copiedCount += batch.size();
-            skip += rawDocs.size();
-
-            log.debug("[{}] 배치 insert 완료: {}건 (누적: {}건)",
-                    file.getFileName(), batch.size(), copiedCount);
-
-            // 조회된 건수가 CURSOR_BATCH_SIZE보다 작으면 마지막 페이지
-            if (rawDocs.size() < CURSOR_BATCH_SIZE) {
-                break;
-            }
         }
 
         log.info("[{}] 복사 완료: {}건", file.getFileName(), copiedCount);
         return copiedCount;
     }
+
 
 
     /**
@@ -228,10 +225,14 @@ public class SessionDataService {
     public Map<String, Object> getSessionData(String sessionId, int page, int size) {
         long totalCount = sessionDataRepository.countBySessionId(sessionId);
 
-        Query query = new Query(Criteria.where("session_id").is(sessionId))
-                .with(org.springframework.data.domain.Sort.by("row_number"))
-                .skip((long) page * size)
-                .limit(size);
+        // row_number 기반 range 쿼리 (skip 사용 안 함)
+        int startRow = page * size + 1;
+        int endRow = startRow + size;
+
+        Query query = new Query(
+                Criteria.where("session_id").is(sessionId)
+                        .and("row_number").gte(startRow).lt(endRow)
+        ).with(org.springframework.data.domain.Sort.by("row_number"));
 
         List<Document> documents = mongoTemplate.find(query, Document.class, "session_data");
 
@@ -263,6 +264,7 @@ public class SessionDataService {
 
         return result;
     }
+
 
     /**
      * 세션의 session_data 삭제 (재분석 또는 세션 삭제 시)
