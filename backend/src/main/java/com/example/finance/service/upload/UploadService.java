@@ -512,12 +512,17 @@ public class UploadService {
                 .orElseThrow(() -> new BusinessException(
                         "FILE_NOT_FOUND", "파일을 찾을 수 없습니다: " + fileId));
 
-        // 3. 세션에서 파일 제거
+        // 세션에서 파일 제거
         fileSession.getUploadedFiles().removeIf(f -> f.getFileId().equals(fileId));
 
-        // 4. 세션 업데이트
-        fileSession.setUpdatedAt(LocalDateTime.now());
-        fileSessionRepository.save(fileSession);
+        // 파일이 모두 제거된 빈 세션이면 세션 자체를 완전 삭제
+        if (fileSession.getUploadedFiles().isEmpty()) {
+            fileSessionRepository.delete(fileSession);
+            log.info("빈 세션 완전 삭제: sessionId={}", fileSession.getSessionId());
+        } else {
+            fileSession.setUpdatedAt(LocalDateTime.now());
+            fileSessionRepository.save(fileSession);
+        }
 
         log.info("파일 삭제 완료: fileId={}", fileId);
     }

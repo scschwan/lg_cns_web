@@ -682,16 +682,10 @@ public class FileSessionService {
             throw new RuntimeException("세션을 삭제할 권한이 없습니다");
         }
 
-        // 소프트 삭제
-        fileSession.setIsDeleted(true);
-        fileSession.setUpdatedAt(LocalDateTime.now());
-        fileSessionRepository.save(fileSession);
+        // 완전 삭제
+        fileSessionRepository.delete(fileSession);
 
-        // 프로젝트 세션 수 업데이트
-        project.setTotalSessions(project.getTotalSessions() - 1);
-        if (fileSession.getIsCompleted()) {
-            project.setCompletedSessions(project.getCompletedSessions() - 1);
-        }
+        // 프로젝트 업데이트
         project.setUpdatedAt(LocalDateTime.now());
         projectRepository.save(project);
 
@@ -1067,18 +1061,22 @@ public class FileSessionService {
                     .orElseThrow(() -> new BusinessException(
                             "SESSION_NOT_FOUND", "세션을 찾을 수 없습니다: " + sessionId));
 
-            // 프로젝트 확인
             if (!session.getProjectId().equals(projectId)) {
                 throw new BusinessException("FORBIDDEN", "프로젝트 세션이 아닙니다");
             }
 
-            // 소프트 삭제
-            session.setIsDeleted(true);
-            session.setUpdatedAt(LocalDateTime.now());
-            fileSessionRepository.save(session);
+            // 완전 삭제
+            fileSessionRepository.delete(session);
         }
 
-        log.info("세션 일괄 삭제 완료: {} 개", sessionIds.size());
+        // 프로젝트 업데이트
+        Project project = projectRepository.findByProjectId(projectId).orElse(null);
+        if (project != null) {
+            project.setUpdatedAt(LocalDateTime.now());
+            projectRepository.save(project);
+        }
+
+        log.info("세션 일괄 완전 삭제 완료: {} 개", sessionIds.size());
     }
 
     /**

@@ -244,10 +244,18 @@ public class ProjectService {
                             .orElseThrow();
 
                     // 세션 통계 조회
+                    /*
                     long totalSessions = fileSessionRepository
                             .countByProjectIdAndIsDeletedFalse(project.getProjectId());
                     long completedSessions = fileSessionRepository
                             .countByProjectIdAndIsCompletedTrueAndIsDeletedFalse(project.getProjectId());
+                    */
+                    // sessionName이 있는(빈 문자열이 아닌) 세션만 카운트
+                    long totalSessions = fileSessionRepository
+                            .countActiveSessionsWithName(project.getProjectId());
+                    long completedSessions = fileSessionRepository
+                            .countCompletedSessionsWithName(project.getProjectId());
+
 
                     return ProjectSummary.builder()
                             .projectId(project.getProjectId())

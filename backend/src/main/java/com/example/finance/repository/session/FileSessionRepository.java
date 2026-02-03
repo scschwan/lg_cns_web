@@ -3,6 +3,7 @@ package com.example.finance.repository.session;
 import com.example.finance.enums.ProcessStep;
 import com.example.finance.model.session.FileSession;
 import org.springframework.data.mongodb.repository.MongoRepository;
+import org.springframework.data.mongodb.repository.Query;
 import org.springframework.stereotype.Repository;
 
 import java.util.List;
@@ -53,6 +54,12 @@ public interface FileSessionRepository extends MongoRepository<FileSession, Stri
     long countByProjectIdAndIsCompletedTrueAndIsDeletedFalse(String projectId);
 
     // ⭐⭐⭐ 신규 메서드 추가 ⭐⭐⭐
+
+    @Query(value = "{ 'projectId': ?0, 'isDeleted': false, 'sessionName': { $nin: [null, ''] } }", count = true)
+    long countActiveSessionsWithName(String projectId);
+
+    @Query(value = "{ 'projectId': ?0, 'isDeleted': false, 'isCompleted': true, 'sessionName': { $nin: [null, ''] } }", count = true)
+    long countCompletedSessionsWithName(String projectId);
 
     /**
      * 업로드된 파일 ID로 세션 조회
