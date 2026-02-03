@@ -353,7 +353,14 @@ function MultiFileUploadPage() {
         setProgressMessage('세션 병합 중...');
 
         try {
-            await uploadService.mergeSessions(projectId, selectedSessions);
+            // 선택된 세션 중 첫 번째 세션의 이름으로 자동 생성
+            const firstSession = sessions.find(s => s.sessionId === selectedSessions[0]);
+            const firstSessionName = firstSession?.sessionName || '세션';
+            const autoSessionName = selectedSessions.length > 1
+                ? `${firstSessionName} 외 ${selectedSessions.length - 1}개`
+                : firstSessionName;
+
+            await uploadService.mergeSessions(projectId, selectedSessions, autoSessionName);
             loadSessions();
             setSelectedSessions([]);
             setProgressDialogOpen(false);
@@ -726,7 +733,7 @@ function MultiFileUploadPage() {
                                                     <TableHead className="w-[180px]">세션명</TableHead>
                                                     <TableHead className="w-[100px]">작업자</TableHead>
                                                     <TableHead className="w-[120px]">대계정</TableHead>
-                                                    <TableHead className="w-[80px] text-center">파일</TableHead>
+{/*                                                     <TableHead className="w-[80px] text-center">파일</TableHead> */}
                                                     <TableHead className="w-[100px] text-center">행수</TableHead>
                                                     <TableHead className="w-[130px]">합산금액</TableHead>
                                                     <TableHead className="w-[80px] text-center">완료</TableHead>
@@ -812,13 +819,24 @@ function MultiFileUploadPage() {
                                                             />
                                                         </TableCell>
                                                         <TableCell className="truncate">
-                                                            {Array.isArray(session.accountNames) && session.accountNames.length > 0
-                                                                ? session.accountNames.join(', ')
-                                                                : session.accountName || '-'}
+                                                            {Array.isArray(session.accountNames) && session.accountNames.length > 0 ? (
+                                                                    <div className="flex items-center gap-1">
+                                                                        <Badge variant="secondary" className="font-normal text-xs">
+                                                                            {session.accountNames[0]}
+                                                                        </Badge>
+                                                                        {session.accountNames.length > 1 && (
+                                                                            <span className="text-xs text-muted-foreground whitespace-nowrap">
+                                                                                외 {session.accountNames.length - 1}개
+                                                                            </span>
+                                                                        )}
+                                                                    </div>
+                                                                ) : (
+                                                                    '-'
+                                                                )}
                                                         </TableCell>
-                                                        <TableCell className="text-center">
-                                                            {session.totalFiles || session.uploadedFiles?.length || 0}
-                                                        </TableCell>
+{/*                                                         <TableCell className="text-center"> */}
+{/*                                                             {session.totalFiles || session.uploadedFiles?.length || 0} */}
+{/*                                                         </TableCell> */}
                                                         <TableCell className="text-center">
                                                             {(session.totalRowCount || session.totalRows || 0).toLocaleString()}
                                                         </TableCell>

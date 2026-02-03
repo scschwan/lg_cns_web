@@ -229,15 +229,15 @@ const uploadService = {
      * 세션 병합
      * POST /api/projects/{projectId}/upload/sessions/merge
      */
-    mergeSessions: async (projectId, sessionIds, newSessionName, workerName) => {
-        const response = await api.post(
-            `/api/projects/${projectId}/upload/sessions/merge`,
-            {
-                sessionIds,
-                newSessionName,
-                workerName
-            }
-        );
+    mergeSessions:  async (projectId, sessionIds, newSessionName, workerName) => {
+       const response = await api.post(
+           `/api/projects/${projectId}/upload/sessions/merge`,
+           {
+               sessionIds,
+               newSessionName,
+               workerName
+           }
+       );
         return response.data;
     },
 
