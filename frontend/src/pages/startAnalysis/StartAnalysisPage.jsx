@@ -235,8 +235,8 @@ export default function StartAnalysisPage() {
 
               {!isOriginalCollapsed && (
                 <CardContent className="p-0">
-                  {/* max-height를 주어 펼쳐졌을 때 너무 많은 공간을 차지하지 않도록 제어 */}
-                  <div className="overflow-auto max-h-[250px] custom-scrollbar">
+                  <div className="overflow-auto max-h-[250px]">
+                    <div style={{ minWidth: '1200px' }}>
                     <Table>
                       <TableHeader className="bg-gray-100 sticky top-0 z-10">
                         <TableRow>
@@ -270,6 +270,7 @@ export default function StartAnalysisPage() {
                             )}
                       </TableBody>
                     </Table>
+                    </div>
                   </div>
                 </CardContent>
               )}
@@ -283,7 +284,8 @@ export default function StartAnalysisPage() {
 
               {/* 테이블 영역: relative + absolute inset-0으로 부모 꽉 채우기 */}
               <CardContent className="flex-1 relative p-0 min-h-0">
-                <div className="absolute inset-0 overflow-auto custom-scrollbar">
+                <div className="absolute inset-0 overflow-auto">
+                  <div style={{ minWidth: '1200px' }}>
                   <Table>
                     <TableHeader className="bg-gray-100 sticky top-0 z-10 shadow-sm">
                       <TableRow>
@@ -317,6 +319,7 @@ export default function StartAnalysisPage() {
                           )}
                     </TableBody>
                   </Table>
+                  </div>
                 </div>
               </CardContent>
 
