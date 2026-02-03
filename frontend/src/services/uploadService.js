@@ -521,6 +521,18 @@ const uploadService = {
         );
         return response.data.downloadUrl;
     }
+
+    /**
+     * 계정 분석 시작
+     * POST /api/projects/{projectId}/upload/sessions/{sessionId}/analyze
+     */
+    startAccountAnalysis: async (projectId, sessionId) => {
+        const response = await api.post(
+            `/api/projects/${projectId}/upload/sessions/${sessionId}/analyze`
+        );
+        return response.data;
+    }
+
 };
 
 
