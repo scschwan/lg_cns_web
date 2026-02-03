@@ -1174,7 +1174,17 @@ public class UploadService {
                 if (accountName.isEmpty()) continue;
 
                 long count = doc.getInteger("count", 0);
-                double amount = amountColName != null ? doc.getDouble("totalAmount") != null ? doc.getDouble("totalAmount") : 0.0 : 0.0;
+                double amount = 0.0;
+                if (amountColName != null) {
+                    Object totalAmountObj = doc.get("totalAmount");
+                    if (totalAmountObj instanceof Number) {
+                        amount = ((Number) totalAmountObj).doubleValue();
+                    }
+                }
+
+                log.debug("[{}] 계정={}, count={}, amount={}, amountType={}",
+                        fileName, accountName, count, amount,
+                        doc.get("totalAmount") != null ? doc.get("totalAmount").getClass().getSimpleName() : "null");
 
                 statsMap.put(accountName, createPartitionStats(count, amount));
                 cacheData.put(accountName, count + "|" + amount);

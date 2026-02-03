@@ -1,5 +1,6 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate, useParams, useLocation } from 'react-router-dom';
+import uploadService from '../../services/uploadService';
 import { cn } from '@/lib/utils';
 import {
   Upload,
@@ -18,6 +19,15 @@ const Sidebar = () => {
   const navigate = useNavigate();
   const { projectId, sessionId } = useParams();
   const location = useLocation();
+  const [sessionName, setSessionName] = useState('');
+
+  useEffect(() => {
+    if (projectId && sessionId) {
+      uploadService.getSession(projectId, sessionId)
+        .then(session => setSessionName(session.sessionName || ''))
+        .catch(() => setSessionName(''));
+    }
+  }, [projectId, sessionId]);
 
   const steps = [
     {
@@ -235,7 +245,7 @@ const Sidebar = () => {
             {sessionId && (
               <p className="flex items-center gap-2 text-primary">
                 <CheckCircle2 className="w-3 h-3" />
-                현재 세션: {sessionId.slice(0, 8)}...
+                현재 세션: {sessionName || sessionId.slice(0, 8) + '...'}
               </p>
             )}
           </div>
