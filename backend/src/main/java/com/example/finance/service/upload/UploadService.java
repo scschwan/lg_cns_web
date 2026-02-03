@@ -265,39 +265,54 @@ public class UploadService {
      * Excel 메타데이터 감지 - raw_data 우선, fallback으로 Excel
      */
     private ExcelMetadata detectExcelMetadata(String s3Key) {
-        // 1. raw_data에서 먼저 시도
         String uploadId = extractUploadIdFromS3Key(s3Key);
+
         if (uploadId != null) {
-            try {
-                long rowCount = mongoTemplate.getCollection("raw_data")
+            // raw_data에 데이터가 들어올 때까지 최대 30초 대기
+            long rowCount = 0;
+            for (int retry = 0; retry < 10; retry++) {
+                rowCount = mongoTemplate.getCollection("raw_data")
                         .countDocuments(new org.bson.Document("upload_id", uploadId));
-
-                if (rowCount > 0) {
-                    org.bson.Document rawDoc = mongoTemplate.getCollection("raw_data")
-                            .find(new org.bson.Document("upload_id", uploadId))
-                            .limit(1)
-                            .first();
-
-                    List<String> columns = new ArrayList<>();
-                    if (rawDoc != null) {
-                        Object dataObj = rawDoc.get("data");
-                        if (dataObj instanceof org.bson.Document dataDoc) {
-                            columns.addAll(dataDoc.keySet());
-                        }
-                    }
-
-                    log.info("raw_data에서 메타데이터 조회 성공: uploadId={}, columns={}, rowCount={}",
-                            uploadId, columns.size(), rowCount);
-                    return new ExcelMetadata(columns, rowCount);
+                if (rowCount > 0) break;
+                try {
+                    log.info("raw_data 대기 중: uploadId={}, retry={}", uploadId, retry + 1);
+                    Thread.sleep(3000);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    break;
                 }
-            } catch (Exception e) {
-                log.warn("raw_data 메타데이터 조회 실패, Excel fallback: uploadId={}", uploadId, e);
+            }
+
+            if (rowCount > 0) {
+                org.bson.Document rawDoc = mongoTemplate.getCollection("raw_data")
+                        .find(new org.bson.Document("upload_id", uploadId))
+                        .limit(1)
+                        .first();
+
+                List<String> columns = new ArrayList<>();
+                if (rawDoc != null) {
+                    Object dataObj = rawDoc.get("data");
+                    if (dataObj instanceof org.bson.Document dataDoc) {
+                        columns.addAll(dataDoc.keySet());
+                    }
+                }
+
+                log.info("raw_data 메타데이터 조회 성공: uploadId={}, columns={}, rowCount={}",
+                        uploadId, columns.size(), rowCount);
+                return new ExcelMetadata(columns, rowCount);
             }
         }
 
-        // 2. Fallback: Excel 파싱 (소용량 또는 raw_data 미존재 시)
+        // Fallback: 파일 크기 체크 후 소용량만 Excel 파싱
         try {
             byte[] fileBytes = s3Service.downloadFile(s3Key);
+
+            // 10MB 이상이면 POI 파싱 포기 (OOM 방지)
+            if (fileBytes.length > 10 * 1024 * 1024) {
+                log.warn("대용량 파일 Excel 파싱 스킵 ({}MB): s3Key={}",
+                        fileBytes.length / 1024 / 1024, s3Key);
+                return new ExcelMetadata(new ArrayList<>(), 0L);
+            }
 
             try (ByteArrayInputStream bis = new ByteArrayInputStream(fileBytes);
                  Workbook workbook = new XSSFWorkbook(bis)) {
@@ -328,8 +343,6 @@ public class UploadService {
             return new ExcelMetadata(new ArrayList<>(), 0L);
         }
     }
-
-
 
 
     /**
@@ -760,18 +773,19 @@ public class UploadService {
 
         try {
             String fieldPath = "data." + columnName;
-
-            // 방법 1: Java에서 직접 합산 (문자열 금액 처리 가능)
             double total = 0.0;
+            long count = 0;
+            long failCount = 0;
+
             try (var cursor = mongoTemplate.getCollection("raw_data")
-                    .find(new Document("upload_id", uploadId)
-                            .append(fieldPath, new Document("$exists", true)))
-                    .projection(new Document(fieldPath, 1))
+                    .find(new org.bson.Document("upload_id", uploadId)
+                            .append(fieldPath, new org.bson.Document("$exists", true)))
+                    .projection(new org.bson.Document(fieldPath, 1))
                     .batchSize(5000).cursor()) {
 
                 while (cursor.hasNext()) {
-                    Document doc = cursor.next();
-                    Document data = doc.get("data", Document.class);
+                    org.bson.Document doc = cursor.next();
+                    org.bson.Document data = doc.get("data", org.bson.Document.class);
                     if (data == null) continue;
 
                     Object val = data.get(columnName);
@@ -780,27 +794,35 @@ public class UploadService {
                     try {
                         if (val instanceof Number num) {
                             total += num.doubleValue();
+                            count++;
                         } else {
-                            // 쉼표, 공백 제거 후 파싱
-                            String str = val.toString().replaceAll("[,\\s]", "").trim();
-                            if (!str.isEmpty() && !str.equals("-")) {
+                            // 쉼표, 공백, 통화기호 제거 후 파싱
+                            String str = val.toString()
+                                    .replaceAll("[,\\s₩\\\\]", "")
+                                    .trim();
+                            if (!str.isEmpty() && !str.equals("-") && !str.equals("N/A")) {
                                 total += Double.parseDouble(str);
+                                count++;
                             }
                         }
-                    } catch (NumberFormatException ignored) {
-                        // 숫자가 아닌 값 무시
+                    } catch (NumberFormatException e) {
+                        failCount++;
                     }
                 }
             }
+
+            log.info("금액 합산 완료: uploadId={}, column={}, total={}, count={}, failCount={}",
+                    uploadId, columnName, total, count, failCount);
 
             redisTemplate.opsForValue().set(cacheKey, String.valueOf(total), Duration.ofMinutes(10));
             return total;
 
         } catch (Exception e) {
-            log.error("raw_data 금액 합산 실패, Excel fallback 사용: uploadId={}", uploadId, e);
+            log.error("raw_data 금액 합산 실패: uploadId={}", uploadId, e);
             return calculateTotalAmountFromExcel(s3Key, columnName);
         }
     }
+
 
 
     // 기존 로직을 fallback용으로 이름만 변경
