@@ -12,6 +12,11 @@ import software.amazon.awssdk.services.s3.presigner.model.PresignedPutObjectRequ
 import software.amazon.awssdk.services.s3.presigner.model.PutObjectPresignRequest;
 
 import java.time.Duration;
+import software.amazon.awssdk.core.ResponseInputStream;
+import software.amazon.awssdk.services.s3.model.GetObjectResponse;import java.io.File;
+import java.io.FileOutputStream;
+import java.io.IOException;
+import java.io.InputStream;
 
 /**
  * S3 서비스
@@ -114,4 +119,39 @@ public class S3Service {
             throw new RuntimeException("S3 파일 다운로드 실패: " + e.getMessage(), e);
         }
     }
+
+    /**
+     * S3에서 파일을 임시 파일로 다운로드 (대용량 파일용 - 메모리 절약)
+     */
+    public File downloadFileToTemp(String s3Key) {
+        log.info("S3 파일 임시 다운로드: bucket={}, key={}", excelBucket, s3Key);
+
+        try {
+            GetObjectRequest getObjectRequest = GetObjectRequest.builder()
+                    .bucket(excelBucket)
+                    .key(s3Key)
+                    .build();
+
+            File tempFile = File.createTempFile("excel-", ".xlsx");
+            tempFile.deleteOnExit();
+
+            try (ResponseInputStream<GetObjectResponse> s3Stream = s3Client.getObject(getObjectRequest);
+                 FileOutputStream fos = new FileOutputStream(tempFile)) {
+
+                byte[] buffer = new byte[8192];
+                int bytesRead;
+                while ((bytesRead = s3Stream.read(buffer)) != -1) {
+                    fos.write(buffer, 0, bytesRead);
+                }
+            }
+
+            log.info("S3 파일 임시 다운로드 완료: {} bytes → {}", tempFile.length(), tempFile.getAbsolutePath());
+            return tempFile;
+
+        } catch (Exception e) {
+            log.error("S3 파일 임시 다운로드 실패: key={}, error={}", s3Key, e.getMessage(), e);
+            throw new RuntimeException("S3 파일 임시 다운로드 실패: " + e.getMessage(), e);
+        }
+    }
+
 }

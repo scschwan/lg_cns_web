@@ -741,14 +741,15 @@ public class FileSessionService {
             }
         }
 
-        // 6. 합산 데이터 계산
-        long totalRowCount = mergedFiles.stream()
-                .mapToLong(UploadedFileInfo::getRowCount)
+        // 6. 합산 데이터 계산 - 세션 레벨의 집계 데이터를 합산
+        long totalRowCount = sessions.stream()
+                .mapToLong(s -> s.getTotalRowCount() != null ? s.getTotalRowCount() : 0L)
                 .sum();
 
         long totalAmount = sessions.stream()
                 .mapToLong(s -> s.getTotalAmount() != null ? s.getTotalAmount() : 0L)
                 .sum();
+
 
         // 7. accountNames 수집 - 세션 레벨 + 파일 레벨 모두에서 수집
         Set<String> accountNameSet = new LinkedHashSet<>();

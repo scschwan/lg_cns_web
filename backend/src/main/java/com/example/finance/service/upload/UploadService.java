@@ -23,6 +23,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.io.ByteArrayInputStream;
+import java.io.File;
 import java.io.IOException;
 import java.time.LocalDateTime;
 import java.util.*;
@@ -623,97 +624,39 @@ public class UploadService {
      * 계정명 추출 (내부 메서드)
      */
     private List<String> extractAccountValuesInternal(String s3Key, String columnName) {
+        File tempFile = null;
         try {
-            byte[] fileBytes = s3Service.downloadFile(s3Key);
-
-            try (ByteArrayInputStream bis = new ByteArrayInputStream(fileBytes);
-                 Workbook workbook = new XSSFWorkbook(bis)) {
-
-                Sheet sheet = workbook.getSheetAt(0);
-                Row headerRow = sheet.getRow(0);
-
-                // 컬럼 인덱스 찾기
-                int columnIndex = findColumnIndex(headerRow, columnName);
-                if (columnIndex == -1) {
-                    throw new BusinessException("COLUMN_NOT_FOUND",
-                            "컬럼을 찾을 수 없습니다: " + columnName);
-                }
-
-                // 고유값 추출 (전체 행 - 속도 우선)
-                Set<String> accountValues = new HashSet<>();
-
-                for (int i = 1; i <= sheet.getLastRowNum(); i++) {
-                    Row row = sheet.getRow(i);
-                    if (row == null) continue;
-
-                    Cell cell = row.getCell(columnIndex);
-                    if (cell == null) continue;
-
-                    String value = getCellValueAsString(cell);
-                    if (value != null && !value.trim().isEmpty()) {
-                        accountValues.add(value.trim());
-                    }
-                }
-
-                return new ArrayList<>(accountValues);
-            }
-        } catch (IOException e) {
+            tempFile = s3Service.downloadFileToTemp(s3Key);
+            return ExcelStreamingParser.extractAccountValues(tempFile, columnName);
+        } catch (Exception e) {
             log.error("계정명 추출 실패: s3Key={}", s3Key, e);
             return new ArrayList<>();
+        } finally {
+            if (tempFile != null && tempFile.exists()) {
+                tempFile.delete();
+            }
         }
     }
+
 
     /**
      * 금액 합산 (내부 메서드)
      */
     private Double calculateTotalAmountInternal(String s3Key, String columnName) {
+        File tempFile = null;
         try {
-            byte[] fileBytes = s3Service.downloadFile(s3Key);
-
-            try (ByteArrayInputStream bis = new ByteArrayInputStream(fileBytes);
-                 Workbook workbook = new XSSFWorkbook(bis)) {
-
-                Sheet sheet = workbook.getSheetAt(0);
-                Row headerRow = sheet.getRow(0);
-
-                // 컬럼 인덱스 찾기
-                int columnIndex = findColumnIndex(headerRow, columnName);
-                if (columnIndex == -1) {
-                    throw new BusinessException("COLUMN_NOT_FOUND",
-                            "컬럼을 찾을 수 없습니다: " + columnName);
-                }
-
-                // 금액 합산 (전체 행 - 속도 우선)
-                double totalAmount = 0.0;
-
-                for (int i = 1; i <= sheet.getLastRowNum(); i++) {
-                    Row row = sheet.getRow(i);
-                    if (row == null) continue;
-
-                    Cell cell = row.getCell(columnIndex);
-                    if (cell == null) continue;
-
-                    if (cell.getCellType() == CellType.NUMERIC) {
-                        totalAmount += cell.getNumericCellValue();
-                    } else if (cell.getCellType() == CellType.STRING) {
-                        String value = cell.getStringCellValue().replaceAll("[^0-9.-]", "");
-                        if (!value.isEmpty()) {
-                            try {
-                                totalAmount += Double.parseDouble(value);
-                            } catch (NumberFormatException e) {
-                                // 무시
-                            }
-                        }
-                    }
-                }
-
-                return totalAmount;
-            }
-        } catch (IOException e) {
+            tempFile = s3Service.downloadFileToTemp(s3Key);
+            return ExcelStreamingParser.calculateTotalAmount(tempFile, columnName);
+        } catch (Exception e) {
             log.error("금액 계산 실패: s3Key={}", s3Key, e);
             return 0.0;
+        } finally {
+            if (tempFile != null && tempFile.exists()) {
+                tempFile.delete();
+            }
         }
     }
+
 
 
     /**
@@ -764,12 +707,11 @@ public class UploadService {
                         fileInfo.getFileName(), fileInfo.getAccountColumnName(), fileInfo.getAmountColumnName());
 
                 // 2. 엑셀 파싱 및 그룹핑 (병렬)
-                Map<String, PartitionStats> statsMap = groupFileByAccountParallel(fileInfo);
+                Map<String, ExcelStreamingParser.PartitionStats> statsMap = groupFileByAccountParallel(fileInfo);
 
-                // 3. 결과 DTO 생성
-                for (Map.Entry<String, PartitionStats> entry : statsMap.entrySet()) {
+                for (Map.Entry<String, ExcelStreamingParser.PartitionStats> entry : statsMap.entrySet()) {
                     String accountName = entry.getKey();
-                    PartitionStats stats = entry.getValue();
+                    ExcelStreamingParser.PartitionStats stats = entry.getValue();
 
                     partitionList.add(AccountPartition.builder()
                             .fileId(fileInfo.getFileId())
@@ -812,67 +754,29 @@ public class UploadService {
         public double getAmount() { return amount.sum(); }
     }
 
-    private Map<String, PartitionStats> groupFileByAccountParallel(UploadedFileInfo fileInfo) {
-        Map<String, PartitionStats> statsMap = new ConcurrentHashMap<>();
-
+    private Map<String, ExcelStreamingParser.PartitionStats> groupFileByAccountParallel(UploadedFileInfo fileInfo) {
         String accountColName = fileInfo.getAccountColumnName();
         String amountColName = fileInfo.getAmountColumnName();
 
         if (accountColName == null) {
             log.warn("[{}] 계정 컬럼이 설정되지 않아 분석을 건너뜁니다.", fileInfo.getFileName());
-            return statsMap;
+            return new ConcurrentHashMap<>();
         }
 
+        File tempFile = null;
         try {
-            byte[] fileBytes = s3Service.downloadFile(fileInfo.getS3Key());
-
-            try (ByteArrayInputStream bis = new ByteArrayInputStream(fileBytes);
-                 Workbook workbook = new XSSFWorkbook(bis)) {
-
-                Sheet sheet = workbook.getSheetAt(0);
-                Row headerRow = sheet.getRow(0);
-
-                int accIdx = findColumnIndex(headerRow, accountColName);
-                int amtIdx = findColumnIndex(headerRow, amountColName);
-
-                log.info("[{}] 컬럼 인덱스 - 계정({}): {}, 금액({}): {}",
-                        fileInfo.getFileName(), accountColName, accIdx, amountColName, amtIdx);
-
-                if (accIdx == -1) {
-                    log.error("[{}] 계정 컬럼을 찾을 수 없습니다.", fileInfo.getFileName());
-                    return statsMap;
-                }
-
-                // Spliterator를 이용해 Row를 스트림으로 변환
-                Spliterator<Row> spliterator = Spliterators.spliteratorUnknownSize(sheet.rowIterator(), Spliterator.ORDERED);
-
-                // 병렬 스트림 처리 (1번 행부터 시작하기 위해 skip(1))
-                StreamSupport.stream(spliterator, true) // true = parallel
-                        .skip(1)
-                        .forEach(row -> {
-                            // 1. 계정명 추출
-                            String account = getCellValueAsString(row.getCell(accIdx));
-
-                            if (account != null && !account.trim().isEmpty()) {
-                                account = account.trim();
-
-                                // 2. 금액 추출
-                                double amount = 0.0;
-                                if (amtIdx != -1) {
-                                    amount = getCellValueAsNumeric(row.getCell(amtIdx));
-                                }
-
-                                // 3. 집계 (ConcurrentMap + Atomic)
-                                statsMap.computeIfAbsent(account, k -> new PartitionStats()).add(amount);
-                            }
-                        });
-            }
+            tempFile = s3Service.downloadFileToTemp(fileInfo.getS3Key());
+            return ExcelStreamingParser.groupByAccount(tempFile, accountColName, amountColName);
         } catch (Exception e) {
             log.error("[{}] 엑셀 그룹핑 실패: {}", fileInfo.getFileName(), e.getMessage());
+            return new ConcurrentHashMap<>();
+        } finally {
+            if (tempFile != null && tempFile.exists()) {
+                tempFile.delete();
+            }
         }
-
-        return statsMap;
     }
+
 
     private int findColumnIndex(Row headerRow, String columnName) {
         if (headerRow == null || columnName == null) return -1;
