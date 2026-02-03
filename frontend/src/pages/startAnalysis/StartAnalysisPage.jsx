@@ -44,9 +44,9 @@ export default function StartAnalysisPage() {
 
   // ===== 상태 관리 =====
   const [sessionInfo, setSessionInfo] = useState({
-    sessionName: '지급수수료_sample1_2025-10-11',
-    totalRecords: 6270,
-    totalAmount: 5461923000,
+    sessionName: '',
+    totalRecords: 0,
+    totalAmount: 0,
   });
 
   // 데이터
@@ -115,8 +115,22 @@ export default function StartAnalysisPage() {
 
 
 
-  // ===== useEffect - 초기 데이터 로드 =====
-
+  // ===== useEffect - 세션 정보 로드 =====
+  useEffect(() => {
+    const loadSessionInfo = async () => {
+      try {
+        const session = await uploadService.getSession(projectId, sessionId);
+        setSessionInfo({
+          sessionName: session.sessionName || sessionId,
+          totalRecords: session.totalRowCount || 0,
+          totalAmount: session.totalAmount || 0,
+        });
+      } catch (error) {
+        console.error('세션 정보 로드 실패:', error);
+      }
+    };
+    loadSessionInfo();
+  }, [projectId, sessionId]);
 
   // ===== 데이터 로드 =====
   const loadSessionData = async () => {
