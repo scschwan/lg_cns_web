@@ -729,14 +729,16 @@ public class FileSessionService {
             throw new RuntimeException("세션을 병합할 권한이 없습니다");
         }
 
-        // 4. 0번째 세션을 기준 세션으로 사용
+        // 4. 0번째 세션을 기준, 나머지를 별도 리스트로 복사
         FileSession baseSession = sessions.get(0);
-        List<FileSession> otherSessions = sessions.subList(1, sessions.size());
+        List<FileSession> otherSessions = new ArrayList<>(sessions.subList(1, sessions.size()));
 
-        // 5. 나머지 세션들의 파일을 기준 세션에 합산
+        // 5. 모든 세션의 파일 합산
         List<UploadedFileInfo> mergedFiles = new ArrayList<>(baseSession.getUploadedFiles());
         for (FileSession other : otherSessions) {
-            mergedFiles.addAll(other.getUploadedFiles());
+            if (other.getUploadedFiles() != null) {
+                mergedFiles.addAll(other.getUploadedFiles());
+            }
         }
 
         // 6. 합산 데이터 계산
@@ -744,11 +746,23 @@ public class FileSessionService {
                 .mapToLong(UploadedFileInfo::getRowCount)
                 .sum();
 
-        List<String> mergedAccountNames = sessions.stream()
-                .filter(s -> s.getAccountNames() != null)
-                .flatMap(s -> s.getAccountNames().stream())
-                .distinct()
-                .collect(Collectors.toList());
+        long totalAmount = sessions.stream()
+                .mapToLong(s -> s.getTotalAmount() != null ? s.getTotalAmount() : 0L)
+                .sum();
+
+        // 7. accountNames 수집 - 세션 레벨 + 파일 레벨 모두에서 수집
+        Set<String> accountNameSet = new LinkedHashSet<>();
+        for (FileSession s : sessions) {
+            if (s.getAccountNames() != null) {
+                accountNameSet.addAll(s.getAccountNames());
+            }
+        }
+        // 파일 내 accountContents에서도 수집 (세션 레벨에 없을 경우 대비)
+        for (UploadedFileInfo file : mergedFiles) {
+            if (file.getAccountContents() != null) {
+                accountNameSet.addAll(file.getAccountContents());
+            }
+        }
 
         List<String> mergedAccountColumnNames = sessions.stream()
                 .filter(s -> s.getAccountColumnNames() != null)
@@ -756,11 +770,13 @@ public class FileSessionService {
                 .distinct()
                 .collect(Collectors.toList());
 
-        long totalAmount = sessions.stream()
-                .mapToLong(s -> s.getTotalAmount() != null ? s.getTotalAmount() : 0L)
-                .sum();
+        // 8. 나머지 세션 하드 삭제 (save보다 먼저 실행)
+        for (FileSession other : otherSessions) {
+            log.info("병합으로 삭제할 세션: sessionId={}, mongoId={}", other.getSessionId(), other.getId());
+            fileSessionRepository.deleteById(other.getId());
+        }
 
-        // 7. 기준 세션 업데이트
+        // 9. 기준 세션 업데이트 후 저장
         baseSession.setSessionName(request.getNewSessionName());
         if (request.getWorkerName() != null) {
             baseSession.setWorkerName(request.getWorkerName());
@@ -769,21 +785,15 @@ public class FileSessionService {
         baseSession.setTotalFiles(mergedFiles.size());
         baseSession.setTotalRowCount(totalRowCount);
         baseSession.setTotalAmount(totalAmount);
-        baseSession.setAccountNames(mergedAccountNames);
+        baseSession.setAccountNames(new ArrayList<>(accountNameSet));
         baseSession.setAccountColumnNames(mergedAccountColumnNames);
         baseSession.setUpdatedAt(LocalDateTime.now());
         baseSession.setLastAccessedAt(LocalDateTime.now());
 
         fileSessionRepository.save(baseSession);
 
-        // 8. 나머지 세션 하드 삭제
-        for (FileSession other : otherSessions) {
-            fileSessionRepository.delete(other);
-            log.info("병합으로 삭제된 세션: sessionId={}", other.getSessionId());
-        }
-
-        log.info("세션 병합 완료: baseSessionId={}, 삭제된 세션 수={}",
-                baseSession.getSessionId(), otherSessions.size());
+        log.info("세션 병합 완료: baseSessionId={}, accountNames={}, 삭제된 세션 수={}",
+                baseSession.getSessionId(), accountNameSet, otherSessions.size());
 
         return baseSession;
     }
