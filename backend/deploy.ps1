@@ -95,6 +95,7 @@ Write-Host "`n[7/12] Task Definition new Revision insert..." -ForegroundColor Ye
 if (Test-Path "task-def-template.json") {
     Write-Host "use template File: task-def-template.json" -ForegroundColor Cyan
     $taskDefJson = Get-Content "task-def-template.json" -Raw
+    $taskDefJson = $taskDefJson -replace "PLACEHOLDER_IMAGE", "${ECR_REPO}:v${newVersion}"
 } else {
     Write-Host "Downloading Current Task Definition .." -ForegroundColor Cyan
     $taskDefRaw = aws ecs describe-task-definition `
