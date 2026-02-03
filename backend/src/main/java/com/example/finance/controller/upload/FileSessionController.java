@@ -21,9 +21,10 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-
+import com.example.finance.service.data.SessionDataService;
 /**
  * 파일 세션 컨트롤러
  *
@@ -40,6 +41,7 @@ public class FileSessionController {
 
     private final FileSessionService fileSessionService;
     private final ProjectService projectService;
+    private final SessionDataService sessionDataService;
 
     /**
      * 파일 세션 생성
@@ -333,6 +335,31 @@ public class FileSessionController {
         fileSessionService.deleteSessions(projectId, sessionIds);
 
         return ResponseEntity.noContent().build();
+    }
+
+    // 엔드포인트 추가
+    @Operation(summary = "계정 분석 시작", description = "raw_data에서 session_data로 데이터 복사")
+    @PostMapping("/{sessionId}/analyze")
+    public ResponseEntity<Map<String, Object>> startAccountAnalysis(
+            @PathVariable String projectId,
+            @PathVariable String sessionId,
+            @CurrentUser UserPrincipal userPrincipal) {
+
+        String userId = userPrincipal.getId();
+        log.info("계정 분석 시작 요청: projectId={}, sessionId={}", projectId, sessionId);
+
+        // 프로젝트 권한 확인
+        projectService.getProject(projectId, userId);
+
+        long copiedCount = sessionDataService.startAccountAnalysis(sessionId);
+
+        Map<String, Object> response = new HashMap<>();
+        response.put("success", true);
+        response.put("sessionId", sessionId);
+        response.put("copiedCount", copiedCount);
+        response.put("message", copiedCount + "건의 데이터가 복사되었습니다.");
+
+        return ResponseEntity.ok(response);
     }
 
     /**
