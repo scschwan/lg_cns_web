@@ -17,6 +17,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.poi.ss.usermodel.*;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.bson.types.ObjectId;
+import org.springframework.data.domain.Sort;
 import org.springframework.data.redis.core.HashOperations;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
@@ -261,9 +262,40 @@ public class UploadService {
     }
 
     /**
-     * Excel 메타데이터 감지 (컬럼 + rowCount)
+     * Excel 메타데이터 감지 - raw_data 우선, fallback으로 Excel
      */
     private ExcelMetadata detectExcelMetadata(String s3Key) {
+        // 1. raw_data에서 먼저 시도
+        String uploadId = extractUploadIdFromS3Key(s3Key);
+        if (uploadId != null) {
+            try {
+                long rowCount = mongoTemplate.getCollection("raw_data")
+                        .countDocuments(new org.bson.Document("upload_id", uploadId));
+
+                if (rowCount > 0) {
+                    org.bson.Document rawDoc = mongoTemplate.getCollection("raw_data")
+                            .find(new org.bson.Document("upload_id", uploadId))
+                            .limit(1)
+                            .first();
+
+                    List<String> columns = new ArrayList<>();
+                    if (rawDoc != null) {
+                        Object dataObj = rawDoc.get("data");
+                        if (dataObj instanceof org.bson.Document dataDoc) {
+                            columns.addAll(dataDoc.keySet());
+                        }
+                    }
+
+                    log.info("raw_data에서 메타데이터 조회 성공: uploadId={}, columns={}, rowCount={}",
+                            uploadId, columns.size(), rowCount);
+                    return new ExcelMetadata(columns, rowCount);
+                }
+            } catch (Exception e) {
+                log.warn("raw_data 메타데이터 조회 실패, Excel fallback: uploadId={}", uploadId, e);
+            }
+        }
+
+        // 2. Fallback: Excel 파싱 (소용량 또는 raw_data 미존재 시)
         try {
             byte[] fileBytes = s3Service.downloadFile(s3Key);
 
@@ -280,28 +312,23 @@ public class UploadService {
                         if (cell != null) {
                             String columnName = getCellValueAsString(cell);
                             if (columnName != null && !columnName.trim().isEmpty()) {
-                                // ⭐ trim 적용하여 저장
                                 columns.add(columnName.trim());
                             }
                         }
                     }
                 }
 
-                // rowCount 계산 (헤더 제외)
                 long rowCount = sheet.getLastRowNum();
                 if (rowCount > 0) rowCount--;
 
-                log.debug("Excel 메타데이터: s3Key={}, columns={}, rowCount={}",
-                        s3Key, columns.size(), rowCount);
-
                 return new ExcelMetadata(columns, rowCount);
             }
-
-        } catch (IOException e) {
+        } catch (Exception e) {
             log.error("Excel 메타데이터 감지 실패: s3Key={}", s3Key, e);
             return new ExcelMetadata(new ArrayList<>(), 0L);
         }
     }
+
 
 
 
@@ -508,22 +535,34 @@ public class UploadService {
     public void deleteFile(String projectId, String fileId) {
         log.info("파일 삭제: projectId={}, fileId={}", projectId, fileId);
 
-        // 1. 파일이 속한 세션 조회
         FileSession fileSession = fileSessionRepository.findFirstByUploadedFilesFileId(fileId)
                 .orElseThrow(() -> new BusinessException(
                         "FILE_NOT_FOUND", "파일을 찾을 수 없습니다: " + fileId));
 
-        // 2. 파일 정보 찾기
         UploadedFileInfo fileToDelete = fileSession.getUploadedFiles().stream()
                 .filter(f -> f.getFileId().equals(fileId))
                 .findFirst()
                 .orElseThrow(() -> new BusinessException(
                         "FILE_NOT_FOUND", "파일을 찾을 수 없습니다: " + fileId));
 
-        // 세션에서 파일 제거
+        // ★ S3 파일 삭제
+        try {
+            s3Service.deleteFile(fileToDelete.getS3Key());
+        } catch (Exception e) {
+            log.warn("S3 파일 삭제 실패 (계속 진행): s3Key={}", fileToDelete.getS3Key(), e);
+        }
+
+        // ★ raw_data 삭제
+        String uploadId = extractUploadIdFromS3Key(fileToDelete.getS3Key());
+        if (uploadId != null) {
+            long deleted = mongoTemplate.getCollection("raw_data")
+                    .deleteMany(new org.bson.Document("upload_id", uploadId))
+                    .getDeletedCount();
+            log.info("raw_data 삭제: uploadId={}, count={}", uploadId, deleted);
+        }
+
         fileSession.getUploadedFiles().removeIf(f -> f.getFileId().equals(fileId));
 
-        // 파일이 모두 제거된 빈 세션이면 세션 자체를 완전 삭제
         if (fileSession.getUploadedFiles().isEmpty()) {
             fileSessionRepository.delete(fileSession);
             log.info("빈 세션 완전 삭제: sessionId={}", fileSession.getSessionId());
@@ -534,6 +573,8 @@ public class UploadService {
 
         log.info("파일 삭제 완료: fileId={}", fileId);
     }
+
+
 
 
 
@@ -632,30 +673,37 @@ public class UploadService {
      */
     private List<String> extractAccountValuesInternal(String s3Key, String columnName) {
         String uploadId = extractUploadIdFromS3Key(s3Key);
+        log.info("extractAccountValues: s3Key={}, uploadId={}, columnName={}", s3Key, uploadId, columnName);
 
         if (uploadId == null) {
-            log.warn("s3Key에서 uploadId 추출 실패, S3 다운로드 fallback: {}", s3Key);
+            log.warn("uploadId 추출 실패, Excel fallback 사용");
             return extractAccountValuesFromExcel(s3Key, columnName);
         }
 
-        // Redis 캐시 확인
         String cacheKey = "accounts:" + uploadId + ":" + columnName;
         String cached = redisTemplate.opsForValue().get(cacheKey);
         if (cached != null) {
-            log.info("계정명 Redis 캐시 hit: uploadId={}, column={}", uploadId, columnName);
             return Arrays.asList(cached.split("\\|\\|"));
         }
 
         try {
-            // raw_data에서 MongoDB aggregation으로 직접 추출
             String fieldPath = "data." + columnName;
+
+            // raw_data에서 해당 upload_id의 데이터 수 확인
+            long count = mongoTemplate.getCollection("raw_data")
+                    .countDocuments(new Document("upload_id", uploadId));
+            log.info("raw_data count for uploadId={}: {}", uploadId, count);
+
+            if (count == 0) {
+                log.warn("raw_data에 데이터 없음, Excel fallback 사용");
+                return extractAccountValuesFromExcel(s3Key, columnName);
+            }
 
             Aggregation agg = Aggregation.newAggregation(
                     Aggregation.match(Criteria.where("upload_id").is(uploadId)),
                     Aggregation.group(fieldPath),
-                    Aggregation.sort(org.springframework.data.domain.Sort.Direction.ASC, "_id")
+                    Aggregation.sort(Sort.Direction.ASC, "_id")
             );
-
             List<Document> results = mongoTemplate.aggregate(agg, "raw_data", Document.class)
                     .getMappedResults();
 
@@ -667,21 +715,19 @@ public class UploadService {
                     .filter(v -> v != null && !v.trim().isEmpty())
                     .collect(Collectors.toList());
 
-            // Redis 캐시 저장 (10분)
-            if (!values.isEmpty()) {
-                redisTemplate.opsForValue().set(cacheKey, String.join("||", values),
-                        Duration.ofMinutes(10));
-            }
+            log.info("raw_data aggregation 결과: {} 건", values.size());
 
-            log.info("계정명 raw_data aggregation 완료: uploadId={}, column={}, {}개",
-                    uploadId, columnName, values.size());
+            if (!values.isEmpty()) {
+                redisTemplate.opsForValue().set(cacheKey, String.join("||", values), Duration.ofMinutes(10));
+            }
             return values;
 
         } catch (Exception e) {
-            log.error("raw_data aggregation 실패, S3 다운로드 fallback: {}", e.getMessage());
+            log.error("raw_data aggregation 실패, Excel fallback 사용", e);
             return extractAccountValuesFromExcel(s3Key, columnName);
         }
     }
+
 
     // 기존 로직을 fallback용으로 이름만 변경
     private List<String> extractAccountValuesFromExcel(String s3Key, String columnName) {
@@ -706,59 +752,56 @@ public class UploadService {
      */
     private Double calculateTotalAmountInternal(String s3Key, String columnName) {
         String uploadId = extractUploadIdFromS3Key(s3Key);
+        if (uploadId == null) return calculateTotalAmountFromExcel(s3Key, columnName);
 
-        if (uploadId == null) {
-            log.warn("s3Key에서 uploadId 추출 실패, S3 다운로드 fallback: {}", s3Key);
-            return calculateTotalAmountFromExcel(s3Key, columnName);
-        }
-
-        // Redis 캐시 확인
         String cacheKey = "amount:" + uploadId + ":" + columnName;
         String cached = redisTemplate.opsForValue().get(cacheKey);
-        if (cached != null) {
-            log.info("금액 Redis 캐시 hit: uploadId={}, column={}", uploadId, columnName);
-            return Double.parseDouble(cached);
-        }
+        if (cached != null) return Double.parseDouble(cached);
 
         try {
-            // raw_data에서 MongoDB aggregation으로 금액 합산
             String fieldPath = "data." + columnName;
 
-            // data 필드 내 금액값은 String일 수 있으므로 toDouble 변환
-            Aggregation agg = Aggregation.newAggregation(
-                    Aggregation.match(Criteria.where("upload_id").is(uploadId)
-                            .and(fieldPath).exists(true)),
-                    Aggregation.project()
-                            .and(context -> new Document("$toDouble",
-                                    new Document("$ifNull", Arrays.asList("$" + fieldPath, 0))))
-                            .as("amount"),
-                    Aggregation.group().sum("amount").as("total")
-            );
-
-            Document result = mongoTemplate.aggregate(agg, "raw_data", Document.class)
-                    .getUniqueMappedResult();
-
+            // 방법 1: Java에서 직접 합산 (문자열 금액 처리 가능)
             double total = 0.0;
-            if (result != null) {
-                Object totalObj = result.get("total");
-                if (totalObj instanceof Number) {
-                    total = ((Number) totalObj).doubleValue();
+            try (var cursor = mongoTemplate.getCollection("raw_data")
+                    .find(new Document("upload_id", uploadId)
+                            .append(fieldPath, new Document("$exists", true)))
+                    .projection(new Document(fieldPath, 1))
+                    .batchSize(5000).cursor()) {
+
+                while (cursor.hasNext()) {
+                    Document doc = cursor.next();
+                    Document data = doc.get("data", Document.class);
+                    if (data == null) continue;
+
+                    Object val = data.get(columnName);
+                    if (val == null) continue;
+
+                    try {
+                        if (val instanceof Number num) {
+                            total += num.doubleValue();
+                        } else {
+                            // 쉼표, 공백 제거 후 파싱
+                            String str = val.toString().replaceAll("[,\\s]", "").trim();
+                            if (!str.isEmpty() && !str.equals("-")) {
+                                total += Double.parseDouble(str);
+                            }
+                        }
+                    } catch (NumberFormatException ignored) {
+                        // 숫자가 아닌 값 무시
+                    }
                 }
             }
 
-            // Redis 캐시 저장 (10분)
-            redisTemplate.opsForValue().set(cacheKey, String.valueOf(total),
-                    Duration.ofMinutes(10));
-
-            log.info("금액 raw_data aggregation 완료: uploadId={}, column={}, total={}",
-                    uploadId, columnName, total);
+            redisTemplate.opsForValue().set(cacheKey, String.valueOf(total), Duration.ofMinutes(10));
             return total;
 
         } catch (Exception e) {
-            log.error("raw_data aggregation 실패, S3 다운로드 fallback: {}", e.getMessage());
+            log.error("raw_data 금액 합산 실패, Excel fallback 사용: uploadId={}", uploadId, e);
             return calculateTotalAmountFromExcel(s3Key, columnName);
         }
     }
+
 
     // 기존 로직을 fallback용으로 이름만 변경
     private Double calculateTotalAmountFromExcel(String s3Key, String columnName) {
@@ -778,12 +821,13 @@ public class UploadService {
 
     private String extractUploadIdFromS3Key(String s3Key) {
         if (s3Key == null) return null;
-        String[] parts = s3Key.split("/");
-        // projects/{projectId}/sessions/{sessionId}/uploads/{uploadId}/{fileName}
-        if (parts.length >= 6) {
-            return parts[5];
-        }
-        return null;
+        // uploads/upload-xxxx/ 패턴에서 upload-xxxx 추출
+        int uploadsIdx = s3Key.indexOf("uploads/");
+        if (uploadsIdx == -1) return null;
+        String afterUploads = s3Key.substring(uploadsIdx + "uploads/".length());
+        int slashIdx = afterUploads.indexOf("/");
+        if (slashIdx == -1) return null;
+        return afterUploads.substring(0, slashIdx);
     }
 
 

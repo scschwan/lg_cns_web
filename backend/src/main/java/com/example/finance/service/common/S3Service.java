@@ -5,18 +5,19 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import software.amazon.awssdk.services.s3.S3Client;
-import software.amazon.awssdk.services.s3.model.GetObjectRequest;
-import software.amazon.awssdk.services.s3.model.PutObjectRequest;
+import software.amazon.awssdk.services.s3.model.*;
 import software.amazon.awssdk.services.s3.presigner.S3Presigner;
 import software.amazon.awssdk.services.s3.presigner.model.PresignedPutObjectRequest;
 import software.amazon.awssdk.services.s3.presigner.model.PutObjectPresignRequest;
 
 import java.time.Duration;
 import software.amazon.awssdk.core.ResponseInputStream;
-import software.amazon.awssdk.services.s3.model.GetObjectResponse;import java.io.File;
+
+import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.util.List;
 
 /**
  * S3 서비스
@@ -153,5 +154,40 @@ public class S3Service {
             throw new RuntimeException("S3 파일 임시 다운로드 실패: " + e.getMessage(), e);
         }
     }
+
+    public void deleteFile(String s3Key) {
+        s3Client.deleteObject(DeleteObjectRequest.builder()
+                .bucket(excelBucket)
+                .key(s3Key)
+                .build());
+        log.info("S3 파일 삭제 완료: key={}", s3Key);
+    }
+
+
+    // 폴더(prefix) 단위 삭제 - 세션 삭제 시 사용
+    public void deleteFolder(String prefix) {
+        try {
+            ListObjectsV2Response listResponse = s3Client.listObjectsV2(
+                    ListObjectsV2Request.builder()
+                            .bucket(excelBucket)
+                            .prefix(prefix)
+                            .build());
+
+            List<ObjectIdentifier> toDelete = listResponse.contents().stream()
+                    .map(obj -> ObjectIdentifier.builder().key(obj.key()).build())
+                    .toList();
+
+            if (!toDelete.isEmpty()) {
+                s3Client.deleteObjects(DeleteObjectsRequest.builder()
+                        .bucket(excelBucket)
+                        .delete(Delete.builder().objects(toDelete).build())
+                        .build());
+                log.info("S3 폴더 삭제 완료: prefix={}, count={}", prefix, toDelete.size());
+            }
+        } catch (Exception e) {
+            log.error("S3 폴더 삭제 실패: prefix={}", prefix, e);
+        }
+    }
+
 
 }
