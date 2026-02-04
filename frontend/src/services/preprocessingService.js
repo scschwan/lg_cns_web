@@ -62,6 +62,17 @@ const preprocessingService = {
         );
         return response.data;
     },
+
+    /**
+     * NLP 기반 키워드 추출 (형태소 분석)
+     */
+    extractKeywordsNlp: async (projectId, sessionId, minKeywordLength = 4) => {
+        const response = await api.post(
+            `/api/projects/${projectId}/sessions/${sessionId}/preprocessing/extract-keywords-nlp`,
+            { minKeywordLength }
+        );
+        return response.data;
+    },
 };
 
 export default preprocessingService;
