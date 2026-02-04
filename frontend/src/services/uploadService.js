@@ -703,6 +703,17 @@ const uploadService = {
         return response.data;
     },
 
+    /**
+     * process_data 생성 진행 상태 조회 (폴링)
+     * GET /api/projects/{projectId}/upload/sessions/{sessionId}/data/process-status
+     */
+    getProcessDataStatus: async (projectId, sessionId) => {
+        const response = await api.get(
+            `/api/projects/${projectId}/upload/sessions/${sessionId}/data/process-status`
+        );
+        return response.data;
+    },
+
 };
 
 
