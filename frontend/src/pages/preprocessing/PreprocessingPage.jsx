@@ -699,8 +699,20 @@ function PreprocessingPage() {
                   <Button
                     size="sm"
                     className="w-full bg-purple-600 hover:bg-purple-700 h-8"
-                    onClick={() => {
-                      alert(`NLP 기반 키워드 추출 (${minKeywordLength}글자 이상)\n\n현재 NLP 모듈 연동이 필요합니다.`);
+                    onClick={async () => {
+                      setNlpExtracting(true);
+                      try {
+                        const result = await preprocessingService.extractKeywordsNlp(projectId, sessionId, minKeywordLength);
+                        console.log('NLP 키워드 추출 완료:', result);
+                        setMaxKeywordCols(result.maxKeywordCols || maxKeywordCols);
+                        await loadData();
+                        alert(`NLP 키워드 추출 완료: ${result.processedCount}건 변경, ${result.splitCount}건 분할 (${result.elapsedMs}ms)`);
+                      } catch (error) {
+                        console.error('NLP 키워드 추출 실패:', error);
+                        alert('NLP 키워드 추출 실패: ' + (error.response?.data?.message || error.message));
+                      } finally {
+                        setNlpExtracting(false);
+                      }
                     }}
                     disabled={nlpExtracting}
                   >

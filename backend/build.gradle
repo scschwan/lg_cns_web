@@ -62,6 +62,9 @@ dependencies {
     implementation 'org.apache.poi:poi:5.2.5'
     implementation 'org.apache.poi:poi-ooxml:5.2.5'
 
+    // 한국어 형태소 분석 (Open Korean Text / Okt)
+    implementation 'org.openkoreantext:open-korean-text:2.3.1'
+
     compileOnly 'org.projectlombok:lombok'
     annotationProcessor 'org.projectlombok:lombok'
     testImplementation 'org.springframework.boot:spring-boot-starter-test'

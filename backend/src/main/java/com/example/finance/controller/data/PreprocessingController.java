@@ -134,4 +134,22 @@ public class PreprocessingController {
         projectService.getProject(projectId, userPrincipal.getId());
         return ResponseEntity.ok(preprocessingService.removeSingleCharKeywords(sessionId));
     }
+
+    /**
+     * NLP 기반 키워드 추출 (형태소 분석)
+     */
+    @PostMapping("/extract-keywords-nlp")
+    public ResponseEntity<Map<String, Object>> extractKeywordsNlp(
+            @PathVariable String projectId,
+            @PathVariable String sessionId,
+            @RequestBody Map<String, Object> body,
+            @CurrentUser UserPrincipal userPrincipal) {
+
+        projectService.getProject(projectId, userPrincipal.getId());
+        int minKeywordLength = 4;
+        if (body != null && body.get("minKeywordLength") != null) {
+            minKeywordLength = ((Number) body.get("minKeywordLength")).intValue();
+        }
+        return ResponseEntity.ok(preprocessingService.extractKeywordsNlp(sessionId, minKeywordLength));
+    }
 }

@@ -14,6 +14,10 @@ import org.bson.Document;
 import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.stereotype.Service;
 
+import org.openkoreantext.processor.OpenKoreanTextProcessorJava;
+import org.openkoreantext.processor.tokenizer.KoreanTokenizer;
+import scala.collection.Seq;
+
 import java.time.LocalDateTime;
 import java.util.*;
 import java.util.concurrent.*;
@@ -469,5 +473,174 @@ public class PreprocessingService {
         result.put("removedCount", removedCount.get());
         result.put("elapsedMs", elapsed);
         return result;
+    }
+
+    // ========== 6. NLP 기반 키워드 추출 ==========
+
+    /**
+     * NLP(형태소 분석) 기반 키워드 재분할
+     *
+     * 구분자 추출로 만들어진 cn 컬럼 중 minKeywordLength 글자 이상인 키워드를
+     * Open Korean Text(Okt) 형태소 분석기로 재분할합니다.
+     *
+     * 처리 흐름:
+     * 1. process_data의 각 row에서 c0, c1, ... cn 컬럼을 읽음
+     * 2. 각 키워드가 minKeywordLength 이상이면 Okt로 명사/형용사 추출
+     * 3. 결과를 다시 c0, c1, ... cm으로 재배치하여 저장
+     */
+    public Map<String, Object> extractKeywordsNlp(String sessionId, int minKeywordLength) {
+        long startTime = System.currentTimeMillis();
+        log.info("NLP 키워드 추출 시작: sessionId={}, minLen={}", sessionId, minKeywordLength);
+
+        Document matchFilter = new Document("session_id", sessionId).append("is_hidden", false);
+        long totalCount = mongoTemplate.getCollection(PROCESS_DATA_COLLECTION).countDocuments(matchFilter);
+
+        ExecutorService executor = Executors.newFixedThreadPool(THREAD_POOL_SIZE);
+        List<CompletableFuture<Void>> futures = new ArrayList<>();
+        AtomicInteger maxCols = new AtomicInteger(0);
+        AtomicInteger processedCount = new AtomicInteger(0);
+        AtomicInteger splitCount = new AtomicInteger(0);
+
+        List<Document[]> updateBatch = new ArrayList<>(BATCH_SIZE);
+
+        try (var cursor = mongoTemplate.getCollection(PROCESS_DATA_COLLECTION)
+                .find(matchFilter).batchSize(5000).cursor()) {
+
+            while (cursor.hasNext()) {
+                Document doc = cursor.next();
+                Document data = (Document) doc.get("data");
+                if (data == null) continue;
+
+                // 기존 cn 키워드 수집
+                List<String> existingKeywords = new ArrayList<>();
+                for (int i = 0; i < 100; i++) {
+                    if (!data.containsKey("c" + i)) break;
+                    Object val = data.get("c" + i);
+                    existingKeywords.add(val != null ? val.toString() : null);
+                }
+
+                if (existingKeywords.isEmpty()) continue;
+
+                // NLP 재분할
+                List<String> newKeywords = new ArrayList<>();
+                boolean hasChange = false;
+
+                for (String keyword : existingKeywords) {
+                    if (keyword == null || keyword.isEmpty()) {
+                        newKeywords.add(keyword);
+                        continue;
+                    }
+
+                    if (keyword.length() >= minKeywordLength) {
+                        List<String> morphemes = extractMorphemes(keyword);
+                        if (morphemes.size() > 1) {
+                            newKeywords.addAll(morphemes);
+                            hasChange = true;
+                            splitCount.incrementAndGet();
+                        } else {
+                            newKeywords.add(keyword);
+                        }
+                    } else {
+                        newKeywords.add(keyword);
+                    }
+                }
+
+                if (!hasChange) continue;
+
+                // 업데이트 문서 생성
+                Document setFields = new Document();
+                Document unsetFields = new Document();
+
+                for (int i = 0; i < newKeywords.size(); i++) {
+                    setFields.append("data.c" + i, newKeywords.get(i));
+                }
+
+                // 기존 cn 중 새 키워드 수 이후 제거
+                for (int i = newKeywords.size(); i < existingKeywords.size(); i++) {
+                    unsetFields.append("data.c" + i, "");
+                }
+
+                if (newKeywords.size() > maxCols.get()) {
+                    maxCols.set(newKeywords.size());
+                }
+
+                Document update = new Document();
+                if (!unsetFields.isEmpty()) {
+                    update.append("$unset", unsetFields);
+                }
+                if (!setFields.isEmpty()) {
+                    update.append("$set", setFields);
+                }
+
+                updateBatch.add(new Document[]{
+                        new Document("_id", doc.getObjectId("_id")),
+                        update
+                });
+
+                if (updateBatch.size() >= BATCH_SIZE) {
+                    List<Document[]> batch = new ArrayList<>(updateBatch);
+                    updateBatch.clear();
+                    CompletableFuture<Void> future = CompletableFuture.runAsync(() -> {
+                        executeBatchUpdate(batch);
+                        processedCount.addAndGet(batch.size());
+                    }, executor);
+                    futures.add(future);
+                }
+            }
+        }
+
+        // 잔여 배치
+        if (!updateBatch.isEmpty()) {
+            List<Document[]> batch = new ArrayList<>(updateBatch);
+            CompletableFuture<Void> future = CompletableFuture.runAsync(() -> {
+                executeBatchUpdate(batch);
+                processedCount.addAndGet(batch.size());
+            }, executor);
+            futures.add(future);
+        }
+
+        CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
+        executor.shutdown();
+
+        long elapsed = System.currentTimeMillis() - startTime;
+        log.info("NLP 키워드 추출 완료: sessionId={}, 변경={}건, 분할={}건, maxCols={}, {}ms",
+                sessionId, processedCount.get(), splitCount.get(), maxCols.get(), elapsed);
+
+        Map<String, Object> result = new HashMap<>();
+        result.put("processedCount", processedCount.get());
+        result.put("totalCount", totalCount);
+        result.put("splitCount", splitCount.get());
+        result.put("maxKeywordCols", maxCols.get());
+        result.put("elapsedMs", elapsed);
+        return result;
+    }
+
+    /**
+     * Okt 형태소 분석기로 텍스트에서 명사(Noun), 형용사(Adjective), 동사(Verb) 추출
+     */
+    private List<String> extractMorphemes(String text) {
+        try {
+            CharSequence normalized = OpenKoreanTextProcessorJava.normalize(text);
+            Seq<KoreanTokenizer.KoreanToken> tokens = OpenKoreanTextProcessorJava.tokenize(normalized);
+            List<KoreanTokenizer.KoreanToken> tokenList = OpenKoreanTextProcessorJava.tokensToJavaKoreanTokenList(tokens);
+
+            List<String> morphemes = new ArrayList<>();
+            for (KoreanTokenizer.KoreanToken token : tokenList) {
+                String pos = token.pos().toString();
+                // 명사, 형용사, 동사, 알파벳, 외래어만 추출
+                if ("Noun".equals(pos) || "Adjective".equals(pos) || "Verb".equals(pos)
+                        || "Alpha".equals(pos) || "ForeignWord".equals(pos)) {
+                    String word = token.text();
+                    if (!word.isEmpty()) {
+                        morphemes.add(word);
+                    }
+                }
+            }
+
+            return morphemes.isEmpty() ? List.of(text) : morphemes;
+        } catch (Exception e) {
+            log.warn("형태소 분석 실패: text={}, error={}", text, e.getMessage());
+            return List.of(text);
+        }
     }
 }
