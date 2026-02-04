@@ -648,7 +648,8 @@ public class FileSessionService {
 
         // 3-1. session_data 삭제
         sessionDataService.deleteSessionData(sessionId);
-        log.info("session_data 삭제 완료: sessionId={}", sessionId);
+        sessionDataService.deleteColumnMappings(sessionId);
+        log.info("session_data + column_mapping 삭제 완료: sessionId={}", sessionId);
 
         // 4. 세션 상태 초기화
         fileSession.setCurrentStep(null);
@@ -690,7 +691,8 @@ public class FileSessionService {
 
         // session_data 삭제
         sessionDataService.deleteSessionData(sessionId);
-        log.info("session_data 삭제 완료: sessionId={}", sessionId);
+        sessionDataService.deleteColumnMappings(sessionId);
+        log.info("session_data + column_mapping 삭제 완료: sessionId={}", sessionId);
 
         // 완전 삭제
         fileSessionRepository.delete(fileSession);
@@ -1101,8 +1103,9 @@ public class FileSessionService {
                 throw new BusinessException("FORBIDDEN", "프로젝트 세션이 아닙니다");
             }
 
-            // session_data 삭제
+            // session_data + column_mapping 삭제
             sessionDataService.deleteSessionData(sessionId);
+            sessionDataService.deleteColumnMappings(sessionId);
 
             // 완전 삭제
             fileSessionRepository.delete(session);

@@ -391,6 +391,102 @@ public class FileSessionController {
         return ResponseEntity.ok(result);
     }
 
+    // ========== 컬럼 매핑 API ==========
+
+    @Operation(summary = "컬럼 매핑 조회", description = "세션의 컬럼 매핑 정보 조회 (없으면 자동 초기화)")
+    @GetMapping("/{sessionId}/column-mappings")
+    public ResponseEntity<?> getColumnMappings(
+            @PathVariable String projectId,
+            @PathVariable String sessionId,
+            @CurrentUser UserPrincipal userPrincipal) {
+
+        projectService.getProject(projectId, userPrincipal.getId());
+        return ResponseEntity.ok(sessionDataService.getColumnMappings(sessionId));
+    }
+
+    @Operation(summary = "컬럼 가시성 변경", description = "특정 컬럼의 is_visible 토글")
+    @PutMapping("/{sessionId}/column-mappings/{columnName}/visibility")
+    public ResponseEntity<?> updateColumnVisibility(
+            @PathVariable String projectId,
+            @PathVariable String sessionId,
+            @PathVariable String columnName,
+            @RequestBody Map<String, Boolean> body,
+            @CurrentUser UserPrincipal userPrincipal) {
+
+        projectService.getProject(projectId, userPrincipal.getId());
+        boolean isVisible = body.getOrDefault("isVisible", true);
+        return ResponseEntity.ok(sessionDataService.updateColumnVisibility(sessionId, columnName, isVisible));
+    }
+
+    @Operation(summary = "컬럼 매핑 일괄 업데이트")
+    @PutMapping("/{sessionId}/column-mappings/batch")
+    public ResponseEntity<?> updateColumnMappingsBatch(
+            @PathVariable String projectId,
+            @PathVariable String sessionId,
+            @RequestBody Map<String, Object> body,
+            @CurrentUser UserPrincipal userPrincipal) {
+
+        projectService.getProject(projectId, userPrincipal.getId());
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> updates = (List<Map<String, Object>>) body.get("updates");
+        return ResponseEntity.ok(sessionDataService.updateColumnMappingsBatch(sessionId, updates));
+    }
+
+    // ========== 데이터 삭제 (is_hidden) API ==========
+
+    @Operation(summary = "세션 데이터 검색", description = "특정 컬럼의 값으로 session_data 검색")
+    @GetMapping("/{sessionId}/data/search")
+    public ResponseEntity<?> searchSessionData(
+            @PathVariable String projectId,
+            @PathVariable String sessionId,
+            @RequestParam String columnName,
+            @RequestParam String keyword,
+            @CurrentUser UserPrincipal userPrincipal) {
+
+        projectService.getProject(projectId, userPrincipal.getId());
+        return ResponseEntity.ok(sessionDataService.searchSessionData(sessionId, columnName, keyword));
+    }
+
+    @Operation(summary = "컬럼 고유 값 조회", description = "특정 컬럼의 고유 값 목록 + 건수 조회")
+    @GetMapping("/{sessionId}/data/distinct-values")
+    public ResponseEntity<?> getDistinctValues(
+            @PathVariable String projectId,
+            @PathVariable String sessionId,
+            @RequestParam String columnName,
+            @CurrentUser UserPrincipal userPrincipal) {
+
+        projectService.getProject(projectId, userPrincipal.getId());
+        return ResponseEntity.ok(sessionDataService.getDistinctValues(sessionId, columnName));
+    }
+
+    @Operation(summary = "데이터 행 숨김", description = "선택된 row의 is_hidden=true 처리")
+    @PostMapping("/{sessionId}/data/hide")
+    public ResponseEntity<?> hideSessionDataRows(
+            @PathVariable String projectId,
+            @PathVariable String sessionId,
+            @RequestBody Map<String, List<String>> body,
+            @CurrentUser UserPrincipal userPrincipal) {
+
+        projectService.getProject(projectId, userPrincipal.getId());
+        List<String> rowIds = body.get("rowIds");
+        long count = sessionDataService.hideSessionDataRows(sessionId, rowIds);
+        return ResponseEntity.ok(Map.of("hiddenCount", count));
+    }
+
+    @Operation(summary = "데이터 행 원복", description = "선택된 row의 is_hidden=false 복원")
+    @PostMapping("/{sessionId}/data/restore")
+    public ResponseEntity<?> restoreSessionDataRows(
+            @PathVariable String projectId,
+            @PathVariable String sessionId,
+            @RequestBody Map<String, List<String>> body,
+            @CurrentUser UserPrincipal userPrincipal) {
+
+        projectService.getProject(projectId, userPrincipal.getId());
+        List<String> rowIds = body.get("rowIds");
+        long count = sessionDataService.restoreSessionDataRows(sessionId, rowIds);
+        return ResponseEntity.ok(Map.of("restoredCount", count));
+    }
+
 
 
     /**
