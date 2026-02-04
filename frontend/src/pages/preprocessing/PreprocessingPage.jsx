@@ -438,13 +438,13 @@ function PreprocessingPage() {
         </div>
 
         {/* 메인 콘텐츠 그리드 (남은 높이 채움) */}
-        <div className="flex-1 min-h-0 grid grid-cols-1 xl:grid-cols-12 gap-4 overflow-y-auto xl:overflow-visible">
+        <div className="flex-1 min-h-0 grid grid-cols-1 xl:grid-cols-12 xl:grid-rows-[1fr] gap-4 overflow-y-auto xl:overflow-visible">
 
           {/* 좌측: 데이터 테이블 영역 (8/12) */}
           <div className="xl:col-span-8 min-h-[50vh] xl:min-h-0 xl:h-full flex flex-col gap-4">
 
             {/* 내부 그리드: 대상 테이블(5) + 결과 테이블(7) */}
-            <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-12 gap-4">
+            <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-12 lg:grid-rows-[1fr] gap-4">
 
               {/* 키워드 추출 대상 */}
               <div className="lg:col-span-5 min-h-[250px] lg:min-h-0 lg:h-full">

@@ -628,7 +628,7 @@ export default function StartAnalysisPage() {
         </div>
 
         {/* 메인 콘텐츠 그리드 */}
-        <div className="flex-1 min-h-0 grid grid-cols-1 xl:grid-cols-12 gap-4 overflow-y-auto xl:overflow-visible">
+        <div className="flex-1 min-h-0 grid grid-cols-1 xl:grid-cols-12 xl:grid-rows-[1fr] gap-4 overflow-y-auto xl:overflow-visible">
 
           {/* 좌측: 테이블 영역 (8/12) */}
           <div className="xl:col-span-8 min-h-[50vh] xl:min-h-0 xl:h-full flex flex-col gap-4">
