@@ -35,6 +35,20 @@ import {
   TableRow,
 } from '@/components/ui/table';
 
+// [추가] 가로 스크롤바를 항상 하단에 고정시키는 래퍼 컴포넌트
+function HorizontalScrollTable({ children, className = "" }) {
+  return (
+    // 1. flex-1 min-h-0: 부모 영역(Card) 내에서 남은 높이를 모두 차지
+    // 2. w-full overflow-auto: 영역을 벗어나면 스크롤 생성
+    <div className={`flex-1 w-full min-h-0 overflow-auto ${className}`}>
+      {/* 3. min-w-max: 내부 컨텐츠(테이블)가 줄어들지 않고 본래 너비를 유지하도록 강제 */}
+      <div className="min-w-max h-full">
+        {children}
+      </div>
+    </div>
+  );
+}
+
 // ===== 멀티셀렉트 체크박스 리스트 컴포넌트 =====
 // 드래그 선택 + Ctrl+클릭 복수 커서 지원
 function MultiSelectCheckList({ items, checkedSet, onCheckedChange, renderLabel, getKey, className = '' }) {
@@ -648,39 +662,41 @@ export default function StartAnalysisPage() {
               {!isOriginalCollapsed && (
                 <CardContent className="p-0">
                   <div className="overflow-auto max-h-[250px]">
-                    <Table className="min-w-max">
-                      <TableHeader className="bg-gray-100 sticky top-0 z-10">
-                        <TableRow>
-                          {visibleColumns.map((col) => (
-                            <TableHead key={col} className="font-semibold text-xs whitespace-nowrap bg-gray-100">
-                              {col}
-                            </TableHead>
-                          ))}
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {loading ? (
-                          <TableRow>
-                            <TableCell colSpan={visibleColumns.length || 1} className="text-center py-4">
-                              <div className="flex items-center justify-center gap-2 text-muted-foreground text-xs">
-                                <div className="animate-spin h-3 w-3 border-2 border-primary border-t-transparent rounded-full" />
-                                로딩 중...
-                              </div>
-                            </TableCell>
-                          </TableRow>
-                        ) : (
-                          originalData.map((row, idx) => (
-                            <TableRow key={row._id || idx} className="hover:bg-muted/50">
-                              {visibleColumns.map((col) => (
-                                <TableCell key={col} className="text-xs whitespace-nowrap">
-                                  {row[col] ?? ''}
-                                </TableCell>
-                              ))}
-                            </TableRow>
-                          ))
-                        )}
-                      </TableBody>
-                    </Table>
+                      <div className="min-w-max">
+                            <Table className="min-w-max">
+                              <TableHeader className="bg-gray-100 sticky top-0 z-10">
+                                <TableRow>
+                                  {visibleColumns.map((col) => (
+                                    <TableHead key={col} className="font-semibold text-xs whitespace-nowrap bg-gray-100">
+                                      {col}
+                                    </TableHead>
+                                  ))}
+                                </TableRow>
+                              </TableHeader>
+                              <TableBody>
+                                {loading ? (
+                                  <TableRow>
+                                    <TableCell colSpan={visibleColumns.length || 1} className="text-center py-4">
+                                      <div className="flex items-center justify-center gap-2 text-muted-foreground text-xs">
+                                        <div className="animate-spin h-3 w-3 border-2 border-primary border-t-transparent rounded-full" />
+                                        로딩 중...
+                                      </div>
+                                    </TableCell>
+                                  </TableRow>
+                                ) : (
+                                  originalData.map((row, idx) => (
+                                    <TableRow key={row._id || idx} className="hover:bg-muted/50">
+                                      {visibleColumns.map((col) => (
+                                        <TableCell key={col} className="text-xs whitespace-nowrap">
+                                          {row[col] ?? ''}
+                                        </TableCell>
+                                      ))}
+                                    </TableRow>
+                                  ))
+                                )}
+                              </TableBody>
+                            </Table>
+                      </div>
                   </div>
                 </CardContent>
               )}
@@ -692,40 +708,42 @@ export default function StartAnalysisPage() {
                 <CardTitle className="text-base">가공 데이터</CardTitle>
               </CardHeader>
 
-              <CardContent className="flex-1 p-0 min-h-0 overflow-auto">
-                  <Table className="min-w-max">
-                    <TableHeader className="bg-gray-100 sticky top-0 z-10 shadow-sm">
-                      <TableRow>
-                        {visibleColumns.map((col) => (
-                          <TableHead key={col} className="font-semibold text-xs whitespace-nowrap bg-gray-100">
-                            {col}
-                          </TableHead>
-                        ))}
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {loading ? (
-                        <TableRow>
-                          <TableCell colSpan={visibleColumns.length || 1} className="text-center py-8">
-                            <div className="flex items-center justify-center gap-2 text-muted-foreground">
-                              <div className="animate-spin h-4 w-4 border-2 border-primary border-t-transparent rounded-full" />
-                              데이터 로딩 중...
-                            </div>
-                          </TableCell>
-                        </TableRow>
-                      ) : (
-                        sessionData.map((row, idx) => (
-                          <TableRow key={row._id || idx} className="hover:bg-muted/50">
-                            {visibleColumns.map((col) => (
-                              <TableCell key={col} className="text-xs whitespace-nowrap">
-                                {row[col] ?? ''}
-                              </TableCell>
-                            ))}
-                          </TableRow>
-                        ))
-                      )}
-                    </TableBody>
-                  </Table>
+              <CardContent className="flex-1 p-0 min-h-0 flex flex-col"> {/* flex flex-col 로 변경하여 내부 컴포넌트 확장 유도 */}
+                  <HorizontalScrollTable> {/* 새로 만든 컴포넌트로 감싸기 */}
+                      <Table className="min-w-max">
+                          <TableHeader className="bg-gray-100 sticky top-0 z-10 shadow-sm">
+                              <TableRow>
+                                {visibleColumns.map((col) => (
+                                  <TableHead key={col} className="font-semibold text-xs whitespace-nowrap bg-gray-100">
+                                    {col}
+                                  </TableHead>
+                                ))}
+                              </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                              {loading ? (
+                                <TableRow>
+                                  <TableCell colSpan={visibleColumns.length || 1} className="text-center py-8">
+                                    <div className="flex items-center justify-center gap-2 text-muted-foreground">
+                                      <div className="animate-spin h-4 w-4 border-2 border-primary border-t-transparent rounded-full" />
+                                      데이터 로딩 중...
+                                    </div>
+                                  </TableCell>
+                                </TableRow>
+                              ) : (
+                                sessionData.map((row, idx) => (
+                                  <TableRow key={row._id || idx} className="hover:bg-muted/50">
+                                    {visibleColumns.map((col) => (
+                                      <TableCell key={col} className="text-xs whitespace-nowrap">
+                                        {row[col] ?? ''}
+                                      </TableCell>
+                                    ))}
+                                  </TableRow>
+                                ))
+                              )}
+                            </TableBody>
+                      </Table>
+                  </HorizontalScrollTable>
               </CardContent>
 
               {/* 페이지네이션 */}

@@ -35,6 +35,16 @@ import {
   TableRow,
 } from '@/components/ui/table';
 
+function HorizontalScrollTable({ children, className = "" }) {
+  return (
+    <div className={`flex-1 w-full min-h-0 overflow-auto ${className}`}>
+      <div className="min-w-max h-full">
+        {children}
+      </div>
+    </div>
+  );
+}
+
 // ===== 멀티셀렉트 체크박스 리스트 컴포넌트 (StartAnalysis와 동일) =====
 function MultiSelectCheckList({ items, checkedSet, onCheckedChange, renderLabel, getKey, className = '' }) {
   const [cursorSet, setCursorSet] = useState(new Set());
@@ -455,32 +465,34 @@ function PreprocessingPage() {
                       타겟열: <strong>{sessionInfo.targetColumn || '미설정'}</strong>
                     </p>
                   </CardHeader>
-                  <CardContent className="p-0 flex-1 min-h-0 overflow-auto">
+                  <CardContent className="p-0 flex-1 min-h-0 flex flex-col">
                       {loading ? (
                         <div className="flex items-center justify-center h-32">
                           <div className="animate-spin h-6 w-6 border-2 border-blue-500 border-t-transparent rounded-full" />
                         </div>
                       ) : (
-                        <Table className="min-w-max">
-                          <TableHeader className="bg-gray-100 sticky top-0 z-10 shadow-sm">
-                            <TableRow>
-                              <TableHead className="font-semibold text-xs w-[60px] text-center bg-gray-100">No</TableHead>
-                              <TableHead className="font-semibold text-xs bg-gray-100">
-                                {sessionInfo.targetColumn || '타겟'}
-                              </TableHead>
-                            </TableRow>
-                          </TableHeader>
-                          <TableBody>
-                            {targetData.map((row) => (
-                              <TableRow key={row._id} className="hover:bg-muted/50">
-                                <TableCell className="text-xs text-center">{row._rowNum}</TableCell>
-                                <TableCell className="text-xs whitespace-nowrap">
-                                  {row[sessionInfo.targetColumn] ?? ''}
-                                </TableCell>
-                              </TableRow>
-                            ))}
-                          </TableBody>
-                        </Table>
+                          <HorizontalScrollTable>
+                            <Table className="min-w-max">
+                              <TableHeader className="bg-gray-100 sticky top-0 z-10 shadow-sm">
+                                <TableRow>
+                                  <TableHead className="font-semibold text-xs w-[60px] text-center bg-gray-100">No</TableHead>
+                                  <TableHead className="font-semibold text-xs bg-gray-100">
+                                    {sessionInfo.targetColumn || '타겟'}
+                                  </TableHead>
+                                </TableRow>
+                              </TableHeader>
+                              <TableBody>
+                                {targetData.map((row) => (
+                                  <TableRow key={row._id} className="hover:bg-muted/50">
+                                    <TableCell className="text-xs text-center">{row._rowNum}</TableCell>
+                                    <TableCell className="text-xs whitespace-nowrap">
+                                      {row[sessionInfo.targetColumn] ?? ''}
+                                    </TableCell>
+                                  </TableRow>
+                                ))}
+                              </TableBody>
+                            </Table>
+                         </HorizontalScrollTable>
                       )}
                   </CardContent>
                 </Card>
@@ -492,34 +504,36 @@ function PreprocessingPage() {
                   <CardHeader className="py-3 px-4 border-b bg-white flex-shrink-0">
                     <CardTitle className="text-base">키워드 추출 결과</CardTitle>
                   </CardHeader>
-                  <CardContent className="p-0 flex-1 min-h-0 overflow-auto">
+                  <CardContent className="p-0 flex-1 min-h-0 flex flex-col">
                       {loading ? (
                         <div className="flex items-center justify-center h-32">
                           <div className="animate-spin h-6 w-6 border-2 border-blue-500 border-t-transparent rounded-full" />
                         </div>
                       ) : (
-                        <Table className="min-w-max">
-                          <TableHeader className="bg-gray-100 sticky top-0 z-10 shadow-sm">
-                            <TableRow>
-                              {resultColumns.map((col) => (
-                                <TableHead key={col} className="font-semibold text-xs whitespace-nowrap bg-gray-100">
-                                  {col}
-                                </TableHead>
-                              ))}
-                            </TableRow>
-                          </TableHeader>
-                          <TableBody>
-                            {resultData.map((row) => (
-                              <TableRow key={row._id} className="hover:bg-muted/50">
-                                {resultColumns.map((col) => (
-                                  <TableCell key={col} className="text-xs whitespace-nowrap">
-                                    {row[col] ?? ''}
-                                  </TableCell>
-                                ))}
-                              </TableRow>
-                            ))}
-                          </TableBody>
-                        </Table>
+                          <HorizontalScrollTable>
+                                <Table className="min-w-max">
+                                  <TableHeader className="bg-gray-100 sticky top-0 z-10 shadow-sm">
+                                    <TableRow>
+                                      {resultColumns.map((col) => (
+                                        <TableHead key={col} className="font-semibold text-xs whitespace-nowrap bg-gray-100">
+                                          {col}
+                                        </TableHead>
+                                      ))}
+                                    </TableRow>
+                                  </TableHeader>
+                                  <TableBody>
+                                    {resultData.map((row) => (
+                                      <TableRow key={row._id} className="hover:bg-muted/50">
+                                        {resultColumns.map((col) => (
+                                          <TableCell key={col} className="text-xs whitespace-nowrap">
+                                            {row[col] ?? ''}
+                                          </TableCell>
+                                        ))}
+                                      </TableRow>
+                                    ))}
+                                  </TableBody>
+                                </Table>
+                          </HorizontalScrollTable>
                       )}
                   </CardContent>
                 </Card>
