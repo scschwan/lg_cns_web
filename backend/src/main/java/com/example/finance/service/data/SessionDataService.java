@@ -4,7 +4,9 @@ import com.example.finance.exception.BusinessException;
 import com.example.finance.model.session.FileSession;
 import com.example.finance.model.session.UploadedFileInfo;
 import com.example.finance.model.data.ColumnMappingDocument;
+import com.example.finance.model.data.ProcessDataDocument;
 import com.example.finance.repository.data.ColumnMappingRepository;
+import com.example.finance.repository.data.ProcessDataRepository;
 import com.example.finance.repository.data.SessionDataRepository;
 import com.example.finance.repository.session.FileSessionRepository;
 import lombok.RequiredArgsConstructor;
@@ -37,6 +39,7 @@ public class SessionDataService {
     private final FileSessionRepository fileSessionRepository;
     private final SessionDataRepository sessionDataRepository;
     private final ColumnMappingRepository columnMappingRepository;
+    private final ProcessDataRepository processDataRepository;
     private final RedisService redisService;
     private final ObjectMapper objectMapper;
     private final SqsClient sqsClient;
@@ -56,6 +59,7 @@ public class SessionDataService {
                                FileSessionRepository fileSessionRepository,
                                SessionDataRepository sessionDataRepository,
                                ColumnMappingRepository columnMappingRepository,
+                               ProcessDataRepository processDataRepository,
                                RedisService redisService,
                                ObjectMapper objectMapper,
                                @org.springframework.context.annotation.Lazy SqsClient sqsClient) {
@@ -63,6 +67,7 @@ public class SessionDataService {
         this.fileSessionRepository = fileSessionRepository;
         this.sessionDataRepository = sessionDataRepository;
         this.columnMappingRepository = columnMappingRepository;
+        this.processDataRepository = processDataRepository;
         this.redisService = redisService;
         this.objectMapper = objectMapper;
         this.sqsClient = sqsClient;
@@ -948,5 +953,144 @@ public class SessionDataService {
         log.info("표준화 완료: sessionId={}, key={}, change={}, 표준화key={}개, 변경행={}건",
                 sessionId, keyColumn, changeColumn, keysStandardized, totalUpdated);
         return result;
+    }
+
+    // ========== process_data 생성 (Step 2 → Step 3) ==========
+
+    /**
+     * session_data에서 process_data 생성
+     *
+     * C# PrepareProcessDataAsync 참고:
+     * 1. 기존 process_data 삭제
+     * 2. session_data에서 is_hidden=false인 행만 조회
+     * 3. visible 컬럼만 추출하여 process_data에 삽입
+     * 4. raw_data_id 참조 유지
+     *
+     * @param sessionId 세션 ID
+     * @param requiredColumns 필수 항목 매핑 (category, costCenter, supplier, amount, target)
+     * @return 처리 결과
+     */
+    public Map<String, Object> prepareProcessData(String sessionId, Map<String, String> requiredColumns) {
+        log.info("process_data 생성 시작: sessionId={}", sessionId);
+        long startTime = System.currentTimeMillis();
+
+        // 1. 세션 조회
+        FileSession session = fileSessionRepository.findBySessionId(sessionId)
+                .orElseThrow(() -> new BusinessException(
+                        "SESSION_NOT_FOUND", "세션을 찾을 수 없습니다: " + sessionId));
+
+        // 2. 기존 process_data 삭제
+        processDataRepository.deleteBySessionId(sessionId);
+        log.info("기존 process_data 삭제 완료: sessionId={}", sessionId);
+
+        // 3. visible 컬럼 목록 조회
+        List<ColumnMappingDocument> mappings = columnMappingRepository.findBySessionIdOrderBySequenceAsc(sessionId);
+        Set<String> visibleColumns = mappings.stream()
+                .filter(ColumnMappingDocument::getIsVisible)
+                .map(ColumnMappingDocument::getOriginalName)
+                .collect(Collectors.toCollection(LinkedHashSet::new));
+
+        if (visibleColumns.isEmpty()) {
+            throw new BusinessException("NO_VISIBLE_COLUMNS", "표시할 컬럼이 없습니다.");
+        }
+
+        // _id, row_number 제외
+        visibleColumns.remove("_id");
+        visibleColumns.remove("row_number");
+
+        log.info("visible 컬럼: {}", visibleColumns);
+
+        // 4. session_data에서 is_hidden=false인 행을 커서로 읽어 process_data 생성
+        Query query = new Query(new Criteria().andOperator(
+                Criteria.where("session_id").is(sessionId),
+                new Criteria().orOperator(
+                        Criteria.where("is_hidden").is(false),
+                        Criteria.where("is_hidden").exists(false)
+                )
+        ));
+
+        long totalCount = mongoTemplate.count(query, "session_data");
+        log.info("처리 대상 session_data: {}건", totalCount);
+
+        // 배치 처리
+        List<ProcessDataDocument> batch = new ArrayList<>(BATCH_SIZE);
+        AtomicLong processedCount = new AtomicLong(0);
+
+        query.cursorBatchSize(CURSOR_BATCH_SIZE);
+
+        try (var cursor = mongoTemplate.getCollection("session_data")
+                .find(query.getQueryObject()).batchSize(CURSOR_BATCH_SIZE).cursor()) {
+
+            while (cursor.hasNext()) {
+                Document doc = cursor.next();
+                Document dataDoc = (Document) doc.get("data");
+                if (dataDoc == null) continue;
+
+                // visible 컬럼만 추출
+                Map<String, Object> filteredData = new LinkedHashMap<>();
+                for (String col : visibleColumns) {
+                    if (dataDoc.containsKey(col)) {
+                        filteredData.put(col, dataDoc.get(col));
+                    }
+                }
+
+                ProcessDataDocument processDoc = ProcessDataDocument.builder()
+                        .projectId(session.getProjectId())
+                        .sessionId(sessionId)
+                        .rawDataId(doc.get("raw_data_id") != null ? doc.get("raw_data_id").toString() : null)
+                        .data(filteredData)
+                        .isHidden(false)
+                        .createdAt(LocalDateTime.now())
+                        .build();
+
+                batch.add(processDoc);
+
+                if (batch.size() >= BATCH_SIZE) {
+                    processDataRepository.saveAll(batch);
+                    processedCount.addAndGet(batch.size());
+                    log.debug("process_data 배치 삽입: {}건 / {}건", processedCount.get(), totalCount);
+                    batch.clear();
+                }
+            }
+        }
+
+        // 잔여 배치 삽입
+        if (!batch.isEmpty()) {
+            processDataRepository.saveAll(batch);
+            processedCount.addAndGet(batch.size());
+        }
+
+        // 5. 세션에 필수 항목 매핑 저장 + 단계 업데이트
+        if (requiredColumns != null) {
+            session.setCategoryColumn(requiredColumns.getOrDefault("category", null));
+            session.setCostCenterColumn(requiredColumns.getOrDefault("costCenter", null));
+            session.setSupplierColumn(requiredColumns.getOrDefault("supplier", null));
+            session.setAmountColumn(requiredColumns.getOrDefault("amount", null));
+            session.setTargetColumn(requiredColumns.getOrDefault("target", null));
+        }
+        session.setCurrentStep(ProcessStep.PREPROCESSING);
+        session.setUpdatedAt(LocalDateTime.now());
+        fileSessionRepository.save(session);
+
+        long elapsed = System.currentTimeMillis() - startTime;
+
+        Map<String, Object> result = new HashMap<>();
+        result.put("sessionId", sessionId);
+        result.put("processedCount", processedCount.get());
+        result.put("visibleColumns", visibleColumns);
+        result.put("currentStep", "PREPROCESSING");
+        result.put("elapsedMs", elapsed);
+
+        log.info("process_data 생성 완료: sessionId={}, {}건, {}ms",
+                sessionId, processedCount.get(), elapsed);
+        return result;
+    }
+
+    /**
+     * process_data 삭제 (세션 삭제 시)
+     */
+    public void deleteProcessData(String sessionId) {
+        processDataRepository.deleteBySessionId(sessionId);
+        log.info("process_data 삭제: sessionId={}", sessionId);
     }
 }

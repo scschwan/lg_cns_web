@@ -123,6 +123,7 @@ function MultiSelectCheckList({ items, checkedSet, onCheckedChange, renderLabel,
             <Checkbox
               checked={isChecked}
               onCheckedChange={() => handleCheckToggle(key)}
+              onMouseDown={(e) => e.stopPropagation()}
               onClick={(e) => e.stopPropagation()}
             />
             {renderLabel(item, isChecked)}
@@ -518,8 +519,31 @@ export default function StartAnalysisPage() {
       .filter(Boolean);
   };
 
-  const handleComplete = () => {
-    navigate(`/projects/${projectId}/sessions/${sessionId}/preprocessing`);
+  const [completeLoading, setCompleteLoading] = useState(false);
+
+  const handleComplete = async () => {
+    // 필수 항목 검증
+    if (!requiredColumns.category) {
+      alert('세목 열을 선택해주세요.');
+      return;
+    }
+    if (!requiredColumns.amount) {
+      alert('금액 열을 선택해주세요.');
+      return;
+    }
+
+    setCompleteLoading(true);
+    try {
+      // process_data 생성 (session_data → visible 컬럼만 추출)
+      const result = await uploadService.prepareProcessData(projectId, sessionId, requiredColumns);
+      console.log('process_data 생성 완료:', result);
+      navigate(`/projects/${projectId}/sessions/${sessionId}/preprocessing`);
+    } catch (error) {
+      console.error('process_data 생성 실패:', error);
+      alert('데이터 처리에 실패했습니다. 다시 시도해주세요.');
+    } finally {
+      setCompleteLoading(false);
+    }
   };
 
   // ===== 렌더링 =====
@@ -1063,8 +1087,16 @@ export default function StartAnalysisPage() {
               <Button
                 className="w-full bg-green-600 hover:bg-green-700 text-white shadow-lg h-12 text-base font-semibold"
                 onClick={handleComplete}
+                disabled={completeLoading}
               >
-                완료 → Step 3: Preprocessing
+                {completeLoading ? (
+                  <div className="flex items-center gap-2">
+                    <div className="animate-spin h-4 w-4 border-2 border-white border-t-transparent rounded-full" />
+                    process_data 생성 중...
+                  </div>
+                ) : (
+                  '완료 → Step 3: Preprocessing'
+                )}
               </Button>
             </div>
 

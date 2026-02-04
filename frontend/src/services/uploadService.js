@@ -691,6 +691,18 @@ const uploadService = {
         return response.data;
     },
 
+    /**
+     * process_data 생성 (Step 2 → Step 3)
+     * POST /api/projects/{projectId}/upload/sessions/{sessionId}/data/prepare-process
+     */
+    prepareProcessData: async (projectId, sessionId, requiredColumns) => {
+        const response = await api.post(
+            `/api/projects/${projectId}/upload/sessions/${sessionId}/data/prepare-process`,
+            { requiredColumns }
+        );
+        return response.data;
+    },
+
 };
 
 
