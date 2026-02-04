@@ -5,7 +5,7 @@ $ErrorActionPreference = "Stop"
 
 # ===== 설정 =====
 $S3_BUCKET = "s3://lgcns-finance-frontend-app"
-$CLOUDFRONT_DISTRIBUTION_ID = "YOUR_DISTRIBUTION_ID"  # CloudFront 콘솔에서 확인 후 교체
+$CLOUDFRONT_DISTRIBUTION_ID = "E2WSY238E3ZG9N"  # CloudFront 콘솔에서 확인 후 교체
 
 # ===== 1. 빌드 =====
 Write-Host "[1/4] Building..." -ForegroundColor Cyan
