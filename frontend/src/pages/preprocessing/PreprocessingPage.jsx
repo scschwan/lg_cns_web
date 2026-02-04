@@ -65,7 +65,7 @@ function MultiSelectCheckList({ items, checkedSet, onCheckedChange, renderLabel,
     const maxIdx = Math.max(startIdx, idx);
     const newSet = new Set();
     for (let i = minIdx; i <= maxIdx; i++) {
-      newSet.add(getKey(items[i]));
+      newSet.add(getKey(items[i], i));
     }
     setCursorSet(newSet);
   };
@@ -100,7 +100,7 @@ function MultiSelectCheckList({ items, checkedSet, onCheckedChange, renderLabel,
   return (
     <div ref={listRef} className={`select-none ${className}`} onMouseUp={handleMouseUp}>
       {items.map((item, idx) => {
-        const key = getKey(item);
+        const key = getKey(item, idx);
         const isCursor = cursorSet.has(key);
         const isChecked = checkedSet.has(key);
         return (
