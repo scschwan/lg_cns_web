@@ -12,14 +12,28 @@ import {
   Sparkles,
   CheckCircle2,
   Circle,
-  Lock
+  Lock,
+  AlertTriangle
 } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogFooter,
+  DialogTitle,
+  DialogDescription,
+} from '@/components/ui/dialog';
 
 const Sidebar = () => {
   const navigate = useNavigate();
   const { projectId, sessionId } = useParams();
   const location = useLocation();
   const [sessionName, setSessionName] = useState('');
+
+  // Step 1 이동 확인 다이얼로그
+  const [showStep1Confirm, setShowStep1Confirm] = useState(false);
+  const [pendingStep1Path, setPendingStep1Path] = useState(null);
 
   useEffect(() => {
     if (projectId && sessionId) {
@@ -88,6 +102,11 @@ const Sidebar = () => {
     }
   ];
 
+  // 현재 페이지가 Step 2~7인지 판별
+  const isOnSessionStep = () => {
+    return !!sessionId;
+  };
+
   const isStepActive = (step) => {
     return location.pathname === step.path;
   };
@@ -133,9 +152,16 @@ const Sidebar = () => {
       targetPath = `/projects/${projectId}/sessions/${tempSessionId}/${routeName}`;
     }
 
-    if (targetPath) {
-      navigate(targetPath);
+    if (!targetPath) return;
+
+    // Step 1 클릭 시 현재 Step 2~7에 있으면 확인 다이얼로그 표시
+    if (step.id === 1 && isOnSessionStep()) {
+      setPendingStep1Path(targetPath);
+      setShowStep1Confirm(true);
+      return;
     }
+
+    navigate(targetPath);
 
     /* 원래 코드 (나중에 복구용 - 주석 처리)
     if (isStepDisabled(step)) {
@@ -150,6 +176,19 @@ const Sidebar = () => {
     */
   };
 
+  const handleConfirmStep1 = () => {
+    setShowStep1Confirm(false);
+    if (pendingStep1Path) {
+      navigate(pendingStep1Path);
+      setPendingStep1Path(null);
+    }
+  };
+
+  const handleCancelStep1 = () => {
+    setShowStep1Confirm(false);
+    setPendingStep1Path(null);
+  };
+
   const getStepIcon = (step) => {
     if (isStepCompleted(step)) {
       return CheckCircle2;
@@ -161,7 +200,7 @@ const Sidebar = () => {
   };
 
   return (
-
+    <>
       <div className="w-64 h-screen bg-card border-r border-border flex flex-col">
 
           <div className="p-4 border-b border-border flex-shrink-0">
@@ -251,6 +290,33 @@ const Sidebar = () => {
           </div>
         </div>
       </div>
+
+      {/* Step 1 이동 확인 다이얼로그 */}
+      <Dialog open={showStep1Confirm} onOpenChange={setShowStep1Confirm}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <AlertTriangle className="h-5 w-5 text-amber-500" />
+              페이지 이동 확인
+            </DialogTitle>
+            <DialogDescription className="text-sm leading-relaxed pt-2">
+              Multi File Upload 단계로 돌아갈 경우 현재 페이지는 작업중이던 세션 항목에서 '계정 분석 시작'으로만 재진입이 가능합니다.
+            </DialogDescription>
+            <p className="text-sm font-medium pt-2">
+              'Multi File Upload' 단계로 이동하시겠습니까?
+            </p>
+          </DialogHeader>
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button variant="outline" onClick={handleCancelStep1}>
+              취소
+            </Button>
+            <Button onClick={handleConfirmStep1}>
+              이동
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 };
 
