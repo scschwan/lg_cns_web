@@ -303,19 +303,22 @@ public class PreprocessingService {
                     }
                 }
 
-                // 기존 cn 컬럼 제거 + 새로운 cn 컬럼 추가를 위한 update document 생성
+                // 기존 cn 컬럼 중 새 키워드 수보다 큰 인덱스만 $unset으로 제거
+                // (MongoDB는 $set과 $unset에 같은 경로가 있으면 에러)
                 Document setFields = new Document();
                 Document unsetFields = new Document();
-
-                // 기존 c0~c99 제거
-                for (int i = 0; i < 100; i++) {
-                    String key = "data.c" + i;
-                    unsetFields.append(key, "");
-                }
 
                 // 새 cn 컬럼 세팅
                 for (int i = 0; i < cleanKeywords.size(); i++) {
                     setFields.append("data.c" + i, cleanKeywords.get(i));
+                }
+
+                // 기존 cn 컬럼 중 새 키워드 개수 이후의 컬럼만 제거
+                for (int i = cleanKeywords.size(); i < 100; i++) {
+                    String key = "data.c" + i;
+                    if (data.containsKey("c" + i)) {
+                        unsetFields.append(key, "");
+                    }
                 }
 
                 if (cleanKeywords.size() > maxCols.get()) {
