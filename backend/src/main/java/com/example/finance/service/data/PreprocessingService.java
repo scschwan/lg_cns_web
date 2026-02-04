@@ -14,6 +14,7 @@ import org.bson.Document;
 import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.stereotype.Service;
 
+import org.openkoreantext.processor.KoreanTokenJava;
 import org.openkoreantext.processor.OpenKoreanTextProcessorJava;
 import org.openkoreantext.processor.tokenizer.KoreanTokenizer;
 import scala.collection.Seq;
@@ -622,15 +623,15 @@ public class PreprocessingService {
         try {
             CharSequence normalized = OpenKoreanTextProcessorJava.normalize(text);
             Seq<KoreanTokenizer.KoreanToken> tokens = OpenKoreanTextProcessorJava.tokenize(normalized);
-            List<KoreanTokenizer.KoreanToken> tokenList = OpenKoreanTextProcessorJava.tokensToJavaKoreanTokenList(tokens);
+            List<KoreanTokenJava> tokenList = OpenKoreanTextProcessorJava.tokensToJavaKoreanTokenList(tokens);
 
             List<String> morphemes = new ArrayList<>();
-            for (KoreanTokenizer.KoreanToken token : tokenList) {
-                String pos = token.pos().toString();
+            for (KoreanTokenJava token : tokenList) {
+                String pos = token.getPos().toString();
                 // 명사, 형용사, 동사, 알파벳, 외래어만 추출
                 if ("Noun".equals(pos) || "Adjective".equals(pos) || "Verb".equals(pos)
                         || "Alpha".equals(pos) || "ForeignWord".equals(pos)) {
-                    String word = token.text();
+                    String word = token.getText();
                     if (!word.isEmpty()) {
                         morphemes.add(word);
                     }
