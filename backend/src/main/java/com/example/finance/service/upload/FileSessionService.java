@@ -14,6 +14,7 @@ import com.example.finance.model.session.StepHistory;
 import com.example.finance.model.session.UploadedFileInfo;
 import com.example.finance.model.upload.UploadSession;
 import com.example.finance.repository.data.ClusteringResultRepository;
+import com.example.finance.repository.data.PreprocessingConfigRepository;
 import com.example.finance.repository.data.ProcessDataRepository;
 import com.example.finance.repository.data.RawDataRepository;
 import com.example.finance.repository.project.ProjectRepository;
@@ -56,6 +57,7 @@ public class FileSessionService {
     private final RawDataRepository rawDataRepository;
     private final ProcessDataRepository processDataRepository;
     private final ClusteringResultRepository clusteringResultRepository;
+    private final PreprocessingConfigRepository preprocessingConfigRepository;
     private final SessionDataService sessionDataService;
 
     // 클래스 상단에 추가
@@ -650,7 +652,8 @@ public class FileSessionService {
         sessionDataService.deleteSessionData(sessionId);
         sessionDataService.deleteColumnMappings(sessionId);
         sessionDataService.deleteProcessData(sessionId);
-        log.info("session_data + column_mapping + process_data 삭제 완료: sessionId={}", sessionId);
+        preprocessingConfigRepository.deleteBySessionId(sessionId);
+        log.info("session_data + column_mapping + process_data + preprocessing_config 삭제 완료: sessionId={}", sessionId);
 
         // 4. 세션 상태 초기화
         fileSession.setCurrentStep(null);
@@ -694,7 +697,8 @@ public class FileSessionService {
         sessionDataService.deleteSessionData(sessionId);
         sessionDataService.deleteColumnMappings(sessionId);
         sessionDataService.deleteProcessData(sessionId);
-        log.info("session_data + column_mapping + process_data 삭제 완료: sessionId={}", sessionId);
+        preprocessingConfigRepository.deleteBySessionId(sessionId);
+        log.info("session_data + column_mapping + process_data + preprocessing_config 삭제 완료: sessionId={}", sessionId);
 
         // 완전 삭제
         fileSessionRepository.delete(fileSession);
@@ -833,6 +837,11 @@ public class FileSessionService {
                 .updatedAt(session.getUpdatedAt())
                 .lastAccessedAt(session.getLastAccessedAt())
                 .completedAt(session.getCompletedAt())
+                .categoryColumn(session.getCategoryColumn())
+                .costCenterColumn(session.getCostCenterColumn())
+                .supplierColumn(session.getSupplierColumn())
+                .amountColumn(session.getAmountColumn())
+                .targetColumn(session.getTargetColumn())
                 .build();
     }
 
@@ -858,6 +867,11 @@ public class FileSessionService {
                 .completedAt(session.getCompletedAt())
                 .uploadedFiles(session.getUploadedFiles())
                 .stepHistory(session.getStepHistory())
+                .categoryColumn(session.getCategoryColumn())
+                .costCenterColumn(session.getCostCenterColumn())
+                .supplierColumn(session.getSupplierColumn())
+                .amountColumn(session.getAmountColumn())
+                .targetColumn(session.getTargetColumn())
                 .build();
     }
 
@@ -1105,9 +1119,11 @@ public class FileSessionService {
                 throw new BusinessException("FORBIDDEN", "프로젝트 세션이 아닙니다");
             }
 
-            // session_data + column_mapping 삭제
+            // session_data + column_mapping + process_data + preprocessing_config 삭제
             sessionDataService.deleteSessionData(sessionId);
             sessionDataService.deleteColumnMappings(sessionId);
+            sessionDataService.deleteProcessData(sessionId);
+            preprocessingConfigRepository.deleteBySessionId(sessionId);
 
             // 완전 삭제
             fileSessionRepository.delete(session);
