@@ -4,6 +4,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { ChevronRight, Home, Plus, Trash2 } from 'lucide-react';
 import preprocessingService from '../../services/preprocessingService';
+import uploadService from '../../services/uploadService';
 
 // shadcn/ui components
 import {
@@ -164,12 +165,14 @@ function PreprocessingPage() {
 
   // 처리 상태
   const [extracting, setExtracting] = useState(false);
+  const [extractProgress, setExtractProgress] = useState(0);
   const [removingSingle, setRemovingSingle] = useState(false);
   const [savingConfig, setSavingConfig] = useState(false);
 
   // NLP 설정
   const [minKeywordLength, setMinKeywordLength] = useState(4);
   const [nlpExtracting, setNlpExtracting] = useState(false);
+  const [nlpProgress, setNlpProgress] = useState(0);
 
   // ===== 세션 정보 로드 =====
   useEffect(() => {
@@ -184,6 +187,8 @@ function PreprocessingPage() {
           costCenterColumn: info.costCenterColumn || '',
           supplierColumn: info.supplierColumn || '',
         });
+        // step_history 업데이트 (Step 3 진입)
+        uploadService.updateStepHistory(projectId, sessionId, 3).catch(() => {});
       } catch (error) {
         console.error('세션 정보 로드 실패:', error);
       }
@@ -305,16 +310,35 @@ function PreprocessingPage() {
     setStopwordCheckedSet(newCheckedSet);
   };
 
+  // ===== 진행률 폴링 헬퍼 =====
+  const pollProgress = async (type, setProgress) => {
+    let attempts = 0;
+    while (attempts < 300) {
+      await new Promise(r => setTimeout(r, 500));
+      attempts++;
+      try {
+        const status = await preprocessingService.getExtractProgress(projectId, sessionId, type);
+        setProgress(status.progress || 0);
+        if (status.status === 'COMPLETED') return;
+      } catch (e) { /* ignore polling errors */ }
+    }
+  };
+
   // ===== 키워드 추출 =====
   const handleKeywordExtract = async () => {
     setExtracting(true);
+    setExtractProgress(0);
     try {
       // 먼저 설정 저장
       await saveConfigToServer(separatorList, stopwordList);
-      const result = await preprocessingService.extractKeywords(projectId, sessionId);
+      // 추출 시작 + 폴링 병렬
+      const [result] = await Promise.all([
+        preprocessingService.extractKeywords(projectId, sessionId),
+        pollProgress('separator', setExtractProgress),
+      ]);
+      setExtractProgress(100);
       console.log('키워드 추출 완료:', result);
       setMaxKeywordCols(result.maxKeywordCols || 0);
-      // 데이터 새로 로드
       await loadData();
       alert(`키워드 추출 완료: ${result.processedCount}건 처리, 최대 ${result.maxKeywordCols}개 키워드 분할 (${result.elapsedMs}ms)`);
     } catch (error) {
@@ -322,6 +346,7 @@ function PreprocessingPage() {
       alert('키워드 추출에 실패했습니다.');
     } finally {
       setExtracting(false);
+      setExtractProgress(0);
     }
   };
 
@@ -430,8 +455,7 @@ function PreprocessingPage() {
                       타겟열: <strong>{sessionInfo.targetColumn || '미설정'}</strong>
                     </p>
                   </CardHeader>
-                  <CardContent className="p-0 flex-1 relative min-h-[200px] lg:min-h-0">
-                    <div className="absolute inset-0 overflow-auto">
+                  <CardContent className="p-0 flex-1 min-h-0 overflow-auto">
                       {loading ? (
                         <div className="flex items-center justify-center h-32">
                           <div className="animate-spin h-6 w-6 border-2 border-blue-500 border-t-transparent rounded-full" />
@@ -458,7 +482,6 @@ function PreprocessingPage() {
                           </TableBody>
                         </Table>
                       )}
-                    </div>
                   </CardContent>
                 </Card>
               </div>
@@ -469,8 +492,7 @@ function PreprocessingPage() {
                   <CardHeader className="py-3 px-4 border-b bg-white flex-shrink-0">
                     <CardTitle className="text-base">키워드 추출 결과</CardTitle>
                   </CardHeader>
-                  <CardContent className="p-0 flex-1 relative min-h-[200px] lg:min-h-0">
-                    <div className="absolute inset-0 overflow-auto">
+                  <CardContent className="p-0 flex-1 min-h-0 overflow-auto">
                       {loading ? (
                         <div className="flex items-center justify-center h-32">
                           <div className="animate-spin h-6 w-6 border-2 border-blue-500 border-t-transparent rounded-full" />
@@ -499,7 +521,6 @@ function PreprocessingPage() {
                           </TableBody>
                         </Table>
                       )}
-                    </div>
                   </CardContent>
                 </Card>
               </div>
@@ -659,7 +680,7 @@ function PreprocessingPage() {
                       {extracting ? (
                         <div className="flex items-center gap-1">
                           <div className="animate-spin h-3 w-3 border-2 border-white border-t-transparent rounded-full" />
-                          추출 중...
+                          {extractProgress > 0 ? `${extractProgress}%` : '추출 중...'}
                         </div>
                       ) : '키워드 추출'}
                     </Button>
@@ -701,8 +722,13 @@ function PreprocessingPage() {
                     className="w-full bg-purple-600 hover:bg-purple-700 h-8"
                     onClick={async () => {
                       setNlpExtracting(true);
+                      setNlpProgress(0);
                       try {
-                        const result = await preprocessingService.extractKeywordsNlp(projectId, sessionId, minKeywordLength);
+                        const [result] = await Promise.all([
+                          preprocessingService.extractKeywordsNlp(projectId, sessionId, minKeywordLength),
+                          pollProgress('nlp', setNlpProgress),
+                        ]);
+                        setNlpProgress(100);
                         console.log('NLP 키워드 추출 완료:', result);
                         setMaxKeywordCols(result.maxKeywordCols || maxKeywordCols);
                         await loadData();
@@ -712,6 +738,7 @@ function PreprocessingPage() {
                         alert('NLP 키워드 추출 실패: ' + (error.response?.data?.message || error.message));
                       } finally {
                         setNlpExtracting(false);
+                        setNlpProgress(0);
                       }
                     }}
                     disabled={nlpExtracting}
@@ -719,7 +746,7 @@ function PreprocessingPage() {
                     {nlpExtracting ? (
                       <div className="flex items-center gap-1">
                         <div className="animate-spin h-3 w-3 border-2 border-white border-t-transparent rounded-full" />
-                        추출 중...
+                        {nlpProgress > 0 ? `${nlpProgress}%` : '추출 중...'}
                       </div>
                     ) : '키워드 추출'}
                   </Button>

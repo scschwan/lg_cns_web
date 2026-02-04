@@ -44,6 +44,18 @@ const preprocessingService = {
     },
 
     /**
+     * 키워드 추출 진행 상태 조회 (Redis 폴링)
+     * @param type "separator" | "nlp"
+     */
+    getExtractProgress: async (projectId, sessionId, type = 'separator') => {
+        const response = await api.get(
+            `/api/projects/${projectId}/sessions/${sessionId}/preprocessing/extract-progress`,
+            { params: { type } }
+        );
+        return response.data;
+    },
+
+    /**
      * 키워드 추출 (구분자 기반)
      */
     extractKeywords: async (projectId, sessionId) => {

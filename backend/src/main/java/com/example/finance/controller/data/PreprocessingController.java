@@ -110,6 +110,21 @@ public class PreprocessingController {
     }
 
     /**
+     * 키워드 추출 진행 상태 조회 (Redis 폴링)
+     * @param type "separator" 또는 "nlp"
+     */
+    @GetMapping("/extract-progress")
+    public ResponseEntity<Map<String, Object>> getExtractProgress(
+            @PathVariable String projectId,
+            @PathVariable String sessionId,
+            @RequestParam(defaultValue = "separator") String type,
+            @CurrentUser UserPrincipal userPrincipal) {
+
+        projectService.getProject(projectId, userPrincipal.getId());
+        return ResponseEntity.ok(preprocessingService.getExtractProgress(sessionId, type));
+    }
+
+    /**
      * 키워드 추출 (구분자 기반)
      */
     @PostMapping("/extract-keywords")
