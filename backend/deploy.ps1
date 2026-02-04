@@ -145,6 +145,7 @@ aws ecs update-service `
     --service $SERVICE `
     --task-definition $TASK_FAMILY `
     --force-new-deployment `
+    --health-check-grace-period-seconds 120 `
     --region $AWS_REGION `
     --no-cli-pager
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
