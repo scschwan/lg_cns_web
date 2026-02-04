@@ -247,6 +247,8 @@ export default function StartAnalysisPage() {
             target: session.targetColumn || prev.target,
           }));
         }
+        // step_history 업데이트 (Step 2 진입)
+        uploadService.updateStepHistory(projectId, sessionId, 2).catch(() => {});
       } catch (error) {
         console.error('세션 정보 로드 실패:', error);
       }
@@ -685,13 +687,12 @@ export default function StartAnalysisPage() {
             </Card>
 
             {/* 2. 가공 데이터 테이블 */}
-            <Card className="flex-1 flex flex-col min-h-0 shadow-sm overflow-hidden">
+            <Card className="flex-1 flex flex-col min-h-0 shadow-sm">
               <CardHeader className="py-3 px-4 border-b bg-white flex-shrink-0">
                 <CardTitle className="text-base">가공 데이터</CardTitle>
               </CardHeader>
 
-              <CardContent className="flex-1 relative p-0 min-h-[300px] xl:min-h-0">
-                <div className="absolute inset-0 overflow-auto">
+              <CardContent className="flex-1 p-0 min-h-0 overflow-auto">
                   <Table className="min-w-max">
                     <TableHeader className="bg-gray-100 sticky top-0 z-10 shadow-sm">
                       <TableRow>
@@ -725,7 +726,6 @@ export default function StartAnalysisPage() {
                       )}
                     </TableBody>
                   </Table>
-                </div>
               </CardContent>
 
               {/* 페이지네이션 */}

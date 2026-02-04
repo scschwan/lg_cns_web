@@ -15,6 +15,7 @@ import com.example.finance.model.session.UploadedFileInfo;
 import com.example.finance.model.upload.UploadSession;
 import com.example.finance.repository.data.ClusteringResultRepository;
 import com.example.finance.repository.data.PreprocessingConfigRepository;
+import com.example.finance.repository.data.ProcessViewDataRepository;
 import com.example.finance.repository.data.ProcessDataRepository;
 import com.example.finance.repository.data.RawDataRepository;
 import com.example.finance.repository.project.ProjectRepository;
@@ -58,6 +59,7 @@ public class FileSessionService {
     private final ProcessDataRepository processDataRepository;
     private final ClusteringResultRepository clusteringResultRepository;
     private final PreprocessingConfigRepository preprocessingConfigRepository;
+    private final ProcessViewDataRepository processViewDataRepository;
     private final SessionDataService sessionDataService;
 
     // 클래스 상단에 추가
@@ -611,6 +613,40 @@ public class FileSessionService {
     }
 
     /**
+     * 세션 step_history 업데이트 (step 진입 시)
+     *
+     * @param sessionId 세션 ID
+     * @param step 현재 진입한 step
+     */
+    public void updateStepHistory(String sessionId, ProcessStep step) {
+        FileSession fileSession = fileSessionRepository.findBySessionId(sessionId)
+                .orElseThrow(() -> new RuntimeException("세션을 찾을 수 없습니다"));
+
+        fileSession.setCurrentStep(step);
+
+        // 동일 step이 이미 있으면 startedAt만 갱신, 없으면 추가
+        boolean found = false;
+        for (StepHistory sh : fileSession.getStepHistory()) {
+            if (sh.getStep() == step) {
+                sh.setStartedAt(LocalDateTime.now());
+                sh.setStatus("in_progress");
+                found = true;
+                break;
+            }
+        }
+        if (!found) {
+            fileSession.getStepHistory().add(StepHistory.builder()
+                    .step(step)
+                    .startedAt(LocalDateTime.now())
+                    .status("in_progress")
+                    .build());
+        }
+
+        fileSession.setUpdatedAt(LocalDateTime.now());
+        fileSessionRepository.save(fileSession);
+    }
+
+    /**
      * 세션 초기화 (모든 데이터 삭제)
      *
      * @param sessionId 세션 ID
@@ -653,7 +689,8 @@ public class FileSessionService {
         sessionDataService.deleteColumnMappings(sessionId);
         sessionDataService.deleteProcessData(sessionId);
         preprocessingConfigRepository.deleteBySessionId(sessionId);
-        log.info("session_data + column_mapping + process_data + preprocessing_config 삭제 완료: sessionId={}", sessionId);
+        processViewDataRepository.deleteBySessionId(sessionId);
+        log.info("session_data + column_mapping + process_data + preprocessing_config + process_view_data 삭제 완료: sessionId={}", sessionId);
 
         // 4. 세션 상태 초기화
         fileSession.setCurrentStep(null);
@@ -698,7 +735,8 @@ public class FileSessionService {
         sessionDataService.deleteColumnMappings(sessionId);
         sessionDataService.deleteProcessData(sessionId);
         preprocessingConfigRepository.deleteBySessionId(sessionId);
-        log.info("session_data + column_mapping + process_data + preprocessing_config 삭제 완료: sessionId={}", sessionId);
+        processViewDataRepository.deleteBySessionId(sessionId);
+        log.info("session_data + column_mapping + process_data + preprocessing_config + process_view_data 삭제 완료: sessionId={}", sessionId);
 
         // 완전 삭제
         fileSessionRepository.delete(fileSession);
@@ -842,6 +880,7 @@ public class FileSessionService {
                 .supplierColumn(session.getSupplierColumn())
                 .amountColumn(session.getAmountColumn())
                 .targetColumn(session.getTargetColumn())
+                .stepHistory(session.getStepHistory())
                 .build();
     }
 
@@ -1119,11 +1158,12 @@ public class FileSessionService {
                 throw new BusinessException("FORBIDDEN", "프로젝트 세션이 아닙니다");
             }
 
-            // session_data + column_mapping + process_data + preprocessing_config 삭제
+            // session_data + column_mapping + process_data + preprocessing_config + process_view_data 삭제
             sessionDataService.deleteSessionData(sessionId);
             sessionDataService.deleteColumnMappings(sessionId);
             sessionDataService.deleteProcessData(sessionId);
             preprocessingConfigRepository.deleteBySessionId(sessionId);
+            processViewDataRepository.deleteBySessionId(sessionId);
 
             // 완전 삭제
             fileSessionRepository.delete(session);

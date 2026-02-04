@@ -19,7 +19,8 @@ import java.util.List;
  *
  * MongoDB 컬렉션: process_view_data
  *
- * Step 3 (Preprocessing)에서 생성
+ * Step 3 (Preprocessing)에서 키워드 추출 시 생성
+ * Step 4 (Transform) 이후 money 합산에 사용
  */
 @Document(collection = "process_view_data")
 @Data
@@ -47,38 +48,56 @@ public class ProcessViewData {
     private String projectId;
 
     /**
-     * 원본 raw_data._id
+     * process_data._id 참조
      */
     @Indexed
+    @Field("process_data_id")
+    private String processDataId;
+
+    /**
+     * 원본 raw_data._id 참조
+     */
     @Field("raw_data_id")
     private String rawDataId;
 
     /**
      * 추출된 최종 키워드 목록
-     *
-     * C# 원본: process_view_data.final_keywords
      */
-    @Field("final_keywords")
+    @Field("keywords")
     @Builder.Default
-    private List<String> finalKeywords = new ArrayList<>();
+    private Keywords keywords = new Keywords();
 
     /**
-     * 키워드 추출 방식
-     * - SEPARATOR: 구분자 기반
-     * - NLP: NLP 기반
+     * 금액 (session의 amountColumn 값)
      */
-    @Field("extraction_method")
-    private String extractionMethod;
+    @Field("money")
+    private String money;
 
     /**
-     * 생성 시간
+     * 부서 (session의 costCenterColumn 값)
      */
-    @Field("created_at")
-    private LocalDateTime createdAt;
+    @Field("department")
+    private String department;
+
+    /**
+     * 공급업체 (session의 supplierColumn 값)
+     */
+    @Field("supplier")
+    private String supplier;
 
     /**
      * 수정 시간
      */
-    @Field("updated_at")
-    private LocalDateTime updatedAt;
+    @Field("last_modified_date")
+    private LocalDateTime lastModifiedDate;
+
+    @Data
+    @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class Keywords {
+        @Field("final_keywords")
+        @Builder.Default
+        private List<String> finalKeywords = new ArrayList<>();
+    }
 }

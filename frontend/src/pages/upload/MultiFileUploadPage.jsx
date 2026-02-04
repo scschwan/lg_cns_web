@@ -401,6 +401,31 @@ function MultiFileUploadPage() {
         }
     };
 
+   // step → URL 경로 매핑
+   const stepToPath = (step) => {
+       const map = {
+           START_ANALYSIS: 'startanalysis',
+           PREPROCESSING: 'preprocessing',
+           TRANSFORM: 'transform',
+           CLUSTERING: 'clustering',
+           EXPORT: 'export',
+           DETAIL_CLUSTERING: 'detailclustering',
+       };
+       return map[step] || 'startanalysis';
+   };
+
+   // 세션의 마지막 step 경로 결정
+   const getLastStepPath = (session) => {
+       if (session?.stepHistory?.length > 0) {
+           const lastStep = session.stepHistory[session.stepHistory.length - 1];
+           return stepToPath(lastStep.step);
+       }
+       if (session?.currentStep) {
+           return stepToPath(session.currentStep);
+       }
+       return 'startanalysis';
+   };
+
    const handleStartAnalysis = async () => {
        if (selectedSessions.length !== 1) return;
 
@@ -413,13 +438,17 @@ function MultiFileUploadPage() {
 
            const result = await uploadService.startAccountAnalysis(projectId, sessionId);
 
-           // 이미 완료된 경우 (기존 데이터 존재)
+           // 이미 완료된 경우 (기존 데이터 존재) → 마지막 step으로 이동
            if (result.status === 'COMPLETED' || result.skipped) {
                setProgressValue(100);
                setProgressMessage('완료');
                setProgressDialogOpen(false);
-               alert(`기존 분석 데이터(${result.copiedCount}건)가 있습니다. 분석 페이지로 이동합니다.`);
-               navigate(`/projects/${projectId}/sessions/${sessionId}/startanalysis`);
+
+               // 세션 상세 조회하여 마지막 step 확인
+               const sessionDetail = await uploadService.getSession(projectId, sessionId);
+               const lastPath = getLastStepPath(sessionDetail);
+               alert(`기존 분석 데이터(${result.copiedCount}건)가 있습니다. 마지막 작업 단계로 이동합니다.`);
+               navigate(`/projects/${projectId}/sessions/${sessionId}/${lastPath}`);
                return;
            }
 

@@ -714,6 +714,17 @@ const uploadService = {
         return response.data;
     },
 
+    /**
+     * step_history 업데이트 (step 페이지 진입 시)
+     */
+    updateStepHistory: async (projectId, sessionId, stepNumber) => {
+        const response = await api.put(
+            `/api/projects/${projectId}/upload/sessions/${sessionId}/step-history`,
+            { stepNumber }
+        );
+        return response.data;
+    },
+
 };
 
 

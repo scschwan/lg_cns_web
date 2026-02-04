@@ -592,6 +592,27 @@ public class FileSessionController {
     }
 
     /**
+     * step_history 업데이트 (각 step 페이지 진입 시 호출)
+     */
+    @PutMapping("/{sessionId}/step-history")
+    public ResponseEntity<Map<String, Object>> updateStepHistory(
+            @PathVariable String projectId,
+            @PathVariable String sessionId,
+            @RequestBody Map<String, Object> body,
+            @CurrentUser UserPrincipal userPrincipal) {
+
+        projectService.getProject(projectId, userPrincipal.getId());
+        int stepNumber = ((Number) body.get("stepNumber")).intValue();
+        com.example.finance.enums.ProcessStep step =
+                com.example.finance.enums.ProcessStep.fromStepNumber(stepNumber);
+        fileSessionService.updateStepHistory(sessionId, step);
+        Map<String, Object> result = new HashMap<>();
+        result.put("success", true);
+        result.put("step", step.name());
+        return ResponseEntity.ok(result);
+    }
+
+    /**
      * 세션 완료 처리 (Step 1 → Step 2)
      */
     @PostMapping("/{sessionId}/complete")
