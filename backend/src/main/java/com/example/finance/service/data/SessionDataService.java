@@ -984,7 +984,7 @@ public class SessionDataService {
         status.put("processedCount", 0);
         status.put("totalCount", 0);
         status.put("startTime", System.currentTimeMillis());
-        redisService.setWithTTL(statusKey, status, PROCESS_STATUS_TTL);
+        redisService.set(statusKey, status, PROCESS_STATUS_TTL);
 
         // 필수 항목 매핑을 먼저 세션에 저장
         if (requiredColumns != null) {
@@ -1006,7 +1006,7 @@ public class SessionDataService {
                 Map<String, Object> errorStatus = new HashMap<>();
                 errorStatus.put("status", "FAILED");
                 errorStatus.put("error", e.getMessage());
-                redisService.setWithTTL(statusKey, errorStatus, PROCESS_STATUS_TTL);
+                redisService.set(statusKey, errorStatus, PROCESS_STATUS_TTL);
             }
         });
 
@@ -1064,7 +1064,7 @@ public class SessionDataService {
         progressStatus.put("totalCount", totalCount);
         progressStatus.put("processedCount", 0);
         progressStatus.put("progress", 0);
-        redisService.setWithTTL(statusKey, progressStatus, PROCESS_STATUS_TTL);
+        redisService.set(statusKey, progressStatus, PROCESS_STATUS_TTL);
 
         // 4. 병렬 스레드풀 생성
         ExecutorService executor = Executors.newFixedThreadPool(THREAD_POOL_SIZE);
@@ -1117,7 +1117,7 @@ public class SessionDataService {
                         ps.put("totalCount", totalCount);
                         ps.put("processedCount", current);
                         ps.put("progress", Math.min(progress, 99));
-                        redisService.setWithTTL(statusKey, ps, PROCESS_STATUS_TTL);
+                        redisService.set(statusKey, ps, PROCESS_STATUS_TTL);
 
                         log.debug("process_data 배치 삽입: {}건 / {}건", current, totalCount);
                     }, executor);
@@ -1161,7 +1161,7 @@ public class SessionDataService {
         doneStatus.put("elapsedMs", elapsed);
         doneStatus.put("visibleColumns", new ArrayList<>(visibleColumns));
         doneStatus.put("currentStep", "PREPROCESSING");
-        redisService.setWithTTL(statusKey, doneStatus, PROCESS_STATUS_TTL);
+        redisService.set(statusKey, doneStatus, PROCESS_STATUS_TTL);
 
         log.info("process_data 생성 완료: sessionId={}, {}건, {}ms",
                 sessionId, processedCount.get(), elapsed);
@@ -1172,7 +1172,8 @@ public class SessionDataService {
      */
     public Map<String, Object> getProcessDataStatus(String sessionId) {
         String statusKey = PROCESS_STATUS_PREFIX + sessionId;
-        Map<String, Object> status = redisService.get(statusKey, new TypeReference<Map<String, Object>>() {});
+        @SuppressWarnings("unchecked")
+        Map<String, Object> status = (Map<String, Object>) redisService.get(statusKey);
         if (status != null) {
             return status;
         }
