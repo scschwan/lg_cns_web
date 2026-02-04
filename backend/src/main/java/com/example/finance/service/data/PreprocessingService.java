@@ -8,6 +8,8 @@ import com.example.finance.repository.data.PreprocessingConfigRepository;
 import com.example.finance.repository.session.FileSessionRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import com.mongodb.client.model.UpdateOneModel;
+import com.mongodb.client.model.WriteModel;
 import org.bson.Document;
 import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.stereotype.Service;
@@ -255,6 +257,15 @@ public class PreprocessingService {
 
         log.info("활성 구분자: {}, 활성 불용어: {}개", activeSeparators, activeStopwords.size());
 
+        // 구분자 regex 패턴 사전 컴파일
+        java.util.regex.Pattern separatorPattern = null;
+        if (!activeSeparators.isEmpty()) {
+            String patternStr = activeSeparators.stream()
+                    .map(s -> java.util.regex.Pattern.quote(s))
+                    .collect(Collectors.joining("|"));
+            separatorPattern = java.util.regex.Pattern.compile(patternStr);
+        }
+
         // process_data 커서 순회 + 배치 업데이트
         Document matchFilter = new Document("session_id", sessionId).append("is_hidden", false);
         long totalCount = mongoTemplate.getCollection(PROCESS_DATA_COLLECTION).countDocuments(matchFilter);
@@ -282,14 +293,10 @@ public class PreprocessingService {
                     text = text.replace(stopword, "");
                 }
 
-                // 2. 구분자로 split
-                // 구분자들을 regex 패턴으로 변환
+                // 2. 사전 컴파일된 패턴으로 split
                 String[] keywords;
-                if (!activeSeparators.isEmpty()) {
-                    String pattern = activeSeparators.stream()
-                            .map(s -> java.util.regex.Pattern.quote(s))
-                            .collect(Collectors.joining("|"));
-                    keywords = text.split(pattern);
+                if (separatorPattern != null) {
+                    keywords = separatorPattern.split(text);
                 } else {
                     keywords = new String[]{text};
                 }
@@ -376,13 +383,15 @@ public class PreprocessingService {
     }
 
     /**
-     * 배치 업데이트 실행 (native MongoDB)
+     * 배치 업데이트 실행 (bulkWrite로 일괄 처리)
      */
     private void executeBatchUpdate(List<Document[]> batch) {
         var collection = mongoTemplate.getCollection(PROCESS_DATA_COLLECTION);
+        List<WriteModel<Document>> bulkOps = new ArrayList<>(batch.size());
         for (Document[] pair : batch) {
-            collection.updateOne(pair[0], pair[1]);
+            bulkOps.add(new UpdateOneModel<>(pair[0], pair[1]));
         }
+        collection.bulkWrite(bulkOps);
     }
 
     // ========== 5. 1글자 제거 ==========

@@ -167,6 +167,10 @@ function PreprocessingPage() {
   const [removingSingle, setRemovingSingle] = useState(false);
   const [savingConfig, setSavingConfig] = useState(false);
 
+  // NLP 설정
+  const [minKeywordLength, setMinKeywordLength] = useState(4);
+  const [nlpExtracting, setNlpExtracting] = useState(false);
+
   // ===== 세션 정보 로드 =====
   useEffect(() => {
     const loadSessionInfo = async () => {
@@ -188,25 +192,19 @@ function PreprocessingPage() {
   }, [projectId, sessionId]);
 
   // ===== 구분자/불용어 설정 로드 =====
+  // 주의: UI의 checkedSet은 "삭제 대상 선택"용이므로 로드 시 비어있어야 함
+  // 백엔드의 config.checked는 "키워드 추출에 활성"인지 여부 (별도 관리)
   useEffect(() => {
     const loadConfig = async () => {
       try {
         const config = await preprocessingService.getConfig(projectId, sessionId);
         if (config.separators) {
           setSeparatorList(config.separators);
-          const checkedSet = new Set();
-          config.separators.forEach((s, i) => {
-            if (s.checked) checkedSet.add(i);
-          });
-          setSeparatorCheckedSet(checkedSet);
+          setSeparatorCheckedSet(new Set()); // UI 체크는 비움 (삭제용)
         }
         if (config.stopwords) {
           setStopwordList(config.stopwords);
-          const checkedSet = new Set();
-          config.stopwords.forEach((s, i) => {
-            if (s.checked) checkedSet.add(i);
-          });
-          setStopwordCheckedSet(checkedSet);
+          setStopwordCheckedSet(new Set()); // UI 체크는 비움 (삭제용)
         }
       } catch (error) {
         console.error('설정 로드 실패:', error);
@@ -237,16 +235,17 @@ function PreprocessingPage() {
   }, [loadData]);
 
   // ===== 설정 저장 =====
-  const saveConfigToServer = useCallback(async (sepList, sepChecked, swList, swChecked) => {
+  // 목록에 있는 항목은 모두 활성(checked=true) - 사용자가 삭제하면 목록에서 제거
+  const saveConfigToServer = useCallback(async (sepList, swList) => {
     setSavingConfig(true);
     try {
-      const separators = sepList.map((s, i) => ({
+      const separators = sepList.map(s => ({
         value: s.value,
-        checked: sepChecked.has(i),
+        checked: true,
       }));
-      const stopwords = swList.map((s, i) => ({
+      const stopwords = swList.map(s => ({
         value: s.value,
-        checked: swChecked.has(i),
+        checked: true,
       }));
       await preprocessingService.saveConfig(projectId, sessionId, { separators, stopwords });
     } catch (error) {
@@ -260,12 +259,9 @@ function PreprocessingPage() {
   const handleAddSeparator = () => {
     if (newSeparator.trim()) {
       const updated = [...separatorList, { value: newSeparator.trim(), checked: true }];
-      const newChecked = new Set(separatorCheckedSet);
-      newChecked.add(updated.length - 1);
       setSeparatorList(updated);
-      setSeparatorCheckedSet(newChecked);
       setNewSeparator('');
-      saveConfigToServer(updated, newChecked, stopwordList, stopwordCheckedSet);
+      saveConfigToServer(updated, stopwordList);
     }
   };
 
@@ -276,30 +272,21 @@ function PreprocessingPage() {
     }
     const remaining = separatorList.filter((_, i) => !separatorCheckedSet.has(i));
     setSeparatorList(remaining);
-    const newChecked = new Set();
-    remaining.forEach((s, i) => {
-      if (s.checked) newChecked.add(i);
-    });
-    setSeparatorCheckedSet(newChecked);
-    saveConfigToServer(remaining, newChecked, stopwordList, stopwordCheckedSet);
+    setSeparatorCheckedSet(new Set());
+    saveConfigToServer(remaining, stopwordList);
   };
 
   const handleSeparatorCheckedChange = (newCheckedSet) => {
     setSeparatorCheckedSet(newCheckedSet);
-    // 자동 저장 (체크 상태 변경 시)
-    saveConfigToServer(separatorList, newCheckedSet, stopwordList, stopwordCheckedSet);
   };
 
   // ===== 불용어 핸들러 =====
   const handleAddStopword = () => {
     if (newStopword.trim()) {
       const updated = [...stopwordList, { value: newStopword.trim(), checked: true }];
-      const newChecked = new Set(stopwordCheckedSet);
-      newChecked.add(updated.length - 1);
       setStopwordList(updated);
-      setStopwordCheckedSet(newChecked);
       setNewStopword('');
-      saveConfigToServer(separatorList, separatorCheckedSet, updated, newChecked);
+      saveConfigToServer(separatorList, updated);
     }
   };
 
@@ -310,17 +297,12 @@ function PreprocessingPage() {
     }
     const remaining = stopwordList.filter((_, i) => !stopwordCheckedSet.has(i));
     setStopwordList(remaining);
-    const newChecked = new Set();
-    remaining.forEach((s, i) => {
-      if (s.checked) newChecked.add(i);
-    });
-    setStopwordCheckedSet(newChecked);
-    saveConfigToServer(separatorList, separatorCheckedSet, remaining, newChecked);
+    setStopwordCheckedSet(new Set());
+    saveConfigToServer(separatorList, remaining);
   };
 
   const handleStopwordCheckedChange = (newCheckedSet) => {
     setStopwordCheckedSet(newCheckedSet);
-    saveConfigToServer(separatorList, separatorCheckedSet, stopwordList, newCheckedSet);
   };
 
   // ===== 키워드 추출 =====
@@ -328,7 +310,7 @@ function PreprocessingPage() {
     setExtracting(true);
     try {
       // 먼저 설정 저장
-      await saveConfigToServer(separatorList, separatorCheckedSet, stopwordList, stopwordCheckedSet);
+      await saveConfigToServer(separatorList, stopwordList);
       const result = await preprocessingService.extractKeywords(projectId, sessionId);
       console.log('키워드 추출 완료:', result);
       setMaxKeywordCols(result.maxKeywordCols || 0);
@@ -449,13 +431,13 @@ function PreprocessingPage() {
                     </p>
                   </CardHeader>
                   <CardContent className="p-0 flex-1 relative min-h-0">
-                    <div className="absolute inset-0 overflow-auto custom-scrollbar">
+                    <div className="absolute inset-0 overflow-auto">
                       {loading ? (
                         <div className="flex items-center justify-center h-32">
                           <div className="animate-spin h-6 w-6 border-2 border-blue-500 border-t-transparent rounded-full" />
                         </div>
                       ) : (
-                        <Table>
+                        <Table className="min-w-max">
                           <TableHeader className="bg-gray-100 sticky top-0 z-10 shadow-sm">
                             <TableRow>
                               <TableHead className="font-semibold text-xs w-[60px] text-center bg-gray-100">No</TableHead>
@@ -468,7 +450,7 @@ function PreprocessingPage() {
                             {targetData.map((row) => (
                               <TableRow key={row._id} className="hover:bg-muted/50">
                                 <TableCell className="text-xs text-center">{row._rowNum}</TableCell>
-                                <TableCell className="text-xs">
+                                <TableCell className="text-xs whitespace-nowrap">
                                   {row[sessionInfo.targetColumn] ?? ''}
                                 </TableCell>
                               </TableRow>
@@ -488,13 +470,13 @@ function PreprocessingPage() {
                     <CardTitle className="text-base">키워드 추출 결과</CardTitle>
                   </CardHeader>
                   <CardContent className="p-0 flex-1 relative min-h-0">
-                    <div className="absolute inset-0 overflow-auto custom-scrollbar">
+                    <div className="absolute inset-0 overflow-auto">
                       {loading ? (
                         <div className="flex items-center justify-center h-32">
                           <div className="animate-spin h-6 w-6 border-2 border-blue-500 border-t-transparent rounded-full" />
                         </div>
                       ) : (
-                        <Table>
+                        <Table className="min-w-max">
                           <TableHeader className="bg-gray-100 sticky top-0 z-10 shadow-sm">
                             <TableRow>
                               {resultColumns.map((col) => (
@@ -690,6 +672,45 @@ function PreprocessingPage() {
                       ) : '1글자 제거'}
                     </Button>
                   </div>
+                </CardContent>
+              </Card>
+
+              {/* NLP 기반 키워드 추출 */}
+              <Card>
+                <CardHeader className="py-3">
+                  <CardTitle className="text-sm font-bold">NLP 기반 키워드 추출</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-3 pt-0">
+                  <div className="text-[11px] text-pink-600 bg-pink-50 p-2 rounded">
+                    * 구분자 기반으로 키워드 추출 후<br />
+                    AI가 추가적으로 키워드를 분할합니다.
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Input
+                      type="number"
+                      value={minKeywordLength}
+                      onChange={(e) => setMinKeywordLength(parseInt(e.target.value) || 4)}
+                      min="1"
+                      max="10"
+                      className="w-16 h-8 text-sm"
+                    />
+                    <span className="text-xs text-muted-foreground">글자 이상 키워드 자동 분할</span>
+                  </div>
+                  <Button
+                    size="sm"
+                    className="w-full bg-purple-600 hover:bg-purple-700 h-8"
+                    onClick={() => {
+                      alert(`NLP 기반 키워드 추출 (${minKeywordLength}글자 이상)\n\n현재 NLP 모듈 연동이 필요합니다.`);
+                    }}
+                    disabled={nlpExtracting}
+                  >
+                    {nlpExtracting ? (
+                      <div className="flex items-center gap-1">
+                        <div className="animate-spin h-3 w-3 border-2 border-white border-t-transparent rounded-full" />
+                        추출 중...
+                      </div>
+                    ) : '키워드 추출'}
+                  </Button>
                 </CardContent>
               </Card>
 
