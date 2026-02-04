@@ -2,8 +2,8 @@
   "family": "finance-backend-task",
   "networkMode": "awsvpc",
   "requiresCompatibilities": ["FARGATE"],
-  "cpu": "512",
-  "memory": "1024",
+  "cpu": "2024",
+  "memory": "4096",
   "executionRoleArn": "arn:aws:iam::659002796326:role/finance-ecs-task-execution-role",
   "taskRoleArn": "arn:aws:iam::659002796326:role/finance-ecs-task-role",
   "runtimePlatform": {
