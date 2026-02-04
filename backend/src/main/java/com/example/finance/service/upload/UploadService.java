@@ -1076,6 +1076,30 @@ public class UploadService {
         if (uploadId != null) {
             Map<String, ExcelStreamingParser.PartitionStats> result = groupByAccountFromRawData(uploadId, accountColName, amountColName, fileInfo.getFileName());
             if (result != null) {
+                // 금액 컬럼이 설정되었는데 모든 계정의 금액이 0이면 → Excel fallback으로 금액 재계산
+                if (amountColName != null && !result.isEmpty()) {
+                    boolean allAmountsZero = result.values().stream()
+                            .allMatch(stats -> stats.getAmount() == 0.0);
+                    if (allAmountsZero) {
+                        log.warn("[{}] raw_data aggregation 금액 합산 결과가 모두 0 → Excel fallback으로 금액 재계산", fileInfo.getFileName());
+                        // 잘못된 캐시 데이터 삭제
+                        try {
+                            String cacheKey = "partition:" + uploadId + ":" + accountColName + ":" + amountColName;
+                            redisTemplate.delete(cacheKey);
+                        } catch (Exception ignored) {}
+                        Map<String, ExcelStreamingParser.PartitionStats> excelResult = groupByAccountFromExcel(fileInfo);
+                        if (!excelResult.isEmpty()) {
+                            // Excel 결과에서 금액이 실제로 있으면 Excel 결과 사용
+                            boolean excelHasAmounts = excelResult.values().stream()
+                                    .anyMatch(stats -> stats.getAmount() != 0.0);
+                            if (excelHasAmounts) {
+                                log.info("[{}] Excel fallback 금액 재계산 성공 → Excel 결과 사용", fileInfo.getFileName());
+                                return excelResult;
+                            }
+                        }
+                        // Excel에서도 0이면 원래 aggregation 결과 반환 (실제로 금액이 0인 경우)
+                    }
+                }
                 return result;
             }
         }
@@ -1141,13 +1165,23 @@ public class UploadService {
 
             if (amountColName != null) {
                 String amountField = "data." + amountColName;
-                // DocumentDB 호환: $convert로 숫자/문자열 모두 안전하게 double 변환
+                // DocumentDB 호환: $type 체크로 숫자 타입만 합산 (double/int/long/decimal)
+                // $convert는 DocumentDB에서 문자열→숫자 변환이 불안정하므로, $type 기반으로 변경
                 groupFields.append("totalAmount", new org.bson.Document("$sum",
-                        new org.bson.Document("$convert",
-                                new org.bson.Document("input", "$" + amountField)
-                                        .append("to", "double")
-                                        .append("onError", 0.0)
-                                        .append("onNull", 0.0))));
+                        new org.bson.Document("$cond", Arrays.asList(
+                                new org.bson.Document("$or", Arrays.asList(
+                                        new org.bson.Document("$eq", Arrays.asList(
+                                                new org.bson.Document("$type", "$" + amountField), "double")),
+                                        new org.bson.Document("$eq", Arrays.asList(
+                                                new org.bson.Document("$type", "$" + amountField), "int")),
+                                        new org.bson.Document("$eq", Arrays.asList(
+                                                new org.bson.Document("$type", "$" + amountField), "long")),
+                                        new org.bson.Document("$eq", Arrays.asList(
+                                                new org.bson.Document("$type", "$" + amountField), "decimal"))
+                                )),
+                                "$" + amountField,
+                                0
+                        ))));
             }
 
             pipeline.add(new org.bson.Document("$group", groupFields));
@@ -1173,7 +1207,9 @@ public class UploadService {
                 String accountName = idObj.toString().trim();
                 if (accountName.isEmpty()) continue;
 
-                long count = doc.getInteger("count", 0);
+                // count도 Number 타입으로 안전하게 추출 (DocumentDB가 Long 반환 가능)
+                Object countObj = doc.get("count");
+                long count = (countObj instanceof Number) ? ((Number) countObj).longValue() : 0L;
                 double amount = 0.0;
                 if (amountColName != null) {
                     Object totalAmountObj = doc.get("totalAmount");
@@ -1182,7 +1218,7 @@ public class UploadService {
                     }
                 }
 
-                log.debug("[{}] 계정={}, count={}, amount={}, amountType={}",
+                log.info("[{}] 계정={}, count={}, amount={}, amountType={}",
                         fileName, accountName, count, amount,
                         doc.get("totalAmount") != null ? doc.get("totalAmount").getClass().getSimpleName() : "null");
 
