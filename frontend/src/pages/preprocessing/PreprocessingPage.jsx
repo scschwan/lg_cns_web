@@ -413,16 +413,16 @@ function PreprocessingPage() {
         </div>
 
         {/* 메인 콘텐츠 그리드 (남은 높이 채움) */}
-        <div className="flex-1 min-h-0 grid grid-cols-1 xl:grid-cols-12 gap-4">
+        <div className="flex-1 min-h-0 grid grid-cols-1 xl:grid-cols-12 gap-4 overflow-y-auto xl:overflow-visible">
 
           {/* 좌측: 데이터 테이블 영역 (8/12) */}
-          <div className="xl:col-span-8 h-full flex flex-col min-h-0 gap-4">
+          <div className="xl:col-span-8 min-h-[50vh] xl:min-h-0 xl:h-full flex flex-col gap-4">
 
             {/* 내부 그리드: 대상 테이블(5) + 결과 테이블(7) */}
             <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-12 gap-4">
 
               {/* 키워드 추출 대상 */}
-              <div className="lg:col-span-5 h-full min-h-0">
+              <div className="lg:col-span-5 min-h-[250px] lg:min-h-0 lg:h-full">
                 <Card className="h-full flex flex-col overflow-hidden shadow-sm">
                   <CardHeader className="py-3 px-4 border-b bg-white flex-shrink-0">
                     <CardTitle className="text-base">키워드 추출 대상</CardTitle>
@@ -430,7 +430,7 @@ function PreprocessingPage() {
                       타겟열: <strong>{sessionInfo.targetColumn || '미설정'}</strong>
                     </p>
                   </CardHeader>
-                  <CardContent className="p-0 flex-1 relative min-h-0">
+                  <CardContent className="p-0 flex-1 relative min-h-[200px] lg:min-h-0">
                     <div className="absolute inset-0 overflow-auto">
                       {loading ? (
                         <div className="flex items-center justify-center h-32">
@@ -464,12 +464,12 @@ function PreprocessingPage() {
               </div>
 
               {/* 키워드 추출 결과 */}
-              <div className="lg:col-span-7 h-full min-h-0">
+              <div className="lg:col-span-7 min-h-[250px] lg:min-h-0 lg:h-full">
                 <Card className="h-full flex flex-col overflow-hidden shadow-sm">
                   <CardHeader className="py-3 px-4 border-b bg-white flex-shrink-0">
                     <CardTitle className="text-base">키워드 추출 결과</CardTitle>
                   </CardHeader>
-                  <CardContent className="p-0 flex-1 relative min-h-0">
+                  <CardContent className="p-0 flex-1 relative min-h-[200px] lg:min-h-0">
                     <div className="absolute inset-0 overflow-auto">
                       {loading ? (
                         <div className="flex items-center justify-center h-32">
@@ -542,7 +542,7 @@ function PreprocessingPage() {
           </div>
 
           {/* 우측: 컨트롤 영역 (4/12) */}
-          <div className="xl:col-span-4 h-full flex flex-col min-h-0">
+          <div className="xl:col-span-4 min-h-[40vh] xl:min-h-0 xl:h-full flex flex-col">
 
             {/* 설정 패널 (스크롤 가능) */}
             <div className="flex-1 overflow-y-auto pr-1 space-y-4 pb-2">
