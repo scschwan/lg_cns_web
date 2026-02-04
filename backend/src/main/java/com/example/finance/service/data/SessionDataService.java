@@ -3,6 +3,8 @@ package com.example.finance.service.data;
 import com.example.finance.exception.BusinessException;
 import com.example.finance.model.session.FileSession;
 import com.example.finance.model.session.UploadedFileInfo;
+import com.example.finance.model.data.ColumnMappingDocument;
+import com.example.finance.repository.data.ColumnMappingRepository;
 import com.example.finance.repository.data.SessionDataRepository;
 import com.example.finance.repository.session.FileSessionRepository;
 import lombok.RequiredArgsConstructor;
@@ -34,6 +36,7 @@ public class SessionDataService {
     private final MongoTemplate mongoTemplate;
     private final FileSessionRepository fileSessionRepository;
     private final SessionDataRepository sessionDataRepository;
+    private final ColumnMappingRepository columnMappingRepository;
     private final RedisService redisService;
     private final ObjectMapper objectMapper;
     private final SqsClient sqsClient;
@@ -52,12 +55,14 @@ public class SessionDataService {
     public SessionDataService(MongoTemplate mongoTemplate,
                                FileSessionRepository fileSessionRepository,
                                SessionDataRepository sessionDataRepository,
+                               ColumnMappingRepository columnMappingRepository,
                                RedisService redisService,
                                ObjectMapper objectMapper,
                                @org.springframework.context.annotation.Lazy SqsClient sqsClient) {
         this.mongoTemplate = mongoTemplate;
         this.fileSessionRepository = fileSessionRepository;
         this.sessionDataRepository = sessionDataRepository;
+        this.columnMappingRepository = columnMappingRepository;
         this.redisService = redisService;
         this.objectMapper = objectMapper;
         this.sqsClient = sqsClient;
@@ -403,11 +408,22 @@ public class SessionDataService {
             log.warn("session_data 캐시 조회 실패 (무시): {}", e.getMessage());
         }
 
-        // 2. MongoDB 조회
+        // 2. MongoDB 조회 (is_hidden=true인 행 제외)
         long startTime = System.currentTimeMillis();
-        long totalCount = sessionDataRepository.countBySessionId(sessionId);
 
-        Query query = new Query(Criteria.where("session_id").is(sessionId))
+        // is_hidden이 true가 아닌 행만 카운트 (is_hidden 없는 기존 데이터도 포함)
+        Query countQuery = new Query(Criteria.where("session_id").is(sessionId)
+                .orOperator(
+                        Criteria.where("is_hidden").is(false),
+                        Criteria.where("is_hidden").exists(false)
+                ));
+        long totalCount = mongoTemplate.count(countQuery, "session_data");
+
+        Query query = new Query(Criteria.where("session_id").is(sessionId)
+                .orOperator(
+                        Criteria.where("is_hidden").is(false),
+                        Criteria.where("is_hidden").exists(false)
+                ))
                 .with(org.springframework.data.domain.Sort.by("_id"))
                 .skip((long) page * size)
                 .limit(size);
@@ -479,5 +495,231 @@ public class SessionDataService {
         } catch (Exception e) {
             log.warn("session_data 캐시 무효화 실패 (무시): {}", e.getMessage());
         }
+    }
+
+    // ========== 컬럼 매핑 관리 ==========
+
+    /**
+     * 컬럼 매핑 초기화 (detected_columns 기반)
+     * 이미 존재하면 기존 데이터 반환
+     */
+    public List<ColumnMappingDocument> initColumnMappings(String sessionId) {
+        long existingCount = columnMappingRepository.countBySessionId(sessionId);
+        if (existingCount > 0) {
+            return columnMappingRepository.findBySessionIdOrderBySequenceAsc(sessionId);
+        }
+
+        FileSession session = fileSessionRepository.findBySessionId(sessionId)
+                .orElseThrow(() -> new BusinessException(
+                        "SESSION_NOT_FOUND", "세션을 찾을 수 없습니다: " + sessionId));
+
+        // uploaded_files의 detected_columns에서 컬럼 목록 추출
+        Set<String> allColumns = new LinkedHashSet<>();
+        if (session.getUploadedFiles() != null) {
+            for (UploadedFileInfo file : session.getUploadedFiles()) {
+                if (file.getDetectedColumns() != null) {
+                    allColumns.addAll(file.getDetectedColumns());
+                }
+            }
+        }
+
+        List<ColumnMappingDocument> mappings = new ArrayList<>();
+        int seq = 1;
+        for (String colName : allColumns) {
+            mappings.add(ColumnMappingDocument.builder()
+                    .sessionId(sessionId)
+                    .originalName(colName)
+                    .displayName(colName)
+                    .dataType("text")
+                    .isVisible(true)
+                    .sequence(seq++)
+                    .build());
+        }
+
+        if (!mappings.isEmpty()) {
+            columnMappingRepository.saveAll(mappings);
+            log.info("컬럼 매핑 초기화: sessionId={}, {}개 컬럼", sessionId, mappings.size());
+        }
+
+        return mappings;
+    }
+
+    /**
+     * 컬럼 매핑 목록 조회
+     */
+    public List<ColumnMappingDocument> getColumnMappings(String sessionId) {
+        List<ColumnMappingDocument> mappings = columnMappingRepository.findBySessionIdOrderBySequenceAsc(sessionId);
+        if (mappings.isEmpty()) {
+            // 아직 초기화 안 됐으면 자동 초기화
+            return initColumnMappings(sessionId);
+        }
+        return mappings;
+    }
+
+    /**
+     * 컬럼 가시성 토글
+     */
+    public ColumnMappingDocument updateColumnVisibility(String sessionId, String columnName, boolean isVisible) {
+        ColumnMappingDocument mapping = columnMappingRepository.findBySessionIdAndOriginalName(sessionId, columnName)
+                .orElseThrow(() -> new BusinessException(
+                        "COLUMN_NOT_FOUND", "컬럼을 찾을 수 없습니다: " + columnName));
+
+        mapping.setIsVisible(isVisible);
+        columnMappingRepository.save(mapping);
+
+        // 캐시 무효화
+        invalidateSessionDataCache(sessionId);
+
+        log.info("컬럼 가시성 변경: sessionId={}, column={}, visible={}", sessionId, columnName, isVisible);
+        return mapping;
+    }
+
+    /**
+     * 컬럼 매핑 일괄 업데이트
+     */
+    public List<ColumnMappingDocument> updateColumnMappingsBatch(String sessionId, List<Map<String, Object>> updates) {
+        for (Map<String, Object> update : updates) {
+            String columnName = (String) update.get("originalName");
+            Boolean isVisible = (Boolean) update.get("isVisible");
+
+            if (columnName != null && isVisible != null) {
+                columnMappingRepository.findBySessionIdAndOriginalName(sessionId, columnName)
+                        .ifPresent(mapping -> {
+                            mapping.setIsVisible(isVisible);
+                            columnMappingRepository.save(mapping);
+                        });
+            }
+        }
+
+        invalidateSessionDataCache(sessionId);
+        return columnMappingRepository.findBySessionIdOrderBySequenceAsc(sessionId);
+    }
+
+    // ========== 데이터 삭제 (is_hidden) ==========
+
+    /**
+     * session_data에서 특정 컬럼의 값으로 검색
+     */
+    public List<Map<String, Object>> searchSessionData(String sessionId, String columnName, String keyword) {
+        String fieldPath = "data." + columnName;
+
+        Criteria criteria = new Criteria().andOperator(
+                Criteria.where("session_id").is(sessionId),
+                Criteria.where(fieldPath).regex(keyword, "i"),
+                new Criteria().orOperator(
+                        Criteria.where("is_hidden").is(false),
+                        Criteria.where("is_hidden").exists(false)
+                )
+        );
+
+        Query query = new Query(criteria).limit(500);
+
+        List<Document> documents = mongoTemplate.find(query, Document.class, "session_data");
+
+        List<Map<String, Object>> results = new ArrayList<>();
+        for (Document doc : documents) {
+            Map<String, Object> row = new LinkedHashMap<>();
+            row.put("_id", doc.getObjectId("_id").toString());
+            row.put("row_number", doc.getInteger("row_number"));
+            @SuppressWarnings("unchecked")
+            Map<String, Object> data = (Map<String, Object>) doc.get("data");
+            if (data != null) {
+                row.putAll(data);
+            }
+            results.add(row);
+        }
+
+        log.info("session_data 검색: sessionId={}, column={}, keyword={}, 결과={}건",
+                sessionId, columnName, keyword, results.size());
+        return results;
+    }
+
+    /**
+     * session_data에서 특정 컬럼의 고유 값 목록 조회 (검색용)
+     */
+    public List<Map<String, Object>> getDistinctValues(String sessionId, String columnName) {
+        String fieldPath = "data." + columnName;
+
+        List<Document> pipeline = new ArrayList<>();
+        pipeline.add(new Document("$match", new Document("session_id", sessionId)
+                .append("$or", List.of(
+                        new Document("is_hidden", false),
+                        new Document("is_hidden", new Document("$exists", false))
+                ))));
+        pipeline.add(new Document("$group", new Document("_id", "$" + fieldPath)
+                .append("count", new Document("$sum", 1))));
+        pipeline.add(new Document("$sort", new Document("_id", 1)));
+        pipeline.add(new Document("$limit", 1000));
+
+        List<Document> results = mongoTemplate.getCollection("session_data")
+                .aggregate(pipeline)
+                .into(new ArrayList<>());
+
+        List<Map<String, Object>> values = new ArrayList<>();
+        for (Document doc : results) {
+            Object idObj = doc.get("_id");
+            if (idObj == null) continue;
+            Map<String, Object> item = new LinkedHashMap<>();
+            item.put("value", idObj.toString());
+            Object countObj = doc.get("count");
+            item.put("count", countObj instanceof Number ? ((Number) countObj).longValue() : 0L);
+            values.add(item);
+        }
+
+        return values;
+    }
+
+    /**
+     * session_data 행 숨김 처리 (is_hidden = true)
+     */
+    public long hideSessionDataRows(String sessionId, List<String> rowIds) {
+        org.springframework.data.mongodb.core.query.Update update =
+                new org.springframework.data.mongodb.core.query.Update().set("is_hidden", true);
+
+        List<org.bson.types.ObjectId> objectIds = rowIds.stream()
+                .map(org.bson.types.ObjectId::new)
+                .collect(Collectors.toList());
+
+        Query query = new Query(Criteria.where("session_id").is(sessionId)
+                .and("_id").in(objectIds));
+
+        var result = mongoTemplate.updateMulti(query, update, "session_data");
+        long modifiedCount = result.getModifiedCount();
+
+        invalidateSessionDataCache(sessionId);
+        log.info("session_data 행 숨김: sessionId={}, 요청={}건, 처리={}건",
+                sessionId, rowIds.size(), modifiedCount);
+        return modifiedCount;
+    }
+
+    /**
+     * session_data 행 원복 (is_hidden = false)
+     */
+    public long restoreSessionDataRows(String sessionId, List<String> rowIds) {
+        org.springframework.data.mongodb.core.query.Update update =
+                new org.springframework.data.mongodb.core.query.Update().set("is_hidden", false);
+
+        List<org.bson.types.ObjectId> objectIds = rowIds.stream()
+                .map(org.bson.types.ObjectId::new)
+                .collect(Collectors.toList());
+
+        Query query = new Query(Criteria.where("session_id").is(sessionId)
+                .and("_id").in(objectIds));
+
+        var result = mongoTemplate.updateMulti(query, update, "session_data");
+        long modifiedCount = result.getModifiedCount();
+
+        invalidateSessionDataCache(sessionId);
+        log.info("session_data 행 원복: sessionId={}, 요청={}건, 처리={}건",
+                sessionId, rowIds.size(), modifiedCount);
+        return modifiedCount;
+    }
+
+    /**
+     * 컬럼 매핑 삭제 (세션 삭제 시)
+     */
+    public void deleteColumnMappings(String sessionId) {
+        columnMappingRepository.deleteBySessionId(sessionId);
+        log.info("컬럼 매핑 삭제: sessionId={}", sessionId);
     }
 }

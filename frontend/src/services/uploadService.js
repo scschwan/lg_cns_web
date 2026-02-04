@@ -556,6 +556,80 @@ const uploadService = {
         return response.data;
     },
 
+    // ========== 컬럼 매핑 API ==========
+
+    /**
+     * 컬럼 매핑 조회
+     * GET /api/projects/{projectId}/upload/sessions/{sessionId}/column-mappings
+     */
+    getColumnMappings: async (projectId, sessionId) => {
+        const response = await api.get(
+            `/api/projects/${projectId}/upload/sessions/${sessionId}/column-mappings`
+        );
+        return response.data;
+    },
+
+    /**
+     * 컬럼 가시성 변경
+     * PUT /api/projects/{projectId}/upload/sessions/{sessionId}/column-mappings/{columnName}/visibility
+     */
+    updateColumnVisibility: async (projectId, sessionId, columnName, isVisible) => {
+        const response = await api.put(
+            `/api/projects/${projectId}/upload/sessions/${sessionId}/column-mappings/${encodeURIComponent(columnName)}/visibility`,
+            { isVisible }
+        );
+        return response.data;
+    },
+
+    // ========== 데이터 삭제 API ==========
+
+    /**
+     * 세션 데이터 검색 (컬럼+키워드 기반)
+     * GET /api/projects/{projectId}/upload/sessions/{sessionId}/data/search
+     */
+    searchSessionData: async (projectId, sessionId, columnName, keyword) => {
+        const response = await api.get(
+            `/api/projects/${projectId}/upload/sessions/${sessionId}/data/search`,
+            { params: { columnName, keyword } }
+        );
+        return response.data;
+    },
+
+    /**
+     * 컬럼 고유 값 목록 조회
+     * GET /api/projects/{projectId}/upload/sessions/{sessionId}/data/distinct-values
+     */
+    getDistinctValues: async (projectId, sessionId, columnName) => {
+        const response = await api.get(
+            `/api/projects/${projectId}/upload/sessions/${sessionId}/data/distinct-values`,
+            { params: { columnName } }
+        );
+        return response.data;
+    },
+
+    /**
+     * 데이터 행 숨김 (is_hidden=true)
+     * POST /api/projects/{projectId}/upload/sessions/{sessionId}/data/hide
+     */
+    hideSessionDataRows: async (projectId, sessionId, rowIds) => {
+        const response = await api.post(
+            `/api/projects/${projectId}/upload/sessions/${sessionId}/data/hide`,
+            { rowIds }
+        );
+        return response.data;
+    },
+
+    /**
+     * 데이터 행 원복 (is_hidden=false)
+     * POST /api/projects/{projectId}/upload/sessions/{sessionId}/data/restore
+     */
+    restoreSessionDataRows: async (projectId, sessionId, rowIds) => {
+        const response = await api.post(
+            `/api/projects/${projectId}/upload/sessions/${sessionId}/data/restore`,
+            { rowIds }
+        );
+        return response.data;
+    },
 
 };
 

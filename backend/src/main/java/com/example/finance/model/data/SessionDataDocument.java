@@ -46,6 +46,10 @@ public class SessionDataDocument {
 
     private Map<String, Object> data;
 
+    @Field("is_hidden")
+    @Builder.Default
+    private Boolean isHidden = false;
+
     @Field("created_at")
     private LocalDateTime createdAt;
 }
