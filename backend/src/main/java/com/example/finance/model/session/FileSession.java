@@ -175,4 +175,36 @@ public class FileSession {
     @Field("is_deleted")
     @Builder.Default
     private Boolean isDeleted = false;
+
+    // ===== 필수 항목 매핑 (Step 2: Start Analysis에서 설정) =====
+
+    /**
+     * 세목 열 (계정명 컬럼)
+     */
+    @Field("category_column")
+    private String categoryColumn;
+
+    /**
+     * 코스트센터 열
+     */
+    @Field("cost_center_column")
+    private String costCenterColumn;
+
+    /**
+     * 공급업체 열
+     */
+    @Field("supplier_column")
+    private String supplierColumn;
+
+    /**
+     * 금액 열
+     */
+    @Field("amount_column")
+    private String amountColumn;
+
+    /**
+     * 타겟 열
+     */
+    @Field("target_column")
+    private String targetColumn;
 }

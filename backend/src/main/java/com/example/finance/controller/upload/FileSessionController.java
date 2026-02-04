@@ -558,10 +558,25 @@ public class FileSessionController {
         return ResponseEntity.ok(sessionDataService.standardizeData(sessionId, keyColumn, changeColumn));
     }
 
+    @Operation(summary = "process_data 생성 (Step 2→3)", description = "session_data에서 visible 컬럼만 추출하여 process_data 생성")
+    @PostMapping("/{sessionId}/data/prepare-process")
+    public ResponseEntity<Map<String, Object>> prepareProcessData(
+            @PathVariable String projectId,
+            @PathVariable String sessionId,
+            @RequestBody Map<String, Object> body,
+            @CurrentUser UserPrincipal userPrincipal) {
 
+        projectService.getProject(projectId, userPrincipal.getId());
+
+        @SuppressWarnings("unchecked")
+        Map<String, String> requiredColumns = (Map<String, String>) body.get("requiredColumns");
+
+        Map<String, Object> result = sessionDataService.prepareProcessData(sessionId, requiredColumns);
+        return ResponseEntity.ok(result);
+    }
 
     /**
-     * 세션 완료 처리 (Step 2 진입)
+     * 세션 완료 처리 (Step 1 → Step 2)
      */
     @PostMapping("/{sessionId}/complete")
     public ResponseEntity<Map<String, Object>> completeSession(
@@ -575,7 +590,6 @@ public class FileSessionController {
         // 프로젝트 권한 확인
         projectService.getProject(projectId, userId);
 
-        // FileSessionService에 메서드 추가 필요
         Map<String, Object> result = fileSessionService.completeSessionProcessing(sessionId, userId);
 
         return ResponseEntity.ok(result);
