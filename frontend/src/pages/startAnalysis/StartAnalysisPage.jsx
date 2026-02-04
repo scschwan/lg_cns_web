@@ -520,6 +520,7 @@ export default function StartAnalysisPage() {
   };
 
   const [completeLoading, setCompleteLoading] = useState(false);
+  const [completeProgress, setCompleteProgress] = useState(0);
 
   const handleComplete = async () => {
     // 필수 항목 검증
@@ -533,16 +534,38 @@ export default function StartAnalysisPage() {
     }
 
     setCompleteLoading(true);
+    setCompleteProgress(0);
     try {
-      // process_data 생성 (session_data → visible 컬럼만 추출)
-      const result = await uploadService.prepareProcessData(projectId, sessionId, requiredColumns);
-      console.log('process_data 생성 완료:', result);
-      navigate(`/projects/${projectId}/sessions/${sessionId}/preprocessing`);
+      // process_data 비동기 생성 시작
+      await uploadService.prepareProcessData(projectId, sessionId, requiredColumns);
+
+      // 폴링으로 진행 상태 추적
+      const pollInterval = 1000; // 1초
+      const maxPolls = 300; // 최대 5분
+      let polls = 0;
+
+      while (polls < maxPolls) {
+        await new Promise(r => setTimeout(r, pollInterval));
+        polls++;
+
+        const status = await uploadService.getProcessDataStatus(projectId, sessionId);
+        setCompleteProgress(status.progress || 0);
+
+        if (status.status === 'COMPLETED') {
+          console.log('process_data 생성 완료:', status);
+          navigate(`/projects/${projectId}/sessions/${sessionId}/preprocessing`);
+          return;
+        } else if (status.status === 'FAILED') {
+          throw new Error(status.error || '데이터 처리에 실패했습니다.');
+        }
+      }
+      throw new Error('처리 시간이 초과되었습니다.');
     } catch (error) {
       console.error('process_data 생성 실패:', error);
-      alert('데이터 처리에 실패했습니다. 다시 시도해주세요.');
+      alert(error.message || '데이터 처리에 실패했습니다. 다시 시도해주세요.');
     } finally {
       setCompleteLoading(false);
+      setCompleteProgress(0);
     }
   };
 
@@ -1084,6 +1107,20 @@ export default function StartAnalysisPage() {
 
             {/* 완료 버튼 (하단 고정) */}
             <div className="pt-3 mt-auto flex-shrink-0 z-20 bg-gray-50 pb-2">
+              {completeLoading && completeProgress > 0 && (
+                <div className="mb-2">
+                  <div className="flex justify-between text-xs text-gray-600 mb-1">
+                    <span>process_data 생성 중...</span>
+                    <span>{completeProgress}%</span>
+                  </div>
+                  <div className="w-full bg-gray-200 rounded-full h-2">
+                    <div
+                      className="bg-green-600 h-2 rounded-full transition-all duration-300"
+                      style={{ width: `${completeProgress}%` }}
+                    />
+                  </div>
+                </div>
+              )}
               <Button
                 className="w-full bg-green-600 hover:bg-green-700 text-white shadow-lg h-12 text-base font-semibold"
                 onClick={handleComplete}
@@ -1092,7 +1129,7 @@ export default function StartAnalysisPage() {
                 {completeLoading ? (
                   <div className="flex items-center gap-2">
                     <div className="animate-spin h-4 w-4 border-2 border-white border-t-transparent rounded-full" />
-                    process_data 생성 중...
+                    {completeProgress > 0 ? `처리 중... ${completeProgress}%` : '시작 중...'}
                   </div>
                 ) : (
                   '완료 → Step 3: Preprocessing'

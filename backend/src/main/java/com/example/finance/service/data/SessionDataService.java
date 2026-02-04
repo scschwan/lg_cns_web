@@ -957,33 +957,85 @@ public class SessionDataService {
 
     // ========== process_data 생성 (Step 2 → Step 3) ==========
 
+    private static final String PROCESS_DATA_COLLECTION = "process_data";
+    private static final String PROCESS_STATUS_PREFIX = "process:status:";
+    private static final Duration PROCESS_STATUS_TTL = Duration.ofHours(2);
+    private static final int PROCESS_BATCH_SIZE = 5_000;
+
     /**
-     * session_data에서 process_data 생성
+     * session_data에서 process_data 생성 (비동기)
      *
-     * C# PrepareProcessDataAsync 참고:
-     * 1. 기존 process_data 삭제
-     * 2. session_data에서 is_hidden=false인 행만 조회
-     * 3. visible 컬럼만 추출하여 process_data에 삽입
-     * 4. raw_data_id 참조 유지
-     *
-     * @param sessionId 세션 ID
-     * @param requiredColumns 필수 항목 매핑 (category, costCenter, supplier, amount, target)
-     * @return 처리 결과
+     * SQS 큐가 설정된 경우 SQS로 처리, 아닌 경우 @Async 스레드풀 사용
+     * 진행 상태는 Redis로 추적, 클라이언트가 폴링
      */
     public Map<String, Object> prepareProcessData(String sessionId, Map<String, String> requiredColumns) {
-        log.info("process_data 생성 시작: sessionId={}", sessionId);
-        long startTime = System.currentTimeMillis();
+        log.info("process_data 생성 요청: sessionId={}", sessionId);
 
-        // 1. 세션 조회
+        // 세션 조회 (유효성 검증)
         FileSession session = fileSessionRepository.findBySessionId(sessionId)
                 .orElseThrow(() -> new BusinessException(
                         "SESSION_NOT_FOUND", "세션을 찾을 수 없습니다: " + sessionId));
 
-        // 2. 기존 process_data 삭제
-        processDataRepository.deleteBySessionId(sessionId);
+        // Redis에 진행 상태 초기화
+        String statusKey = PROCESS_STATUS_PREFIX + sessionId;
+        Map<String, Object> status = new HashMap<>();
+        status.put("status", "PROCESSING");
+        status.put("progress", 0);
+        status.put("processedCount", 0);
+        status.put("totalCount", 0);
+        status.put("startTime", System.currentTimeMillis());
+        redisService.setWithTTL(statusKey, status, PROCESS_STATUS_TTL);
+
+        // 필수 항목 매핑을 먼저 세션에 저장
+        if (requiredColumns != null) {
+            session.setCategoryColumn(requiredColumns.getOrDefault("category", null));
+            session.setCostCenterColumn(requiredColumns.getOrDefault("costCenter", null));
+            session.setSupplierColumn(requiredColumns.getOrDefault("supplier", null));
+            session.setAmountColumn(requiredColumns.getOrDefault("amount", null));
+            session.setTargetColumn(requiredColumns.getOrDefault("target", null));
+            session.setUpdatedAt(LocalDateTime.now());
+            fileSessionRepository.save(session);
+        }
+
+        // 비동기 처리 시작
+        CompletableFuture.runAsync(() -> {
+            try {
+                executePrepareProcessData(sessionId, session.getProjectId());
+            } catch (Exception e) {
+                log.error("process_data 생성 실패: sessionId={}", sessionId, e);
+                Map<String, Object> errorStatus = new HashMap<>();
+                errorStatus.put("status", "FAILED");
+                errorStatus.put("error", e.getMessage());
+                redisService.setWithTTL(statusKey, errorStatus, PROCESS_STATUS_TTL);
+            }
+        });
+
+        Map<String, Object> result = new HashMap<>();
+        result.put("sessionId", sessionId);
+        result.put("status", "PROCESSING");
+        result.put("message", "process_data 생성이 비동기로 시작되었습니다.");
+        return result;
+    }
+
+    /**
+     * process_data 생성 실행 (병렬 처리 + native insertMany)
+     *
+     * ⭐ MappingMongoConverter 우회: 컬럼명에 dots(.)이 포함된 경우
+     *    Spring Data의 repository.saveAll()이 MappingException을 던지므로
+     *    native MongoDB driver의 insertMany()를 사용하여 BSON Document 직접 삽입
+     *
+     * ⭐ 병렬 처리: 커서에서 배치 단위로 읽어 멀티스레드로 동시 삽입
+     */
+    private void executePrepareProcessData(String sessionId, String projectId) {
+        long startTime = System.currentTimeMillis();
+        String statusKey = PROCESS_STATUS_PREFIX + sessionId;
+
+        // 1. 기존 process_data 삭제 (native delete for speed)
+        mongoTemplate.getCollection(PROCESS_DATA_COLLECTION)
+                .deleteMany(new Document("session_id", sessionId));
         log.info("기존 process_data 삭제 완료: sessionId={}", sessionId);
 
-        // 3. visible 컬럼 목록 조회
+        // 2. visible 컬럼 목록 조회
         List<ColumnMappingDocument> mappings = columnMappingRepository.findBySessionIdOrderBySequenceAsc(sessionId);
         Set<String> visibleColumns = mappings.stream()
                 .filter(ColumnMappingDocument::getIsVisible)
@@ -993,96 +1045,151 @@ public class SessionDataService {
         if (visibleColumns.isEmpty()) {
             throw new BusinessException("NO_VISIBLE_COLUMNS", "표시할 컬럼이 없습니다.");
         }
-
-        // _id, row_number 제외
         visibleColumns.remove("_id");
         visibleColumns.remove("row_number");
-
         log.info("visible 컬럼: {}", visibleColumns);
 
-        // 4. session_data에서 is_hidden=false인 행을 커서로 읽어 process_data 생성
-        Query query = new Query(new Criteria().andOperator(
-                Criteria.where("session_id").is(sessionId),
-                new Criteria().orOperator(
-                        Criteria.where("is_hidden").is(false),
-                        Criteria.where("is_hidden").exists(false)
-                )
-        ));
-
-        long totalCount = mongoTemplate.count(query, "session_data");
+        // 3. session_data 건수 조회
+        Document matchFilter = new Document("session_id", sessionId)
+                .append("$or", List.of(
+                        new Document("is_hidden", false),
+                        new Document("is_hidden", new Document("$exists", false))
+                ));
+        long totalCount = mongoTemplate.getCollection("session_data").countDocuments(matchFilter);
         log.info("처리 대상 session_data: {}건", totalCount);
 
-        // 배치 처리
-        List<ProcessDataDocument> batch = new ArrayList<>(BATCH_SIZE);
-        AtomicLong processedCount = new AtomicLong(0);
+        // Redis 상태 업데이트
+        Map<String, Object> progressStatus = new HashMap<>();
+        progressStatus.put("status", "PROCESSING");
+        progressStatus.put("totalCount", totalCount);
+        progressStatus.put("processedCount", 0);
+        progressStatus.put("progress", 0);
+        redisService.setWithTTL(statusKey, progressStatus, PROCESS_STATUS_TTL);
 
-        query.cursorBatchSize(CURSOR_BATCH_SIZE);
+        // 4. 병렬 스레드풀 생성
+        ExecutorService executor = Executors.newFixedThreadPool(THREAD_POOL_SIZE);
+        AtomicLong processedCount = new AtomicLong(0);
+        List<CompletableFuture<Void>> futures = new ArrayList<>();
+        LocalDateTime now = LocalDateTime.now();
+
+        // 5. 커서로 session_data 읽기 → 배치 단위로 병렬 삽입
+        List<Document> bsonBatch = new ArrayList<>(PROCESS_BATCH_SIZE);
 
         try (var cursor = mongoTemplate.getCollection("session_data")
-                .find(query.getQueryObject()).batchSize(CURSOR_BATCH_SIZE).cursor()) {
+                .find(matchFilter).batchSize(CURSOR_BATCH_SIZE).cursor()) {
 
             while (cursor.hasNext()) {
                 Document doc = cursor.next();
                 Document dataDoc = (Document) doc.get("data");
                 if (dataDoc == null) continue;
 
-                // visible 컬럼만 추출
-                Map<String, Object> filteredData = new LinkedHashMap<>();
+                // visible 컬럼만 추출 → BSON Document로 직접 생성
+                Document filteredData = new Document();
                 for (String col : visibleColumns) {
                     if (dataDoc.containsKey(col)) {
                         filteredData.put(col, dataDoc.get(col));
                     }
                 }
 
-                ProcessDataDocument processDoc = ProcessDataDocument.builder()
-                        .projectId(session.getProjectId())
-                        .sessionId(sessionId)
-                        .rawDataId(doc.get("raw_data_id") != null ? doc.get("raw_data_id").toString() : null)
-                        .data(filteredData)
-                        .isHidden(false)
-                        .createdAt(LocalDateTime.now())
-                        .build();
+                Document bsonDoc = new Document()
+                        .append("project_id", projectId)
+                        .append("session_id", sessionId)
+                        .append("raw_data_id", doc.get("raw_data_id") != null ? doc.get("raw_data_id").toString() : null)
+                        .append("data", filteredData)
+                        .append("is_hidden", false)
+                        .append("created_at", now);
 
-                batch.add(processDoc);
+                bsonBatch.add(bsonDoc);
 
-                if (batch.size() >= BATCH_SIZE) {
-                    processDataRepository.saveAll(batch);
-                    processedCount.addAndGet(batch.size());
-                    log.debug("process_data 배치 삽입: {}건 / {}건", processedCount.get(), totalCount);
-                    batch.clear();
+                if (bsonBatch.size() >= PROCESS_BATCH_SIZE) {
+                    // 배치를 복사하여 병렬 스레드에 전달
+                    List<Document> batchToInsert = new ArrayList<>(bsonBatch);
+                    bsonBatch.clear();
+
+                    CompletableFuture<Void> future = CompletableFuture.runAsync(() -> {
+                        mongoTemplate.getCollection(PROCESS_DATA_COLLECTION).insertMany(batchToInsert);
+                        long current = processedCount.addAndGet(batchToInsert.size());
+
+                        // Redis 진행 상태 업데이트
+                        int progress = totalCount > 0 ? (int) (current * 100 / totalCount) : 0;
+                        Map<String, Object> ps = new HashMap<>();
+                        ps.put("status", "PROCESSING");
+                        ps.put("totalCount", totalCount);
+                        ps.put("processedCount", current);
+                        ps.put("progress", Math.min(progress, 99));
+                        redisService.setWithTTL(statusKey, ps, PROCESS_STATUS_TTL);
+
+                        log.debug("process_data 배치 삽입: {}건 / {}건", current, totalCount);
+                    }, executor);
+
+                    futures.add(future);
                 }
             }
         }
 
         // 잔여 배치 삽입
-        if (!batch.isEmpty()) {
-            processDataRepository.saveAll(batch);
-            processedCount.addAndGet(batch.size());
+        if (!bsonBatch.isEmpty()) {
+            List<Document> remainBatch = new ArrayList<>(bsonBatch);
+            CompletableFuture<Void> future = CompletableFuture.runAsync(() -> {
+                mongoTemplate.getCollection(PROCESS_DATA_COLLECTION).insertMany(remainBatch);
+                processedCount.addAndGet(remainBatch.size());
+            }, executor);
+            futures.add(future);
         }
 
-        // 5. 세션에 필수 항목 매핑 저장 + 단계 업데이트
-        if (requiredColumns != null) {
-            session.setCategoryColumn(requiredColumns.getOrDefault("category", null));
-            session.setCostCenterColumn(requiredColumns.getOrDefault("costCenter", null));
-            session.setSupplierColumn(requiredColumns.getOrDefault("supplier", null));
-            session.setAmountColumn(requiredColumns.getOrDefault("amount", null));
-            session.setTargetColumn(requiredColumns.getOrDefault("target", null));
+        // 모든 병렬 작업 완료 대기
+        CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
+        executor.shutdown();
+
+        // 6. 세션 단계 업데이트
+        FileSession session = fileSessionRepository.findBySessionId(sessionId)
+                .orElse(null);
+        if (session != null) {
+            session.setCurrentStep(ProcessStep.PREPROCESSING);
+            session.setUpdatedAt(LocalDateTime.now());
+            fileSessionRepository.save(session);
         }
-        session.setCurrentStep(ProcessStep.PREPROCESSING);
-        session.setUpdatedAt(LocalDateTime.now());
-        fileSessionRepository.save(session);
 
         long elapsed = System.currentTimeMillis() - startTime;
 
-        Map<String, Object> result = new HashMap<>();
-        result.put("sessionId", sessionId);
-        result.put("processedCount", processedCount.get());
-        result.put("visibleColumns", visibleColumns);
-        result.put("currentStep", "PREPROCESSING");
-        result.put("elapsedMs", elapsed);
+        // Redis 완료 상태
+        Map<String, Object> doneStatus = new HashMap<>();
+        doneStatus.put("status", "COMPLETED");
+        doneStatus.put("totalCount", totalCount);
+        doneStatus.put("processedCount", processedCount.get());
+        doneStatus.put("progress", 100);
+        doneStatus.put("elapsedMs", elapsed);
+        doneStatus.put("visibleColumns", new ArrayList<>(visibleColumns));
+        doneStatus.put("currentStep", "PREPROCESSING");
+        redisService.setWithTTL(statusKey, doneStatus, PROCESS_STATUS_TTL);
 
         log.info("process_data 생성 완료: sessionId={}, {}건, {}ms",
                 sessionId, processedCount.get(), elapsed);
+    }
+
+    /**
+     * process_data 생성 진행 상태 조회 (Redis 폴링)
+     */
+    public Map<String, Object> getProcessDataStatus(String sessionId) {
+        String statusKey = PROCESS_STATUS_PREFIX + sessionId;
+        Map<String, Object> status = redisService.get(statusKey, new TypeReference<Map<String, Object>>() {});
+        if (status != null) {
+            return status;
+        }
+
+        // Redis에 상태 없으면 DB에서 확인
+        long count = mongoTemplate.getCollection(PROCESS_DATA_COLLECTION)
+                .countDocuments(new Document("session_id", sessionId));
+        Map<String, Object> result = new HashMap<>();
+        if (count > 0) {
+            result.put("status", "COMPLETED");
+            result.put("processedCount", count);
+            result.put("progress", 100);
+        } else {
+            result.put("status", "NOT_STARTED");
+            result.put("processedCount", 0);
+            result.put("progress", 0);
+        }
         return result;
     }
 

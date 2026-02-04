@@ -576,6 +576,22 @@ public class FileSessionController {
     }
 
     /**
+     * process_data 생성 진행 상태 조회 (폴링)
+     *
+     * GET /api/projects/{projectId}/upload/sessions/{sessionId}/data/process-status
+     */
+    @GetMapping("/{sessionId}/data/process-status")
+    public ResponseEntity<Map<String, Object>> getProcessDataStatus(
+            @PathVariable String projectId,
+            @PathVariable String sessionId,
+            @CurrentUser UserPrincipal userPrincipal) {
+
+        projectService.getProject(projectId, userPrincipal.getId());
+        Map<String, Object> result = sessionDataService.getProcessDataStatus(sessionId);
+        return ResponseEntity.ok(result);
+    }
+
+    /**
      * 세션 완료 처리 (Step 1 → Step 2)
      */
     @PostMapping("/{sessionId}/complete")
