@@ -487,6 +487,77 @@ public class FileSessionController {
         return ResponseEntity.ok(Map.of("restoredCount", count));
     }
 
+    @Operation(summary = "컬럼 고유 값 + hidden 상태 조회", description = "visible/hidden 분리된 고유 값 목록")
+    @GetMapping("/{sessionId}/data/distinct-values-status")
+    public ResponseEntity<?> getDistinctValuesWithStatus(
+            @PathVariable String projectId,
+            @PathVariable String sessionId,
+            @RequestParam String columnName,
+            @CurrentUser UserPrincipal userPrincipal) {
+
+        projectService.getProject(projectId, userPrincipal.getId());
+        return ResponseEntity.ok(sessionDataService.getDistinctValuesWithStatus(sessionId, columnName));
+    }
+
+    @Operation(summary = "컬럼 값 기반 데이터 숨김", description = "특정 컬럼 값에 해당하는 행 is_hidden=true")
+    @PostMapping("/{sessionId}/data/hide-by-values")
+    public ResponseEntity<?> hideByColumnValues(
+            @PathVariable String projectId,
+            @PathVariable String sessionId,
+            @RequestBody Map<String, Object> body,
+            @CurrentUser UserPrincipal userPrincipal) {
+
+        projectService.getProject(projectId, userPrincipal.getId());
+        String columnName = (String) body.get("columnName");
+        @SuppressWarnings("unchecked")
+        List<String> values = (List<String>) body.get("values");
+        long count = sessionDataService.hideByColumnValues(sessionId, columnName, values);
+        return ResponseEntity.ok(Map.of("hiddenCount", count));
+    }
+
+    @Operation(summary = "컬럼 값 기반 데이터 원복", description = "특정 컬럼 값에 해당하는 hidden 행 복원")
+    @PostMapping("/{sessionId}/data/restore-by-values")
+    public ResponseEntity<?> restoreByColumnValues(
+            @PathVariable String projectId,
+            @PathVariable String sessionId,
+            @RequestBody Map<String, Object> body,
+            @CurrentUser UserPrincipal userPrincipal) {
+
+        projectService.getProject(projectId, userPrincipal.getId());
+        String columnName = (String) body.get("columnName");
+        @SuppressWarnings("unchecked")
+        List<String> values = (List<String>) body.get("values");
+        long count = sessionDataService.restoreByColumnValues(sessionId, columnName, values);
+        return ResponseEntity.ok(Map.of("restoredCount", count));
+    }
+
+    @Operation(summary = "두 컬럼 그룹바이", description = "key열+변경열 기준 그룹바이 결과 조회")
+    @GetMapping("/{sessionId}/data/group-by-two")
+    public ResponseEntity<?> groupByTwoColumns(
+            @PathVariable String projectId,
+            @PathVariable String sessionId,
+            @RequestParam String keyColumn,
+            @RequestParam String changeColumn,
+            @CurrentUser UserPrincipal userPrincipal) {
+
+        projectService.getProject(projectId, userPrincipal.getId());
+        return ResponseEntity.ok(sessionDataService.groupByTwoColumns(sessionId, keyColumn, changeColumn));
+    }
+
+    @Operation(summary = "표준화 수행", description = "key열 기준 변경열 데이터를 최빈값으로 통일")
+    @PostMapping("/{sessionId}/data/standardize")
+    public ResponseEntity<?> standardizeData(
+            @PathVariable String projectId,
+            @PathVariable String sessionId,
+            @RequestBody Map<String, String> body,
+            @CurrentUser UserPrincipal userPrincipal) {
+
+        projectService.getProject(projectId, userPrincipal.getId());
+        String keyColumn = body.get("keyColumn");
+        String changeColumn = body.get("changeColumn");
+        return ResponseEntity.ok(sessionDataService.standardizeData(sessionId, keyColumn, changeColumn));
+    }
+
 
 
     /**

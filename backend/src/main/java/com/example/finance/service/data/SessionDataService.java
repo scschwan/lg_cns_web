@@ -722,4 +722,231 @@ public class SessionDataService {
         columnMappingRepository.deleteBySessionId(sessionId);
         log.info("컬럼 매핑 삭제: sessionId={}", sessionId);
     }
+
+    // ========== 데이터 삭제 - 컬럼 값 기반 ==========
+
+    /**
+     * 특정 컬럼의 고유 값 목록 + hidden 상태 분리 조회
+     * visible(is_hidden!=true)과 hidden(is_hidden=true) 각각의 고유 값/건수 반환
+     */
+    public Map<String, Object> getDistinctValuesWithStatus(String sessionId, String columnName) {
+        String fieldPath = "data." + columnName;
+
+        // visible 값
+        List<Document> visiblePipeline = new ArrayList<>();
+        visiblePipeline.add(new Document("$match", new Document("session_id", sessionId)
+                .append("$or", List.of(
+                        new Document("is_hidden", false),
+                        new Document("is_hidden", new Document("$exists", false))
+                ))));
+        visiblePipeline.add(new Document("$group", new Document("_id", "$" + fieldPath)
+                .append("count", new Document("$sum", 1))));
+        visiblePipeline.add(new Document("$sort", new Document("count", -1)));
+        visiblePipeline.add(new Document("$limit", 5000));
+
+        List<Document> visibleResults = mongoTemplate.getCollection("session_data")
+                .aggregate(visiblePipeline).into(new ArrayList<>());
+
+        List<Map<String, Object>> visibleValues = new ArrayList<>();
+        for (Document doc : visibleResults) {
+            Object idObj = doc.get("_id");
+            if (idObj == null) continue;
+            Map<String, Object> item = new LinkedHashMap<>();
+            item.put("value", idObj.toString());
+            Object countObj = doc.get("count");
+            item.put("count", countObj instanceof Number ? ((Number) countObj).longValue() : 0L);
+            visibleValues.add(item);
+        }
+
+        // hidden 값
+        List<Document> hiddenPipeline = new ArrayList<>();
+        hiddenPipeline.add(new Document("$match", new Document("session_id", sessionId)
+                .append("is_hidden", true)));
+        hiddenPipeline.add(new Document("$group", new Document("_id", "$" + fieldPath)
+                .append("count", new Document("$sum", 1))));
+        hiddenPipeline.add(new Document("$sort", new Document("count", -1)));
+        hiddenPipeline.add(new Document("$limit", 5000));
+
+        List<Document> hiddenResults = mongoTemplate.getCollection("session_data")
+                .aggregate(hiddenPipeline).into(new ArrayList<>());
+
+        List<Map<String, Object>> hiddenValues = new ArrayList<>();
+        for (Document doc : hiddenResults) {
+            Object idObj = doc.get("_id");
+            if (idObj == null) continue;
+            Map<String, Object> item = new LinkedHashMap<>();
+            item.put("value", idObj.toString());
+            Object countObj = doc.get("count");
+            item.put("count", countObj instanceof Number ? ((Number) countObj).longValue() : 0L);
+            hiddenValues.add(item);
+        }
+
+        Map<String, Object> result = new HashMap<>();
+        result.put("visible", visibleValues);
+        result.put("hidden", hiddenValues);
+
+        log.info("distinct values (with status): sessionId={}, column={}, visible={}, hidden={}",
+                sessionId, columnName, visibleValues.size(), hiddenValues.size());
+        return result;
+    }
+
+    /**
+     * 특정 컬럼 값 기반으로 행 숨김 처리 (is_hidden = true)
+     */
+    public long hideByColumnValues(String sessionId, String columnName, List<String> values) {
+        String fieldPath = "data." + columnName;
+
+        org.springframework.data.mongodb.core.query.Update update =
+                new org.springframework.data.mongodb.core.query.Update().set("is_hidden", true);
+
+        Query query = new Query(new Criteria().andOperator(
+                Criteria.where("session_id").is(sessionId),
+                Criteria.where(fieldPath).in(values),
+                new Criteria().orOperator(
+                        Criteria.where("is_hidden").is(false),
+                        Criteria.where("is_hidden").exists(false)
+                )
+        ));
+
+        var result = mongoTemplate.updateMulti(query, update, "session_data");
+        long modifiedCount = result.getModifiedCount();
+
+        invalidateSessionDataCache(sessionId);
+        log.info("컬럼 값 기반 행 숨김: sessionId={}, column={}, values={}, 처리={}건",
+                sessionId, columnName, values.size(), modifiedCount);
+        return modifiedCount;
+    }
+
+    /**
+     * 특정 컬럼 값 기반으로 행 원복 (is_hidden = false)
+     */
+    public long restoreByColumnValues(String sessionId, String columnName, List<String> values) {
+        String fieldPath = "data." + columnName;
+
+        org.springframework.data.mongodb.core.query.Update update =
+                new org.springframework.data.mongodb.core.query.Update().set("is_hidden", false);
+
+        Query query = new Query(new Criteria().andOperator(
+                Criteria.where("session_id").is(sessionId),
+                Criteria.where(fieldPath).in(values),
+                Criteria.where("is_hidden").is(true)
+        ));
+
+        var result = mongoTemplate.updateMulti(query, update, "session_data");
+        long modifiedCount = result.getModifiedCount();
+
+        invalidateSessionDataCache(sessionId);
+        log.info("컬럼 값 기반 행 원복: sessionId={}, column={}, values={}, 처리={}건",
+                sessionId, columnName, values.size(), modifiedCount);
+        return modifiedCount;
+    }
+
+    // ========== 표준화 기능 ==========
+
+    /**
+     * 두 컬럼 기준 그룹바이 (key열 + 변경열 → 건수)
+     */
+    public List<Map<String, Object>> groupByTwoColumns(String sessionId, String keyColumn, String changeColumn) {
+        String keyPath = "data." + keyColumn;
+        String changePath = "data." + changeColumn;
+
+        List<Document> pipeline = new ArrayList<>();
+        pipeline.add(new Document("$match", new Document("session_id", sessionId)
+                .append("$or", List.of(
+                        new Document("is_hidden", false),
+                        new Document("is_hidden", new Document("$exists", false))
+                ))));
+        pipeline.add(new Document("$group", new Document("_id",
+                new Document("keyValue", "$" + keyPath)
+                        .append("changeValue", "$" + changePath))
+                .append("count", new Document("$sum", 1))));
+        pipeline.add(new Document("$sort", new Document("_id.keyValue", 1).append("count", -1)));
+        pipeline.add(new Document("$limit", 10000));
+
+        List<Document> results = mongoTemplate.getCollection("session_data")
+                .aggregate(pipeline).into(new ArrayList<>());
+
+        List<Map<String, Object>> groupedData = new ArrayList<>();
+        for (Document doc : results) {
+            Document idDoc = (Document) doc.get("_id");
+            if (idDoc == null) continue;
+            Map<String, Object> item = new LinkedHashMap<>();
+            item.put("keyValue", idDoc.get("keyValue") != null ? idDoc.get("keyValue").toString() : "");
+            item.put("changeValue", idDoc.get("changeValue") != null ? idDoc.get("changeValue").toString() : "");
+            Object countObj = doc.get("count");
+            item.put("count", countObj instanceof Number ? ((Number) countObj).longValue() : 0L);
+            groupedData.add(item);
+        }
+
+        log.info("두 컬럼 그룹바이: sessionId={}, key={}, change={}, 결과={}건",
+                sessionId, keyColumn, changeColumn, groupedData.size());
+        return groupedData;
+    }
+
+    /**
+     * 표준화 수행: key값별로 변경열 데이터를 가장 빈도 높은 값으로 통일
+     */
+    public Map<String, Object> standardizeData(String sessionId, String keyColumn, String changeColumn) {
+        // 1. group by 결과에서 key값별 최빈값 추출
+        List<Map<String, Object>> grouped = groupByTwoColumns(sessionId, keyColumn, changeColumn);
+
+        // key값 → 최빈 변경값 매핑 (이미 count desc로 정렬됨)
+        Map<String, String> keyToMostFrequent = new LinkedHashMap<>();
+        for (Map<String, Object> item : grouped) {
+            String keyValue = (String) item.get("keyValue");
+            String changeValue = (String) item.get("changeValue");
+            // 첫 번째 등장이 가장 빈도 높음 (정렬 보장)
+            keyToMostFrequent.putIfAbsent(keyValue, changeValue);
+        }
+
+        // 2. 표준화가 필요한 key값 찾기 (변경열 값이 2개 이상인 key)
+        Map<String, Set<String>> keyToAllValues = new LinkedHashMap<>();
+        for (Map<String, Object> item : grouped) {
+            String keyValue = (String) item.get("keyValue");
+            String changeValue = (String) item.get("changeValue");
+            keyToAllValues.computeIfAbsent(keyValue, k -> new LinkedHashSet<>()).add(changeValue);
+        }
+
+        long totalUpdated = 0;
+        int keysStandardized = 0;
+        String changePath = "data." + changeColumn;
+        String keyPath = "data." + keyColumn;
+
+        for (Map.Entry<String, Set<String>> entry : keyToAllValues.entrySet()) {
+            if (entry.getValue().size() <= 1) continue; // 이미 통일됨
+
+            String keyValue = entry.getKey();
+            String targetValue = keyToMostFrequent.get(keyValue);
+
+            // 해당 key값을 가진 행 중 변경열이 targetValue가 아닌 행을 업데이트
+            Query query = new Query(new Criteria().andOperator(
+                    Criteria.where("session_id").is(sessionId),
+                    Criteria.where(keyPath).is(keyValue),
+                    Criteria.where(changePath).ne(targetValue),
+                    new Criteria().orOperator(
+                            Criteria.where("is_hidden").is(false),
+                            Criteria.where("is_hidden").exists(false)
+                    )
+            ));
+
+            org.springframework.data.mongodb.core.query.Update update =
+                    new org.springframework.data.mongodb.core.query.Update().set(changePath, targetValue);
+
+            var result = mongoTemplate.updateMulti(query, update, "session_data");
+            totalUpdated += result.getModifiedCount();
+            keysStandardized++;
+        }
+
+        invalidateSessionDataCache(sessionId);
+
+        Map<String, Object> result = new HashMap<>();
+        result.put("keysStandardized", keysStandardized);
+        result.put("totalUpdated", totalUpdated);
+        result.put("keyColumn", keyColumn);
+        result.put("changeColumn", changeColumn);
+
+        log.info("표준화 완료: sessionId={}, key={}, change={}, 표준화key={}개, 변경행={}건",
+                sessionId, keyColumn, changeColumn, keysStandardized, totalUpdated);
+        return result;
+    }
 }

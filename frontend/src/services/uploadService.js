@@ -631,6 +631,66 @@ const uploadService = {
         return response.data;
     },
 
+    /**
+     * 컬럼 고유 값 + hidden 상태 분리 조회
+     * GET /api/projects/{projectId}/upload/sessions/{sessionId}/data/distinct-values-status
+     */
+    getDistinctValuesWithStatus: async (projectId, sessionId, columnName) => {
+        const response = await api.get(
+            `/api/projects/${projectId}/upload/sessions/${sessionId}/data/distinct-values-status`,
+            { params: { columnName } }
+        );
+        return response.data;
+    },
+
+    /**
+     * 컬럼 값 기반 데이터 숨김
+     * POST /api/projects/{projectId}/upload/sessions/{sessionId}/data/hide-by-values
+     */
+    hideByColumnValues: async (projectId, sessionId, columnName, values) => {
+        const response = await api.post(
+            `/api/projects/${projectId}/upload/sessions/${sessionId}/data/hide-by-values`,
+            { columnName, values }
+        );
+        return response.data;
+    },
+
+    /**
+     * 컬럼 값 기반 데이터 원복
+     * POST /api/projects/{projectId}/upload/sessions/{sessionId}/data/restore-by-values
+     */
+    restoreByColumnValues: async (projectId, sessionId, columnName, values) => {
+        const response = await api.post(
+            `/api/projects/${projectId}/upload/sessions/${sessionId}/data/restore-by-values`,
+            { columnName, values }
+        );
+        return response.data;
+    },
+
+    /**
+     * 두 컬럼 그룹바이 (표준화용)
+     * GET /api/projects/{projectId}/upload/sessions/{sessionId}/data/group-by-two
+     */
+    groupByTwoColumns: async (projectId, sessionId, keyColumn, changeColumn) => {
+        const response = await api.get(
+            `/api/projects/${projectId}/upload/sessions/${sessionId}/data/group-by-two`,
+            { params: { keyColumn, changeColumn } }
+        );
+        return response.data;
+    },
+
+    /**
+     * 표준화 수행
+     * POST /api/projects/{projectId}/upload/sessions/{sessionId}/data/standardize
+     */
+    standardizeData: async (projectId, sessionId, keyColumn, changeColumn) => {
+        const response = await api.post(
+            `/api/projects/${projectId}/upload/sessions/${sessionId}/data/standardize`,
+            { keyColumn, changeColumn }
+        );
+        return response.data;
+    },
+
 };
 
 
