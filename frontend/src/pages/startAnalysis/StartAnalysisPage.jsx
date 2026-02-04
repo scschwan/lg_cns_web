@@ -626,10 +626,10 @@ export default function StartAnalysisPage() {
         </div>
 
         {/* 메인 콘텐츠 그리드 */}
-        <div className="flex-1 min-h-0 grid grid-cols-1 xl:grid-cols-12 gap-4">
+        <div className="flex-1 min-h-0 grid grid-cols-1 xl:grid-cols-12 gap-4 overflow-y-auto xl:overflow-visible">
 
           {/* 좌측: 테이블 영역 (8/12) */}
-          <div className="xl:col-span-8 h-full flex flex-col min-h-0 gap-4">
+          <div className="xl:col-span-8 min-h-[50vh] xl:min-h-0 xl:h-full flex flex-col gap-4">
 
             {/* 1. 원본 테이블 */}
             <Card className="flex-shrink-0 transition-all duration-300 shadow-sm">
@@ -646,7 +646,7 @@ export default function StartAnalysisPage() {
               {!isOriginalCollapsed && (
                 <CardContent className="p-0">
                   <div className="overflow-auto max-h-[250px]">
-                    <Table>
+                    <Table className="min-w-max">
                       <TableHeader className="bg-gray-100 sticky top-0 z-10">
                         <TableRow>
                           {visibleColumns.map((col) => (
@@ -690,9 +690,9 @@ export default function StartAnalysisPage() {
                 <CardTitle className="text-base">가공 데이터</CardTitle>
               </CardHeader>
 
-              <CardContent className="flex-1 relative p-0 min-h-0">
+              <CardContent className="flex-1 relative p-0 min-h-[300px] xl:min-h-0">
                 <div className="absolute inset-0 overflow-auto">
-                  <Table>
+                  <Table className="min-w-max">
                     <TableHeader className="bg-gray-100 sticky top-0 z-10 shadow-sm">
                       <TableRow>
                         {visibleColumns.map((col) => (
@@ -786,7 +786,7 @@ export default function StartAnalysisPage() {
           </div>
 
           {/* 우측: 설정 패널 (4/12) */}
-          <div className="xl:col-span-4 h-full flex flex-col min-h-0">
+          <div className="xl:col-span-4 min-h-[40vh] xl:min-h-0 xl:h-full flex flex-col">
 
             {/* 설정 패널 (스크롤 가능 영역) */}
             <div className="flex-1 overflow-y-auto pr-1 space-y-4 pb-2">
