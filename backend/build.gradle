@@ -74,6 +74,7 @@ dependencies {
 tasks.named('test') {
     useJUnitPlatform()
 
-    // ▼▼▼ 이 줄을 추가해 주세요 ▼▼▼
     jvmArgs("-XX:+EnableDynamicAgentLoading")
+    // open-korean-text 사전 로딩에 충분한 힙 메모리 할당
+    maxHeapSize = '1g'
 }
