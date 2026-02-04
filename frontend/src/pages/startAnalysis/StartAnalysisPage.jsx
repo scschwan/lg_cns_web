@@ -236,6 +236,17 @@ export default function StartAnalysisPage() {
         if (session.uploadedFiles && session.uploadedFiles.length > 0) {
           setFileInfo(session.uploadedFiles[0]);
         }
+        // 필수 항목 매핑 복원 (이전에 저장된 값이 있으면)
+        if (session.categoryColumn || session.costCenterColumn || session.supplierColumn || session.amountColumn || session.targetColumn) {
+          setRequiredColumns(prev => ({
+            ...prev,
+            category: session.categoryColumn || prev.category,
+            costCenter: session.costCenterColumn || prev.costCenter,
+            supplier: session.supplierColumn || prev.supplier,
+            amount: session.amountColumn || prev.amount,
+            target: session.targetColumn || prev.target,
+          }));
+        }
       } catch (error) {
         console.error('세션 정보 로드 실패:', error);
       }

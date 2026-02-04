@@ -59,4 +59,11 @@ public class FileSessionResponse {
      * 계정명 컬럼명 목록
      */
     private List<String> accountColumnNames;
+
+    // 필수 항목 매핑 (Step 2: Start Analysis에서 설정)
+    private String categoryColumn;
+    private String costCenterColumn;
+    private String supplierColumn;
+    private String amountColumn;
+    private String targetColumn;
 }
