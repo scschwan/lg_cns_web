@@ -197,8 +197,6 @@ function PreprocessingPage() {
           costCenterColumn: info.costCenterColumn || '',
           supplierColumn: info.supplierColumn || '',
         });
-        // step_history 업데이트 (Step 3 진입)
-        uploadService.updateStepHistory(projectId, sessionId, 3).catch(() => {});
       } catch (error) {
         console.error('세션 정보 로드 실패:', error);
       }
@@ -350,6 +348,8 @@ function PreprocessingPage() {
       console.log('키워드 추출 완료:', result);
       setMaxKeywordCols(result.maxKeywordCols || 0);
       await loadData();
+      // step_history: 데이터 변경 발생 → 현재 step(3) 저장
+      uploadService.updateStepHistory(projectId, sessionId, 3).catch(() => {});
       alert(`키워드 추출 완료: ${result.processedCount}건 처리, 최대 ${result.maxKeywordCols}개 키워드 분할 (${result.elapsedMs}ms)`);
     } catch (error) {
       console.error('키워드 추출 실패:', error);
@@ -367,6 +367,8 @@ function PreprocessingPage() {
       const result = await preprocessingService.removeSingleChar(projectId, sessionId);
       console.log('1글자 제거 완료:', result);
       await loadData();
+      // step_history: 데이터 변경 발생 → 현재 step(3) 저장
+      uploadService.updateStepHistory(projectId, sessionId, 3).catch(() => {});
       alert(`1글자 제거 완료: ${result.removedCount}건 제거 (${result.elapsedMs}ms)`);
     } catch (error) {
       console.error('1글자 제거 실패:', error);
@@ -377,7 +379,13 @@ function PreprocessingPage() {
   };
 
   // ===== 완료 =====
-  const handleComplete = () => {
+  const handleComplete = async () => {
+    try {
+      // step_history: 완료 → 다음 step(4) 저장
+      await uploadService.updateStepHistory(projectId, sessionId, 4);
+    } catch (e) {
+      console.error('step_history 업데이트 실패:', e);
+    }
     navigate(`/projects/${projectId}/sessions/${sessionId}/transform`);
   };
 
@@ -746,6 +754,8 @@ function PreprocessingPage() {
                         console.log('NLP 키워드 추출 완료:', result);
                         setMaxKeywordCols(result.maxKeywordCols || maxKeywordCols);
                         await loadData();
+                        // step_history: 데이터 변경 발생 → 현재 step(3) 저장
+                        uploadService.updateStepHistory(projectId, sessionId, 3).catch(() => {});
                         alert(`NLP 키워드 추출 완료: ${result.processedCount}건 변경, ${result.splitCount}건 분할 (${result.elapsedMs}ms)`);
                       } catch (error) {
                         console.error('NLP 키워드 추출 실패:', error);

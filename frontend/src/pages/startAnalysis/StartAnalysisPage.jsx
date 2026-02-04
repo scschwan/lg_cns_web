@@ -261,8 +261,6 @@ export default function StartAnalysisPage() {
             target: session.targetColumn || prev.target,
           }));
         }
-        // step_history 업데이트 (Step 2 진입)
-        uploadService.updateStepHistory(projectId, sessionId, 2).catch(() => {});
       } catch (error) {
         console.error('세션 정보 로드 실패:', error);
       }
@@ -377,6 +375,8 @@ export default function StartAnalysisPage() {
           uploadService.updateColumnVisibility(projectId, sessionId, u.originalName, u.isVisible)
         )
       );
+      // step_history: 데이터 변경 발생 → 현재 step(2) 저장
+      uploadService.updateStepHistory(projectId, sessionId, 2).catch(() => {});
     } catch (error) {
       console.error('컬럼 가시성 변경 실패:', error);
       // 롤백
@@ -439,6 +439,8 @@ export default function StartAnalysisPage() {
       });
       setDeleteCheckedSet(new Set());
       loadSessionData();
+      // step_history: 데이터 변경 발생 → 현재 step(2) 저장
+      uploadService.updateStepHistory(projectId, sessionId, 2).catch(() => {});
     } catch (error) {
       console.error('데이터 삭제 실패:', error);
       alert('데이터 삭제에 실패했습니다.');
@@ -471,6 +473,8 @@ export default function StartAnalysisPage() {
       setDeleteCheckedSet(new Set());
       setShowHiddenItems(false);
       loadSessionData();
+      // step_history: 데이터 변경 발생 → 현재 step(2) 저장
+      uploadService.updateStepHistory(projectId, sessionId, 2).catch(() => {});
     } catch (error) {
       console.error('데이터 원복 실패:', error);
       alert('데이터 원복에 실패했습니다.');
@@ -532,6 +536,8 @@ export default function StartAnalysisPage() {
       // 테이블 새로고침 + 표준화 테이블 새로고침
       loadSessionData();
       loadStandardizationData();
+      // step_history: 데이터 변경 발생 → 현재 step(2) 저장
+      uploadService.updateStepHistory(projectId, sessionId, 2).catch(() => {});
     } catch (error) {
       console.error('표준화 실패:', error);
       alert('표준화에 실패했습니다.');
@@ -580,6 +586,8 @@ export default function StartAnalysisPage() {
 
         if (status.status === 'COMPLETED') {
           console.log('process_data 생성 완료:', status);
+          // step_history: 완료 → 다음 step(3) 저장
+          await uploadService.updateStepHistory(projectId, sessionId, 3);
           navigate(`/projects/${projectId}/sessions/${sessionId}/preprocessing`);
           return;
         } else if (status.status === 'FAILED') {
