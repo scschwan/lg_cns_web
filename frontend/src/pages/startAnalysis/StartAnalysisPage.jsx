@@ -1,8 +1,8 @@
 // frontend/src/pages/startAnalysis/StartAnalysisPage.jsx
 
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ChevronRight, Home, Search, Trash2, RotateCcw, ChevronDown, ChevronUp } from 'lucide-react';
+import { ChevronRight, Home, Trash2, RotateCcw, ChevronDown, ChevronUp } from 'lucide-react';
 import uploadService from '../../services/uploadService';
 
 // shadcn/ui components
@@ -35,6 +35,104 @@ import {
   TableRow,
 } from '@/components/ui/table';
 
+// ===== 멀티셀렉트 체크박스 리스트 컴포넌트 =====
+// 드래그 선택 + Ctrl+클릭 복수 커서 지원
+function MultiSelectCheckList({ items, checkedSet, onCheckedChange, renderLabel, getKey, className = '' }) {
+  const [cursorSet, setCursorSet] = useState(new Set());
+  const [isDragging, setIsDragging] = useState(false);
+  const dragStartRef = useRef(null);
+  const listRef = useRef(null);
+
+  const handleMouseDown = (e, key, idx) => {
+    // Ctrl/Cmd 클릭: 개별 커서 토글
+    if (e.ctrlKey || e.metaKey) {
+      e.preventDefault();
+      setCursorSet(prev => {
+        const next = new Set(prev);
+        if (next.has(key)) next.delete(key);
+        else next.add(key);
+        return next;
+      });
+      return;
+    }
+
+    // 일반 클릭: 드래그 시작
+    e.preventDefault();
+    setIsDragging(true);
+    dragStartRef.current = idx;
+    setCursorSet(new Set([key]));
+  };
+
+  const handleMouseEnter = (key, idx) => {
+    if (!isDragging || dragStartRef.current === null) return;
+    const startIdx = dragStartRef.current;
+    const minIdx = Math.min(startIdx, idx);
+    const maxIdx = Math.max(startIdx, idx);
+    const newSet = new Set();
+    for (let i = minIdx; i <= maxIdx; i++) {
+      newSet.add(getKey(items[i]));
+    }
+    setCursorSet(newSet);
+  };
+
+  const handleMouseUp = () => {
+    setIsDragging(false);
+  };
+
+  useEffect(() => {
+    const handleGlobalMouseUp = () => setIsDragging(false);
+    window.addEventListener('mouseup', handleGlobalMouseUp);
+    return () => window.removeEventListener('mouseup', handleGlobalMouseUp);
+  }, []);
+
+  // 커서가 잡힌 항목의 체크 토글 → 커서 전체에 적용
+  const handleCheckToggle = (key) => {
+    if (cursorSet.size > 0 && cursorSet.has(key)) {
+      // 커서가 잡힌 상태에서 그 중 하나를 체크/해제 → 전체 커서 항목 동시 적용
+      const isCurrentlyChecked = checkedSet.has(key);
+      const newChecked = new Set(checkedSet);
+      cursorSet.forEach(k => {
+        if (isCurrentlyChecked) newChecked.delete(k);
+        else newChecked.add(k);
+      });
+      onCheckedChange(newChecked);
+    } else {
+      // 커서 없이 단독 체크 토글
+      const newChecked = new Set(checkedSet);
+      if (newChecked.has(key)) newChecked.delete(key);
+      else newChecked.add(key);
+      onCheckedChange(newChecked);
+    }
+  };
+
+  return (
+    <div ref={listRef} className={`select-none ${className}`} onMouseUp={handleMouseUp}>
+      {items.map((item, idx) => {
+        const key = getKey(item);
+        const isCursor = cursorSet.has(key);
+        const isChecked = checkedSet.has(key);
+        return (
+          <div
+            key={key}
+            className={`flex items-center gap-2 p-1.5 rounded cursor-pointer transition-colors
+              ${isCursor ? 'bg-blue-100 ring-1 ring-blue-300' : 'hover:bg-gray-50'}
+              ${isChecked ? 'bg-blue-50' : ''}`}
+            onMouseDown={(e) => handleMouseDown(e, key, idx)}
+            onMouseEnter={() => handleMouseEnter(key, idx)}
+          >
+            <Checkbox
+              checked={isChecked}
+              onCheckedChange={() => handleCheckToggle(key)}
+              onClick={(e) => e.stopPropagation()}
+            />
+            {renderLabel(item, isChecked)}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 export default function StartAnalysisPage() {
   const { projectId, sessionId } = useParams();
   const navigate = useNavigate();
@@ -45,7 +143,7 @@ export default function StartAnalysisPage() {
     totalRecords: 0,
     totalAmount: 0,
   });
-  const [fileInfo, setFileInfo] = useState(null); // uploaded_files[0] 정보
+  const [fileInfo, setFileInfo] = useState(null);
 
   // 데이터
   const [originalData, setOriginalData] = useState([]);
@@ -68,19 +166,22 @@ export default function StartAnalysisPage() {
 
   // ===== 제거 열 설정 (컬럼 매핑) =====
   const [columnMappings, setColumnMappings] = useState([]);
+  const [columnCheckedSet, setColumnCheckedSet] = useState(new Set());
 
   // ===== 데이터 삭제 =====
   const [deleteBaseColumn, setDeleteBaseColumn] = useState('');
-  const [searchKeyword, setSearchKeyword] = useState('');
-  const [searchResults, setSearchResults] = useState([]);
-  const [selectedDeleteRows, setSelectedDeleteRows] = useState(new Set());
-  const [selectAllData, setSelectAllData] = useState(false);
-  const [searchLoading, setSearchLoading] = useState(false);
+  const [deleteFilterKeyword, setDeleteFilterKeyword] = useState('');
+  const [distinctVisible, setDistinctVisible] = useState([]);
+  const [distinctHidden, setDistinctHidden] = useState([]);
+  const [deleteCheckedSet, setDeleteCheckedSet] = useState(new Set());
+  const [showHiddenItems, setShowHiddenItems] = useState(false);
+  const [deleteLoading, setDeleteLoading] = useState(false);
 
   // 표준화 설정
   const [standardKeyColumn, setStandardKeyColumn] = useState('');
   const [standardValueColumn, setStandardValueColumn] = useState('');
   const [standardData, setStandardData] = useState([]);
+  const [standardLoading, setStandardLoading] = useState(false);
 
   // 필수 항목 설정
   const [requiredColumns, setRequiredColumns] = useState({
@@ -92,7 +193,6 @@ export default function StartAnalysisPage() {
   });
 
   // ===== 파생 상태 =====
-  // visible 컬럼만 (테이블 렌더링용)
   const visibleColumns = useMemo(() => {
     if (columnMappings.length === 0) return columns;
     const visibleSet = new Set(
@@ -101,10 +201,26 @@ export default function StartAnalysisPage() {
     return columns.filter(col => visibleSet.has(col));
   }, [columns, columnMappings]);
 
-  // 필수 항목 설정에서 사용할 수 있는 컬럼 (visible만)
   const availableRequiredColumns = useMemo(() => {
     return visibleColumns.filter(col => col !== '_id' && col !== 'row_number');
   }, [visibleColumns]);
+
+  // 데이터 삭제 탭: 로컬 like 필터링
+  const filteredVisibleValues = useMemo(() => {
+    if (!deleteFilterKeyword.trim()) return distinctVisible;
+    const kw = deleteFilterKeyword.trim().toLowerCase();
+    return distinctVisible.filter(item =>
+      item.value.toLowerCase().includes(kw)
+    );
+  }, [distinctVisible, deleteFilterKeyword]);
+
+  const filteredHiddenValues = useMemo(() => {
+    if (!deleteFilterKeyword.trim()) return distinctHidden;
+    const kw = deleteFilterKeyword.trim().toLowerCase();
+    return distinctHidden.filter(item =>
+      item.value.toLowerCase().includes(kw)
+    );
+  }, [distinctHidden, deleteFilterKeyword]);
 
   // ===== useEffect - 세션 정보 + 파일 정보 로드 =====
   useEffect(() => {
@@ -116,8 +232,6 @@ export default function StartAnalysisPage() {
           totalRecords: session.totalRowCount || 0,
           totalAmount: session.totalAmount || 0,
         });
-
-        // uploaded_files에서 첫 번째 파일 정보 추출
         if (session.uploadedFiles && session.uploadedFiles.length > 0) {
           setFileInfo(session.uploadedFiles[0]);
         }
@@ -134,6 +248,11 @@ export default function StartAnalysisPage() {
       try {
         const mappings = await uploadService.getColumnMappings(projectId, sessionId);
         setColumnMappings(mappings);
+        // columnCheckedSet = visible 컬럼들의 Set
+        const checkedSet = new Set(
+          mappings.filter(m => m.isVisible).map(m => m.originalName)
+        );
+        setColumnCheckedSet(checkedSet);
       } catch (error) {
         console.error('컬럼 매핑 로드 실패:', error);
       }
@@ -156,32 +275,21 @@ export default function StartAnalysisPage() {
 
     setRequiredColumns(prev => {
       const newCols = { ...prev };
-
-      // 세목 열: account_contents의 항목과 일치하는 컬럼명
       if (!newCols.category && fileInfo.accountColumnName) {
         newCols.category = trimMatch(columns, fileInfo.accountColumnName);
       }
-
-      // 금액 열: amount_column_name (trim 비교)
       if (!newCols.amount && fileInfo.amountColumnName) {
         newCols.amount = trimMatch(columns, fileInfo.amountColumnName);
       }
-
-      // 코스트센터 열: '코스트센터' 포함 컬럼
       if (!newCols.costCenter) {
         newCols.costCenter = containsMatch(columns, '코스트센터');
       }
-
-      // 공급업체 열: '공급업체' 포함 컬럼
       if (!newCols.supplier) {
         newCols.supplier = containsMatch(columns, '공급업체');
       }
-
-      // 타겟 열: '타겟' 포함 컬럼
       if (!newCols.target) {
         newCols.target = containsMatch(columns, '타겟');
       }
-
       return newCols;
     });
   }, [fileInfo, columns]);
@@ -193,7 +301,6 @@ export default function StartAnalysisPage() {
       const result = await uploadService.getSessionData(
         projectId, sessionId, currentPage, pageSize
       );
-
       setColumns(result.columns || []);
       setOriginalData(result.data || []);
       setSessionData(result.data || []);
@@ -211,84 +318,98 @@ export default function StartAnalysisPage() {
   }, [loadSessionData]);
 
   // ===== 제거 열 설정 핸들러 =====
-  const handleColumnVisibilityToggle = async (columnName, currentVisible) => {
-    const newVisible = !currentVisible;
-    // 즉시 UI 반영
+  const handleColumnCheckedChange = async (newCheckedSet) => {
+    const prevSet = columnCheckedSet;
+    setColumnCheckedSet(newCheckedSet);
+
+    // 변경된 항목 찾기
+    const updates = [];
+    columnMappings.forEach(m => {
+      const wasChecked = prevSet.has(m.originalName);
+      const isNowChecked = newCheckedSet.has(m.originalName);
+      if (wasChecked !== isNowChecked) {
+        updates.push({ originalName: m.originalName, isVisible: isNowChecked });
+      }
+    });
+
+    if (updates.length === 0) return;
+
+    // UI 즉시 반영
     setColumnMappings(prev =>
-      prev.map(m => m.originalName === columnName ? { ...m, isVisible: newVisible } : m)
+      prev.map(m => ({
+        ...m,
+        isVisible: newCheckedSet.has(m.originalName),
+      }))
     );
+
+    // 서버 업데이트 (batch)
     try {
-      await uploadService.updateColumnVisibility(projectId, sessionId, columnName, newVisible);
+      await Promise.all(
+        updates.map(u =>
+          uploadService.updateColumnVisibility(projectId, sessionId, u.originalName, u.isVisible)
+        )
+      );
     } catch (error) {
       console.error('컬럼 가시성 변경 실패:', error);
-      // 실패 시 롤백
+      // 롤백
+      setColumnCheckedSet(prevSet);
       setColumnMappings(prev =>
-        prev.map(m => m.originalName === columnName ? { ...m, isVisible: currentVisible } : m)
+        prev.map(m => ({ ...m, isVisible: prevSet.has(m.originalName) }))
       );
     }
   };
 
-  // ===== 데이터 삭제 핸들러 =====
-  const handleSearch = async () => {
-    if (!deleteBaseColumn) {
-      alert('기준 열을 선택해주세요.');
+  // ===== 데이터 삭제: 기준 열 선택 시 즉시 group-by 조회 =====
+  const loadDistinctValues = useCallback(async (colName) => {
+    if (!colName) {
+      setDistinctVisible([]);
+      setDistinctHidden([]);
       return;
     }
-    if (!searchKeyword.trim()) {
-      alert('검색 키워드를 입력해주세요.');
-      return;
-    }
-
-    setSearchLoading(true);
+    setDeleteLoading(true);
     try {
-      const results = await uploadService.searchSessionData(
-        projectId, sessionId, deleteBaseColumn, searchKeyword.trim()
-      );
-      setSearchResults(results);
-      setSelectedDeleteRows(new Set());
-      setSelectAllData(false);
+      const result = await uploadService.getDistinctValuesWithStatus(projectId, sessionId, colName);
+      setDistinctVisible(result.visible || []);
+      setDistinctHidden(result.hidden || []);
+      setDeleteCheckedSet(new Set());
+      setDeleteFilterKeyword('');
+      setShowHiddenItems(false);
     } catch (error) {
-      console.error('데이터 검색 실패:', error);
+      console.error('고유 값 조회 실패:', error);
     } finally {
-      setSearchLoading(false);
+      setDeleteLoading(false);
     }
+  }, [projectId, sessionId]);
+
+  const handleDeleteBaseColumnChange = (colName) => {
+    setDeleteBaseColumn(colName);
+    loadDistinctValues(colName);
   };
 
-  const handleToggleDeleteRow = (rowId) => {
-    setSelectedDeleteRows(prev => {
-      const next = new Set(prev);
-      if (next.has(rowId)) {
-        next.delete(rowId);
-      } else {
-        next.add(rowId);
-      }
-      return next;
-    });
-  };
-
-  const handleSelectAllToggle = (checked) => {
-    setSelectAllData(!!checked);
-    if (checked) {
-      setSelectedDeleteRows(new Set(searchResults.map(r => r._id)));
-    } else {
-      setSelectedDeleteRows(new Set());
-    }
-  };
-
-  const handleDataDelete = async () => {
-    if (selectedDeleteRows.size === 0) {
-      alert('삭제할 데이터를 선택해주세요.');
+  // 데이터 삭제 (선택된 값 기반)
+  const handleDataDeleteByValues = async () => {
+    if (deleteCheckedSet.size === 0) {
+      alert('삭제할 항목을 선택해주세요.');
       return;
     }
-
     try {
-      const rowIds = Array.from(selectedDeleteRows);
-      await uploadService.hideSessionDataRows(projectId, sessionId, rowIds);
-      // 검색 결과에서 제거
-      setSearchResults(prev => prev.filter(r => !selectedDeleteRows.has(r._id)));
-      setSelectedDeleteRows(new Set());
-      setSelectAllData(false);
-      // 테이블 데이터 새로고침
+      const values = Array.from(deleteCheckedSet);
+      await uploadService.hideByColumnValues(projectId, sessionId, deleteBaseColumn, values);
+      // visible → hidden으로 이동
+      setDistinctVisible(prev => prev.filter(v => !deleteCheckedSet.has(v.value)));
+      setDistinctHidden(prev => {
+        const hiddenMap = new Map(prev.map(v => [v.value, v]));
+        const movedItems = distinctVisible.filter(v => deleteCheckedSet.has(v.value));
+        movedItems.forEach(item => {
+          if (hiddenMap.has(item.value)) {
+            hiddenMap.get(item.value).count += item.count;
+          } else {
+            hiddenMap.set(item.value, { ...item });
+          }
+        });
+        return Array.from(hiddenMap.values());
+      });
+      setDeleteCheckedSet(new Set());
       loadSessionData();
     } catch (error) {
       console.error('데이터 삭제 실패:', error);
@@ -296,21 +417,96 @@ export default function StartAnalysisPage() {
     }
   };
 
-  const handleDataRestore = async () => {
-    if (selectedDeleteRows.size === 0) {
-      alert('원복할 데이터를 선택해주세요.');
+  // 데이터 원복 (hidden 항목 선택 기반)
+  const handleDataRestoreByValues = async () => {
+    if (deleteCheckedSet.size === 0) {
+      alert('원복할 항목을 선택해주세요.');
       return;
     }
-
     try {
-      const rowIds = Array.from(selectedDeleteRows);
-      await uploadService.restoreSessionDataRows(projectId, sessionId, rowIds);
-      setSelectedDeleteRows(new Set());
-      setSelectAllData(false);
+      const values = Array.from(deleteCheckedSet);
+      await uploadService.restoreByColumnValues(projectId, sessionId, deleteBaseColumn, values);
+      // hidden → visible로 이동
+      setDistinctHidden(prev => prev.filter(v => !deleteCheckedSet.has(v.value)));
+      setDistinctVisible(prev => {
+        const visibleMap = new Map(prev.map(v => [v.value, v]));
+        const movedItems = distinctHidden.filter(v => deleteCheckedSet.has(v.value));
+        movedItems.forEach(item => {
+          if (visibleMap.has(item.value)) {
+            visibleMap.get(item.value).count += item.count;
+          } else {
+            visibleMap.set(item.value, { ...item });
+          }
+        });
+        return Array.from(visibleMap.values());
+      });
+      setDeleteCheckedSet(new Set());
+      setShowHiddenItems(false);
       loadSessionData();
     } catch (error) {
       console.error('데이터 원복 실패:', error);
       alert('데이터 원복에 실패했습니다.');
+    }
+  };
+
+  // 전체 선택/해제
+  const handleDeleteSelectAll = (checked) => {
+    if (showHiddenItems) {
+      setDeleteCheckedSet(checked ? new Set(filteredHiddenValues.map(v => v.value)) : new Set());
+    } else {
+      setDeleteCheckedSet(checked ? new Set(filteredVisibleValues.map(v => v.value)) : new Set());
+    }
+  };
+
+  // ===== 표준화 기능 =====
+  const loadStandardizationData = useCallback(async () => {
+    if (!standardKeyColumn || !standardValueColumn) {
+      setStandardData([]);
+      return;
+    }
+    if (standardKeyColumn === standardValueColumn) {
+      setStandardData([]);
+      return;
+    }
+    setStandardLoading(true);
+    try {
+      const result = await uploadService.groupByTwoColumns(
+        projectId, sessionId, standardKeyColumn, standardValueColumn
+      );
+      setStandardData(result || []);
+    } catch (error) {
+      console.error('표준화 그룹바이 실패:', error);
+    } finally {
+      setStandardLoading(false);
+    }
+  }, [projectId, sessionId, standardKeyColumn, standardValueColumn]);
+
+  useEffect(() => {
+    loadStandardizationData();
+  }, [loadStandardizationData]);
+
+  const handleStandardize = async () => {
+    if (!standardKeyColumn || !standardValueColumn) {
+      alert('Key 열과 변경 열을 모두 선택해주세요.');
+      return;
+    }
+    if (standardKeyColumn === standardValueColumn) {
+      alert('Key 열과 변경 열은 서로 다른 컬럼을 선택해야 합니다.');
+      return;
+    }
+    if (!confirm('표준화를 수행하면 변경 열 데이터가 Key값별 최빈값으로 변경됩니다. 계속하시겠습니까?')) return;
+
+    try {
+      const result = await uploadService.standardizeData(
+        projectId, sessionId, standardKeyColumn, standardValueColumn
+      );
+      alert(`표준화 완료: ${result.keysStandardized}개 Key, ${result.totalUpdated}건 변경`);
+      // 테이블 새로고침 + 표준화 테이블 새로고침
+      loadSessionData();
+      loadStandardizationData();
+    } catch (error) {
+      console.error('표준화 실패:', error);
+      alert('표준화에 실패했습니다.');
     }
   };
 
@@ -378,7 +574,7 @@ export default function StartAnalysisPage() {
           <div className="xl:col-span-8 h-full flex flex-col min-h-0 gap-4">
 
             {/* 1. 원본 테이블 */}
-            <Card className={`flex-shrink-0 transition-all duration-300 shadow-sm`}>
+            <Card className="flex-shrink-0 transition-all duration-300 shadow-sm">
               <CardHeader
                 className="py-3 px-4 border-b bg-white cursor-pointer hover:bg-gray-50 transition-colors"
                 onClick={() => setIsOriginalCollapsed(!isOriginalCollapsed)}
@@ -549,24 +745,20 @@ export default function StartAnalysisPage() {
                     {/* ===== 제거 열 설정 탭 ===== */}
                     <TabsContent value="remove-columns" className="space-y-3 mt-0">
                       <p className="text-xs text-muted-foreground">
-                        체크 해제 시 해당 컬럼이 테이블에서 숨겨집니다.
+                        체크 해제 시 해당 컬럼이 테이블에서 숨겨집니다. 드래그 또는 Ctrl+클릭으로 여러 항목을 선택한 후 한번에 체크/해제할 수 있습니다.
                       </p>
-                      <div className="border rounded-md p-2 space-y-1 max-h-[300px] overflow-y-auto bg-white">
-                        {columnMappings.map((col) => (
-                          <div key={col.id || col.originalName} className="flex items-center gap-2 p-1 hover:bg-gray-50 rounded">
-                            <Checkbox
-                              id={`col-vis-${col.originalName}`}
-                              checked={col.isVisible}
-                              onCheckedChange={() => handleColumnVisibilityToggle(col.originalName, col.isVisible)}
-                            />
-                            <label
-                              htmlFor={`col-vis-${col.originalName}`}
-                              className={`text-sm cursor-pointer flex-1 ${!col.isVisible ? 'text-gray-400 line-through' : ''}`}
-                            >
-                              {col.originalName}
-                            </label>
-                          </div>
-                        ))}
+                      <div className="border rounded-md p-2 max-h-[300px] overflow-y-auto bg-white">
+                        <MultiSelectCheckList
+                          items={columnMappings}
+                          checkedSet={columnCheckedSet}
+                          onCheckedChange={handleColumnCheckedChange}
+                          getKey={(item) => item.originalName}
+                          renderLabel={(item, isChecked) => (
+                            <span className={`text-sm flex-1 ${!isChecked ? 'text-gray-400 line-through' : ''}`}>
+                              {item.originalName}
+                            </span>
+                          )}
+                        />
                         {columnMappings.length === 0 && (
                           <p className="text-xs text-gray-400 p-2">컬럼 정보가 없습니다.</p>
                         )}
@@ -577,7 +769,7 @@ export default function StartAnalysisPage() {
                     <TabsContent value="delete-data" className="space-y-3 mt-0">
                       <div>
                         <label className="text-xs font-medium mb-1.5 block">기준 열 선택</label>
-                        <Select value={deleteBaseColumn} onValueChange={setDeleteBaseColumn}>
+                        <Select value={deleteBaseColumn} onValueChange={handleDeleteBaseColumnChange}>
                           <SelectTrigger className="h-9">
                             <SelectValue placeholder="데이터 삭제 기준 열 선택" />
                           </SelectTrigger>
@@ -589,68 +781,154 @@ export default function StartAnalysisPage() {
                         </Select>
                       </div>
 
-                      <div className="flex gap-2">
+                      {/* 로컬 필터 검색 */}
+                      {deleteBaseColumn && (distinctVisible.length > 0 || distinctHidden.length > 0) && (
                         <Input
                           className="h-9"
-                          placeholder="검색 키워드 입력"
-                          value={searchKeyword}
-                          onChange={(e) => setSearchKeyword(e.target.value)}
-                          onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
+                          placeholder="항목 검색 (like 필터)"
+                          value={deleteFilterKeyword}
+                          onChange={(e) => setDeleteFilterKeyword(e.target.value)}
                         />
-                        <Button size="sm" className="h-9 px-3" onClick={handleSearch} disabled={searchLoading}>
-                          <Search className="h-4 w-4 mr-1" />
-                          검색
-                        </Button>
-                      </div>
+                      )}
 
-                      {searchResults.length > 0 && (
+                      {deleteLoading && (
+                        <div className="flex items-center justify-center gap-2 text-muted-foreground text-xs py-4">
+                          <div className="animate-spin h-3 w-3 border-2 border-primary border-t-transparent rounded-full" />
+                          조회 중...
+                        </div>
+                      )}
+
+                      {/* Visible 항목 리스트 */}
+                      {!deleteLoading && deleteBaseColumn && !showHiddenItems && (
                         <>
-                          <div className="flex items-center gap-2">
-                            <Checkbox
-                              id="select-all-delete"
-                              checked={selectAllData}
-                              onCheckedChange={handleSelectAllToggle}
-                            />
-                            <label htmlFor="select-all-delete" className="text-sm cursor-pointer">
-                              전체 선택 ({searchResults.length}건)
-                            </label>
-                          </div>
-
-                          <div className="border rounded-md max-h-[200px] overflow-y-auto bg-white">
-                            {searchResults.map((row) => (
-                              <div
-                                key={row._id}
-                                className={`flex items-center gap-2 p-2 border-b last:border-b-0 hover:bg-gray-50 text-xs ${
-                                  selectedDeleteRows.has(row._id) ? 'bg-red-50' : ''
-                                }`}
-                              >
-                                <Checkbox
-                                  checked={selectedDeleteRows.has(row._id)}
-                                  onCheckedChange={() => handleToggleDeleteRow(row._id)}
-                                />
-                                <span className="truncate flex-1">
-                                  {deleteBaseColumn && row[deleteBaseColumn] != null
-                                    ? String(row[deleteBaseColumn])
-                                    : `Row ${row.row_number || row._id}`}
-                                </span>
+                          {filteredVisibleValues.length > 0 && (
+                            <>
+                              <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-2">
+                                  <Checkbox
+                                    id="select-all-visible"
+                                    checked={deleteCheckedSet.size > 0 && deleteCheckedSet.size === filteredVisibleValues.length}
+                                    onCheckedChange={handleDeleteSelectAll}
+                                  />
+                                  <label htmlFor="select-all-visible" className="text-xs cursor-pointer">
+                                    전체 선택 ({filteredVisibleValues.length}건)
+                                  </label>
+                                </div>
+                                {distinctHidden.length > 0 && (
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    className="text-xs h-7 text-orange-600"
+                                    onClick={() => { setShowHiddenItems(true); setDeleteCheckedSet(new Set()); }}
+                                  >
+                                    삭제된 항목 보기 ({distinctHidden.length})
+                                  </Button>
+                                )}
                               </div>
-                            ))}
+
+                              <div className="border rounded-md max-h-[250px] overflow-y-auto bg-white p-1">
+                                <MultiSelectCheckList
+                                  items={filteredVisibleValues}
+                                  checkedSet={deleteCheckedSet}
+                                  onCheckedChange={setDeleteCheckedSet}
+                                  getKey={(item) => item.value}
+                                  renderLabel={(item) => (
+                                    <span className="text-xs flex-1 flex justify-between">
+                                      <span className="truncate">{item.value}</span>
+                                      <span className="text-gray-400 ml-2 flex-shrink-0">({item.count})</span>
+                                    </span>
+                                  )}
+                                />
+                              </div>
+                            </>
+                          )}
+
+                          {filteredVisibleValues.length === 0 && !deleteLoading && (
+                            <div className="text-center py-4">
+                              <p className="text-xs text-gray-400">
+                                {distinctVisible.length === 0 ? '데이터가 없습니다.' : '검색 결과가 없습니다.'}
+                              </p>
+                              {distinctHidden.length > 0 && (
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="text-xs h-7 text-orange-600 mt-1"
+                                  onClick={() => { setShowHiddenItems(true); setDeleteCheckedSet(new Set()); }}
+                                >
+                                  삭제된 항목 보기 ({distinctHidden.length})
+                                </Button>
+                              )}
+                            </div>
+                          )}
+
+                          <div className="flex gap-2">
+                            <Button
+                              variant="destructive"
+                              className="flex-1 h-9"
+                              onClick={handleDataDeleteByValues}
+                              disabled={deleteCheckedSet.size === 0}
+                            >
+                              <Trash2 className="h-4 w-4 mr-1" /> 데이터 삭제 ({deleteCheckedSet.size})
+                            </Button>
                           </div>
                         </>
                       )}
 
-                      {searchResults.length === 0 && searchKeyword && !searchLoading && (
-                        <p className="text-xs text-gray-400 text-center py-2">검색 결과가 없습니다.</p>
-                      )}
+                      {/* Hidden 항목 리스트 (원복 모드) */}
+                      {!deleteLoading && deleteBaseColumn && showHiddenItems && (
+                        <>
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                              <Checkbox
+                                id="select-all-hidden"
+                                checked={deleteCheckedSet.size > 0 && deleteCheckedSet.size === filteredHiddenValues.length}
+                                onCheckedChange={handleDeleteSelectAll}
+                              />
+                              <label htmlFor="select-all-hidden" className="text-xs cursor-pointer text-orange-700">
+                                삭제된 항목 ({filteredHiddenValues.length}건)
+                              </label>
+                            </div>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="text-xs h-7"
+                              onClick={() => { setShowHiddenItems(false); setDeleteCheckedSet(new Set()); }}
+                            >
+                              목록으로 돌아가기
+                            </Button>
+                          </div>
 
-                      <div className="flex gap-2">
-                        <Button variant="outline" className="flex-1 h-9" onClick={handleDataRestore} disabled={selectedDeleteRows.size === 0}>
-                          <RotateCcw className="h-4 w-4 mr-1" /> 데이터 원복
-                        </Button>
-                        <Button variant="destructive" className="flex-1 h-9" onClick={handleDataDelete} disabled={selectedDeleteRows.size === 0}>
-                          <Trash2 className="h-4 w-4 mr-1" /> 데이터 삭제
-                        </Button>
-                      </div>
+                          {filteredHiddenValues.length > 0 ? (
+                            <div className="border border-orange-200 rounded-md max-h-[250px] overflow-y-auto bg-orange-50 p-1">
+                              <MultiSelectCheckList
+                                items={filteredHiddenValues}
+                                checkedSet={deleteCheckedSet}
+                                onCheckedChange={setDeleteCheckedSet}
+                                getKey={(item) => item.value}
+                                renderLabel={(item) => (
+                                  <span className="text-xs flex-1 flex justify-between text-orange-800">
+                                    <span className="truncate line-through">{item.value}</span>
+                                    <span className="text-orange-400 ml-2 flex-shrink-0">({item.count})</span>
+                                  </span>
+                                )}
+                              />
+                            </div>
+                          ) : (
+                            <p className="text-xs text-gray-400 text-center py-2">삭제된 항목이 없습니다.</p>
+                          )}
+
+                          <div className="flex gap-2">
+                            <Button
+                              variant="outline"
+                              className="flex-1 h-9 border-orange-300 text-orange-700 hover:bg-orange-50"
+                              onClick={handleDataRestoreByValues}
+                              disabled={deleteCheckedSet.size === 0}
+                            >
+                              <RotateCcw className="h-4 w-4 mr-1" /> 데이터 원복 ({deleteCheckedSet.size})
+                            </Button>
+                          </div>
+                        </>
+                      )}
                     </TabsContent>
                   </Tabs>
                 </CardContent>
@@ -665,24 +943,28 @@ export default function StartAnalysisPage() {
                   <div className="grid grid-cols-2 gap-2">
                     <div>
                       <label className="text-xs font-medium mb-1 block">Key 열</label>
-                      <Select value={standardKeyColumn} onValueChange={setStandardKeyColumn}>
+                      <Select value={standardKeyColumn} onValueChange={(v) => { setStandardKeyColumn(v); if (v === standardValueColumn) setStandardValueColumn(''); }}>
                         <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="선택" /></SelectTrigger>
                         <SelectContent>
-                          {visibleColumns.filter(c => c !== '_id' && c !== 'row_number').map((col) => (<SelectItem key={col} value={col}>{col}</SelectItem>))}
+                          {visibleColumns.filter(c => c !== '_id' && c !== 'row_number' && c !== standardValueColumn).map((col) => (
+                            <SelectItem key={col} value={col}>{col}</SelectItem>
+                          ))}
                         </SelectContent>
                       </Select>
                     </div>
                     <div>
                       <label className="text-xs font-medium mb-1 block">변경 열</label>
-                      <Select value={standardValueColumn} onValueChange={setStandardValueColumn}>
+                      <Select value={standardValueColumn} onValueChange={(v) => { setStandardValueColumn(v); if (v === standardKeyColumn) setStandardKeyColumn(''); }}>
                         <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="선택" /></SelectTrigger>
                         <SelectContent>
-                          {visibleColumns.filter(c => c !== '_id' && c !== 'row_number').map((col) => (<SelectItem key={col} value={col}>{col}</SelectItem>))}
+                          {visibleColumns.filter(c => c !== '_id' && c !== 'row_number' && c !== standardKeyColumn).map((col) => (
+                            <SelectItem key={col} value={col}>{col}</SelectItem>
+                          ))}
                         </SelectContent>
                       </Select>
                     </div>
                   </div>
-                  <div className="border rounded-md overflow-hidden max-h-[150px] overflow-y-auto bg-white">
+                  <div className="border rounded-md overflow-hidden max-h-[200px] overflow-y-auto bg-white">
                     <Table>
                       <TableHeader className="bg-gray-100 sticky top-0">
                         <TableRow>
@@ -692,25 +974,42 @@ export default function StartAnalysisPage() {
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {standardData.length > 0 ? (
+                        {standardLoading ? (
+                          <TableRow>
+                            <TableCell colSpan={3} className="text-center py-4">
+                              <div className="flex items-center justify-center gap-2 text-muted-foreground text-xs">
+                                <div className="animate-spin h-3 w-3 border-2 border-primary border-t-transparent rounded-full" />
+                                조회 중...
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        ) : standardData.length > 0 ? (
                           standardData.map((row, idx) => (
                             <TableRow key={idx}>
                               <TableCell className="text-xs py-1">{row.keyValue}</TableCell>
-                              <TableCell className="text-xs py-1">{row.targetValue}</TableCell>
+                              <TableCell className="text-xs py-1">{row.changeValue}</TableCell>
                               <TableCell className="text-xs py-1 text-center">{row.count}</TableCell>
                             </TableRow>
                           ))
                         ) : (
                           <TableRow>
                             <TableCell colSpan={3} className="text-xs text-gray-400 text-center py-4">
-                              다음 세션에서 구현 예정
+                              {standardKeyColumn && standardValueColumn
+                                ? '그룹바이 결과가 없습니다.'
+                                : 'Key 열과 변경 열을 선택해주세요.'}
                             </TableCell>
                           </TableRow>
                         )}
                       </TableBody>
                     </Table>
                   </div>
-                  <Button className="w-full h-8 text-xs" disabled>표준화 수행 (다음 세션 구현 예정)</Button>
+                  <Button
+                    className="w-full h-8 text-xs"
+                    onClick={handleStandardize}
+                    disabled={!standardKeyColumn || !standardValueColumn || standardData.length === 0 || standardLoading}
+                  >
+                    표준화 수행
+                  </Button>
                 </CardContent>
               </Card>
 
@@ -728,11 +1027,9 @@ export default function StartAnalysisPage() {
                     { label: '타겟 열', key: 'target' },
                   ].map((field) => {
                     const usedCols = getUsedRequiredColumns(field.key);
-                    // 사용 가능 컬럼: visible 컬럼 중 다른 필수항목에서 이미 선택된 것 제외
                     const selectableCols = availableRequiredColumns.filter(
                       col => !usedCols.includes(col)
                     );
-                    // 현재 선택된 값이 hidden 된 컬럼이면 표시 안 함
                     const currentValue = requiredColumns[field.key];
                     const isCurrentValid = currentValue && availableRequiredColumns.includes(currentValue);
 
