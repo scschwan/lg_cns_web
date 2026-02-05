@@ -38,6 +38,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import AdvancedTable from '@/components/AdvancedTable';
 import transformService from '../../services/transformService';
 import uploadService from '../../services/uploadService';
+import clusteringService from '../../services/clusteringService';
 
 /**
  * 페이징 컴포넌트
@@ -478,13 +479,29 @@ function DataTransformPage() {
   };
 
   // ===== 완료 =====
+  const [completing, setCompleting] = useState(false);
+
   const handleComplete = async () => {
+    setCompleting(true);
     try {
-      await uploadService.updateStepHistory(projectId, sessionId, 5);
-    } catch (e) {
-      console.error('step_history 업데이트 실패:', e);
+      // 1. step_history 업데이트
+      try {
+        await uploadService.updateStepHistory(projectId, sessionId, 5);
+      } catch (e) {
+        console.error('step_history 업데이트 실패:', e);
+      }
+
+      // 2. 미병합 클러스터 생성
+      try {
+        await clusteringService.generateClusters(projectId, sessionId);
+      } catch (e) {
+        console.error('클러스터 생성 실패:', e);
+      }
+
+      navigate(`/projects/${projectId}/sessions/${sessionId}/clustering`);
+    } finally {
+      setCompleting(false);
     }
-    navigate(`/projects/${projectId}/sessions/${sessionId}/clustering`);
   };
 
   // ===== 원본/검색결과 테이블 컬럼 빌드 =====
@@ -984,8 +1001,9 @@ function DataTransformPage() {
               <Button
                 className="w-full bg-green-600 hover:bg-green-700 text-white shadow-lg h-12 text-base font-semibold"
                 onClick={handleComplete}
+                disabled={completing}
               >
-                완료 → Step 5: Clustering
+                {completing ? '클러스터 생성 중...' : '완료 → Step 5: Clustering'}
               </Button>
             </div>
           </div>
