@@ -885,20 +885,27 @@ function DataTransformPage() {
                                 getKey={(item) => item.keyword}
                                 renderLabel={(item, isChecked) => (
                                   <div
-                                    className={`flex-1 flex items-center justify-between text-xs cursor-pointer ${
-                                      selectedMergeKeyword === item.keyword ? 'font-semibold' : ''
+                                    className={`flex-1 flex items-center justify-between text-xs ${
+                                      selectedMergeKeyword === item.keyword ? 'font-semibold bg-blue-50 rounded' : ''
                                     }`}
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      handleMergeResultClick(item.keyword);
-                                    }}
                                   >
                                     <Badge variant="outline" className="text-[10px]">
                                       {item.keyword}
                                     </Badge>
-                                    <span className="flex gap-3 ml-2 flex-shrink-0">
+                                    <span className="flex items-center gap-2 ml-2 flex-shrink-0">
                                       <span className="text-gray-500">{item.count}</span>
-                                      <span className="text-gray-400">{formatAmount(item.totalAmount)}</span>
+                                      <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        className="h-5 px-1.5 text-[10px] text-blue-600 hover:text-blue-800 hover:bg-blue-100"
+                                        onMouseDown={(e) => e.stopPropagation()}
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          handleMergeResultClick(item.keyword);
+                                        }}
+                                      >
+                                        자세히
+                                      </Button>
                                     </span>
                                   </div>
                                 )}
