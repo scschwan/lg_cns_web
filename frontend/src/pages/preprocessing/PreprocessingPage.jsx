@@ -1,6 +1,6 @@
 // frontend/src/pages/preprocessing/PreprocessingPage.jsx
 
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { ChevronRight, Home, Plus, Trash2 } from 'lucide-react';
 import preprocessingService from '../../services/preprocessingService';
@@ -385,17 +385,38 @@ function PreprocessingPage() {
   };
 
   // ===== 결과 테이블 컬럼 계산 =====
-  const resultColumns = [];
-  if (sessionInfo.costCenterColumn) resultColumns.push(sessionInfo.costCenterColumn);
-  if (sessionInfo.supplierColumn) resultColumns.push(sessionInfo.supplierColumn);
-  // 키워드 추출 전에는 타겟열 표시, 추출 후에는 c0, c1... 표시
-  if (maxKeywordCols > 0) {
-    for (let i = 0; i < maxKeywordCols; i++) {
-      resultColumns.push(`c${i}`);
+  // resultData 자체에서 c0, c1, ... 키를 감지하여 컬럼 구성
+  // (maxKeywordCols 상태에만 의존하지 않고, 실제 데이터 기반으로 계산)
+  const resultColumns = useMemo(() => {
+    const cols = [];
+    if (sessionInfo.costCenterColumn) cols.push(sessionInfo.costCenterColumn);
+    if (sessionInfo.supplierColumn) cols.push(sessionInfo.supplierColumn);
+
+    // 실제 데이터에서 c0, c1, c2... 키 존재 여부 감지
+    let detectedMax = -1;
+    for (const row of resultData) {
+      for (const key of Object.keys(row)) {
+        const match = key.match(/^c(\d+)$/);
+        if (match) {
+          const num = parseInt(match[1], 10);
+          if (num > detectedMax) detectedMax = num;
+        }
+      }
+      if (detectedMax >= 0) break; // 첫 번째 행에서 패턴 확인되면 충분
     }
-  } else if (sessionInfo.targetColumn) {
-    resultColumns.push(sessionInfo.targetColumn);
-  }
+
+    // maxKeywordCols 상태값과 데이터 기반 값 중 큰 쪽 사용
+    const effectiveMax = Math.max(detectedMax + 1, maxKeywordCols);
+
+    if (effectiveMax > 0) {
+      for (let i = 0; i < effectiveMax; i++) {
+        cols.push(`c${i}`);
+      }
+    } else if (sessionInfo.targetColumn) {
+      cols.push(sessionInfo.targetColumn);
+    }
+    return cols;
+  }, [resultData, maxKeywordCols, sessionInfo.costCenterColumn, sessionInfo.supplierColumn, sessionInfo.targetColumn]);
 
   // ===== 금액 포맷 =====
   const formatAmount = (value) => {
@@ -429,6 +450,7 @@ function PreprocessingPage() {
     },
   ], [sessionInfo.targetColumn]);
 
+  // resultColumns는 이미 useMemo이므로 참조 안정적
   const resultTableColumns = useMemo(() => {
     return resultColumns.map(col => ({
       key: col,
@@ -439,7 +461,8 @@ function PreprocessingPage() {
         <span className="whitespace-nowrap">{row[col] ?? ''}</span>
       ),
     }));
-  }, [resultColumns]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [resultColumns.join(',')]);
 
   // ===== 프론트 정렬 =====
   const sortDataFn = useCallback((data, sort) => {
