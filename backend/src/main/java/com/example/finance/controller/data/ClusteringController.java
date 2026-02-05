@@ -12,11 +12,6 @@ import org.springframework.web.bind.annotation.*;
 import java.util.List;
 import java.util.Map;
 
-/**
- * 클러스터링 컨트롤러 (Step 5: Clustering)
- *
- * Base path: /api/projects/{projectId}/sessions/{sessionId}/clustering
- */
 @Slf4j
 @RestController
 @RequestMapping("/api/projects/{projectId}/sessions/{sessionId}/clustering")
@@ -26,37 +21,70 @@ public class ClusteringController {
     private final ClusteringService clusteringService;
     private final ProjectService projectService;
 
-    /**
-     * 미병합 클러스터 생성 (process_view_data 기반)
-     */
     @PostMapping("/generate")
     public ResponseEntity<Map<String, Object>> generateClusters(
             @PathVariable String projectId,
             @PathVariable String sessionId,
+            @RequestBody(required = false) Map<String, Object> body,
             @CurrentUser UserPrincipal userPrincipal) {
 
         projectService.getProject(projectId, userPrincipal.getId());
-        return ResponseEntity.ok(clusteringService.generateUnmergedClusters(sessionId));
+
+        boolean includeSupplier = false;
+        boolean includeCostCenter = false;
+        if (body != null) {
+            includeSupplier = Boolean.TRUE.equals(body.get("includeSupplier"));
+            includeCostCenter = Boolean.TRUE.equals(body.get("includeCostCenter"));
+        }
+
+        return ResponseEntity.ok(
+                clusteringService.generateUnmergedClusters(sessionId, includeSupplier, includeCostCenter));
     }
 
-    /**
-     * 미병합 클러스터 목록 조회 (페이징)
-     */
     @GetMapping("/unmerged")
     public ResponseEntity<Map<String, Object>> getUnmergedClusters(
             @PathVariable String projectId,
             @PathVariable String sessionId,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size,
+            @RequestParam(required = false) String keyword,
             @CurrentUser UserPrincipal userPrincipal) {
 
         projectService.getProject(projectId, userPrincipal.getId());
-        return ResponseEntity.ok(clusteringService.getUnmergedClusters(sessionId, page, size));
+        return ResponseEntity.ok(clusteringService.getUnmergedClusters(sessionId, page, size, keyword));
     }
 
-    /**
-     * 병합 클러스터 목록 조회
-     */
+    @GetMapping("/unmerged-ids")
+    public ResponseEntity<List<Integer>> getAllUnmergedClusterNumbers(
+            @PathVariable String projectId,
+            @PathVariable String sessionId,
+            @RequestParam(required = false) String keyword,
+            @CurrentUser UserPrincipal userPrincipal) {
+
+        projectService.getProject(projectId, userPrincipal.getId());
+        return ResponseEntity.ok(clusteringService.getAllUnmergedClusterNumbers(sessionId, keyword));
+    }
+
+    @GetMapping("/keyword-stats")
+    public ResponseEntity<List<Map<String, Object>>> getKeywordStats(
+            @PathVariable String projectId,
+            @PathVariable String sessionId,
+            @CurrentUser UserPrincipal userPrincipal) {
+
+        projectService.getProject(projectId, userPrincipal.getId());
+        return ResponseEntity.ok(clusteringService.getKeywordStats(sessionId));
+    }
+
+    @GetMapping("/supplier-stats")
+    public ResponseEntity<List<Map<String, Object>>> getSupplierStats(
+            @PathVariable String projectId,
+            @PathVariable String sessionId,
+            @CurrentUser UserPrincipal userPrincipal) {
+
+        projectService.getProject(projectId, userPrincipal.getId());
+        return ResponseEntity.ok(clusteringService.getSupplierStats(sessionId));
+    }
+
     @GetMapping("/merged")
     public ResponseEntity<List<Map<String, Object>>> getMergedClusters(
             @PathVariable String projectId,
@@ -67,9 +95,6 @@ public class ClusteringController {
         return ResponseEntity.ok(clusteringService.getMergedClusters(sessionId));
     }
 
-    /**
-     * 통계 조회
-     */
     @GetMapping("/statistics")
     public ResponseEntity<Map<String, Object>> getStatistics(
             @PathVariable String projectId,
@@ -80,9 +105,6 @@ public class ClusteringController {
         return ResponseEntity.ok(clusteringService.getStatistics(sessionId));
     }
 
-    /**
-     * 클러스터 병합
-     */
     @PostMapping("/merge")
     public ResponseEntity<Map<String, Object>> mergeClusters(
             @PathVariable String projectId,
@@ -91,16 +113,11 @@ public class ClusteringController {
             @CurrentUser UserPrincipal userPrincipal) {
 
         projectService.getProject(projectId, userPrincipal.getId());
-
         @SuppressWarnings("unchecked")
         List<Integer> clusterNumbers = (List<Integer>) body.get("clusterNumbers");
-
         return ResponseEntity.ok(clusteringService.mergeClusters(sessionId, clusterNumbers));
     }
 
-    /**
-     * 클러스터 병합 해제 (전체)
-     */
     @PostMapping("/unmerge")
     public ResponseEntity<Map<String, Object>> unmergeClusters(
             @PathVariable String projectId,
@@ -109,15 +126,10 @@ public class ClusteringController {
             @CurrentUser UserPrincipal userPrincipal) {
 
         projectService.getProject(projectId, userPrincipal.getId());
-
         Integer mergedClusterNumber = (Integer) body.get("mergedClusterNumber");
-
         return ResponseEntity.ok(clusteringService.unmergeClusters(sessionId, mergedClusterNumber));
     }
 
-    /**
-     * 클러스터명 수정
-     */
     @PutMapping("/rename")
     public ResponseEntity<Map<String, Object>> renameCluster(
             @PathVariable String projectId,
@@ -126,13 +138,9 @@ public class ClusteringController {
             @CurrentUser UserPrincipal userPrincipal) {
 
         projectService.getProject(projectId, userPrincipal.getId());
-
         Integer clusterNumber = (Integer) body.get("clusterNumber");
         String newName = (String) body.get("newName");
-
         clusteringService.updateClusterName(sessionId, clusterNumber, newName);
-
-        Map<String, Object> result = Map.of("success", true);
-        return ResponseEntity.ok(result);
+        return ResponseEntity.ok(Map.of("success", true));
     }
 }

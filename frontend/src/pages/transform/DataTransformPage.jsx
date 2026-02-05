@@ -491,9 +491,12 @@ function DataTransformPage() {
         console.error('step_history 업데이트 실패:', e);
       }
 
-      // 2. 미병합 클러스터 생성
+      // 2. 미병합 클러스터 생성 (클러스터링 조건 전달)
       try {
-        await clusteringService.generateClusters(projectId, sessionId);
+        await clusteringService.generateClusters(projectId, sessionId, {
+          includeSupplier: clusteringOptions.supplier,
+          includeCostCenter: clusteringOptions.costCenter,
+        });
       } catch (e) {
         console.error('클러스터 생성 실패:', e);
       }
