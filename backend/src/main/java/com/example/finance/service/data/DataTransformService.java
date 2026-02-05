@@ -263,24 +263,69 @@ public class DataTransformService {
 
         List<Document> documents = mongoTemplate.find(query, Document.class, "session_data");
 
+        // 4. 각 row의 raw_data_id 수집 → process_view_data에서 키워드 조회
         List<Map<String, Object>> rows = new ArrayList<>();
+        Map<String, String> rowToRawDataId = new LinkedHashMap<>();
+
         for (Document doc : documents) {
             @SuppressWarnings("unchecked")
             Map<String, Object> data = (Map<String, Object>) doc.get("data");
             if (data != null) {
                 Map<String, Object> row = new LinkedHashMap<>();
-                row.put("_id", doc.getObjectId("_id").toString());
+                String docId = doc.getObjectId("_id").toString();
+                row.put("_id", docId);
                 row.put("row_number", doc.getInteger("row_number"));
-                // visible columns만 포함
                 for (String col : visibleColumns) {
                     row.put(col, data.get(col));
                 }
                 rows.add(row);
+
+                String rawDataId = doc.getString("raw_data_id");
+                if (rawDataId != null) {
+                    rowToRawDataId.put(docId, rawDataId);
+                }
             }
         }
 
+        // 5. process_view_data에서 keywords.final_keywords 조회 (배치)
+        if (!rowToRawDataId.isEmpty()) {
+            Set<String> rawIds = new HashSet<>(rowToRawDataId.values());
+            Query kwQuery = new Query(
+                    Criteria.where("session_id").is(sessionId)
+                            .and("raw_data_id").in(rawIds)
+            );
+            kwQuery.fields().include("raw_data_id").include("keywords.final_keywords");
+            List<Document> pvDocs = mongoTemplate.find(kwQuery, Document.class, "process_view_data");
+
+            // raw_data_id → keywords map
+            Map<String, List<String>> rawIdToKeywords = new HashMap<>();
+            for (Document pvDoc : pvDocs) {
+                String rid = pvDoc.getString("raw_data_id");
+                Document kws = (Document) pvDoc.get("keywords");
+                if (rid != null && kws != null) {
+                    @SuppressWarnings("unchecked")
+                    List<String> finalKws = (List<String>) kws.get("final_keywords");
+                    if (finalKws != null) {
+                        rawIdToKeywords.put(rid, finalKws);
+                    }
+                }
+            }
+
+            // 각 row에 키워드 추가
+            for (Map<String, Object> row : rows) {
+                String docId = (String) row.get("_id");
+                String rawId = rowToRawDataId.get(docId);
+                List<String> keywords = rawId != null ? rawIdToKeywords.get(rawId) : null;
+                row.put("키워드", keywords != null ? keywords : Collections.emptyList());
+            }
+        }
+
+        // "키워드" 컬럼을 columns 끝에 추가
+        List<String> allColumns = new ArrayList<>(visibleColumns);
+        allColumns.add("키워드");
+
         Map<String, Object> result = new HashMap<>();
-        result.put("columns", visibleColumns);
+        result.put("columns", allColumns);
         result.put("data", rows);
         result.put("totalCount", totalCount);
         result.put("page", page);

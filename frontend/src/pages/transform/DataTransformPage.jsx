@@ -1,6 +1,6 @@
 // frontend/src/pages/transform/DataTransformPage.jsx
 
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { ChevronRight, Home, Search, ChevronDown, ChevronUp, Settings, ArrowUpDown, ArrowUp, ArrowDown, RefreshCw } from 'lucide-react';
 
@@ -35,21 +35,9 @@ import { Badge } from '@/components/ui/badge';
 import { Label } from '@/components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
+import AdvancedTable from '@/components/AdvancedTable';
 import transformService from '../../services/transformService';
 import uploadService from '../../services/uploadService';
-
-/**
- * 가로 스크롤 테이블 래퍼 (HorizontalScrollTable 패턴)
- */
-function HorizontalScrollTable({ children, className = "" }) {
-  return (
-    <div className={`flex-1 w-full min-h-0 overflow-auto ${className}`}>
-      <div className="min-w-max h-full">
-        {children}
-      </div>
-    </div>
-  );
-}
 
 /**
  * 페이징 컴포넌트
@@ -99,6 +87,119 @@ function Pagination({ currentPage, totalPages, totalCount, pageSize, onPageChang
   );
 }
 
+/**
+ * 멀티셀렉트 체크박스 리스트 컴포넌트
+ * 드래그 선택 + Ctrl+클릭 복수 커서 지원
+ */
+function MultiSelectCheckList({ items, checkedSet, onCheckedChange, renderLabel, getKey, className = '' }) {
+  const [cursorSet, setCursorSet] = useState(new Set());
+  const [isDragging, setIsDragging] = useState(false);
+  const dragStartRef = useRef(null);
+  const listRef = useRef(null);
+
+  const handleMouseDown = (e, key, idx) => {
+    if (e.ctrlKey || e.metaKey) {
+      e.preventDefault();
+      setCursorSet(prev => {
+        const next = new Set(prev);
+        if (next.has(key)) next.delete(key);
+        else next.add(key);
+        return next;
+      });
+      return;
+    }
+    e.preventDefault();
+    setIsDragging(true);
+    dragStartRef.current = idx;
+    setCursorSet(new Set([key]));
+  };
+
+  const handleMouseEnter = (key, idx) => {
+    if (!isDragging || dragStartRef.current === null) return;
+    const startIdx = dragStartRef.current;
+    const minIdx = Math.min(startIdx, idx);
+    const maxIdx = Math.max(startIdx, idx);
+    const newSet = new Set();
+    for (let i = minIdx; i <= maxIdx; i++) {
+      newSet.add(getKey(items[i], i));
+    }
+    setCursorSet(newSet);
+  };
+
+  const handleMouseUp = () => {
+    setIsDragging(false);
+  };
+
+  useEffect(() => {
+    const handleGlobalMouseUp = () => setIsDragging(false);
+    window.addEventListener('mouseup', handleGlobalMouseUp);
+    return () => window.removeEventListener('mouseup', handleGlobalMouseUp);
+  }, []);
+
+  const handleCheckToggle = (key) => {
+    if (cursorSet.size > 0 && cursorSet.has(key)) {
+      const isCurrentlyChecked = checkedSet.has(key);
+      const newChecked = new Set(checkedSet);
+      cursorSet.forEach(k => {
+        if (isCurrentlyChecked) newChecked.delete(k);
+        else newChecked.add(k);
+      });
+      onCheckedChange(newChecked);
+    } else {
+      const newChecked = new Set(checkedSet);
+      if (newChecked.has(key)) newChecked.delete(key);
+      else newChecked.add(key);
+      onCheckedChange(newChecked);
+    }
+  };
+
+  return (
+    <div ref={listRef} className={`select-none ${className}`} onMouseUp={handleMouseUp}>
+      {items.map((item, idx) => {
+        const key = getKey(item, idx);
+        const isCursor = cursorSet.has(key);
+        const isChecked = checkedSet.has(key);
+        return (
+          <div
+            key={key}
+            className={`flex items-center gap-2 p-1.5 rounded cursor-pointer transition-colors
+              ${isCursor ? 'bg-blue-100 ring-1 ring-blue-300' : 'hover:bg-gray-50'}
+              ${isChecked ? 'bg-blue-50' : ''}`}
+            onMouseDown={(e) => handleMouseDown(e, key, idx)}
+            onMouseEnter={() => handleMouseEnter(key, idx)}
+          >
+            <Checkbox
+              checked={isChecked}
+              onCheckedChange={() => handleCheckToggle(key)}
+              onMouseDown={(e) => e.stopPropagation()}
+              onClick={(e) => e.stopPropagation()}
+            />
+            {renderLabel(item, isChecked)}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+/**
+ * 키워드 배열을 Badge 블록으로 렌더링
+ */
+function renderKeywordBadges(value) {
+  if (!value) return '';
+  const keywords = Array.isArray(value) ? value : String(value).split(',').map(s => s.trim()).filter(Boolean);
+  if (keywords.length === 0) return '';
+  return (
+    <div className="flex flex-wrap gap-1">
+      {keywords.map((kw, i) => (
+        <Badge key={i} variant="outline" className="text-[10px] font-medium whitespace-nowrap">
+          {kw}
+        </Badge>
+      ))}
+    </div>
+  );
+}
+
 function DataTransformPage() {
   const { projectId, sessionId } = useParams();
   const navigate = useNavigate();
@@ -124,6 +225,7 @@ function DataTransformPage() {
   const [origKeywordFilter, setOrigKeywordFilter] = useState(null);
   const [origLoading, setOrigLoading] = useState(false);
   const [isOriginalCollapsed, setIsOriginalCollapsed] = useState(false);
+  const [origSort, setOrigSort] = useState(null);
 
   // ===== 검색 결과 데이터 테이블 =====
   const [searchResultData, setSearchResultData] = useState({ columns: [], data: [], totalCount: 0, totalPages: 0 });
@@ -131,6 +233,7 @@ function DataTransformPage() {
   const [searchPageSize, setSearchPageSize] = useState(100);
   const [searchKeywordFilter, setSearchKeywordFilter] = useState(null);
   const [searchDataLoading, setSearchDataLoading] = useState(false);
+  const [searchSort, setSearchSort] = useState(null);
 
   // ===== 키워드 변환 탭 =====
   const [activeTab, setActiveTab] = useState('stats');
@@ -324,24 +427,6 @@ function DataTransformPage() {
     loadSearchResultData(0, searchPageSize, keyword);
   };
 
-  // ===== 키워드 변환 체크박스 =====
-  const handleMergeCheck = (keyword) => {
-    setMergeCheckedSet(prev => {
-      const next = new Set(prev);
-      if (next.has(keyword)) next.delete(keyword);
-      else next.add(keyword);
-      return next;
-    });
-  };
-
-  const handleMergeCheckAll = (checked) => {
-    if (checked) {
-      setMergeCheckedSet(new Set(mergeSearchResults.map(r => r.keyword)));
-    } else {
-      setMergeCheckedSet(new Set());
-    }
-  };
-
   // ===== 키워드 변환 실행 =====
   const handleReplaceKeywords = async () => {
     if (mergeCheckedSet.size === 0) {
@@ -402,36 +487,73 @@ function DataTransformPage() {
     navigate(`/projects/${projectId}/sessions/${sessionId}/clustering`);
   };
 
-  // ===== 데이터 테이블 렌더 =====
-  const renderDataTable = (data, columns) => {
-    if (!data || data.length === 0) return null;
-    return (
-      <Table>
-        <TableHeader className="bg-gray-100 sticky top-0 z-10">
-          <TableRow>
-            <TableHead className="font-semibold text-xs whitespace-nowrap bg-gray-100 w-[60px]">No</TableHead>
-            {columns.filter(c => c !== '_id' && c !== 'row_number').map(col => (
-              <TableHead key={col} className="font-semibold text-xs whitespace-nowrap bg-gray-100">
-                {col}
-              </TableHead>
-            ))}
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {data.map((row, idx) => (
-            <TableRow key={row._id || idx} className="hover:bg-muted/50">
-              <TableCell className="text-xs whitespace-nowrap text-center">{row.row_number || idx + 1}</TableCell>
-              {columns.filter(c => c !== '_id' && c !== 'row_number').map(col => (
-                <TableCell key={col} className="text-xs whitespace-nowrap">
-                  {row[col] != null ? String(row[col]) : ''}
-                </TableCell>
-              ))}
-            </TableRow>
-          ))}
-        </TableBody>
-      </Table>
-    );
-  };
+  // ===== 원본/검색결과 테이블 컬럼 빌드 =====
+  const buildDataColumns = useCallback((columns) => {
+    if (!columns || columns.length === 0) return [];
+    const cols = [
+      {
+        key: 'row_number',
+        label: 'No',
+        pinned: true,
+        sortable: true,
+        width: 60,
+        minWidth: 50,
+        cellClassName: 'text-center',
+        headerClassName: 'text-center',
+        render: (row, idx) => <span>{row.row_number || idx + 1}</span>,
+      },
+    ];
+    columns.filter(c => c !== '_id' && c !== 'row_number').forEach(col => {
+      if (col === '키워드') {
+        cols.push({
+          key: col,
+          label: col,
+          sortable: false,
+          minWidth: 120,
+          render: (row) => renderKeywordBadges(row[col]),
+        });
+      } else {
+        cols.push({
+          key: col,
+          label: col,
+          sortable: true,
+          minWidth: 60,
+          render: (row) => (
+            <span className="whitespace-nowrap">
+              {row[col] != null ? String(row[col]) : ''}
+            </span>
+          ),
+        });
+      }
+    });
+    return cols;
+  }, []);
+
+  const origColumns = useMemo(() => buildDataColumns(originalData.columns), [originalData.columns, buildDataColumns]);
+  const searchColumns = useMemo(() => buildDataColumns(searchResultData.columns), [searchResultData.columns, buildDataColumns]);
+
+  // ===== 원본/검색 데이터 정렬 (프론트 단) =====
+  const sortData = useCallback((data, sort) => {
+    if (!sort) return data;
+    const sorted = [...data];
+    sorted.sort((a, b) => {
+      const aVal = a[sort.field];
+      const bVal = b[sort.field];
+      if (aVal == null && bVal == null) return 0;
+      if (aVal == null) return 1;
+      if (bVal == null) return -1;
+      if (typeof aVal === 'number' && typeof bVal === 'number') {
+        return sort.direction === 'asc' ? aVal - bVal : bVal - aVal;
+      }
+      const aStr = String(aVal);
+      const bStr = String(bVal);
+      return sort.direction === 'asc' ? aStr.localeCompare(bStr) : bStr.localeCompare(aStr);
+    });
+    return sorted;
+  }, []);
+
+  const sortedOrigData = useMemo(() => sortData(originalData.data, origSort), [originalData.data, origSort, sortData]);
+  const sortedSearchData = useMemo(() => sortData(searchResultData.data, searchSort), [searchResultData.data, searchSort, sortData]);
 
   return (
     <div className="flex flex-col h-full bg-gray-50 overflow-hidden">
@@ -500,19 +622,16 @@ function DataTransformPage() {
               {!isOriginalCollapsed && (
                 <>
                   <CardContent className="p-0">
-                    <HorizontalScrollTable className="max-h-[250px]">
-                      {origLoading ? (
-                        <div className="flex items-center justify-center h-32 text-sm text-muted-foreground">
-                          데이터 로딩 중...
-                        </div>
-                      ) : originalData.data.length === 0 ? (
-                        <div className="flex items-center justify-center h-32 text-sm text-muted-foreground">
-                          데이터가 없습니다
-                        </div>
-                      ) : (
-                        renderDataTable(originalData.data, originalData.columns)
-                      )}
-                    </HorizontalScrollTable>
+                    <AdvancedTable
+                      columns={origColumns}
+                      data={sortedOrigData}
+                      rowKey={(row, idx) => row._id || idx}
+                      sort={origSort}
+                      onSortChange={(field, direction) => setOrigSort({ field, direction })}
+                      maxHeight="250px"
+                      loading={origLoading}
+                      emptyMessage="데이터가 없습니다"
+                    />
                   </CardContent>
                   <Pagination
                     currentPage={origPage}
@@ -541,14 +660,20 @@ function DataTransformPage() {
               </CardHeader>
 
               <CardContent className="p-0 flex-1 min-h-0 flex flex-col">
-                {searchResultData.data.length === 0 ? (
+                {searchResultData.data.length === 0 && !searchDataLoading ? (
                   <div className="flex items-center justify-center h-full text-sm text-muted-foreground min-h-[120px]">
-                    {searchDataLoading ? '데이터 로딩 중...' : '우측 키워드 변환에서 키워드를 검색하고 결과를 선택해주세요'}
+                    우측 키워드 변환에서 키워드를 검색하고 결과를 선택해주세요
                   </div>
                 ) : (
-                  <HorizontalScrollTable>
-                    {renderDataTable(searchResultData.data, searchResultData.columns)}
-                  </HorizontalScrollTable>
+                  <AdvancedTable
+                    columns={searchColumns}
+                    data={sortedSearchData}
+                    rowKey={(row, idx) => row._id || idx}
+                    sort={searchSort}
+                    onSortChange={(field, direction) => setSearchSort({ field, direction })}
+                    loading={searchDataLoading}
+                    emptyMessage="검색 결과가 없습니다"
+                  />
                 )}
               </CardContent>
 
@@ -727,62 +852,58 @@ function DataTransformPage() {
                         </div>
                       )}
 
-                      {/* 검색 결과 (체크박스 포함) */}
+                      {/* 검색 결과 (MultiSelectCheckList) */}
                       <div>
                         <label className="text-xs font-semibold mb-2 block">
                           검색 결과 ({mergeSearchResults.length}건)
                         </label>
-                        <div className="border rounded-md p-2 space-y-1 max-h-[250px] overflow-y-auto bg-white">
+                        <div className="border rounded-md p-2 max-h-[250px] overflow-y-auto bg-white">
                           {mergeSearchResults.length === 0 ? (
                             <div className="text-xs text-muted-foreground text-center py-4">
                               키워드를 검색해주세요
                             </div>
                           ) : (
-                            <Table>
-                              <TableHeader className="bg-gray-50 sticky top-0">
-                                <TableRow>
-                                  <TableHead className="text-xs h-7 py-1 w-[30px]">
-                                    <Checkbox
-                                      checked={mergeCheckedSet.size === mergeSearchResults.length && mergeSearchResults.length > 0}
-                                      onCheckedChange={handleMergeCheckAll}
-                                    />
-                                  </TableHead>
-                                  <TableHead className="text-xs h-7 py-1">키워드</TableHead>
-                                  <TableHead className="text-xs h-7 py-1 text-right">Count</TableHead>
-                                  <TableHead className="text-xs h-7 py-1 text-right">합계({amountUnit})</TableHead>
-                                </TableRow>
-                              </TableHeader>
-                              <TableBody>
-                                {mergeSearchResults.map((result) => (
-                                  <TableRow
-                                    key={result.keyword}
-                                    className={`cursor-pointer hover:bg-blue-50 ${
-                                      selectedMergeKeyword === result.keyword ? 'bg-blue-100' : ''
+                            <>
+                              {/* 전체 선택 */}
+                              <div className="flex items-center gap-2 p-1.5 hover:bg-gray-50 rounded border-b mb-1 pb-2">
+                                <Checkbox
+                                  checked={mergeSearchResults.length > 0 && mergeCheckedSet.size === mergeSearchResults.length}
+                                  onCheckedChange={(checked) => {
+                                    if (checked) {
+                                      setMergeCheckedSet(new Set(mergeSearchResults.map(r => r.keyword)));
+                                    } else {
+                                      setMergeCheckedSet(new Set());
+                                    }
+                                  }}
+                                />
+                                <span className="text-xs font-semibold">전체 선택</span>
+                              </div>
+                              <MultiSelectCheckList
+                                items={mergeSearchResults}
+                                checkedSet={mergeCheckedSet}
+                                onCheckedChange={setMergeCheckedSet}
+                                getKey={(item) => item.keyword}
+                                renderLabel={(item, isChecked) => (
+                                  <div
+                                    className={`flex-1 flex items-center justify-between text-xs cursor-pointer ${
+                                      selectedMergeKeyword === item.keyword ? 'font-semibold' : ''
                                     }`}
-                                    onClick={() => handleMergeResultClick(result.keyword)}
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleMergeResultClick(item.keyword);
+                                    }}
                                   >
-                                    <TableCell className="text-xs py-1"
-                                      onClick={(e) => e.stopPropagation()}>
-                                      <Checkbox
-                                        checked={mergeCheckedSet.has(result.keyword)}
-                                        onCheckedChange={() => handleMergeCheck(result.keyword)}
-                                      />
-                                    </TableCell>
-                                    <TableCell className="text-xs py-1">
-                                      <Badge variant="outline" className="text-[10px]">
-                                        {result.keyword}
-                                      </Badge>
-                                    </TableCell>
-                                    <TableCell className="text-xs py-1 text-right">
-                                      {result.count}
-                                    </TableCell>
-                                    <TableCell className="text-xs py-1 text-right">
-                                      {formatAmount(result.totalAmount)}
-                                    </TableCell>
-                                  </TableRow>
-                                ))}
-                              </TableBody>
-                            </Table>
+                                    <Badge variant="outline" className="text-[10px]">
+                                      {item.keyword}
+                                    </Badge>
+                                    <span className="flex gap-3 ml-2 flex-shrink-0">
+                                      <span className="text-gray-500">{item.count}</span>
+                                      <span className="text-gray-400">{formatAmount(item.totalAmount)}</span>
+                                    </span>
+                                  </div>
+                                )}
+                              />
+                            </>
                           )}
                         </div>
                       </div>
@@ -811,7 +932,7 @@ function DataTransformPage() {
                       </Button>
 
                       <div className="text-[11px] text-muted-foreground bg-muted p-2 rounded">
-                        검색 후 체크박스로 키워드 선택 → 변환 키워드 입력 → 변환 실행
+                        검색 후 드래그/Ctrl+클릭으로 키워드 복수 선택 → 변환 키워드 입력 → 변환 실행
                       </div>
                     </CardContent>
                   </Card>
