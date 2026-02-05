@@ -5,6 +5,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { ChevronRight, Home, Plus, Trash2 } from 'lucide-react';
 import preprocessingService from '../../services/preprocessingService';
 import uploadService from '../../services/uploadService';
+import AdvancedTable from '@/components/AdvancedTable';
 
 // shadcn/ui components
 import {
@@ -34,16 +35,6 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-
-function HorizontalScrollTable({ children, className = "" }) {
-  return (
-    <div className={`flex-1 w-full min-h-0 overflow-auto ${className}`}>
-      <div className="min-w-max h-full">
-        {children}
-      </div>
-    </div>
-  );
-}
 
 // ===== 멀티셀렉트 체크박스 리스트 컴포넌트 (StartAnalysis와 동일) =====
 function MultiSelectCheckList({ items, checkedSet, onCheckedChange, renderLabel, getKey, className = '' }) {
@@ -183,6 +174,10 @@ function PreprocessingPage() {
   const [minKeywordLength, setMinKeywordLength] = useState(4);
   const [nlpExtracting, setNlpExtracting] = useState(false);
   const [nlpProgress, setNlpProgress] = useState(0);
+
+  // 테이블 정렬
+  const [targetSort, setTargetSort] = useState(null);
+  const [resultSort, setResultSort] = useState(null);
 
   // ===== 세션 정보 로드 =====
   useEffect(() => {
@@ -408,6 +403,67 @@ function PreprocessingPage() {
     return Number(value).toLocaleString();
   };
 
+  // ===== AdvancedTable 컬럼 빌드 =====
+  const targetColumns = useMemo(() => [
+    {
+      key: '_rowNum',
+      label: 'No',
+      pinned: true,
+      sortable: true,
+      width: 60,
+      minWidth: 50,
+      cellClassName: 'text-center',
+      headerClassName: 'text-center',
+      render: (row) => <span>{row._rowNum}</span>,
+    },
+    {
+      key: sessionInfo.targetColumn || '타겟',
+      label: sessionInfo.targetColumn || '타겟',
+      sortable: true,
+      minWidth: 100,
+      render: (row) => (
+        <span className="whitespace-nowrap">
+          {row[sessionInfo.targetColumn] ?? ''}
+        </span>
+      ),
+    },
+  ], [sessionInfo.targetColumn]);
+
+  const resultTableColumns = useMemo(() => {
+    return resultColumns.map(col => ({
+      key: col,
+      label: col,
+      sortable: true,
+      minWidth: 60,
+      render: (row) => (
+        <span className="whitespace-nowrap">{row[col] ?? ''}</span>
+      ),
+    }));
+  }, [resultColumns]);
+
+  // ===== 프론트 정렬 =====
+  const sortDataFn = useCallback((data, sort) => {
+    if (!sort) return data;
+    const sorted = [...data];
+    sorted.sort((a, b) => {
+      const aVal = a[sort.field];
+      const bVal = b[sort.field];
+      if (aVal == null && bVal == null) return 0;
+      if (aVal == null) return 1;
+      if (bVal == null) return -1;
+      if (typeof aVal === 'number' && typeof bVal === 'number') {
+        return sort.direction === 'asc' ? aVal - bVal : bVal - aVal;
+      }
+      const aStr = String(aVal);
+      const bStr = String(bVal);
+      return sort.direction === 'asc' ? aStr.localeCompare(bStr) : bStr.localeCompare(aStr);
+    });
+    return sorted;
+  }, []);
+
+  const sortedTargetData = useMemo(() => sortDataFn(targetData, targetSort), [targetData, targetSort, sortDataFn]);
+  const sortedResultData = useMemo(() => sortDataFn(resultData, resultSort), [resultData, resultSort, sortDataFn]);
+
   // ===== 렌더링 =====
   return (
     <div className="flex flex-col h-full bg-gray-50 overflow-hidden">
@@ -474,34 +530,14 @@ function PreprocessingPage() {
                     </p>
                   </CardHeader>
                   <CardContent className="p-0 flex-1 min-h-0 flex flex-col">
-                      {loading ? (
-                        <div className="flex items-center justify-center h-32">
-                          <div className="animate-spin h-6 w-6 border-2 border-blue-500 border-t-transparent rounded-full" />
-                        </div>
-                      ) : (
-                          <HorizontalScrollTable>
-                            <Table className="min-w-max">
-                              <TableHeader className="bg-gray-100 sticky top-0 z-10 shadow-sm">
-                                <TableRow>
-                                  <TableHead className="font-semibold text-xs w-[60px] text-center bg-gray-100">No</TableHead>
-                                  <TableHead className="font-semibold text-xs bg-gray-100">
-                                    {sessionInfo.targetColumn || '타겟'}
-                                  </TableHead>
-                                </TableRow>
-                              </TableHeader>
-                              <TableBody>
-                                {targetData.map((row) => (
-                                  <TableRow key={row._id} className="hover:bg-muted/50">
-                                    <TableCell className="text-xs text-center">{row._rowNum}</TableCell>
-                                    <TableCell className="text-xs whitespace-nowrap">
-                                      {row[sessionInfo.targetColumn] ?? ''}
-                                    </TableCell>
-                                  </TableRow>
-                                ))}
-                              </TableBody>
-                            </Table>
-                         </HorizontalScrollTable>
-                      )}
+                      <AdvancedTable
+                        columns={targetColumns}
+                        data={sortedTargetData}
+                        rowKey={(row) => row._id}
+                        sort={targetSort}
+                        onSortChange={(field, direction) => setTargetSort({ field, direction })}
+                        loading={loading}
+                      />
                   </CardContent>
                 </Card>
               </div>
@@ -513,36 +549,14 @@ function PreprocessingPage() {
                     <CardTitle className="text-base">키워드 추출 결과</CardTitle>
                   </CardHeader>
                   <CardContent className="p-0 flex-1 min-h-0 flex flex-col">
-                      {loading ? (
-                        <div className="flex items-center justify-center h-32">
-                          <div className="animate-spin h-6 w-6 border-2 border-blue-500 border-t-transparent rounded-full" />
-                        </div>
-                      ) : (
-                          <HorizontalScrollTable>
-                                <Table className="min-w-max">
-                                  <TableHeader className="bg-gray-100 sticky top-0 z-10 shadow-sm">
-                                    <TableRow>
-                                      {resultColumns.map((col) => (
-                                        <TableHead key={col} className="font-semibold text-xs whitespace-nowrap bg-gray-100">
-                                          {col}
-                                        </TableHead>
-                                      ))}
-                                    </TableRow>
-                                  </TableHeader>
-                                  <TableBody>
-                                    {resultData.map((row) => (
-                                      <TableRow key={row._id} className="hover:bg-muted/50">
-                                        {resultColumns.map((col) => (
-                                          <TableCell key={col} className="text-xs whitespace-nowrap">
-                                            {row[col] ?? ''}
-                                          </TableCell>
-                                        ))}
-                                      </TableRow>
-                                    ))}
-                                  </TableBody>
-                                </Table>
-                          </HorizontalScrollTable>
-                      )}
+                      <AdvancedTable
+                        columns={resultTableColumns}
+                        data={sortedResultData}
+                        rowKey={(row) => row._id}
+                        sort={resultSort}
+                        onSortChange={(field, direction) => setResultSort({ field, direction })}
+                        loading={loading}
+                      />
                   </CardContent>
                 </Card>
               </div>

@@ -4,6 +4,7 @@ import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom';
 import { ChevronRight, Home, Trash2, RotateCcw, ChevronDown, ChevronUp } from 'lucide-react';
 import uploadService from '../../services/uploadService';
+import AdvancedTable from '@/components/AdvancedTable';
 
 // shadcn/ui components
 import {
@@ -34,20 +35,6 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-
-// [추가] 가로 스크롤바를 항상 하단에 고정시키는 래퍼 컴포넌트
-function HorizontalScrollTable({ children, className = "" }) {
-  return (
-    // 1. flex-1 min-h-0: 부모 영역(Card) 내에서 남은 높이를 모두 차지
-    // 2. w-full overflow-auto: 영역을 벗어나면 스크롤 생성
-    <div className={`flex-1 w-full min-h-0 overflow-auto ${className}`}>
-      {/* 3. min-w-max: 내부 컨텐츠(테이블)가 줄어들지 않고 본래 너비를 유지하도록 강제 */}
-      <div className="min-w-max h-full">
-        {children}
-      </div>
-    </div>
-  );
-}
 
 // ===== 멀티셀렉트 체크박스 리스트 컴포넌트 =====
 // 드래그 선택 + Ctrl+클릭 복수 커서 지원
@@ -552,6 +539,10 @@ export default function StartAnalysisPage() {
       .filter(Boolean);
   };
 
+  // 테이블 정렬
+  const [origSort, setOrigSort] = useState(null);
+  const [processedSort, setProcessedSort] = useState(null);
+
   const [completeLoading, setCompleteLoading] = useState(false);
   const [completeProgress, setCompleteProgress] = useState(0);
 
@@ -603,6 +594,42 @@ export default function StartAnalysisPage() {
       setCompleteProgress(0);
     }
   };
+
+  // ===== AdvancedTable 컬럼 빌드 =====
+  const tableColumns = useMemo(() => {
+    return visibleColumns.map(col => ({
+      key: col,
+      label: col,
+      sortable: true,
+      minWidth: 60,
+      render: (row) => (
+        <span className="whitespace-nowrap">{row[col] ?? ''}</span>
+      ),
+    }));
+  }, [visibleColumns]);
+
+  // ===== 프론트 정렬 =====
+  const sortDataFn = useCallback((data, sort) => {
+    if (!sort) return data;
+    const sorted = [...data];
+    sorted.sort((a, b) => {
+      const aVal = a[sort.field];
+      const bVal = b[sort.field];
+      if (aVal == null && bVal == null) return 0;
+      if (aVal == null) return 1;
+      if (bVal == null) return -1;
+      if (typeof aVal === 'number' && typeof bVal === 'number') {
+        return sort.direction === 'asc' ? aVal - bVal : bVal - aVal;
+      }
+      const aStr = String(aVal);
+      const bStr = String(bVal);
+      return sort.direction === 'asc' ? aStr.localeCompare(bStr) : bStr.localeCompare(aStr);
+    });
+    return sorted;
+  }, []);
+
+  const sortedOriginalData = useMemo(() => sortDataFn(originalData, origSort), [originalData, origSort, sortDataFn]);
+  const sortedSessionData = useMemo(() => sortDataFn(sessionData, processedSort), [sessionData, processedSort, sortDataFn]);
 
   // ===== 렌더링 =====
   return (
@@ -669,43 +696,15 @@ export default function StartAnalysisPage() {
 
               {!isOriginalCollapsed && (
                 <CardContent className="p-0">
-                  <div className="overflow-auto max-h-[250px]">
-                      <div className="min-w-max">
-                            <Table className="min-w-max">
-                              <TableHeader className="bg-gray-100 sticky top-0 z-10">
-                                <TableRow>
-                                  {visibleColumns.map((col) => (
-                                    <TableHead key={col} className="font-semibold text-xs whitespace-nowrap bg-gray-100">
-                                      {col}
-                                    </TableHead>
-                                  ))}
-                                </TableRow>
-                              </TableHeader>
-                              <TableBody>
-                                {loading ? (
-                                  <TableRow>
-                                    <TableCell colSpan={visibleColumns.length || 1} className="text-center py-4">
-                                      <div className="flex items-center justify-center gap-2 text-muted-foreground text-xs">
-                                        <div className="animate-spin h-3 w-3 border-2 border-primary border-t-transparent rounded-full" />
-                                        로딩 중...
-                                      </div>
-                                    </TableCell>
-                                  </TableRow>
-                                ) : (
-                                  originalData.map((row, idx) => (
-                                    <TableRow key={row._id || idx} className="hover:bg-muted/50">
-                                      {visibleColumns.map((col) => (
-                                        <TableCell key={col} className="text-xs whitespace-nowrap">
-                                          {row[col] ?? ''}
-                                        </TableCell>
-                                      ))}
-                                    </TableRow>
-                                  ))
-                                )}
-                              </TableBody>
-                            </Table>
-                      </div>
-                  </div>
+                  <AdvancedTable
+                    columns={tableColumns}
+                    data={sortedOriginalData}
+                    rowKey={(row, idx) => row._id || idx}
+                    sort={origSort}
+                    onSortChange={(field, direction) => setOrigSort({ field, direction })}
+                    maxHeight="250px"
+                    loading={loading}
+                  />
                 </CardContent>
               )}
             </Card>
@@ -716,42 +715,15 @@ export default function StartAnalysisPage() {
                 <CardTitle className="text-base">가공 데이터</CardTitle>
               </CardHeader>
 
-              <CardContent className="flex-1 p-0 min-h-0 flex flex-col"> {/* flex flex-col 로 변경하여 내부 컴포넌트 확장 유도 */}
-                  <HorizontalScrollTable> {/* 새로 만든 컴포넌트로 감싸기 */}
-                      <Table className="min-w-max">
-                          <TableHeader className="bg-gray-100 sticky top-0 z-10 shadow-sm">
-                              <TableRow>
-                                {visibleColumns.map((col) => (
-                                  <TableHead key={col} className="font-semibold text-xs whitespace-nowrap bg-gray-100">
-                                    {col}
-                                  </TableHead>
-                                ))}
-                              </TableRow>
-                            </TableHeader>
-                            <TableBody>
-                              {loading ? (
-                                <TableRow>
-                                  <TableCell colSpan={visibleColumns.length || 1} className="text-center py-8">
-                                    <div className="flex items-center justify-center gap-2 text-muted-foreground">
-                                      <div className="animate-spin h-4 w-4 border-2 border-primary border-t-transparent rounded-full" />
-                                      데이터 로딩 중...
-                                    </div>
-                                  </TableCell>
-                                </TableRow>
-                              ) : (
-                                sessionData.map((row, idx) => (
-                                  <TableRow key={row._id || idx} className="hover:bg-muted/50">
-                                    {visibleColumns.map((col) => (
-                                      <TableCell key={col} className="text-xs whitespace-nowrap">
-                                        {row[col] ?? ''}
-                                      </TableCell>
-                                    ))}
-                                  </TableRow>
-                                ))
-                              )}
-                            </TableBody>
-                      </Table>
-                  </HorizontalScrollTable>
+              <CardContent className="flex-1 p-0 min-h-0 flex flex-col">
+                  <AdvancedTable
+                    columns={tableColumns}
+                    data={sortedSessionData}
+                    rowKey={(row, idx) => row._id || idx}
+                    sort={processedSort}
+                    onSortChange={(field, direction) => setProcessedSort({ field, direction })}
+                    loading={loading}
+                  />
               </CardContent>
 
               {/* 페이지네이션 */}
