@@ -20,9 +20,18 @@ import {
   Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle,
 } from '@/components/ui/dialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Progress } from '@/components/ui/progress';
 import AdvancedTable from '@/components/AdvancedTable';
 import clusteringService from '@/services/clusteringService';
 import uploadService from '@/services/uploadService';
+
+/* ============================================================
+   클러스터명 30자 제한 유틸
+   ============================================================ */
+const truncateName = (name, maxLen = 30) => {
+  if (!name) return '';
+  return name.length > maxLen ? name.slice(0, maxLen) + '...' : name;
+};
 
 /* ============================================================
    페이징 컴포넌트
@@ -170,6 +179,8 @@ function ClusteringPage() {
   /* ----- 상태 ----- */
   const [loading, setLoading] = useState(false);
   const [merging, setMerging] = useState(false);
+  const [mergingProgress, setMergingProgress] = useState(0); // 병합 진행률 (0~100)
+  const [mergingClusters, setMergingClusters] = useState(new Set()); // 현재 병합 중인 클러스터 번호들
   const [statistics, setStatistics] = useState({ totalRows: 0, unmergedCount: 0, unmergedTotalAmount: 0, mergedGroupCount: 0, hasSupplier: false });
   const [amountUnit, setAmountUnit] = useState('원');
   const divisor = { '원': 1, '천원': 1000, '백만원': 1000000, '억원': 100000000 };
@@ -223,13 +234,16 @@ function ClusteringPage() {
   /* 다이얼로그 */
   const [detailDialog, setDetailDialog] = useState({ open: false, cluster: null });
   const [detailChecked, setDetailChecked] = useState(new Set());
+  const [detailDragging, setDetailDragging] = useState(false);
+  const detailDragStart = useRef(null);
+  const detailDragAction = useRef(null);
   const [renameDialog, setRenameDialog] = useState({ open: false, cluster: null });
   const [newClusterName, setNewClusterName] = useState('');
   const [addMergeDialog, setAddMergeDialog] = useState(false);
 
   /* ----- 글로벌 mouse up ----- */
   useEffect(() => {
-    const handler = () => { setIsDraggingRow(false); setKwDragging(false); setSupDragging(false); };
+    const handler = () => { setIsDraggingRow(false); setKwDragging(false); setSupDragging(false); setDetailDragging(false); };
     window.addEventListener('mouseup', handler);
     return () => window.removeEventListener('mouseup', handler);
   }, []);
@@ -470,16 +484,79 @@ function ClusteringPage() {
     if (selectedMerged.size < 2) { alert('2개 이상의 병합 클러스터를 선택하세요.'); return; }
     if (!window.confirm(`${selectedMerged.size}개 병합 클러스터를 하나로 합치시겠습니까?`)) return;
     setMerging(true);
+    setMergingClusters(new Set(selectedMerged));
+    setMergingProgress(0);
     try {
+      // 진행률 시뮬레이션 (실제로는 API 응답에서 제공할 수 있음)
+      const progressInterval = setInterval(() => {
+        setMergingProgress(prev => Math.min(prev + 10, 90));
+      }, 200);
       await clusteringService.mergeMergedClusters(projectId, sessionId, Array.from(selectedMerged));
-      setSelectedMerged(new Set()); await refreshAll();
-    } catch (e) { alert('병합 실패: ' + (e.response?.data?.message || e.message)); } finally { setMerging(false); }
+      clearInterval(progressInterval);
+      setMergingProgress(100);
+      await new Promise(r => setTimeout(r, 300)); // 잠깐 100% 표시
+      setSelectedMerged(new Set());
+      await refreshAll();
+    } catch (e) {
+      alert('병합 실패: ' + (e.response?.data?.message || e.message));
+    } finally {
+      setMerging(false);
+      setMergingClusters(new Set());
+      setMergingProgress(0);
+    }
   };
 
   /* ============================================================
-     병합 상세 다이얼로그 - 부분 해제
+     병합 상세 다이얼로그 - 부분 해제 + 드래그 선택
      ============================================================ */
-  const handleOpenDetail = (cluster) => { setDetailDialog({ open: true, cluster }); setDetailChecked(new Set()); };
+  const handleOpenDetail = (cluster) => {
+    setDetailDialog({ open: true, cluster });
+    setDetailChecked(new Set());
+    setDetailDragging(false);
+    detailDragStart.current = null;
+    detailDragAction.current = null;
+  };
+
+  const handleDetailRowMouseDown = useCallback((row, idx, e) => {
+    if (e.button !== 0) return;
+    if (e.target.closest('[role="checkbox"]')) return;
+    e.preventDefault();
+    const cn = row.clusterNumber;
+    if (e.ctrlKey || e.metaKey) {
+      setDetailChecked(prev => {
+        const next = new Set(prev);
+        next.has(cn) ? next.delete(cn) : next.add(cn);
+        return next;
+      });
+      return;
+    }
+    setDetailDragging(true);
+    const currentlyChecked = detailChecked.has(cn);
+    detailDragAction.current = currentlyChecked ? 'uncheck' : 'check';
+    detailDragStart.current = idx;
+    setDetailChecked(prev => {
+      const next = new Set(prev);
+      currentlyChecked ? next.delete(cn) : next.add(cn);
+      return next;
+    });
+  }, [detailChecked]);
+
+  const handleDetailRowMouseEnter = useCallback((row, idx, e) => {
+    if (!detailDragging || detailDragStart.current === null) return;
+    const children = detailDialog.cluster?.children || [];
+    const lo = Math.min(detailDragStart.current, idx);
+    const hi = Math.max(detailDragStart.current, idx);
+    const action = detailDragAction.current;
+    setDetailChecked(prev => {
+      const next = new Set(prev);
+      for (let i = lo; i <= hi; i++) {
+        const cn = children[i]?.clusterNumber;
+        if (cn == null) continue;
+        action === 'check' ? next.add(cn) : next.delete(cn);
+      }
+      return next;
+    });
+  }, [detailDragging, detailDialog.cluster]);
 
   const handlePartialUnmerge = async () => {
     if (detailChecked.size === 0) { alert('해제할 항목을 선택하세요.'); return; }
@@ -529,7 +606,7 @@ function ClusteringPage() {
         render: r => <Badge variant="outline" className="text-[10px] font-mono">#{r.clusterNumber}</Badge>,
       },
       { key: 'clusterName', label: '클러스터명', sortable: true, minWidth: 150,
-        render: r => <span className="whitespace-nowrap">{r.clusterName}</span>,
+        render: r => <span className="whitespace-nowrap" title={r.clusterName}>{truncateName(r.clusterName)}</span>,
       },
       {
         key: 'keywords', label: '키워드', sortable: false, minWidth: 200,
@@ -557,23 +634,29 @@ function ClusteringPage() {
 
   /* 상세 다이얼로그 컬럼 (체크박스 + 동적) */
   const detailColumns = useMemo(() => {
+    const all = detailDialog.cluster?.children?.length || 0;
+    const isAllChecked = detailChecked.size === all && all > 0;
+    const isIndeterminate = detailChecked.size > 0 && detailChecked.size < all;
     const cols = [
       {
         key: '_cb', label: '', pinned: true, sortable: false, resizable: false, width: 40,
-        headerRender: () => {
-          const all = detailDialog.cluster?.children?.length || 0;
-          const checked = detailChecked.size === all && all > 0;
-          return <Checkbox checked={checked} onCheckedChange={c => {
-            if (c) setDetailChecked(new Set((detailDialog.cluster?.children || []).map(ch => ch.clusterNumber)));
-            else setDetailChecked(new Set());
-          }} />;
-        },
+        headerRender: () => (
+          <Checkbox
+            checked={isAllChecked}
+            ref={el => { if (el) el.indeterminate = isIndeterminate; }}
+            onCheckedChange={c => {
+              if (c) setDetailChecked(new Set((detailDialog.cluster?.children || []).map(ch => ch.clusterNumber)));
+              else setDetailChecked(new Set());
+            }}
+          />
+        ),
         render: r => <Checkbox checked={detailChecked.has(r.clusterNumber)}
           onCheckedChange={c => setDetailChecked(prev => { const n = new Set(prev); c ? n.add(r.clusterNumber) : n.delete(r.clusterNumber); return n; })} />,
       },
       { key: 'clusterNumber', label: '#', pinned: true, sortable: false, width: 70,
         render: r => <Badge variant="outline" className="text-[10px] font-mono">#{r.clusterNumber}</Badge> },
-      { key: 'clusterName', label: '클러스터명', sortable: false, minWidth: 120 },
+      { key: 'clusterName', label: '클러스터명', sortable: false, minWidth: 120,
+        render: r => <span className="whitespace-nowrap">{truncateName(r.clusterName)}</span> },
       { key: 'keywords', label: '키워드', sortable: false, minWidth: 160,
         render: r => <div className="flex flex-wrap gap-0.5">{(r.keywords||[]).map((k,i)=><Badge key={i} variant="secondary" className="text-[9px]">{k}</Badge>)}</div> },
       { key: 'count', label: 'Count', sortable: false, width: 70, cellClassName: 'text-right', render: r => <span className="block text-right text-xs">{(r.count||0).toLocaleString()}</span> },
@@ -583,7 +666,7 @@ function ClusteringPage() {
     for (const colName of visCols) {
       cols.push({
         key: `rep_${colName}`, label: colName, sortable: false, minWidth: 80,
-        render: r => { const v = r.representativeData?.[colName]; return <span className="text-xs">{v != null ? String(v) : ''}</span>; },
+        render: r => { const v = r.representativeData?.[colName]; return <span className="text-xs whitespace-nowrap">{v != null ? String(v) : ''}</span>; },
       });
     }
     return cols;
@@ -611,19 +694,11 @@ function ClusteringPage() {
           {/* 통계 카드 */}
           <Card className="shadow-sm">
             <CardContent className="py-3">
-              <div className="flex items-center justify-between gap-4 text-sm flex-wrap">
-                <div className="flex items-center gap-6 flex-wrap">
-                  <span><span className="font-semibold">전체 행수:</span> <Badge variant="secondary">{(statistics.totalRows||0).toLocaleString()}</Badge></span>
-                  <span><span className="font-semibold">미병합 클러스터:</span> <Badge variant="secondary">{(statistics.unmergedCount||0).toLocaleString()}</Badge></span>
-                  <span><span className="font-semibold">미병합 합산:</span> <Badge variant="secondary">{formatAmount(statistics.unmergedTotalAmount||0)}</Badge></span>
-                  <span><span className="font-semibold">병합 그룹:</span> <Badge variant="secondary">{(statistics.mergedGroupCount||0).toLocaleString()}</Badge></span>
-                </div>
-                <Select value={amountUnit} onValueChange={setAmountUnit}>
-                  <SelectTrigger className="w-[80px] h-8 text-xs"><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    {['원','천원','백만원','억원'].map(u => <SelectItem key={u} value={u}>{u}</SelectItem>)}
-                  </SelectContent>
-                </Select>
+              <div className="flex items-center gap-6 text-sm flex-wrap">
+                <span><span className="font-semibold">전체 행수:</span> <Badge variant="secondary">{(statistics.totalRows||0).toLocaleString()}</Badge></span>
+                <span><span className="font-semibold">미병합 클러스터:</span> <Badge variant="secondary">{(statistics.unmergedCount||0).toLocaleString()}</Badge></span>
+                <span><span className="font-semibold">미병합 합산:</span> <Badge variant="secondary">{formatAmount(statistics.unmergedTotalAmount||0)}</Badge></span>
+                <span><span className="font-semibold">병합 그룹:</span> <Badge variant="secondary">{(statistics.mergedGroupCount||0).toLocaleString()}</Badge></span>
               </div>
             </CardContent>
           </Card>
@@ -635,7 +710,7 @@ function ClusteringPage() {
           {/* === 좌측 (8/12): 미병합 클러스터 === */}
           <div className="xl:col-span-8 h-full flex flex-col min-h-0 gap-3">
 
-            {/* 미병합 카드 헤더: 병합 + 추가병합 + 검색 */}
+            {/* 미병합 카드 헤더: 병합 + 추가병합 + 단위선택 */}
             <Card className="flex-shrink-0 shadow-sm">
               <CardContent className="py-3 px-4">
                 <div className="flex items-center gap-2 flex-wrap">
@@ -649,6 +724,27 @@ function ClusteringPage() {
 
                   <div className="flex-1" />
 
+                  {/* 단위 셀렉트 (검색 옆으로 이동) */}
+                  <Select value={amountUnit} onValueChange={setAmountUnit}>
+                    <SelectTrigger className="w-[80px] h-8 text-xs"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      {['원','천원','백만원','억원'].map(u => <SelectItem key={u} value={u}>{u}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* 검색 섹션 (별도 탭/카드 - 추후 확장용) */}
+            <Card className="flex-shrink-0 shadow-sm">
+              <CardContent className="py-2 px-4">
+                {/* 검색 탭 헤더 (추후 다양한 검색 조건 탭 확장 가능) */}
+                <div className="flex items-center gap-2 mb-2 border-b pb-2">
+                  <span className="text-xs font-semibold text-muted-foreground">검색</span>
+                  {/* 추후 탭 확장 영역 */}
+                </div>
+                {/* 검색 입력 영역 */}
+                <div className="flex items-center gap-2 flex-wrap">
                   <Input className="h-8 text-sm w-[200px]" placeholder="키워드 검색..."
                     value={searchKeyword} onChange={e => setSearchKeyword(e.target.value)}
                     onKeyDown={e => e.key === 'Enter' && handleSearch()} />
@@ -692,62 +788,67 @@ function ClusteringPage() {
           <div className="xl:col-span-4 h-full flex flex-col min-h-0">
 
             {/* 키워드/공급업체 통계 (60% 이하) */}
-            <div className="flex-shrink-0" style={{ maxHeight: '55%', minHeight: '30%' }}>
+            <div className="flex-shrink-0 flex flex-col" style={{ maxHeight: '55%', minHeight: '30%' }}>
               <Tabs value={activeTab} onValueChange={setActiveTab} className="h-full flex flex-col">
-                <TabsList className={`grid w-full ${statistics.hasSupplier ? 'grid-cols-2' : 'grid-cols-1'}`}>
+                <TabsList className={`grid w-full flex-shrink-0 ${statistics.hasSupplier ? 'grid-cols-2' : 'grid-cols-1'}`}>
                   <TabsTrigger value="keyword">키워드별</TabsTrigger>
                   {statistics.hasSupplier && <TabsTrigger value="supplier">공급업체별</TabsTrigger>}
                 </TabsList>
 
-                <TabsContent value="keyword" className="mt-2 flex-1 min-h-0 flex flex-col">
-                  <Card className="flex-1 flex flex-col min-h-0 overflow-hidden">
-                    <CardHeader className="py-2 px-3 border-b flex-shrink-0">
-                      <div className="flex items-center justify-between">
-                        <CardTitle className="text-sm font-bold">키워드 통계 ({keywordStats.length}건)</CardTitle>
-                        <Button variant="ghost" size="sm" className="h-7 px-2" onClick={loadKwStats} disabled={kwLoading}>
-                          <RefreshCw className={`h-3 w-3 ${kwLoading ? 'animate-spin' : ''}`} />
-                        </Button>
-                      </div>
-                    </CardHeader>
-                    <CardContent className="p-0 flex-1 overflow-auto">
-                      <StatsListView items={sortedKwStats} checkedSet={kwCheckedSet} onCheckedChange={setKwCheckedSet}
-                        nameKey="keyword" nameLabel="키워드" sortField={kwSortField} sortDir={kwSortDir} onSort={handleKwSort}
-                        formatAmount={formatAmount} amountUnit={amountUnit} onDetail={handleKwDetail}
-                        isDragging={kwDragging} setIsDragging={setKwDragging} dragStartRef={kwDragRef} />
-                    </CardContent>
-                  </Card>
-                  <Button className="w-full mt-2 bg-purple-600 hover:bg-purple-700 h-8 text-sm font-semibold flex-shrink-0"
-                    onClick={handleAutoMergeByKeywords} disabled={kwCheckedSet.size === 0 || merging}>
-                    {merging && <Loader2 className="h-3 w-3 mr-1 animate-spin" />}
-                    <GitMerge className="h-3 w-3 mr-1" />선택항목 자동 클러스터링 ({kwCheckedSet.size})
-                  </Button>
-                </TabsContent>
-
-                {statistics.hasSupplier && (
-                  <TabsContent value="supplier" className="mt-2 flex-1 min-h-0 flex flex-col">
+                {/* 탭 콘텐츠 컨테이너 - 같은 위치에서 전환 */}
+                <div className="flex-1 min-h-0 mt-2 relative">
+                  {/* 키워드 탭 */}
+                  <div className={`absolute inset-0 flex flex-col ${activeTab === 'keyword' ? '' : 'hidden'}`}>
                     <Card className="flex-1 flex flex-col min-h-0 overflow-hidden">
                       <CardHeader className="py-2 px-3 border-b flex-shrink-0">
                         <div className="flex items-center justify-between">
-                          <CardTitle className="text-sm font-bold">공급업체 통계 ({supplierStats.length}건)</CardTitle>
-                          <Button variant="ghost" size="sm" className="h-7 px-2" onClick={loadSupStats} disabled={supLoading}>
-                            <RefreshCw className={`h-3 w-3 ${supLoading ? 'animate-spin' : ''}`} />
+                          <CardTitle className="text-sm font-bold">키워드 통계 ({keywordStats.length}건)</CardTitle>
+                          <Button variant="ghost" size="sm" className="h-7 px-2" onClick={loadKwStats} disabled={kwLoading}>
+                            <RefreshCw className={`h-3 w-3 ${kwLoading ? 'animate-spin' : ''}`} />
                           </Button>
                         </div>
                       </CardHeader>
                       <CardContent className="p-0 flex-1 overflow-auto">
-                        <StatsListView items={sortedSupStats} checkedSet={supCheckedSet} onCheckedChange={setSupCheckedSet}
-                          nameKey="supplier" nameLabel="공급업체" sortField={supSortField} sortDir={supSortDir} onSort={handleSupSort}
-                          formatAmount={formatAmount} amountUnit={amountUnit}
-                          isDragging={supDragging} setIsDragging={setSupDragging} dragStartRef={supDragRef} />
+                        <StatsListView items={sortedKwStats} checkedSet={kwCheckedSet} onCheckedChange={setKwCheckedSet}
+                          nameKey="keyword" nameLabel="키워드" sortField={kwSortField} sortDir={kwSortDir} onSort={handleKwSort}
+                          formatAmount={formatAmount} amountUnit={amountUnit} onDetail={handleKwDetail}
+                          isDragging={kwDragging} setIsDragging={setKwDragging} dragStartRef={kwDragRef} />
                       </CardContent>
                     </Card>
                     <Button className="w-full mt-2 bg-purple-600 hover:bg-purple-700 h-8 text-sm font-semibold flex-shrink-0"
-                      onClick={handleAutoMergeBySuppliers} disabled={supCheckedSet.size === 0 || merging}>
+                      onClick={handleAutoMergeByKeywords} disabled={kwCheckedSet.size === 0 || merging}>
                       {merging && <Loader2 className="h-3 w-3 mr-1 animate-spin" />}
-                      <GitMerge className="h-3 w-3 mr-1" />선택항목 자동 클러스터링 ({supCheckedSet.size})
+                      <GitMerge className="h-3 w-3 mr-1" />선택항목 자동 클러스터링 ({kwCheckedSet.size})
                     </Button>
-                  </TabsContent>
-                )}
+                  </div>
+
+                  {/* 공급업체 탭 */}
+                  {statistics.hasSupplier && (
+                    <div className={`absolute inset-0 flex flex-col ${activeTab === 'supplier' ? '' : 'hidden'}`}>
+                      <Card className="flex-1 flex flex-col min-h-0 overflow-hidden">
+                        <CardHeader className="py-2 px-3 border-b flex-shrink-0">
+                          <div className="flex items-center justify-between">
+                            <CardTitle className="text-sm font-bold">공급업체 통계 ({supplierStats.length}건)</CardTitle>
+                            <Button variant="ghost" size="sm" className="h-7 px-2" onClick={loadSupStats} disabled={supLoading}>
+                              <RefreshCw className={`h-3 w-3 ${supLoading ? 'animate-spin' : ''}`} />
+                            </Button>
+                          </div>
+                        </CardHeader>
+                        <CardContent className="p-0 flex-1 overflow-auto">
+                          <StatsListView items={sortedSupStats} checkedSet={supCheckedSet} onCheckedChange={setSupCheckedSet}
+                            nameKey="supplier" nameLabel="공급업체" sortField={supSortField} sortDir={supSortDir} onSort={handleSupSort}
+                            formatAmount={formatAmount} amountUnit={amountUnit}
+                            isDragging={supDragging} setIsDragging={setSupDragging} dragStartRef={supDragRef} />
+                        </CardContent>
+                      </Card>
+                      <Button className="w-full mt-2 bg-purple-600 hover:bg-purple-700 h-8 text-sm font-semibold flex-shrink-0"
+                        onClick={handleAutoMergeBySuppliers} disabled={supCheckedSet.size === 0 || merging}>
+                        {merging && <Loader2 className="h-3 w-3 mr-1 animate-spin" />}
+                        <GitMerge className="h-3 w-3 mr-1" />선택항목 자동 클러스터링 ({supCheckedSet.size})
+                      </Button>
+                    </div>
+                  )}
+                </div>
               </Tabs>
             </div>
 
@@ -758,12 +859,25 @@ function ClusteringPage() {
                   <div className="flex items-center justify-between gap-1">
                     <CardTitle className="text-sm font-bold">병합 결과 ({mergedClusters.length})</CardTitle>
                     <div className="flex items-center gap-1">
-                      <Button size="sm" variant="outline" className="h-7 px-2 text-xs"
-                        onClick={handleMergeMerged} disabled={selectedMerged.size < 2 || merging}>
-                        <GitMerge className="h-3 w-3 mr-1" />병합 merge ({selectedMerged.size})
-                      </Button>
+                      {/* 병합 merge 버튼 with 프로그레스바 */}
+                      <div className="relative">
+                        <Button size="sm" variant="outline" className="h-7 px-2 text-xs min-w-[120px] relative overflow-hidden"
+                          onClick={handleMergeMerged} disabled={selectedMerged.size < 2 || merging}>
+                          {merging && mergingClusters.size > 0 && (
+                            <div className="absolute inset-0 bg-blue-100 transition-all"
+                              style={{ width: `${mergingProgress}%` }} />
+                          )}
+                          <span className="relative z-10 flex items-center">
+                            {merging && mergingClusters.size > 0 ? (
+                              <><Loader2 className="h-3 w-3 mr-1 animate-spin" />{mergingProgress}%</>
+                            ) : (
+                              <><GitMerge className="h-3 w-3 mr-1" />병합 merge ({selectedMerged.size})</>
+                            )}
+                          </span>
+                        </Button>
+                      </div>
                       <Button size="sm" variant="outline" className="h-7 px-2 text-xs text-red-600"
-                        onClick={handleBulkUnmerge} disabled={selectedMerged.size === 0}>
+                        onClick={handleBulkUnmerge} disabled={selectedMerged.size === 0 || merging}>
                         <Trash2 className="h-3 w-3 mr-1" />해제 ({selectedMerged.size})
                       </Button>
                     </div>
@@ -776,7 +890,9 @@ function ClusteringPage() {
                     <div className="text-xs">
                       {/* 헤더 */}
                       <div className="grid grid-cols-[28px_1fr_60px_90px_60px] gap-1 items-center px-2 py-2 border-b bg-gray-100 font-semibold text-muted-foreground sticky top-0 z-10">
-                        <Checkbox checked={selectedMerged.size === mergedClusters.length && mergedClusters.length > 0}
+                        <Checkbox
+                          checked={selectedMerged.size === mergedClusters.length && mergedClusters.length > 0}
+                          disabled={merging && mergingClusters.size > 0}
                           onCheckedChange={c => {
                             if (c) setSelectedMerged(new Set(mergedClusters.map(m => m.clusterNumber)));
                             else setSelectedMerged(new Set());
@@ -786,31 +902,38 @@ function ClusteringPage() {
                         <div className="text-right">금액({amountUnit})</div>
                         <div className="text-center">관리</div>
                       </div>
-                      {mergedClusters.map(c => (
-                        <div key={c.clusterNumber}
-                          className={`grid grid-cols-[28px_1fr_60px_90px_60px] gap-1 items-center px-2 py-1.5 border-b hover:bg-muted/50
-                            ${selectedMerged.has(c.clusterNumber) ? 'bg-blue-50' : ''}`}>
-                          <Checkbox checked={selectedMerged.has(c.clusterNumber)}
-                            onCheckedChange={ch => setSelectedMerged(prev => { const n = new Set(prev); ch ? n.add(c.clusterNumber) : n.delete(c.clusterNumber); return n; })} />
-                          <div className="min-w-0">
-                            <div className="flex items-center gap-1">
-                              <Badge variant="outline" className="text-[9px] font-mono flex-shrink-0">#{c.clusterNumber}</Badge>
-                              <span className="truncate">{c.clusterName}</span>
+                      {mergedClusters.map(c => {
+                        const isMergingThis = mergingClusters.has(c.clusterNumber);
+                        return (
+                          <div key={c.clusterNumber}
+                            className={`grid grid-cols-[28px_1fr_60px_90px_60px] gap-1 items-center px-2 py-1.5 border-b transition-colors
+                              ${isMergingThis ? 'bg-yellow-50 opacity-70' : selectedMerged.has(c.clusterNumber) ? 'bg-blue-50' : 'hover:bg-muted/50'}`}>
+                            <Checkbox
+                              checked={selectedMerged.has(c.clusterNumber)}
+                              disabled={isMergingThis}
+                              onCheckedChange={ch => setSelectedMerged(prev => { const n = new Set(prev); ch ? n.add(c.clusterNumber) : n.delete(c.clusterNumber); return n; })} />
+                            <div className="min-w-0">
+                              <div className="flex items-center gap-1">
+                                <Badge variant="outline" className="text-[9px] font-mono flex-shrink-0">#{c.clusterNumber}</Badge>
+                                <span className="truncate" title={c.clusterName}>
+                                  {isMergingThis ? <span className="text-yellow-600 font-semibold">병합중...</span> : truncateName(c.clusterName)}
+                                </span>
+                              </div>
+                              <div className="flex flex-wrap gap-0.5 mt-0.5">
+                                {(c.keywords || []).slice(0, 4).map((k, i) => <Badge key={i} variant="secondary" className="text-[8px]">{k}</Badge>)}
+                                {(c.keywords || []).length > 4 && <Badge variant="secondary" className="text-[8px]">+{c.keywords.length - 4}</Badge>}
+                              </div>
                             </div>
-                            <div className="flex flex-wrap gap-0.5 mt-0.5">
-                              {(c.keywords || []).slice(0, 4).map((k, i) => <Badge key={i} variant="secondary" className="text-[8px]">{k}</Badge>)}
-                              {(c.keywords || []).length > 4 && <Badge variant="secondary" className="text-[8px]">+{c.keywords.length - 4}</Badge>}
+                            <div className="text-right tabular-nums">{(c.count||0).toLocaleString()}</div>
+                            <div className="text-right tabular-nums">{formatAmount(c.totalAmount||0)}</div>
+                            <div className="flex items-center justify-center gap-0.5">
+                              <Button size="sm" variant="ghost" className="h-6 w-6 p-0" onClick={() => handleOpenDetail(c)} title="상세" disabled={isMergingThis}><Eye className="h-3 w-3" /></Button>
+                              <Button size="sm" variant="ghost" className="h-6 w-6 p-0" onClick={() => handleOpenRename(c)} title="이름변경" disabled={isMergingThis}><Edit2 className="h-3 w-3" /></Button>
+                              <Button size="sm" variant="ghost" className="h-6 w-6 p-0 text-red-500" onClick={() => handleUnmerge(c.clusterNumber)} title="병합해제" disabled={isMergingThis}><Trash2 className="h-3 w-3" /></Button>
                             </div>
                           </div>
-                          <div className="text-right tabular-nums">{(c.count||0).toLocaleString()}</div>
-                          <div className="text-right tabular-nums">{formatAmount(c.totalAmount||0)}</div>
-                          <div className="flex items-center justify-center gap-0.5">
-                            <Button size="sm" variant="ghost" className="h-6 w-6 p-0" onClick={() => handleOpenDetail(c)} title="상세"><Eye className="h-3 w-3" /></Button>
-                            <Button size="sm" variant="ghost" className="h-6 w-6 p-0" onClick={() => handleOpenRename(c)} title="이름변경"><Edit2 className="h-3 w-3" /></Button>
-                            <Button size="sm" variant="ghost" className="h-6 w-6 p-0 text-red-500" onClick={() => handleUnmerge(c.clusterNumber)} title="병합해제"><Trash2 className="h-3 w-3" /></Button>
-                          </div>
-                        </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   )}
                 </CardContent>
@@ -872,30 +995,44 @@ function ClusteringPage() {
         </DialogContent>
       </Dialog>
 
-      {/* ===== 상세 다이얼로그 (동적 컬럼 + 체크박스 + 부분 해제) ===== */}
-      <Dialog open={detailDialog.open} onOpenChange={o => setDetailDialog({ ...detailDialog, open: o })}>
+      {/* ===== 상세 다이얼로그 (동적 컬럼 + 체크박스 + 부분 해제 + 드래그 선택) ===== */}
+      <Dialog open={detailDialog.open} onOpenChange={o => {
+        setDetailDialog({ ...detailDialog, open: o });
+        if (!o) {
+          setDetailChecked(new Set());
+          setDetailDragging(false);
+        }
+      }}>
         <DialogContent className="max-w-[900px] max-h-[80vh] flex flex-col">
           <DialogHeader>
             <DialogTitle>
-              병합 상세: #{detailDialog.cluster?.clusterNumber} {detailDialog.cluster?.clusterName}
+              병합 상세: #{detailDialog.cluster?.clusterNumber} {truncateName(detailDialog.cluster?.clusterName)}
             </DialogTitle>
             <DialogDescription>
-              하위 클러스터 {detailDialog.cluster?.childCount || 0}개
+              하위 클러스터 {detailDialog.cluster?.childCount || 0}개 | 드래그 또는 Ctrl+클릭으로 복수 선택 가능
             </DialogDescription>
           </DialogHeader>
           <div className="flex items-center gap-2 mb-2">
             <Button size="sm" variant="destructive" onClick={handlePartialUnmerge} disabled={detailChecked.size === 0}>
               <Trash2 className="h-3 w-3 mr-1" />선택 항목 병합 해제 ({detailChecked.size})
             </Button>
+            <span className="text-xs text-muted-foreground ml-2">
+              {detailChecked.size > 0 && `${detailChecked.size}개 선택됨`}
+            </span>
           </div>
-          <div className="flex-1 min-h-0 overflow-auto">
-            <AdvancedTable
-              columns={detailColumns}
-              data={detailDialog.cluster?.children || []}
-              rowKey={r => r.clusterNumber}
-              emptyMessage="하위 클러스터가 없습니다."
-              rowClassName={r => detailChecked.has(r.clusterNumber) ? 'bg-blue-50' : ''}
-            />
+          {/* 가로 스크롤 적용 */}
+          <div className="flex-1 min-h-0 overflow-x-auto overflow-y-auto custom-scrollbar">
+            <div style={{ minWidth: '800px' }}>
+              <AdvancedTable
+                columns={detailColumns}
+                data={detailDialog.cluster?.children || []}
+                rowKey={r => r.clusterNumber}
+                emptyMessage="하위 클러스터가 없습니다."
+                rowClassName={r => detailChecked.has(r.clusterNumber) ? 'bg-blue-50' : ''}
+                onRowMouseDown={handleDetailRowMouseDown}
+                onRowMouseEnter={handleDetailRowMouseEnter}
+              />
+            </div>
           </div>
         </DialogContent>
       </Dialog>
