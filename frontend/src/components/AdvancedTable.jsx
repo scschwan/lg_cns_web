@@ -28,6 +28,8 @@ import { cn } from '@/lib/utils';
  * @param {Object} sort - { field, direction } 현재 정렬 상태
  * @param {Function} onSortChange - (field, direction) => void
  * @param {Function} onRowClick - (row, idx) => void
+ * @param {Function} onRowMouseDown - (row, idx, event) => void
+ * @param {Function} onRowMouseEnter - (row, idx, event) => void
  * @param {Function} rowClassName - (row, idx) => className string
  * @param {string} maxHeight - CSS 최대 높이 (없으면 flex-1)
  * @param {string} className - 래퍼 추가 클래스
@@ -42,6 +44,8 @@ function AdvancedTable({
   sort = null,
   onSortChange = null,
   onRowClick = null,
+  onRowMouseDown = null,
+  onRowMouseEnter = null,
   rowClassName = null,
   maxHeight,
   className = '',
@@ -267,6 +271,8 @@ function AdvancedTable({
                     rowClassName && rowClassName(row, idx),
                   )}
                   onClick={() => onRowClick && onRowClick(row, idx)}
+                  onMouseDown={(e) => onRowMouseDown && onRowMouseDown(row, idx, e)}
+                  onMouseEnter={(e) => onRowMouseEnter && onRowMouseEnter(row, idx, e)}
                 >
                   {orderedColumns.map((col) => (
                     <td
