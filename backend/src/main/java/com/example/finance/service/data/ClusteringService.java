@@ -296,7 +296,7 @@ public class ClusteringService {
         log.info("클러스터 병합: sessionId={}, clusterNumbers={}", sessionId, clusterNumbers);
 
         if (clusterNumbers == null || clusterNumbers.size() < 2) {
-            throw new BusinessException("병합하려면 2개 이상의 클러스터를 선택해야 합니다.");
+            throw new BusinessException("MERGE_MIN_COUNT", "병합하려면 2개 이상의 클러스터를 선택해야 합니다.");
         }
 
         // 대상 클러스터 조회
@@ -304,13 +304,13 @@ public class ClusteringService {
                 .findBySessionIdAndClusterNumberIn(sessionId, clusterNumbers);
 
         if (targets.size() != clusterNumbers.size()) {
-            throw new BusinessException("일부 클러스터를 찾을 수 없습니다.");
+            throw new BusinessException("CLUSTER_NOT_FOUND", "일부 클러스터를 찾을 수 없습니다.");
         }
 
         // 이미 다른 병합 클러스터에 속한 경우 체크
         for (ClusteringResult target : targets) {
             if (target.getClusterId() > 0) {
-                throw new BusinessException(
+                throw new BusinessException("ALREADY_MERGED",
                         "클러스터 #" + target.getClusterNumber() + "은(는) 이미 다른 병합 클러스터에 속해 있습니다.");
             }
         }
@@ -377,14 +377,14 @@ public class ClusteringService {
         // 병합 클러스터 조회
         ClusteringResult merged = clusteringResultRepository
                 .findBySessionIdAndClusterNumber(sessionId, mergedClusterNumber)
-                .orElseThrow(() -> new BusinessException("병합 클러스터를 찾을 수 없습니다: #" + mergedClusterNumber));
+                .orElseThrow(() -> new BusinessException("CLUSTER_NOT_FOUND", "병합 클러스터를 찾을 수 없습니다: #" + mergedClusterNumber));
 
         // 하위 클러스터 조회
         List<ClusteringResult> children = clusteringResultRepository
                 .findBySessionIdAndClusterIdOrderByClusterNumberAsc(sessionId, mergedClusterNumber);
 
         if (children.isEmpty()) {
-            throw new BusinessException("하위 클러스터가 없습니다. 이미 미병합 상태입니다.");
+            throw new BusinessException("NO_CHILDREN", "하위 클러스터가 없습니다. 이미 미병합 상태입니다.");
         }
 
         // 하위 클러스터 cluster_id 복원
@@ -410,7 +410,7 @@ public class ClusteringService {
     public void updateClusterName(String sessionId, Integer clusterNumber, String newName) {
         ClusteringResult cluster = clusteringResultRepository
                 .findBySessionIdAndClusterNumber(sessionId, clusterNumber)
-                .orElseThrow(() -> new BusinessException("클러스터를 찾을 수 없습니다: #" + clusterNumber));
+                .orElseThrow(() -> new BusinessException("CLUSTER_NOT_FOUND", "클러스터를 찾을 수 없습니다: #" + clusterNumber));
 
         cluster.setClusterName(newName);
         clusteringResultRepository.save(cluster);

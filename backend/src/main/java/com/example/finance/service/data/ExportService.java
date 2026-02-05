@@ -205,7 +205,7 @@ public class ExportService {
             Row row = sheet.createRow(rowNum++);
             row.createCell(0).setCellValue(cluster.getClusterId());
             row.createCell(1).setCellValue(cluster.getClusterName());
-            row.createCell(2).setCellValue(cluster.getRecordCount());
+            row.createCell(2).setCellValue(cluster.getCount());
         }
 
         // 컬럼 너비 자동 조정

@@ -681,7 +681,7 @@ public class FileSessionService {
         log.info("process_data 삭제 완료");
 
         // 3. clustering_results 삭제
-        clusteringResultRepository.deleteByProjectIdAndSessionId(projectId, sessionId);
+        clusteringResultRepository.deleteBySessionId(sessionId);
         log.info("clustering_results 삭제 완료");
 
         // 3-1. session_data 삭제
