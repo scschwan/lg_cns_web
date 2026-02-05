@@ -11,8 +11,8 @@
 > - 기존 C# 프로젝트: https://github.com/scschwan/lgcns_1st_nosql.git
 > - 신규 Spring Boot 프로젝트: https://github.com/scschwan/lg_cns_web.git
 
-**문서 버전:** 3.2 ⭐ Phase 3 완료  
-**최종 업데이트:** 2025-01-29  
+**문서 버전:** 3.3 ⭐ Phase 2 Step 3-5 구현 완료
+**최종 업데이트:** 2026-02-05
 **프로젝트 목표:** C# WinForms FinanceTool을 Spring Boot + React 웹 애플리케이션으로 마이그레이션
 
 ---
@@ -27,6 +27,7 @@
 - [7. Phase 3 프론트엔드 구현](#7-phase-3-프론트엔드-구현)
 - [8. 개발 스케줄](#8-개발-스케줄)
 - [9. v3.2 수정 사항](#9-v32-수정-사항)
+- [9.3 v3.3 수정 사항](#93-v33-수정-사항)
 
 ---
 
@@ -85,15 +86,14 @@ Phase 1: 대용량 파일 업로드 (완료) ✅
    ├─ Lambda Worker (병렬 파싱 → raw_data)
    └─ 진행률 추적 (Redis)
 
-Phase 2: 비즈니스 로직 구현 (대기 중) ⚠️
-   ├─ Step 1: Multi File Upload (세션 생성 - raw_data → session_data)
-   ├─ Step 2: File Load (session_data 조회)
-   ├─ Step 3: Preprocessing (session_data → process_data)
-   ├─ Step 4: Data Transform (process_data → process_view_data)
-   ├─ Step 5: Clustering (process_view_data → clustering_results)
-   ├─ Step 6: Export (Excel 내보내기 + 세션 완료)
-   └─ Step 7: Detail Clustering (서브 클러스터링)
-   ⚠️ 현재 구현과 가이드 문서 간 아키텍처 차이 존재 → 재구현 필요
+Phase 2: 비즈니스 로직 구현 (진행 중) 🔨
+   ├─ Step 1: Multi File Upload (세션 생성 - raw_data → session_data) ⚠️
+   ├─ Step 2: File Load (session_data 조회) ⚠️
+   ├─ Step 3: Preprocessing (키워드 추출 + NLP) ✅ 구현 완료
+   ├─ Step 4: Data Transform (키워드 병합/관리) ✅ 구현 완료
+   ├─ Step 5: Clustering (키워드 그룹핑 + 병합/해제) ✅✅✅ 전면 구현 완료
+   ├─ Step 6: Export (Excel 내보내기 + 세션 완료) ⚠️
+   └─ Step 7: Detail Clustering (서브 클러스터링) ⬜
 
 Phase 3: UI 구현 (완료) ✅
    ├─ 프론트엔드 대규모 리팩토링 (CRA → Vite, MUI → shadcn/ui)
@@ -111,10 +111,10 @@ Phase 3: UI 구현 (완료) ✅
 ```
 Phase 0: ████████████████████ 100% (30/30) ✅
 Phase 1: ████████████████████ 100% (35/35) ✅
-Phase 2: ░░░░░░░░░░░░░░░░░░░░   0% (0/157) ⚠️
+Phase 2: █████████░░░░░░░░░░░  46% (72/157) 🔨 Step 3-5 완료
 Phase 3: ████████████████████ 100% (42/42) ✅
 
-전체:    ████████░░░░░░░░░░░░  41% (107/264)
+전체:    █████████████░░░░░░░  68% (179/264)
 ```
 
 ---
@@ -746,14 +746,36 @@ GET    /api/transform/keyword-summary/{sessionId}
 GET    /api/transform/process-view-data/{sessionId}
 ```
 
-### 6.5 Step 5: Clustering
+### 6.5 Step 5: Clustering ✅ 구현 완료 (2026-02)
 ```
-POST   /api/clustering/create-initial
-POST   /api/clustering/merge
-GET    /api/clustering/results/{sessionId}
-GET    /api/clustering/results/{sessionId}/{clusterNumber}
-PUT    /api/clustering/results/{clusterNumber}/name
-DELETE /api/clustering/results/{clusterNumber}
+실제 구현된 API (RESTful, 프로젝트/세션 스코프):
+
+POST   /api/projects/{projectId}/sessions/{sessionId}/clustering/generate
+         → 클러스터 생성 (키워드 그룹핑, includeSupplier/includeCostCenter 옵션)
+GET    /api/projects/{projectId}/sessions/{sessionId}/clustering/unmerged
+         → 미병합 클러스터 페이징 조회 (page, size, keyword 검색)
+GET    /api/projects/{projectId}/sessions/{sessionId}/clustering/unmerged-ids
+         → 미병합 클러스터 번호 전체 목록 (검색 필터 지원)
+GET    /api/projects/{projectId}/sessions/{sessionId}/clustering/merged
+         → 병합 클러스터 목록 + 자식 상세 + representativeData
+GET    /api/projects/{projectId}/sessions/{sessionId}/clustering/statistics
+         → 전체/미병합/병합 건수 통계
+GET    /api/projects/{projectId}/sessions/{sessionId}/clustering/keyword-stats
+         → 키워드별 통계 (건수, 금액, 클러스터 수)
+GET    /api/projects/{projectId}/sessions/{sessionId}/clustering/supplier-stats
+         → 공급업체별 통계 (건수, 금액, 클러스터 수)
+POST   /api/projects/{projectId}/sessions/{sessionId}/clustering/merge
+         → 미병합 클러스터 병합
+POST   /api/projects/{projectId}/sessions/{sessionId}/clustering/unmerge
+         → 병합 해제
+POST   /api/projects/{projectId}/sessions/{sessionId}/clustering/unmerge-partial
+         → 부분 병합 해제 (선택한 자식만)
+POST   /api/projects/{projectId}/sessions/{sessionId}/clustering/merge-merged
+         → 병합 클러스터끼리 재병합
+POST   /api/projects/{projectId}/sessions/{sessionId}/clustering/add-to-merged
+         → 미병합 항목을 기존 병합 클러스터에 추가
+PUT    /api/projects/{projectId}/sessions/{sessionId}/clustering/rename
+         → 클러스터 이름 변경
 ```
 
 ### 6.6 Step 6: Export
@@ -893,16 +915,22 @@ PUT    /api/clustering/{clusterNumber}/sub-clusters/{subClusterNumber}/name
    - 좌우 분할 (8/12, 4/12)
    - 키워드 추출 설정 UI
    - 진행률 표시
+   - ⭐ 백엔드 API 연동 완료 (NLP 키워드 추출)
 
 ✅ Step 4: DataTransformPage.jsx
    - 키워드별 데이터 테이블
    - 키워드 병합 UI
    - 키워드 통계
+   - ⭐ 백엔드 API 연동 완료 (키워드 병합/요약)
 
-✅ Step 5: ClusteringPage.jsx
-   - 클러스터별 데이터 테이블
-   - 클러스터 관리 UI
-   - 검색 및 수동 페이징
+✅ Step 5: ClusteringPage.jsx ⭐⭐⭐ 전면 재구현 (2026-02)
+   - 좌측 8/12: 미병합 클러스터 테이블 (AdvancedTable + 동적 컬럼)
+   - 우측 4/12: 키워드/공급업체 통계 탭 + 병합 결과 확인 탭
+   - 드래그+Ctrl 복수 선택, selectAllMode+exceptions 패턴
+   - 병합/해제/부분해제/추가병합/병합클러스터 merge 전체 기능
+   - 상세 다이얼로그 (동적 컬럼 + 체크박스 + 부분 병합 해제)
+   - 추가 병합 다이얼로그 (기존 병합 클러스터 선택)
+   - ⭐ 백엔드 API 13개 엔드포인트 연동 완료
 
 ✅ Step 6: ExportPage.jsx
    - 원본 + Export 결과 (각 flex-1)
@@ -912,6 +940,21 @@ PUT    /api/clustering/{clusterNumber}/sub-clusters/{subClusterNumber}/name
 ✅ Step 10: DetailClusteringPage.jsx
    - 서브 클러스터 생성 UI
    - 서브 클러스터 목록
+```
+
+### 7.4.1 공통 컴포넌트 (2026-02 추가)
+
+```
+✅ AdvancedTable.jsx ⭐ 신규 공통 컴포넌트
+   - Sticky 헤더
+   - 컬럼 리사이즈 (드래그)
+   - 컬럼 정렬 (asc/desc)
+   - 컬럼 DnD 재배치
+   - 컬럼 고정 (pinned)
+   - 커스텀 셀/헤더 렌더링
+   - 행 클릭/마우스다운/마우스엔터 이벤트
+   - 로딩/빈 상태 표시
+   사용: ClusteringPage, 향후 다른 페이지 확장 가능
 ```
 
 ### 7.4 설치된 shadcn/ui 컴포넌트
@@ -948,16 +991,14 @@ Phase 0: 인증 및 프로젝트 관리 (완료) ✅
 Phase 1: 대용량 파일 업로드 (완료) ✅
    기간: 2주
 
-Phase 2: 비즈니스 로직 구현 (대기 중) ⚠️
-   기간: 4주 (재구현 시 5주)
-   - Step 1: 2일
-   - Step 2: 2일
-   - Step 3: 3일
-   - Step 4: 3일
-   - Step 5: 3일
-   - Step 6: 3일
-   - Step 7: 2일
-   ⚠️ 현재 구현과 가이드 문서 아키텍처 차이로 재구현 필요
+Phase 2: 비즈니스 로직 구현 (진행 중) 🔨
+   Step 3: Preprocessing ✅ 완료
+   Step 4: Data Transform ✅ 완료
+   Step 5: Clustering ✅✅✅ 전면 구현 완료 (백엔드+프론트엔드)
+   Step 1: Multi File Upload ⚠️ 검증 필요
+   Step 2: File Load ⚠️ 검증 필요
+   Step 6: Export ⚠️ 검증 필요
+   Step 7: Detail Clustering ⬜ 미구현
 
 Phase 3: UI 구현 (완료) ✅
    기간: 1일 (리팩토링 + 7개 페이지 구현)
@@ -1011,18 +1052,61 @@ Phase 4: UI-API 연동 (예정)
    - Radix UI 기반 접근성
    - 경량 컴포넌트 사용
 
-### 9.2 다음 단계
+### 9.2 다음 단계 (v3.2 시점)
 
-**즉시 필요한 작업:**
-1. Phase 2 백엔드 재구현 여부 결정
-2. UI-API 연동 계획 수립
-3. 에러 처리 및 로딩 상태 디자인
-4. 실시간 진행률 구현 방식 결정
+~~**즉시 필요한 작업:**~~
+~~1. Phase 2 백엔드 재구현 여부 결정~~
+→ **결정 완료**: 키워드 그룹핑 방식으로 Step 3-5 재구현 완료 (v3.3)
 
-**팀 논의 필요 사항:**
-- 현재 백엔드 구현 vs 가이드 문서 아키텍처 차이 해소 방안
-- 재구현 시 일정 및 리소스 배분
-- 점진적 마이그레이션 전략
+---
+
+## 9.3 v3.3 수정 사항
+
+### Phase 2 Step 3-5 백엔드+프론트엔드 구현 완료
+
+**날짜:** 2026-02-05
+
+**주요 변경사항:**
+
+1. **Step 5 Clustering 백엔드 전면 재작성**
+   - K-Means 알고리즘 제거 → 키워드 그룹핑 방식 적용
+   - ClusteringResultDocument 모델: cluster_number, cluster_id, cluster_sub_id, data_indices 구조
+   - ClusteringService: 13개 메서드 (생성, 조회, 병합, 해제, 통계 등)
+   - ClusteringController: 13개 RESTful API 엔드포인트
+   - 병렬 처리: ExecutorService, parallelStream, ConcurrentHashMap, CompletableFuture
+   - 배치 저장: 500건씩 chunked batch save
+   - 추가 기능: 부분 병합 해제, 병합 클러스터 merge, 추가 병합
+
+2. **Step 5 Clustering 프론트엔드 전면 구현**
+   - ClusteringPage.jsx (~900줄) 전면 재작성
+   - AdvancedTable 공통 컴포넌트 (리사이즈, 정렬, DnD, 컬럼 고정)
+   - 드래그+Ctrl 복수 선택 (onRowMouseDown/onRowMouseEnter)
+   - 키워드/공급업체 통계 탭 (StatsListView 컴포넌트)
+   - 병합 상세 다이얼로그 (동적 컬럼 + 체크박스 + 부분 병합 해제)
+   - 추가 병합 다이얼로그 (기존 병합 클러스터 선택)
+   - selectAllMode + exceptions 패턴 (크로스 페이지 체크박스)
+   - clusteringService.js: 13개 API 메서드
+
+3. **Step 3-4 백엔드/프론트엔드 연동 완료**
+   - PreprocessingService: NLP 기반 키워드 추출
+   - DataTransformService: 키워드 병합, 요약 통계
+   - PreprocessingPage, DataTransformPage 프론트엔드 API 연동
+
+4. **아키텍처 변경 결정**
+   - K-Means → 키워드 그룹핑 전환 완료 (가이드 문서와 일치)
+   - ClusteringResult 구조를 가이드 문서와 동일하게 적용
+   - 병렬 처리 아키텍처 추가 (가이드 문서 외 성능 최적화)
+
+### 다음 단계
+
+1. **Phase 2 잔여 작업:**
+   - Step 1 (Multi File Upload): session_data 복사 로직 검증
+   - Step 2 (File Load): session_data 조회 검증
+   - Step 6 (Export): Excel 내보내기 검증
+   - Step 7 (Detail Clustering): 서브 클러스터링 구현
+
+2. **나머지 UI-API 연동:**
+   - Step 1, 2, 6, 7 프론트엔드 API 연동
 
 ---
 
@@ -1044,18 +1128,22 @@ Phase 4: UI-API 연동 (예정)
 
 ---
 
-**문서 버전:** 3.2 ⭐ Phase 3 완료  
-**최종 업데이트:** 2025-01-29 15:30 KST  
-**작성자:** dhkim
+**문서 버전:** 3.3 ⭐ Phase 2 Step 3-5 구현 완료
+**최종 업데이트:** 2026-02-05 KST
+**작성자:** dhkim + Claude
 
-> **🎉 Phase 3 UI 구현 완료!**
-> 
-> **달성 내용:**
-> - ✅ 전체 프론트엔드 스택 리팩토링 (CRA → Vite, MUI → shadcn/ui)
-> - ✅ 7개 페이지 구현 완료
-> - ✅ 성능 10배 향상, 번들 크기 67% 감소
-> - ✅ 디자인 패턴 및 접근성 개선
-> 
+> **🔨 Phase 2 Step 3-5 구현 완료!**
+>
+> **최근 달성 내용 (2026-02):**
+> - ✅ Step 5 Clustering 백엔드 전면 재작성 (키워드 그룹핑 + 병렬 처리)
+> - ✅ Step 5 Clustering 프론트엔드 전면 구현 (13개 API 연동)
+> - ✅ Step 3-4 백엔드/프론트엔드 연동 완료
+> - ✅ AdvancedTable 공통 컴포넌트 추가
+>
+> **이전 달성 내용:**
+> - ✅ Phase 3 UI 구현 100% (7개 페이지)
+> - ✅ CRA → Vite, MUI → shadcn/ui 리팩토링
+>
 > **다음 단계:**
-> - Phase 2 백엔드 재구현 여부 결정
-> - UI-API 연동 작업 준비
+> - Phase 2 Step 1, 2, 6, 7 구현/검증
+> - 나머지 UI-API 연동

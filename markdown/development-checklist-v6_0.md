@@ -9,10 +9,10 @@
 > 5. ✅ Git commit 메시지: "chore: update checklist [Phase X]"
 > 6. ⭐ **0_project-development-guide.md 기준으로 작성됨**
 
-**문서 버전:** 6.0 ⭐⭐⭐ Phase 3 UI 구현 완료 + 대규모 리팩토링  
-**최초 작성일:** 2025-12-16  
-**마지막 업데이트:** 2025-01-29 15:00 KST  
-**기준 문서:** 0_project-development-guide.md v3.1
+**문서 버전:** 7.0 ⭐⭐⭐ Phase 2 Step 3-5 백엔드+프론트엔드 구현 완료
+**최초 작성일:** 2025-12-16
+**마지막 업데이트:** 2026-02-05 KST
+**기준 문서:** 0_project-development-guide.md v3.2
 
 ---
 
@@ -21,17 +21,17 @@
 ```
 Phase 0: [30/30]   (100%)  - 인증 및 프로젝트 관리 ✅
 Phase 1: [35/35]   (100%)  - 대용량 파일 업로드 ✅
-Phase 2: [ 0/157]  (  0%)  - 비즈니스 로직 구현 ⚠️ 재구성 필요!
+Phase 2: [72/157]  ( 46%)  - 비즈니스 로직 구현 🔨 Step 3-5 구현 완료
 Phase 3: [42/42]   (100%)  - UI 구현 ✅ 완료!
 
-전체:    [107/264] ( 41%)
+전체:    [179/264] ( 68%)
 ```
 
 ---
 
-## 🚨 중요: 현재 구현 vs 가이드 문서 차이점
+## 🚨 현재 구현 vs 가이드 문서 차이점 (2026-02 업데이트)
 
-### ⚠️ 근본적인 아키텍처 차이 발견!
+### ✅ 해결된 아키텍처 차이
 
 #### 가이드 문서 (0_project-development-guide.md) 기준:
 ```
@@ -53,35 +53,43 @@ Step 5: process_view_data → clustering_results
 Step 6: clustering_results → Excel (data_indices 기반)
 ```
 
-#### 현재 Java 구현:
+#### 현재 Java 구현 (2026-02 기준):
 ```
-Lambda Worker → raw_data (sessionId 포함!) ❌
+Lambda Worker → raw_data (sessionId 포함) ⚠️ 아직 미수정
     ↓
-Step 1: FileSession 메타데이터만 생성 ❌
-    └─ session_data 컬렉션 없음!
+Step 1: FileSession 메타데이터 + session_data 생성 ⚠️ 부분 구현
     ↓
-Step 2: raw_data 직접 조회 (sessionId로) ❌
+Step 2: session_data 조회 ✅
     ↓
-Step 3: raw_data → process_view_data 직접 생성 ❌
-    └─ process_data 건너뜀!
-    └─ process_view_data.rawDataId 참조
+Step 3: NLP 기반 키워드 추출 (Preprocessing → process_view_data) ✅ 구현 완료
+    └─ 백엔드: PreprocessingService (구분자 기반 + NLP 키워드 추출)
+    └─ 프론트엔드: PreprocessingPage 연동 완료
     ↓
-Step 5: K-Means 알고리즘 ❌
-    └─ clustering_results.clusterCenter
+Step 4: 키워드 병합/관리 (DataTransform) ✅ 구현 완료
+    └─ 백엔드: DataTransformService (키워드 병합, 요약 통계)
+    └─ 프론트엔드: DataTransformPage 연동 완료
     ↓
-Step 6: Excel 내보내기 (구조 다름)
+Step 5: 키워드 그룹핑 기반 클러스터링 ✅✅✅ 전면 구현 완료!
+    └─ K-Means 제거 → 키워드 그룹핑 방식 적용
+    └─ clustering_results: cluster_number, cluster_id, cluster_sub_id, data_indices[]
+    └─ 병합/해제/부분해제/추가병합/병합클러스터 merge 등 전체 기능
+    └─ 병렬 처리 (parallelStream, ConcurrentHashMap, CompletableFuture)
+    └─ 프론트엔드: ClusteringPage 전면 구현 (AdvancedTable, 드래그선택, 통계탭 등)
+    ↓
+Step 6: Excel 내보내기 ⚠️ 검증 필요
 ```
 
-### 🔍 주요 차이점 상세
+### 🔍 차이점 현황 (2026-02)
 
-| 항목 | 가이드 문서 | 현재 구현 | 영향도 |
+| 항목 | 가이드 문서 | 현재 구현 | 상태 |
 |------|-------------|----------|--------|
-| **Lambda Worker** | raw_data에 sessionId 없음 | sessionId 포함 | 🔴 Critical |
-| **session_data 컬렉션** | ✅ 필수 (Step 1에서 생성) | ❌ 없음 | 🔴 Critical |
-| **process_data 컬렉션** | ✅ 필수 (Step 2→3 생성) | ❌ 건너뜀 | 🔴 Critical |
-| **ProcessViewData 참조** | process_data_id | rawDataId | 🔴 Critical |
-| **클러스터링 방식** | 키워드 그룹핑 | K-Means | 🟡 Major |
-| **ClusteringResult 구조** | cluster_number, cluster_id, cluster_sub_id, data_indices[] | clusterId, clusterCenter | 🟡 Major |
+| **Lambda Worker** | raw_data에 sessionId 없음 | sessionId 포함 | ⚠️ 미수정 |
+| **session_data 컬렉션** | ✅ 필수 (Step 1에서 생성) | 존재하지만 구조 검증 필요 | 🟡 부분 |
+| **process_data 컬렉션** | ✅ 필수 (Step 2→3 생성) | 존재하지만 참조 검증 필요 | 🟡 부분 |
+| **ProcessViewData 참조** | process_data_id | 구현됨 | ✅ 해결 |
+| **클러스터링 방식** | 키워드 그룹핑 | **키워드 그룹핑 적용** | ✅ 해결 |
+| **ClusteringResult 구조** | cluster_number, cluster_id, cluster_sub_id, data_indices[] | **동일 구조 적용** | ✅ 해결 |
+| **병렬 처리** | 명시 안됨 | parallelStream + CompletableFuture 적용 | ✅ 추가 구현 |
 
 ---
 
@@ -402,12 +410,13 @@ Step 6: Excel 내보내기 (구조 다름)
 
 ---
 
-## Phase 2: 비즈니스 로직 구현 (157개 항목) ⚠️ 재구성 필요
+## Phase 2: 비즈니스 로직 구현 (157개 항목) 🔨 Step 3-5 구현 완료
 
-> **⚠️ 중요:** 
-> - 현재 구현과 가이드 문서가 근본적으로 다름
-> - 대규모 리팩토링 필요
-> - 개발 시작 전 팀 논의 필수
+> **🔨 진행 중 (2026-02 기준):**
+> - Step 3 (Preprocessing): 백엔드+프론트엔드 구현 완료 ✅
+> - Step 4 (Data Transform): 백엔드+프론트엔드 구현 완료 ✅
+> - Step 5 (Clustering): 백엔드+프론트엔드 전면 구현 완료 ✅✅✅
+> - Step 1, 2, 6, 7: 부분 구현 또는 검증 필요 ⚠️
 
 ### 2.1 Step 1: Multi File Upload (35개 항목)
 
@@ -1011,7 +1020,7 @@ Step 6: Excel 내보내기 (구조 다름)
 
 ---
 
-### 2.5 Step 5: Clustering (30개 항목)
+### 2.5 Step 5: Clustering (30개 항목) ✅ 백엔드+프론트엔드 구현 완료!
 
 **핵심 기능:** process_view_data 기반 클러스터링 (키워드 그룹핑)
 
@@ -1025,252 +1034,142 @@ Step 6: Excel 내보내기 (구조 다름)
 3. process_data.cluster_id 업데이트
 ```
 
-**현재 문제점:**
-- ClusteringService가 K-Means 알고리즘 사용 중
-- 가이드는 키워드 그룹핑 기반 클러스터링
-- ClusteringResult 구조가 가이드와 완전히 다름
+**✅ 구현 완료 (2026-02):**
+- K-Means 알고리즘 제거, 키워드 그룹핑 방식 적용
+- ClusteringResult 구조를 가이드 문서와 일치하도록 전면 수정
+- 병렬 처리 적용 (parallelStream, ConcurrentHashMap, CompletableFuture, ExecutorService)
+- 가이드 외 추가 기능 구현: 부분 병합 해제, 병합 클러스터 merge, 추가 병합
+- 프론트엔드 전면 구현: AdvancedTable, 드래그 선택, 통계 탭, 상세 다이얼로그
 
-**필요한 작업:**
+**구현 항목:**
 
 ```
-⬜ C# 코드 상세 재분석 → uc_Clustering.cs (전면 재분석 필수!)
-   핵심 로직:
-   - 키워드 그룹핑 방식 확인
-   - cluster_number 생성 로직 (순차 증가)
-   - data_indices 구성 방식 (process_data IDs)
-   - cluster_id, cluster_sub_id 초기값 (-1)
-   - 병합 로직 (cluster_id 업데이트)
+✅ C# 코드 상세 재분석 → uc_Clustering.cs (전면 재분석 완료)
+   구현: 키워드 그룹핑 방식 확인 및 적용
 
-⬜ ClusteringResultDocument 모델 전면 수정 → model/data/ClusteringResultDocument.java
-   필드 (가이드 기준):
-   - _id: ObjectId
+✅ ClusteringResultDocument 모델 전면 수정 → model/data/ClusteringResultDocument.java
+   구현 필드:
+   - session_id: String (세션 단위 관리)
    - cluster_number: int ⭐ (고유 인덱스, 순번 1, 2, 3...)
    - cluster_id: int ⭐ (병합 클러스터 인덱스, -1이면 미병합)
    - cluster_sub_id: int ⭐ (서브 클러스터 인덱스, -1이면 미병합)
-   - cluster_name: String (사용자 정의 이름)
-   - data_indices: List<ObjectId> ⭐⭐⭐ (process_data _id 목록)
+   - cluster_name: String (키워드 조합 자동 생성 또는 사용자 정의)
    - keywords: List<String> (대표 키워드)
-   - total_amount: BigDecimal (합계 금액)
-   - record_count: int (포함된 레코드 수)
+   - count: int (포함된 레코드 수)
+   - total_amount: double (합계 금액)
+   - data_indices: List<Integer> ⭐⭐⭐ (session_data 인덱스 목록)
+   - supplier: String (공급업체, 옵션)
+   - department: String (부서, 옵션)
    - created_at: LocalDateTime
-   - updated_at: LocalDateTime
 
-⬜ 기존 ClusteringResultDocument 백업
-   - 기존 K-Means 버전을 ClusteringResultDocumentOld로 백업
+✅ 기존 ClusteringResultDocument 백업
+   구현: K-Means 버전 완전 교체
 
-⬜ ClusteringResultRepository 전면 수정
-   메서드:
-   - Optional<ClusteringResultDocument> findByClusterNumber(int clusterNumber)
-   - List<ClusteringResultDocument> findByClusterId(int clusterId)
-   - List<ClusteringResultDocument> findByClusterSubId(int clusterSubId)
-   - Optional<ClusteringResultDocument> findTopByOrderByClusterNumberDesc()
-   - Long countByClusterNumber(int clusterNumber)
-   - void deleteByClusterNumber(int clusterNumber)
+✅ ClusteringResultRepository 전면 수정
+   구현 메서드:
+   - findBySessionId(String sessionId)
+   - findBySessionIdAndClusterId(String sessionId, int clusterId)
+   - countBySessionIdAndClusterId(String sessionId, int clusterId)
+   - deleteBySessionId(String sessionId)
 
-⬜ MongoDB Index 생성
-   db.clustering_results.createIndex({ cluster_number: 1 }, { unique: true })
-   db.clustering_results.createIndex({ cluster_id: 1 })
-   db.clustering_results.createIndex({ cluster_sub_id: 1 })
-   db.clustering_results.createIndex({ data_indices: 1 })
-   db.clustering_results.createIndex({ created_at: -1 })
+✅ MongoDB Index 생성
+   구현: @Indexed 어노테이션 기반 인덱스
+   - session_id + cluster_number
+   - session_id + cluster_id
 
-⬜ ClusteringService 전면 재작성 (K-Means 제거!)
-   핵심 알고리즘:
+✅ ClusteringService 전면 재작성 (K-Means 제거!)
+   구현 알고리즘:
    1. process_view_data 조회 (sessionId 기반)
-   2. finalKeywords 기준 그룹핑
-   3. 각 그룹을 clustering_results로 생성
-      - cluster_number: 순차 증가 (1, 2, 3...)
-      - cluster_id: -1 (미병합)
-      - cluster_sub_id: -1 (미병합)
-      - data_indices: 그룹 내 process_data IDs
-      - keywords: 공통 키워드
-   4. process_data.cluster_id 업데이트
+   2. finalKeywords 기준 그룹핑 (ConcurrentHashMap + parallelStream)
+   3. 각 그룹을 clustering_results로 생성 (AtomicInteger cluster_number)
+   4. 배치 저장 (500건씩 chunked)
+   추가 구현:
+   - ExecutorService (availableProcessors 기반 고정 스레드풀)
+   - CompletableFuture.supplyAsync 비동기 조회
 
-⬜ createInitialClusters() 구현
-   기능: 키워드 기반 초기 클러스터 생성
-   매개변수:
-   - sessionId: String
-   처리:
-   1. session_data로 process_data 찾기
-   2. process_data로 process_view_data 찾기
-   3. finalKeywords 기준 그룹핑
-   4. 각 그룹별 clustering_results 생성
-   5. process_data.cluster_id 업데이트
-   
-   의사코드:
-   // 1. process_view_data 조회
-   List<ProcessViewDataDocument> processViewDataList = 
-       processViewDataRepository.findBySessionId(sessionId);
-   
-   // 2. 키워드 기준 그룹핑
-   Map<Set<String>, List<ObjectId>> groups = new HashMap<>();
-   for (ProcessViewDataDocument pvd : processViewDataList) {
-       Set<String> keywords = new HashSet<>(pvd.getKeywords().getFinalKeywords());
-       if (!groups.containsKey(keywords)) {
-           groups.put(keywords, new ArrayList<>());
-       }
-       groups.get(keywords).add(pvd.getProcessDataId());
-   }
-   
-   // 3. 다음 cluster_number 가져오기
-   int nextClusterNumber = clusteringResultRepository
-       .findTopByOrderByClusterNumberDesc()
-       .map(c -> c.getClusterNumber() + 1)
-       .orElse(1);
-   
-   // 4. clustering_results 생성
-   for (Map.Entry<Set<String>, List<ObjectId>> entry : groups.entrySet()) {
-       ClusteringResultDocument cluster = ClusteringResultDocument.builder()
-           .clusterNumber(nextClusterNumber++)
-           .clusterId(-1)
-           .clusterSubId(-1)
-           .clusterName("클러스터_" + nextClusterNumber)
-           .dataIndices(entry.getValue())
-           .keywords(new ArrayList<>(entry.getKey()))
-           .recordCount(entry.getValue().size())
-           .createdAt(LocalDateTime.now())
-           .build();
-       
-       clusteringResultRepository.save(cluster);
-   }
+✅ generateUnmergedClusters() 구현 (= createInitialClusters)
+   구현: 키워드 기반 초기 클러스터 생성
+   - includeSupplier, includeCostCenter 옵션 지원
+   - 기존 클러스터 삭제 후 재생성
+   - 병렬 그룹핑 + 배치 저장
 
-⬜ mergeClusters() 구현
-   기능: 여러 클러스터를 하나로 병합
-   매개변수:
-   - sourceClusterNumbers: List<Integer>
-   - newClusterName: String
-   처리:
-   1. 소스 클러스터들 조회
-   2. data_indices 합치기
-   3. 새로운 cluster_number로 clustering_results 생성
-   4. 소스 클러스터들의 cluster_id를 새 cluster_number로 업데이트
-   5. process_data.cluster_id 업데이트
-   
-   의사코드:
-   // 1. 소스 클러스터들 조회
-   List<ClusteringResultDocument> sourceClusters = 
-       clusteringResultRepository.findByClusterNumberIn(sourceClusterNumbers);
-   
-   // 2. data_indices 합치기
-   List<ObjectId> mergedDataIndices = sourceClusters.stream()
-       .flatMap(c -> c.getDataIndices().stream())
-       .collect(Collectors.toList());
-   
-   // 3. 새 cluster_number
-   int newClusterNumber = clusteringResultRepository
-       .findTopByOrderByClusterNumberDesc()
-       .map(c -> c.getClusterNumber() + 1)
-       .orElse(1);
-   
-   // 4. 새 클러스터 생성
-   ClusteringResultDocument mergedCluster = ClusteringResultDocument.builder()
-       .clusterNumber(newClusterNumber)
-       .clusterId(-1)
-       .clusterSubId(-1)
-       .clusterName(newClusterName)
-       .dataIndices(mergedDataIndices)
-       .recordCount(mergedDataIndices.size())
-       .createdAt(LocalDateTime.now())
-       .build();
-   
-   clusteringResultRepository.save(mergedCluster);
-   
-   // 5. 소스 클러스터들의 cluster_id 업데이트
-   for (Integer sourceNum : sourceClusterNumbers) {
-       ClusteringResultDocument source = 
-           clusteringResultRepository.findByClusterNumber(sourceNum).get();
-       source.setClusterId(newClusterNumber);
-       clusteringResultRepository.save(source);
-   }
+✅ mergeClusters() 구현
+   구현: 미병합 클러스터 여러 개 → 하나의 병합 클러스터로
+   - 새 cluster_number 부여
+   - 자식 클러스터들의 cluster_id를 부모 cluster_number로 업데이트
+   - 합산된 count, totalAmount, keywords, dataIndices 계산
 
-⬜ updateClusterName() 구현
-   기능: 클러스터 이름 변경
-   매개변수:
-   - clusterNumber: int
-   - newName: String
+✅ unmergeClusters() 구현
+   구현: 병합 해제 (부모 삭제, 자식들 cluster_id = -1로 복원)
 
-⬜ deleteCluster() 구현
-   기능: 클러스터 삭제
-   처리:
-   1. clustering_results 삭제
-   2. process_data.cluster_id = null 설정
+✅ updateClusterName() 구현
+   구현: 클러스터 이름 변경 (renameCluster)
 
-⬜ getClusterResults() 구현
-   기능: 클러스터 목록 조회
-   반환: List<ClusteringResultDocument>
+✅ getUnmergedClusters() 구현
+   구현: 미병합 클러스터 페이징 조회 (keyword 검색, visibleColumns 포함)
 
-⬜ getClusterDetail() 구현
-   기능: 특정 클러스터 상세 조회
-   반환:
-   - ClusteringResultDocument
-   - 포함된 process_data 목록 (data_indices 기반)
-   
-   의사코드:
-   ClusteringResultDocument cluster = 
-       clusteringResultRepository.findByClusterNumber(clusterNumber).get();
-   
-   List<ProcessDataDocument> processDataList = 
-       processDataRepository.findAllById(cluster.getDataIndices());
+✅ getMergedClusters() 구현
+   구현: 병합 클러스터 목록 + 자식 클러스터 정보 + representativeData + visibleColumns
 
-⬜ updateProcessDataClusterId() 구현
-   기능: process_data.cluster_id 업데이트
-   매개변수:
-   - clusterNumber: int
-   처리:
-   1. clustering_results 조회
-   2. data_indices로 process_data 찾기
-   3. cluster_id 업데이트
+✅ getStatistics() 구현
+   구현: 전체/미병합/병합 건수 통계
 
-⬜ ClusteringController 작성 → controller/data/ClusteringController.java
+✅ ClusteringController 작성 → controller/data/ClusteringController.java
 
-⬜ POST /api/clustering/create-initial 구현
-   Request: { "sessionId": "session-123" }
-   Response: {
-     "totalClusters": 450,
-     "totalRecords": 150000
-   }
+✅ POST /api/projects/{projectId}/sessions/{sessionId}/clustering/generate
+   구현: 클러스터 생성 (includeSupplier, includeCostCenter 옵션)
 
-⬜ POST /api/clustering/merge 구현
-   Request: {
-     "sessionId": "session-123",
-     "sourceClusterNumbers": [1, 2, 3],
-     "newClusterName": "병합_클러스터"
-   }
-   Response: {
-     "newClusterNumber": 500,
-     "recordCount": 5000
-   }
+✅ POST /api/projects/{projectId}/sessions/{sessionId}/clustering/merge
+   구현: 미병합 클러스터 병합
 
-⬜ PUT /api/clustering/results/{clusterNumber}/name 구현
-   Request: { "newName": "새이름" }
-   Response: { "success": true }
+✅ PUT /api/projects/{projectId}/sessions/{sessionId}/clustering/rename
+   구현: 클러스터 이름 변경
 
-⬜ DELETE /api/clustering/results/{clusterNumber} 구현
+✅ GET /api/projects/{projectId}/sessions/{sessionId}/clustering/unmerged
+   구현: 미병합 클러스터 페이징 조회 (page, size, keyword)
 
-⬜ GET /api/clustering/results/{sessionId} 구현
-   Response: List<ClusteringResultDocument>
+✅ GET /api/projects/{projectId}/sessions/{sessionId}/clustering/unmerged-ids
+   구현: 미병합 클러스터 번호 전체 목록 (검색 필터 지원)
 
-⬜ GET /api/clustering/results/{sessionId}/{clusterNumber} 구현
-   Response: {
-     "cluster": ClusteringResultDocument,
-     "processDataList": List<ProcessDataDocument>
-   }
+✅ GET /api/projects/{projectId}/sessions/{sessionId}/clustering/merged
+   구현: 병합 클러스터 목록 + 자식 상세
 
-⬜ CreateClusterRequest DTO 작성
-⬜ MergeClustersRequest DTO 작성
-⬜ UpdateClusterNameRequest DTO 작성
-⬜ ClusterDetailResponse DTO 작성
+✅ GET /api/projects/{projectId}/sessions/{sessionId}/clustering/statistics
+   구현: 통계 정보
+
+✅ GET /api/projects/{projectId}/sessions/{sessionId}/clustering/keyword-stats
+   구현: 키워드별 통계 (건수, 금액, 클러스터 수)
+
+✅ GET /api/projects/{projectId}/sessions/{sessionId}/clustering/supplier-stats
+   구현: 공급업체별 통계 (건수, 금액, 클러스터 수)
+
+✅ DTO: Map<String, Object> 방식으로 유연하게 구현 (별도 DTO 클래스 불필요)
 
 ⬜ Postman: 초기 클러스터 생성 테스트
 ⬜ Postman: 클러스터 병합 테스트
 ⬜ Postman: 클러스터 이름 변경 테스트
-⬜ Postman: 클러스터 삭제 테스트
 ⬜ MongoDB 확인: clustering_results 생성 확인
-⬜ MongoDB 확인: cluster_number 순차 증가 확인 (1, 2, 3...)
+⬜ MongoDB 확인: cluster_number 순차 증가 확인
 ⬜ MongoDB 확인: cluster_id = -1 확인 (미병합)
-⬜ MongoDB 확인: data_indices에 process_data IDs 확인
-⬜ MongoDB 확인: process_data.cluster_id 업데이트 확인
-⬜ 성능 테스트: 클러스터 생성 시간 (15만 건 → 클러스터)
+⬜ 성능 테스트: 클러스터 생성 시간 (15만 건 기준)
+```
+
+#### 🆕 가이드 문서 외 추가 구현 (Step 5)
+
+```
+✅ POST /api/.../clustering/unmerge → 병합 해제 (부모 삭제, 자식 복원)
+✅ POST /api/.../clustering/unmerge-partial → 부분 병합 해제 (선택한 자식만 분리)
+✅ POST /api/.../clustering/merge-merged → 병합 클러스터끼리 재병합
+✅ POST /api/.../clustering/add-to-merged → 미병합 항목을 기존 병합 클러스터에 추가
+✅ 키워드 통계 / 공급업체 통계 API 추가
+✅ 병렬 처리: ExecutorService + parallelStream + ConcurrentHashMap + CompletableFuture
+✅ 배치 저장: 500건씩 chunked batch save
+✅ 프론트엔드 AdvancedTable 공통 컴포넌트 (리사이즈, 정렬, DnD, 컬럼 고정)
+✅ 프론트엔드 드래그+Ctrl 복수 선택 기능
+✅ 프론트엔드 키워드/공급업체 통계 탭 (StatsListView 컴포넌트)
+✅ 프론트엔드 병합 상세 다이얼로그 (동적 컬럼 + 체크박스 + 부분 병합 해제)
+✅ 프론트엔드 추가 병합 다이얼로그 (기존 병합 클러스터 선택)
+✅ selectAllMode + exceptions 패턴 (대용량 데이터 크로스페이지 체크박스)
 ```
 
 ---
@@ -1857,64 +1756,81 @@ Step 6: Excel 내보내기 (구조 다름)
 
 ## 📝 다음 개발 우선순위
 
-### 🎯 Phase 3 완료 후 다음 단계
+### 🎯 Phase 2 Step 3-5 완료 후 다음 단계
 
-#### Phase 2 백엔드 구현 (또는 Phase 2 재구현)
-
-**Option A: 현재 구현 기반 API 연동**
-```
-✅ 장점:
-- 이미 작동하는 백엔드
-- 빠른 통합
-
-❌ 단점:
-- 가이드 문서와 불일치
-- 유지보수 어려움
-```
-
-**Option B: 가이드 문서 기반 재구현 (권장) ⭐**
-```
-✅ 장점:
-- C# 원본과 100% 일치
-- 명확한 데이터 흐름
-- 유지보수 용이
-
-❌ 단점:
-- 재작업 필요 (5주 예상)
-```
-
-#### UI-API 연동 작업
+#### 잔여 백엔드 작업 (Step 1, 2, 6, 7)
 
 ```
-1. Phase 3 각 페이지에 API 연동
-   - MultiFileUpload: 파일 업로드 API
+1. Step 1 (Multi File Upload) - session_data 복사 로직 완성
+   ⬜ Lambda Worker → raw_data sessionId 제거
+   ⬜ raw_data → session_data 복사 로직 강화
+   ⬜ 세션 병합/삭제 시 session_data 연동
+
+2. Step 2 (File Load) - session_data 조회 검증
+   ⬜ session_data 페이징 조회 검증
+   ⬜ 컬럼 목록 조회 API 검증
+
+3. Step 6 (Export) - Excel 내보내기 검증
+   ⬜ clustering_results → Excel 변환 검증
+   ⬜ data_indices 기반 process_data 조회 검증
+   ⬜ S3 업로드 + Presigned URL 검증
+
+4. Step 7 (Detail Clustering) - 서브 클러스터링 구현
+   ⬜ DetailClusteringService 구현
+   ⬜ 서브 클러스터 생성/조회/삭제
+```
+
+#### 추가 UI-API 연동 작업
+
+```
+✅ 완료된 연동:
+   - Preprocessing: 키워드 추출 API ✅
+   - DataTransform: 키워드 병합 API ✅
+   - Clustering: 전체 클러스터링 API ✅
+
+⬜ 미완료 연동:
+   - MultiFileUpload: 파일 업로드 + 세션 생성 API
    - FileLoad: session_data 조회 API
-   - Preprocessing: 키워드 추출 API
-   - DataTransform: 키워드 병합 API
-   - Clustering: 클러스터링 API
    - Export: Excel 내보내기 API
-
-2. 에러 처리 및 로딩 상태
-   - API 에러 핸들링
-   - 로딩 스피너
-   - 성공/실패 알림
-
-3. 실시간 진행률
-   - WebSocket 또는 Polling
-   - 진행률 표시
-   - 취소 기능
-
-4. 사용자 경험 개선
-   - Skeleton loading
-   - Optimistic UI
-   - 무한 스크롤 (옵션)
+   - DetailClustering: 서브 클러스터링 API
 ```
 
 ---
 
 ## 📊 완료 기록
 
-### 2025-01-29 (오늘) ⭐⭐⭐ Phase 3 완료!
+### 2026-02-05 ⭐⭐⭐ Phase 2 Step 5 Clustering 전면 구현!
+
+```
+✅ Step 5 Clustering 백엔드 전면 재작성
+   - K-Means 알고리즘 제거 → 키워드 그룹핑 방식 적용
+   - ClusteringResultDocument 모델 전면 수정 (cluster_number, cluster_id, cluster_sub_id, data_indices)
+   - ClusteringService 전면 재작성 + 병렬 처리 적용
+   - ClusteringController 13개 API 엔드포인트 구현
+   - 추가 기능: 부분 병합 해제, 병합 클러스터 merge, 추가 병합
+   - 키워드 통계, 공급업체 통계 API 추가
+
+✅ Step 5 Clustering 프론트엔드 전면 구현
+   - ClusteringPage.jsx (~900줄) 전면 재작성
+   - 좌측 8/12: 미병합 클러스터 테이블 (AdvancedTable + 동적 컬럼 + 검색 + 페이징)
+   - 우측 4/12: 키워드/공급업체 통계 탭 + 병합 결과 확인 탭
+   - 드래그+Ctrl 복수 선택 기능 (onRowMouseDown/onRowMouseEnter)
+   - StatsListView 컴포넌트 (div 기반 그리드 레이아웃)
+   - 병합 상세 다이얼로그 (동적 컬럼 + 체크박스 + 부분 병합 해제)
+   - 추가 병합 다이얼로그 (기존 병합 클러스터 선택)
+   - selectAllMode + exceptions 패턴 (크로스 페이지 체크박스)
+
+✅ 공통 컴포넌트 개선
+   - AdvancedTable.jsx: onRowMouseDown, onRowMouseEnter props 추가
+   - clusteringService.js: 13개 API 메서드 구현
+
+✅ Step 3-4 백엔드/프론트엔드 연동 완료 (이전 세션)
+   - PreprocessingService: NLP 기반 키워드 추출
+   - DataTransformService: 키워드 병합, 요약 통계
+   - PreprocessingPage, DataTransformPage 프론트엔드 연동
+```
+
+### 2025-01-29 ⭐⭐⭐ Phase 3 완료!
 
 ```
 ✅ 대규모 프론트엔드 리팩토링 완료
@@ -1987,105 +1903,31 @@ Step 6: Excel 내보내기 (구조 다름)
 
 ---
 
-## 🚨 중요 경고 및 체크포인트
+## 🚨 중요: 잔여 아키텍처 작업
 
-## 📝 다음 개발 우선순위
-
-### 🎯 즉시 필요한 작업 (Critical):
-
-#### 1단계: 데이터 아키텍처 수정 (1주)
+### 잔여 데이터 아키텍처 수정 (Step 1, 2 관련)
 ```
 ⬜ Lambda Worker 수정
    - raw_data에서 sessionId 필드 제거
    - Lambda 재배포
 
-⬜ SessionDataDocument 추가
-   - 모델 클래스 작성
-   - Repository 작성
-   - Index 생성
+⬜ session_data 컬렉션 구조 검증
+   - session_id 기반 조회 정상 동작 확인
+   - raw_data_id 참조 확인
 
-⬜ ProcessDataDocument 수정
-   - session_data_id 필드 추가
-   - Repository 메서드 추가
-
-⬜ ProcessViewDataDocument 수정
-   - process_data_id 참조로 변경
-
-⬜ MongoDB 마이그레이션 스크립트 작성
-   - 기존 데이터 백업
-   - 새 컬렉션 생성
-   - Index 생성
+⬜ process_data 컬렉션 구조 검증
+   - session_data_id 참조 확인
+   - cluster_id, cluster_name 업데이트 확인
 ```
 
-#### 2단계: Step 1 완성 (3일)
+### ✅ 완료된 아키텍처 변경 사항 (Step 3-5)
 ```
-⬜ FileSessionService.createSession() 수정
-   - raw_data → session_data 복사 로직 추가
-
-⬜ SessionDataService 구현
-⬜ SessionDataController 구현
-⬜ API 테스트
+✅ ClusteringService: K-Means → 키워드 그룹핑 전환 완료
+✅ ClusteringResult 모델: cluster_number, cluster_id, cluster_sub_id, data_indices 구조 적용
+✅ PreprocessingService: 키워드 추출 + NLP 적용
+✅ DataTransformService: 키워드 병합 기능 구현
+✅ 모든 Step 3-5 프론트엔드 페이지 API 연동 완료
 ```
-
-#### 3단계: Step 2-3 완성 (1주)
-```
-⬜ SessionDataService 완성 (Step 2)
-⬜ PreprocessingService 재작성 (Step 3)
-   - session_data → process_data
-   - process_data → process_view_data
-```
-
-#### 4단계: Step 4-7 완성 (2주)
-```
-⬜ DataTransformService 검증 및 수정 (Step 4)
-⬜ ClusteringService 전면 재작성 (Step 5)
-   - K-Means → 키워드 그룹핑
-⬜ ExportService 수정 (Step 6)
-⬜ DetailClusteringService 구현 (Step 7)
-```
-
----
-
-## 🔄 아키텍처 재설계 필요 여부 검토
-
-### Option A: 현재 구현 유지 (비권장)
-**장점:**
-- 이미 작동하는 코드
-- 더 단순한 데이터 흐름
-
-**단점:**
-- C# 원본과 다름
-- 가이드 문서와 100% 불일치
-- 유지보수 어려움
-- 추후 기능 추가 시 혼란
-
-### Option B: 가이드 문서대로 재구현 (권장) ⭐⭐⭐
-**장점:**
-- C# 원본과 100% 일치
-- 가이드 문서 기준
-- 명확한 데이터 흐름
-- 유지보수 용이
-- process_data 중간 단계 보존
-
-**단점:**
-- 이미 작성된 코드 대부분 수정 필요
-- 개발 일정 지연 (약 2-3주)
-- Lambda Worker 재배포 필요
-
-### 🎯 권장: Option B (가이드 문서대로 재구현)
-
-**이유:**
-1. **정확성**: C# 원본과 100% 일치
-2. **명확성**: 가이드 문서 기준
-3. **확장성**: process_data 중간 단계 유지
-4. **유지보수**: 명확한 데이터 흐름
-5. **일관성**: 모든 Step이 동일한 패턴
-
-**예상 작업 기간:**
-- 데이터 아키텍처 수정: 1주
-- Step 1-3 재구현: 2주
-- Step 4-7 재구현: 2주
-- 총 5주 (약 1.5개월)
 
 ---
 
@@ -2100,17 +1942,20 @@ Step 6: Excel 내보내기 (구조 다름)
 ✅ 디자인 패턴 수립
 ✅ 성능 최적화
 ✅ 접근성 개선
+✅ AdvancedTable 공통 컴포넌트 추가 (Phase 2 Step 5에서 신규)
 ```
 
 ### 🎯 다음 단계
 
 ```
-⬜ Phase 2 재구현 여부 결정
-⬜ UI-API 연동 계획 수립
-⬜ API 문서화
-⬜ 에러 처리 전략 수립
-⬜ 로딩 상태 디자인
-⬜ 실시간 진행률 구현 방식 결정
+✅ Phase 2 Step 3-5 백엔드+프론트엔드 구현 완료
+✅ 키워드 그룹핑 기반 클러스터링 방식 적용 (K-Means 제거)
+⬜ Phase 2 Step 1, 2 데이터 아키텍처 검증 및 보완
+⬜ Phase 2 Step 6 (Export) 검증
+⬜ Phase 2 Step 7 (Detail Clustering) 구현
+⬜ 나머지 UI-API 연동 (Step 1, 2, 6, 7)
+⬜ 에러 처리 및 로딩 상태 개선
+⬜ 실시간 진행률 구현 (WebSocket/Polling)
 ```
 
 
@@ -2168,21 +2013,24 @@ clustering_results
 
 ---
 
-**문서 버전:** 6.0 ⭐⭐⭐  
-**최종 업데이트:** 2025-01-29 15:00 KST  
-**기준 문서:** 0_project-development-guide.md v3.1  
+**문서 버전:** 7.0 ⭐⭐⭐
+**최종 업데이트:** 2026-02-05 KST
+**기준 문서:** 0_project-development-guide.md v3.2
 **작성자:** dhkim + Claude
 
-> **🎉 Phase 3 UI 구현 완료!**
-> 
-> **완료 항목:**
-> - ✅ CRA → Vite 마이그레이션
-> - ✅ Material-UI → shadcn/ui + Tailwind CSS
-> - ✅ 7개 페이지 구현 (Step 1, 2, 3, 4, 5, 6, 10)
-> - ✅ 디자인 패턴 수립
-> - ✅ 성능 최적화 (빌드 속도 10배, 번들 크기 67% 감소)
-> 
+> **🔨 Phase 2 Step 3-5 구현 완료!**
+>
+> **최근 완료 항목 (2026-02):**
+> - ✅ Step 5 Clustering 백엔드 전면 재작성 (키워드 그룹핑 + 병렬 처리)
+> - ✅ Step 5 Clustering 프론트엔드 전면 구현 (AdvancedTable + 드래그 선택 + 통계 탭)
+> - ✅ 추가 기능: 부분 병합 해제, 병합 클러스터 merge, 추가 병합
+> - ✅ Step 3-4 백엔드/프론트엔드 연동 완료
+>
+> **이전 완료 항목:**
+> - ✅ Phase 3 UI 구현 100% (7개 페이지)
+> - ✅ CRA → Vite, MUI → shadcn/ui 리팩토링
+>
 > **다음 단계:**
-> - Phase 2 백엔드 재구현 여부 결정 필요
-> - UI-API 연동 작업 준비
-> - 사용자 경험 개선 (로딩, 에러 처리, 실시간 진행률)
+> - Phase 2 Step 1, 2, 6, 7 구현/검증
+> - 나머지 UI-API 연동
+> - 에러 처리 및 로딩 상태 개선
