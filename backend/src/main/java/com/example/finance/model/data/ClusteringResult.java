@@ -98,6 +98,18 @@ public class ClusteringResult {
     private List<String> dataIndices = new ArrayList<>();
 
     /**
+     * 공급업체명 (클러스터링 조건에 공급업체가 포함된 경우)
+     */
+    @Field("supplier")
+    private String supplier;
+
+    /**
+     * 코스트센터/부서명 (클러스터링 조건에 코스트센터가 포함된 경우)
+     */
+    @Field("department")
+    private String department;
+
+    /**
      * 생성 시간
      */
     @Field("created_at")
