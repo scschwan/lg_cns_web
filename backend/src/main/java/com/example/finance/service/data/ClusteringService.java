@@ -15,6 +15,8 @@ import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
 import java.util.*;
+import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 
 @Service
@@ -25,8 +27,11 @@ public class ClusteringService {
     private final MongoTemplate mongoTemplate;
     private final ClusteringResultRepository clusteringResultRepository;
 
+    private static final ExecutorService EXECUTOR = Executors.newFixedThreadPool(
+            Math.max(2, Runtime.getRuntime().availableProcessors()));
+
     // ============================================================
-    // 1. 미병합 클러스터 생성
+    // 1. 미병합 클러스터 생성 (병렬 처리)
     // ============================================================
 
     public Map<String, Object> generateUnmergedClusters(
@@ -49,10 +54,10 @@ public class ClusteringService {
         List<Document> pvDocs = mongoTemplate.find(query, Document.class, "process_view_data");
         log.info("process_view_data 조회: {}건", pvDocs.size());
 
-        // 그룹핑 키: 키워드세트 + (옵션) supplier + (옵션) department
-        Map<String, List<Document>> groupMap = new LinkedHashMap<>();
+        // 병렬 그룹핑: ConcurrentHashMap 사용
+        ConcurrentHashMap<String, List<Document>> groupMap = new ConcurrentHashMap<>();
 
-        for (Document doc : pvDocs) {
+        pvDocs.parallelStream().forEach(doc -> {
             Document kwDoc = (Document) doc.get("keywords");
             List<String> finalKeywords = new ArrayList<>();
             if (kwDoc != null) {
@@ -74,64 +79,66 @@ public class ClusteringService {
                 keyBuilder.append("||D:").append(dept != null ? dept : "");
             }
 
-            groupMap.computeIfAbsent(keyBuilder.toString(), k -> new ArrayList<>()).add(doc);
-        }
+            groupMap.computeIfAbsent(keyBuilder.toString(), k ->
+                    Collections.synchronizedList(new ArrayList<>())).add(doc);
+        });
 
-        List<ClusteringResult> clusters = new ArrayList<>();
-        int clusterNumber = 1;
+        // 병렬로 클러스터 객체 생성
+        AtomicInteger clusterCounter = new AtomicInteger(1);
+        List<ClusteringResult> clusters = groupMap.entrySet().parallelStream()
+                .map(entry -> {
+                    List<Document> docs = entry.getValue();
+                    Document first = docs.get(0);
 
-        for (Map.Entry<String, List<Document>> entry : groupMap.entrySet()) {
-            List<Document> docs = entry.getValue();
-            Document first = docs.get(0);
+                    List<String> keywords = new ArrayList<>();
+                    Document firstKwDoc = (Document) first.get("keywords");
+                    if (firstKwDoc != null) {
+                        @SuppressWarnings("unchecked")
+                        List<String> kws = (List<String>) firstKwDoc.get("final_keywords");
+                        if (kws != null) keywords = new ArrayList<>(kws);
+                    }
 
-            List<String> keywords = new ArrayList<>();
-            Document firstKwDoc = (Document) first.get("keywords");
-            if (firstKwDoc != null) {
-                @SuppressWarnings("unchecked")
-                List<String> kws = (List<String>) firstKwDoc.get("final_keywords");
-                if (kws != null) keywords = new ArrayList<>(kws);
-            }
+                    List<String> dataIndices = docs.stream()
+                            .map(d -> d.getString("raw_data_id"))
+                            .filter(Objects::nonNull)
+                            .collect(Collectors.toList());
 
-            List<String> dataIndices = docs.stream()
-                    .map(d -> d.getString("raw_data_id"))
-                    .filter(Objects::nonNull)
-                    .collect(Collectors.toList());
+                    double totalAmount = docs.stream()
+                            .mapToDouble(d -> {
+                                Object moneyObj = d.get("money");
+                                if (moneyObj == null) return 0;
+                                try { return Double.parseDouble(moneyObj.toString()); }
+                                catch (NumberFormatException e) { return 0; }
+                            }).sum();
 
-            double totalAmount = 0;
-            for (Document doc : docs) {
-                Object moneyObj = doc.get("money");
-                if (moneyObj != null) {
-                    try { totalAmount += Double.parseDouble(moneyObj.toString()); }
-                    catch (NumberFormatException ignored) {}
-                }
-            }
+                    String supplierVal = includeSupplier ? first.getString("supplier") : null;
+                    String deptVal = includeCostCenter ? first.getString("department") : null;
+                    String clusterName = keywords.isEmpty() ? "(키워드 없음)" : String.join("_", keywords);
 
-            String supplierVal = includeSupplier ? first.getString("supplier") : null;
-            String deptVal = includeCostCenter ? first.getString("department") : null;
+                    return ClusteringResult.builder()
+                            .sessionId(sessionId)
+                            .clusterNumber(clusterCounter.getAndIncrement())
+                            .clusterId(-1)
+                            .clusterSubId(-1)
+                            .clusterName(clusterName)
+                            .keywords(keywords)
+                            .count(docs.size())
+                            .totalAmount(totalAmount)
+                            .dataIndices(dataIndices)
+                            .supplier(supplierVal)
+                            .department(deptVal)
+                            .createdAt(LocalDateTime.now())
+                            .build();
+                })
+                .collect(Collectors.toList());
 
-            String clusterName = keywords.isEmpty() ? "(키워드 없음)" : String.join("_", keywords);
-
-            ClusteringResult cluster = ClusteringResult.builder()
-                    .sessionId(sessionId)
-                    .clusterNumber(clusterNumber)
-                    .clusterId(-1)
-                    .clusterSubId(-1)
-                    .clusterName(clusterName)
-                    .keywords(keywords)
-                    .count(docs.size())
-                    .totalAmount(totalAmount)
-                    .dataIndices(dataIndices)
-                    .supplier(supplierVal)
-                    .department(deptVal)
-                    .createdAt(LocalDateTime.now())
-                    .build();
-
-            clusters.add(cluster);
-            clusterNumber++;
-        }
-
+        // 배치 저장 (대량 데이터 시 청크 분할)
         if (!clusters.isEmpty()) {
-            clusteringResultRepository.saveAll(clusters);
+            int batchSize = 500;
+            for (int i = 0; i < clusters.size(); i += batchSize) {
+                int end = Math.min(i + batchSize, clusters.size());
+                clusteringResultRepository.saveAll(clusters.subList(i, end));
+            }
         }
 
         long elapsed = System.currentTimeMillis() - start;
@@ -147,7 +154,7 @@ public class ClusteringService {
     }
 
     // ============================================================
-    // 2. 미병합 클러스터 조회 (페이징 + 대표 데이터)
+    // 2. 미병합 클러스터 조회 (페이징 + 대표 데이터, 병렬 조회)
     // ============================================================
 
     public Map<String, Object> getUnmergedClusters(
@@ -156,7 +163,6 @@ public class ClusteringService {
         Criteria criteria = Criteria.where("session_id").is(sessionId)
                 .and("cluster_id").is(-1);
 
-        // 병합 클러스터(부모)는 제외: 자식이 있는 클러스터 번호를 찾아서 제외
         Set<Integer> mergedParentNumbers = getMergedParentNumbers(sessionId);
         if (!mergedParentNumbers.isEmpty()) {
             criteria = criteria.and("cluster_number").nin(mergedParentNumbers);
@@ -166,20 +172,20 @@ public class ClusteringService {
             criteria = criteria.and("keywords").is(keyword);
         }
 
-        long totalCount = mongoTemplate.count(new Query(criteria), ClusteringResult.class);
+        // 병렬 조회: count와 데이터를 동시에 가져오기
+        Criteria finalCriteria = criteria;
+        CompletableFuture<Long> countFuture = CompletableFuture.supplyAsync(
+                () -> mongoTemplate.count(new Query(finalCriteria), ClusteringResult.class), EXECUTOR);
+        CompletableFuture<List<String>> colFuture = CompletableFuture.supplyAsync(
+                () -> getVisibleColumns(sessionId), EXECUTOR);
 
         Query query = new Query(criteria)
                 .with(Sort.by("cluster_number"))
                 .skip((long) page * size)
                 .limit(size);
-
         List<ClusteringResult> clusters = mongoTemplate.find(query, ClusteringResult.class);
 
-        // visible columns 조회
-        List<String> visibleColumns = getVisibleColumns(sessionId);
-
         // 대표 데이터 (각 클러스터의 data_indices[0])
-        List<Map<String, Object>> dataWithRepresentative = new ArrayList<>();
         Set<String> firstRawIds = new LinkedHashSet<>();
         for (ClusteringResult c : clusters) {
             if (c.getDataIndices() != null && !c.getDataIndices().isEmpty()) {
@@ -189,6 +195,18 @@ public class ClusteringService {
 
         Map<String, Map<String, Object>> rawIdToData = batchFetchSessionData(sessionId, firstRawIds);
 
+        long totalCount;
+        List<String> visibleColumns;
+        try {
+            totalCount = countFuture.get(10, TimeUnit.SECONDS);
+            visibleColumns = colFuture.get(10, TimeUnit.SECONDS);
+        } catch (Exception e) {
+            log.warn("병렬 조회 실패, 동기 조회로 fallback", e);
+            totalCount = mongoTemplate.count(new Query(finalCriteria), ClusteringResult.class);
+            visibleColumns = getVisibleColumns(sessionId);
+        }
+
+        List<Map<String, Object>> dataWithRepresentative = new ArrayList<>();
         for (ClusteringResult c : clusters) {
             Map<String, Object> row = new LinkedHashMap<>();
             row.put("clusterNumber", c.getClusterNumber());
@@ -199,7 +217,6 @@ public class ClusteringService {
             row.put("supplier", c.getSupplier());
             row.put("department", c.getDepartment());
 
-            // 대표 데이터 추가
             if (c.getDataIndices() != null && !c.getDataIndices().isEmpty()) {
                 Map<String, Object> repData = rawIdToData.get(c.getDataIndices().get(0));
                 if (repData != null) {
@@ -220,28 +237,30 @@ public class ClusteringService {
     }
 
     // ============================================================
-    // 3. 키워드 통계
+    // 3. 키워드 통계 (병렬 집계)
     // ============================================================
 
     public List<Map<String, Object>> getKeywordStats(String sessionId) {
         List<ClusteringResult> unmerged = getActiveUnmergedClusters(sessionId);
 
-        Map<String, long[]> kwStats = new LinkedHashMap<>(); // keyword -> [count, totalAmount*100]
+        ConcurrentHashMap<String, long[]> kwStats = new ConcurrentHashMap<>();
 
-        for (ClusteringResult c : unmerged) {
+        unmerged.parallelStream().forEach(c -> {
             for (String kw : c.getKeywords()) {
-                long[] stats = kwStats.computeIfAbsent(kw, k -> new long[]{0, 0});
-                stats[0] += c.getCount();
-                stats[1] += (long) (c.getTotalAmount() * 100);
+                kwStats.compute(kw, (k, v) -> {
+                    if (v == null) v = new long[]{0, 0};
+                    v[0] += c.getCount();
+                    v[1] += (long) (c.getTotalAmount() * 100);
+                    return v;
+                });
             }
-        }
+        });
 
-        List<Map<String, Object>> result = new ArrayList<>();
-        int rank = 1;
-        // count 기준 내림차순 정렬
         List<Map.Entry<String, long[]>> sorted = new ArrayList<>(kwStats.entrySet());
         sorted.sort((a, b) -> Long.compare(b.getValue()[0], a.getValue()[0]));
 
+        List<Map<String, Object>> result = new ArrayList<>();
+        int rank = 1;
         for (Map.Entry<String, long[]> entry : sorted) {
             Map<String, Object> stat = new LinkedHashMap<>();
             stat.put("rank", rank++);
@@ -254,28 +273,31 @@ public class ClusteringService {
     }
 
     // ============================================================
-    // 4. 공급업체 통계
+    // 4. 공급업체 통계 (병렬 집계)
     // ============================================================
 
     public List<Map<String, Object>> getSupplierStats(String sessionId) {
         List<ClusteringResult> unmerged = getActiveUnmergedClusters(sessionId);
 
-        // supplier 필드가 있는 클러스터만 대상 (클러스터링 조건에 공급업체가 포함된 경우)
-        Map<String, long[]> supStats = new LinkedHashMap<>();
+        ConcurrentHashMap<String, long[]> supStats = new ConcurrentHashMap<>();
 
-        for (ClusteringResult c : unmerged) {
+        unmerged.parallelStream().forEach(c -> {
             String sup = c.getSupplier();
             if (sup == null || sup.isBlank()) sup = "(미지정)";
-            long[] stats = supStats.computeIfAbsent(sup, k -> new long[]{0, 0});
-            stats[0] += c.getCount();
-            stats[1] += (long) (c.getTotalAmount() * 100);
-        }
+            String finalSup = sup;
+            supStats.compute(finalSup, (k, v) -> {
+                if (v == null) v = new long[]{0, 0};
+                v[0] += c.getCount();
+                v[1] += (long) (c.getTotalAmount() * 100);
+                return v;
+            });
+        });
 
-        List<Map<String, Object>> result = new ArrayList<>();
-        int rank = 1;
         List<Map.Entry<String, long[]>> sorted = new ArrayList<>(supStats.entrySet());
         sorted.sort((a, b) -> Long.compare(b.getValue()[0], a.getValue()[0]));
 
+        List<Map<String, Object>> result = new ArrayList<>();
+        int rank = 1;
         for (Map.Entry<String, long[]> entry : sorted) {
             Map<String, Object> stat = new LinkedHashMap<>();
             stat.put("rank", rank++);
@@ -287,9 +309,6 @@ public class ClusteringService {
         return result;
     }
 
-    /**
-     * 공급업체 조건으로 클러스터링 되었는지 확인
-     */
     public boolean hasSupplierClustering(String sessionId) {
         Query query = new Query(Criteria.where("session_id").is(sessionId)
                 .and("supplier").ne(null))
@@ -298,7 +317,7 @@ public class ClusteringService {
     }
 
     // ============================================================
-    // 5. 병합 클러스터 목록
+    // 5. 병합 클러스터 목록 (children에 대표데이터 포함)
     // ============================================================
 
     public List<Map<String, Object>> getMergedClusters(String sessionId) {
@@ -309,6 +328,16 @@ public class ClusteringService {
                 .filter(c -> c.getClusterId() > 0)
                 .map(ClusteringResult::getClusterId)
                 .collect(Collectors.toSet());
+
+        // 대표데이터 일괄 조회
+        Set<String> allFirstRawIds = new LinkedHashSet<>();
+        for (ClusteringResult c : all) {
+            if (c.getDataIndices() != null && !c.getDataIndices().isEmpty()) {
+                allFirstRawIds.add(c.getDataIndices().get(0));
+            }
+        }
+        Map<String, Map<String, Object>> rawIdToData = batchFetchSessionData(sessionId, allFirstRawIds);
+        List<String> visibleColumns = getVisibleColumns(sessionId);
 
         List<Map<String, Object>> result = new ArrayList<>();
         for (ClusteringResult cluster : all) {
@@ -324,6 +353,7 @@ public class ClusteringService {
                 merged.put("count", cluster.getCount());
                 merged.put("totalAmount", cluster.getTotalAmount());
                 merged.put("childCount", children.size());
+                merged.put("columns", visibleColumns);
 
                 List<Map<String, Object>> childList = children.stream()
                         .map(c -> {
@@ -333,6 +363,13 @@ public class ClusteringService {
                             child.put("keywords", c.getKeywords());
                             child.put("count", c.getCount());
                             child.put("totalAmount", c.getTotalAmount());
+                            child.put("supplier", c.getSupplier());
+                            child.put("department", c.getDepartment());
+                            // 대표데이터
+                            if (c.getDataIndices() != null && !c.getDataIndices().isEmpty()) {
+                                Map<String, Object> repData = rawIdToData.get(c.getDataIndices().get(0));
+                                if (repData != null) child.put("representativeData", repData);
+                            }
                             return child;
                         })
                         .collect(Collectors.toList());
@@ -438,9 +475,8 @@ public class ClusteringService {
 
         clusteringResultRepository.save(merged);
 
-        for (ClusteringResult target : targets) {
-            target.setClusterId(newClusterNumber);
-        }
+        // 병렬 업데이트
+        targets.parallelStream().forEach(target -> target.setClusterId(newClusterNumber));
         clusteringResultRepository.saveAll(targets);
 
         log.info("클러스터 병합 완료: #{}, {}개 합침", newClusterNumber, targets.size());
@@ -455,7 +491,7 @@ public class ClusteringService {
     }
 
     // ============================================================
-    // 8. 클러스터 병합 해제
+    // 8. 클러스터 병합 해제 (전체)
     // ============================================================
 
     public Map<String, Object> unmergeClusters(String sessionId, Integer mergedClusterNumber) {
@@ -473,9 +509,7 @@ public class ClusteringService {
             throw new BusinessException("NO_CHILDREN", "하위 클러스터가 없습니다.");
         }
 
-        for (ClusteringResult child : children) {
-            child.setClusterId(-1);
-        }
+        children.parallelStream().forEach(child -> child.setClusterId(-1));
         clusteringResultRepository.saveAll(children);
         clusteringResultRepository.delete(merged);
 
@@ -488,7 +522,204 @@ public class ClusteringService {
     }
 
     // ============================================================
-    // 9. 클러스터명 수정
+    // 9. 부분 병합 해제 (선택한 자식만 해제)
+    // ============================================================
+
+    public Map<String, Object> unmergePartialClusters(
+            String sessionId, Integer mergedClusterNumber, List<Integer> childClusterNumbers) {
+
+        log.info("부분 병합 해제: sessionId={}, merged={}, children={}",
+                sessionId, mergedClusterNumber, childClusterNumbers);
+
+        ClusteringResult merged = clusteringResultRepository
+                .findBySessionIdAndClusterNumber(sessionId, mergedClusterNumber)
+                .orElseThrow(() -> new BusinessException("CLUSTER_NOT_FOUND",
+                        "병합 클러스터를 찾을 수 없습니다: #" + mergedClusterNumber));
+
+        List<ClusteringResult> allChildren = clusteringResultRepository
+                .findBySessionIdAndClusterIdOrderByClusterNumberAsc(sessionId, mergedClusterNumber);
+
+        List<ClusteringResult> toRemove = allChildren.stream()
+                .filter(c -> childClusterNumbers.contains(c.getClusterNumber()))
+                .collect(Collectors.toList());
+
+        if (toRemove.isEmpty()) {
+            throw new BusinessException("NO_CHILDREN", "해제할 하위 클러스터가 없습니다.");
+        }
+
+        // 선택한 자식들 해제
+        toRemove.parallelStream().forEach(child -> child.setClusterId(-1));
+        clusteringResultRepository.saveAll(toRemove);
+
+        // 남은 자식이 있으면 부모 갱신, 없으면 부모 삭제
+        List<ClusteringResult> remaining = allChildren.stream()
+                .filter(c -> !childClusterNumbers.contains(c.getClusterNumber()))
+                .collect(Collectors.toList());
+
+        if (remaining.isEmpty()) {
+            clusteringResultRepository.delete(merged);
+        } else {
+            // 부모 재계산
+            Set<String> allKeywords = new LinkedHashSet<>();
+            List<String> allDataIndices = new ArrayList<>();
+            int totalCount = 0;
+            double totalAmount = 0;
+            for (ClusteringResult child : remaining) {
+                allKeywords.addAll(child.getKeywords());
+                allDataIndices.addAll(child.getDataIndices());
+                totalCount += child.getCount();
+                totalAmount += child.getTotalAmount();
+            }
+            merged.setKeywords(new ArrayList<>(allKeywords));
+            merged.setClusterName(String.join("_", allKeywords));
+            merged.setCount(totalCount);
+            merged.setTotalAmount(totalAmount);
+            merged.setDataIndices(allDataIndices);
+            clusteringResultRepository.save(merged);
+        }
+
+        Map<String, Object> result = new HashMap<>();
+        result.put("removedCount", toRemove.size());
+        result.put("remainingCount", remaining.size());
+        result.put("parentDeleted", remaining.isEmpty());
+        return result;
+    }
+
+    // ============================================================
+    // 10. 병합 클러스터끼리 병합
+    // ============================================================
+
+    public Map<String, Object> mergeMergedClusters(String sessionId, List<Integer> mergedClusterNumbers) {
+        log.info("병합 클러스터 merge: sessionId={}, targets={}", sessionId, mergedClusterNumbers);
+
+        if (mergedClusterNumbers == null || mergedClusterNumbers.size() < 2) {
+            throw new BusinessException("MERGE_MIN_COUNT", "2개 이상의 병합 클러스터를 선택해야 합니다.");
+        }
+
+        List<ClusteringResult> all = clusteringResultRepository
+                .findBySessionIdOrderByClusterNumberAsc(sessionId);
+
+        // 대상 병합 클러스터(부모) 찾기
+        List<ClusteringResult> targetParents = all.stream()
+                .filter(c -> mergedClusterNumbers.contains(c.getClusterNumber()))
+                .collect(Collectors.toList());
+
+        if (targetParents.size() != mergedClusterNumbers.size()) {
+            throw new BusinessException("CLUSTER_NOT_FOUND", "일부 병합 클러스터를 찾을 수 없습니다.");
+        }
+
+        // 모든 자식 수집
+        List<ClusteringResult> allChildrenToMove = all.stream()
+                .filter(c -> mergedClusterNumbers.contains(c.getClusterId()))
+                .collect(Collectors.toList());
+
+        // 새 병합 클러스터 생성
+        int newClusterNumber = getNextClusterNumber(sessionId);
+        Set<String> allKeywords = new LinkedHashSet<>();
+        List<String> allDataIndices = new ArrayList<>();
+        int totalCount = 0;
+        double totalAmount = 0;
+
+        for (ClusteringResult child : allChildrenToMove) {
+            allKeywords.addAll(child.getKeywords());
+            allDataIndices.addAll(child.getDataIndices());
+            totalCount += child.getCount();
+            totalAmount += child.getTotalAmount();
+        }
+
+        String mergedName = String.join("_", allKeywords);
+
+        ClusteringResult newParent = ClusteringResult.builder()
+                .sessionId(sessionId)
+                .clusterNumber(newClusterNumber)
+                .clusterId(-1)
+                .clusterSubId(-1)
+                .clusterName(mergedName)
+                .keywords(new ArrayList<>(allKeywords))
+                .count(totalCount)
+                .totalAmount(totalAmount)
+                .dataIndices(allDataIndices)
+                .createdAt(LocalDateTime.now())
+                .build();
+
+        clusteringResultRepository.save(newParent);
+
+        // 모든 자식을 새 부모로 이동
+        allChildrenToMove.parallelStream().forEach(child -> child.setClusterId(newClusterNumber));
+        clusteringResultRepository.saveAll(allChildrenToMove);
+
+        // 기존 부모 삭제
+        clusteringResultRepository.deleteAll(targetParents);
+
+        log.info("병합 클러스터 merge 완료: #{}, {}개 자식", newClusterNumber, allChildrenToMove.size());
+
+        Map<String, Object> result = new HashMap<>();
+        result.put("mergedClusterNumber", newClusterNumber);
+        result.put("mergedClusterName", mergedName);
+        result.put("childCount", allChildrenToMove.size());
+        result.put("deletedParentCount", targetParents.size());
+        return result;
+    }
+
+    // ============================================================
+    // 11. 추가 병합 (기존 병합 클러스터에 미병합 클러스터 추가)
+    // ============================================================
+
+    public Map<String, Object> addToMergedCluster(
+            String sessionId, Integer targetMergedClusterNumber, List<Integer> clusterNumbers) {
+
+        log.info("추가 병합: sessionId={}, target={}, additions={}",
+                sessionId, targetMergedClusterNumber, clusterNumbers);
+
+        ClusteringResult parent = clusteringResultRepository
+                .findBySessionIdAndClusterNumber(sessionId, targetMergedClusterNumber)
+                .orElseThrow(() -> new BusinessException("CLUSTER_NOT_FOUND",
+                        "대상 병합 클러스터를 찾을 수 없습니다: #" + targetMergedClusterNumber));
+
+        List<ClusteringResult> targets = clusteringResultRepository
+                .findBySessionIdAndClusterNumberIn(sessionId, clusterNumbers);
+
+        if (targets.isEmpty()) {
+            throw new BusinessException("CLUSTER_NOT_FOUND", "추가할 클러스터를 찾을 수 없습니다.");
+        }
+
+        // 자식으로 편입
+        for (ClusteringResult target : targets) {
+            target.setClusterId(targetMergedClusterNumber);
+        }
+        clusteringResultRepository.saveAll(targets);
+
+        // 부모 재계산 (기존 자식 + 새 자식)
+        List<ClusteringResult> allChildren = clusteringResultRepository
+                .findBySessionIdAndClusterIdOrderByClusterNumberAsc(sessionId, targetMergedClusterNumber);
+
+        Set<String> allKeywords = new LinkedHashSet<>();
+        List<String> allDataIndices = new ArrayList<>();
+        int totalCount = 0;
+        double totalAmount = 0;
+        for (ClusteringResult child : allChildren) {
+            allKeywords.addAll(child.getKeywords());
+            allDataIndices.addAll(child.getDataIndices());
+            totalCount += child.getCount();
+            totalAmount += child.getTotalAmount();
+        }
+
+        parent.setKeywords(new ArrayList<>(allKeywords));
+        parent.setClusterName(String.join("_", allKeywords));
+        parent.setCount(totalCount);
+        parent.setTotalAmount(totalAmount);
+        parent.setDataIndices(allDataIndices);
+        clusteringResultRepository.save(parent);
+
+        Map<String, Object> result = new HashMap<>();
+        result.put("addedCount", targets.size());
+        result.put("totalChildCount", allChildren.size());
+        result.put("mergedClusterNumber", targetMergedClusterNumber);
+        return result;
+    }
+
+    // ============================================================
+    // 12. 클러스터명 수정
     // ============================================================
 
     public void updateClusterName(String sessionId, Integer clusterNumber, String newName) {
@@ -501,7 +732,7 @@ public class ClusteringService {
     }
 
     // ============================================================
-    // 10. 전체 미병합 클러스터 번호 조회 (selectAll 병합용)
+    // 13. 전체 미병합 클러스터 번호 조회 (selectAll 병합용)
     // ============================================================
 
     public List<Integer> getAllUnmergedClusterNumbers(String sessionId, String keyword) {
@@ -537,9 +768,6 @@ public class ClusteringService {
         return (last != null && last.getClusterNumber() != null) ? last.getClusterNumber() + 1 : 1;
     }
 
-    /**
-     * 활성 미병합 클러스터 목록 (병합 부모 제외)
-     */
     private List<ClusteringResult> getActiveUnmergedClusters(String sessionId) {
         List<ClusteringResult> all = clusteringResultRepository
                 .findBySessionIdOrderByClusterNumberAsc(sessionId);
@@ -554,9 +782,6 @@ public class ClusteringService {
                 .collect(Collectors.toList());
     }
 
-    /**
-     * 병합 부모 클러스터 번호 조회
-     */
     private Set<Integer> getMergedParentNumbers(String sessionId) {
         List<ClusteringResult> all = clusteringResultRepository
                 .findBySessionIdOrderByClusterNumberAsc(sessionId);
@@ -566,9 +791,6 @@ public class ClusteringService {
                 .collect(Collectors.toSet());
     }
 
-    /**
-     * visible columns 조회 (column_mapping)
-     */
     private List<String> getVisibleColumns(String sessionId) {
         Query query = new Query(
                 Criteria.where("session_id").is(sessionId)
@@ -580,9 +802,6 @@ public class ClusteringService {
                 .collect(Collectors.toList());
     }
 
-    /**
-     * session_data 배치 조회 (raw_data_id 기반)
-     */
     private Map<String, Map<String, Object>> batchFetchSessionData(
             String sessionId, Set<String> rawDataIds) {
 

@@ -130,6 +130,49 @@ public class ClusteringController {
         return ResponseEntity.ok(clusteringService.unmergeClusters(sessionId, mergedClusterNumber));
     }
 
+    @PostMapping("/unmerge-partial")
+    public ResponseEntity<Map<String, Object>> unmergePartialClusters(
+            @PathVariable String projectId,
+            @PathVariable String sessionId,
+            @RequestBody Map<String, Object> body,
+            @CurrentUser UserPrincipal userPrincipal) {
+
+        projectService.getProject(projectId, userPrincipal.getId());
+        Integer mergedClusterNumber = (Integer) body.get("mergedClusterNumber");
+        @SuppressWarnings("unchecked")
+        List<Integer> childClusterNumbers = (List<Integer>) body.get("childClusterNumbers");
+        return ResponseEntity.ok(
+                clusteringService.unmergePartialClusters(sessionId, mergedClusterNumber, childClusterNumbers));
+    }
+
+    @PostMapping("/merge-merged")
+    public ResponseEntity<Map<String, Object>> mergeMergedClusters(
+            @PathVariable String projectId,
+            @PathVariable String sessionId,
+            @RequestBody Map<String, Object> body,
+            @CurrentUser UserPrincipal userPrincipal) {
+
+        projectService.getProject(projectId, userPrincipal.getId());
+        @SuppressWarnings("unchecked")
+        List<Integer> mergedClusterNumbers = (List<Integer>) body.get("mergedClusterNumbers");
+        return ResponseEntity.ok(clusteringService.mergeMergedClusters(sessionId, mergedClusterNumbers));
+    }
+
+    @PostMapping("/add-to-merged")
+    public ResponseEntity<Map<String, Object>> addToMergedCluster(
+            @PathVariable String projectId,
+            @PathVariable String sessionId,
+            @RequestBody Map<String, Object> body,
+            @CurrentUser UserPrincipal userPrincipal) {
+
+        projectService.getProject(projectId, userPrincipal.getId());
+        Integer targetMergedClusterNumber = (Integer) body.get("targetMergedClusterNumber");
+        @SuppressWarnings("unchecked")
+        List<Integer> clusterNumbers = (List<Integer>) body.get("clusterNumbers");
+        return ResponseEntity.ok(
+                clusteringService.addToMergedCluster(sessionId, targetMergedClusterNumber, clusterNumbers));
+    }
+
     @PutMapping("/rename")
     public ResponseEntity<Map<String, Object>> renameCluster(
             @PathVariable String projectId,
