@@ -63,4 +63,18 @@ public class User {
     @Field("is_active")
     @Builder.Default
     private Boolean isActive = true;
+
+    /**
+     * 사용자 역할: "USER" | "ADMIN"
+     */
+    @Field("role")
+    @Builder.Default
+    private String role = "USER";
+
+    /**
+     * 관리자 승인 여부
+     */
+    @Field("is_approved")
+    @Builder.Default
+    private Boolean isApproved = false;
 }

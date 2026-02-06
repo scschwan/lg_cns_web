@@ -12,14 +12,14 @@ const authService = {
         const response = await api.post('/api/auth/login', credentials);
 
         // 백엔드 응답 구조에 맞게 수정
-        const { accessToken, refreshToken, userId, email, name } = response.data;
+        const { accessToken, refreshToken, userId, email, name, role } = response.data;
 
         // 토큰 저장
         localStorage.setItem('authToken', accessToken);
         localStorage.setItem('refreshToken', refreshToken);
 
         // 사용자 정보 저장
-        const user = { userId, email, name };
+        const user = { userId, email, name, role };
         localStorage.setItem('user', JSON.stringify(user));
 
         return response.data;

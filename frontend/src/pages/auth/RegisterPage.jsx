@@ -109,7 +109,7 @@ export default function RegisterPage() {
                         <Alert className="bg-green-50 text-green-800 border-green-200">
                             <CheckCircle2 className="h-4 w-4" />
                             <AlertDescription>
-                                회원가입이 완료되었습니다! 로그인 페이지로 이동합니다...
+                                회원가입이 완료되었습니다! 관리자 승인 후 로그인할 수 있습니다.
                             </AlertDescription>
                         </Alert>
                     )}

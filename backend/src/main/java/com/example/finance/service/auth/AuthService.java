@@ -80,6 +80,10 @@ public class AuthService {
             throw new InvalidCredentialsException("비활성화된 계정입니다");
         }
 
+        if (!Boolean.TRUE.equals(user.getIsApproved())) {
+            throw new InvalidCredentialsException("관리자 승인을 기다려주세요");
+        }
+
         String accessToken = jwtTokenProvider.createAccessToken(user.getId(), user.getEmail());
         String refreshToken = jwtTokenProvider.createRefreshToken(user.getId());
 
@@ -94,6 +98,7 @@ public class AuthService {
                 .userId(user.getId())
                 .email(user.getEmail())
                 .name(user.getName())
+                .role(user.getRole())
                 .build();
     }
 
@@ -110,7 +115,7 @@ public class AuthService {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new UserNotFoundException("사용자를 찾을 수 없습니다: " + userId));
 
-        if (!user.getIsActive()) {
+        if (!user.getIsActive() || !Boolean.TRUE.equals(user.getIsApproved())) {
             throw new InvalidCredentialsException("비활성화된 계정입니다");
         }
 
@@ -118,6 +123,7 @@ public class AuthService {
         userInfo.put("userId", user.getId());
         userInfo.put("email", user.getEmail());
         userInfo.put("name", user.getName());
+        userInfo.put("role", user.getRole());
 
         return userInfo;
     }
