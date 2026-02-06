@@ -1,9 +1,9 @@
-import React, { useEffect } from 'react';
+import React from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 
-function PrivateRoute({ children }) {
-  const { isAuthenticated, loading } = useAuth();
+function PrivateRoute({ children, requireAdmin = false }) {
+  const { user, isAuthenticated, loading } = useAuth();
   const location = useLocation();
 
   if (loading) {
@@ -15,8 +15,11 @@ function PrivateRoute({ children }) {
   }
 
   if (!isAuthenticated) {
-    // 현재 경로를 state로 전달하여 로그인 후 원래 페이지로 복귀 가능
     return <Navigate to="/login" state={{ from: location }} replace />;
+  }
+
+  if (requireAdmin && user?.role !== 'ADMIN') {
+    return <Navigate to="/projects" replace />;
   }
 
   return children;

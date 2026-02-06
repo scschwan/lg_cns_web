@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/context/AuthContext';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
-import { LogOut } from 'lucide-react';
+import { LogOut, Shield } from 'lucide-react';
 
 const Navbar = () => {
   const { user, logout } = useAuth();
@@ -26,13 +26,19 @@ const Navbar = () => {
 
       {user && (
         <div className="flex items-center gap-3">
+          {user.role === 'ADMIN' && (
+            <Button variant="ghost" size="sm" onClick={() => navigate('/admin')} className="gap-1">
+              <Shield className="h-4 w-4" />
+              관리자
+            </Button>
+          )}
           <Avatar className="h-8 w-8">
             <AvatarFallback className="bg-primary text-primary-foreground">
               {getUserInitial()}
             </AvatarFallback>
           </Avatar>
           <span className="text-sm font-medium">
-            {user.username || user.email}
+            {user.username || user.name || user.email}
           </span>
           <Button variant="ghost" size="sm" onClick={handleLogout} className="gap-2">
             <LogOut className="h-4 w-4" />

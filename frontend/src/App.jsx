@@ -28,6 +28,16 @@ import DetailClusteringPage from './pages/detailclustering/DetailClusteringPage'
 // Test Page
 import TestPage from './pages/TestPage';
 
+// Admin Pages
+import AdminLayout from './pages/admin/AdminLayout';
+import AdminDashboard from './pages/admin/AdminDashboard';
+import UserManagement from './pages/admin/UserManagement';
+import ProjectManagement from './pages/admin/ProjectManagement';
+import S3Management from './pages/admin/S3Management';
+import SessionMonitoring from './pages/admin/SessionMonitoring';
+import AuditLogPage from './pages/admin/AuditLogPage';
+import AdminProfile from './pages/admin/AdminProfile';
+
 // ⭐ Layout Wrapper Component
 function LayoutWrapper({ children, showNavbar = true }) {
   return (
@@ -176,6 +186,26 @@ function App() {
               </PrivateRoute>
             }
           />
+
+          {/* 🔐 Admin Routes */}
+          <Route
+            path="/admin"
+            element={
+              <PrivateRoute requireAdmin>
+                <LayoutWrapper>
+                  <AdminLayout />
+                </LayoutWrapper>
+              </PrivateRoute>
+            }
+          >
+            <Route index element={<AdminDashboard />} />
+            <Route path="users" element={<UserManagement />} />
+            <Route path="projects" element={<ProjectManagement />} />
+            <Route path="s3" element={<S3Management />} />
+            <Route path="sessions" element={<SessionMonitoring />} />
+            <Route path="logs" element={<AuditLogPage />} />
+            <Route path="profile" element={<AdminProfile />} />
+          </Route>
 
           {/* Default Redirect */}
           <Route path="/" element={<Navigate to="/login" replace />} />
