@@ -4,9 +4,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
-    AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
-    AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle
-} from '@/components/ui/alert-dialog';
+    Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle
+} from '@/components/ui/dialog';
 import { RotateCcw, RefreshCw } from 'lucide-react';
 import adminService from '@/services/adminService';
 
@@ -126,22 +125,22 @@ export default function SessionMonitoring() {
                 </CardContent>
             </Card>
 
-            <AlertDialog open={!!resetTarget} onOpenChange={() => setResetTarget(null)}>
-                <AlertDialogContent>
-                    <AlertDialogHeader>
-                        <AlertDialogTitle>세션 초기화</AlertDialogTitle>
-                        <AlertDialogDescription>
+            <Dialog open={!!resetTarget} onOpenChange={() => setResetTarget(null)}>
+                <DialogContent>
+                    <DialogHeader>
+                        <DialogTitle>세션 초기화</DialogTitle>
+                        <DialogDescription>
                             이 세션의 분석 데이터(session_data)를 모두 삭제하고 상태를 초기화합니다. 이 작업은 되돌릴 수 없습니다.
-                        </AlertDialogDescription>
-                    </AlertDialogHeader>
-                    <AlertDialogFooter>
-                        <AlertDialogCancel>취소</AlertDialogCancel>
-                        <AlertDialogAction onClick={handleReset} className="bg-red-500 hover:bg-red-600">
+                        </DialogDescription>
+                    </DialogHeader>
+                    <DialogFooter>
+                        <Button variant="outline" onClick={() => setResetTarget(null)}>취소</Button>
+                        <Button onClick={handleReset} className="bg-red-500 hover:bg-red-600 text-white">
                             초기화
-                        </AlertDialogAction>
-                    </AlertDialogFooter>
-                </AlertDialogContent>
-            </AlertDialog>
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
         </div>
     );
 }

@@ -5,9 +5,8 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import {
-    AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
-    AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle
-} from '@/components/ui/alert-dialog';
+    Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle
+} from '@/components/ui/dialog';
 import { Trash2, RefreshCw } from 'lucide-react';
 import adminService from '@/services/adminService';
 
@@ -162,22 +161,22 @@ export default function S3Management() {
                 </CardContent>
             </Card>
 
-            <AlertDialog open={cleanupConfirm} onOpenChange={setCleanupConfirm}>
-                <AlertDialogContent>
-                    <AlertDialogHeader>
-                        <AlertDialogTitle>고아 파일 일괄 정리</AlertDialogTitle>
-                        <AlertDialogDescription>
+            <Dialog open={cleanupConfirm} onOpenChange={setCleanupConfirm}>
+                <DialogContent>
+                    <DialogHeader>
+                        <DialogTitle>고아 파일 일괄 정리</DialogTitle>
+                        <DialogDescription>
                             세션에 연결되지 않은 {orphanedFiles.length}개의 파일을 삭제합니다. 이 작업은 되돌릴 수 없습니다.
-                        </AlertDialogDescription>
-                    </AlertDialogHeader>
-                    <AlertDialogFooter>
-                        <AlertDialogCancel>취소</AlertDialogCancel>
-                        <AlertDialogAction onClick={handleCleanup} className="bg-red-500 hover:bg-red-600">
+                        </DialogDescription>
+                    </DialogHeader>
+                    <DialogFooter>
+                        <Button variant="outline" onClick={() => setCleanupConfirm(false)}>취소</Button>
+                        <Button onClick={handleCleanup} className="bg-red-500 hover:bg-red-600 text-white">
                             정리
-                        </AlertDialogAction>
-                    </AlertDialogFooter>
-                </AlertDialogContent>
-            </AlertDialog>
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
         </div>
     );
 }
