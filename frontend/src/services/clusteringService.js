@@ -105,6 +105,74 @@ const clusteringService = {
         );
         return response.data;
     },
+
+    // ============================================================
+    // 고급 검색 API
+    // ============================================================
+
+    /** 고급 검색 (컬럼 선택, 완전일치, 제외, 결과내 재검색) */
+    advancedSearch: async (projectId, sessionId, params) => {
+        const response = await api.post(
+            `/api/projects/${projectId}/sessions/${sessionId}/clustering/advanced-search`,
+            params
+        );
+        return response.data;
+    },
+
+    /** 고급 검색 결과의 전체 clusterNumber 목록 조회 */
+    getAdvancedSearchClusterNumbers: async (projectId, sessionId, params) => {
+        const response = await api.post(
+            `/api/projects/${projectId}/sessions/${sessionId}/clustering/advanced-search-ids`,
+            params
+        );
+        return response.data;
+    },
+
+    /** 검색 가능한 컬럼 목록 조회 */
+    getSearchableColumns: async (projectId, sessionId) => {
+        const response = await api.get(
+            `/api/projects/${projectId}/sessions/${sessionId}/clustering/searchable-columns`
+        );
+        return response.data;
+    },
+
+    // ============================================================
+    // 키워드 계층 API (Lv1/Lv2/Lv3)
+    // ============================================================
+
+    /** 키워드 계층 전체 조회 */
+    getKeywordHierarchy: async (projectId, sessionId) => {
+        const response = await api.get(
+            `/api/projects/${projectId}/sessions/${sessionId}/clustering/keyword-hierarchy`
+        );
+        return response.data;
+    },
+
+    /** 키워드 추가 */
+    addKeywordHierarchy: async (projectId, sessionId, level, parentId, keyword) => {
+        const response = await api.post(
+            `/api/projects/${projectId}/sessions/${sessionId}/clustering/keyword-hierarchy`,
+            { level, parentId, keyword }
+        );
+        return response.data;
+    },
+
+    /** 키워드 수정 */
+    updateKeywordHierarchy: async (projectId, sessionId, id, keyword) => {
+        const response = await api.put(
+            `/api/projects/${projectId}/sessions/${sessionId}/clustering/keyword-hierarchy/${id}`,
+            { keyword }
+        );
+        return response.data;
+    },
+
+    /** 키워드 삭제 */
+    deleteKeywordHierarchy: async (projectId, sessionId, id) => {
+        const response = await api.delete(
+            `/api/projects/${projectId}/sessions/${sessionId}/clustering/keyword-hierarchy/${id}`
+        );
+        return response.data;
+    },
 };
 
 export default clusteringService;

@@ -186,4 +186,124 @@ public class ClusteringController {
         clusteringService.updateClusterName(sessionId, clusterNumber, newName);
         return ResponseEntity.ok(Map.of("success", true));
     }
+
+    // ============================================================
+    // 고급 검색 API
+    // ============================================================
+
+    @PostMapping("/advanced-search")
+    public ResponseEntity<Map<String, Object>> advancedSearch(
+            @PathVariable String projectId,
+            @PathVariable String sessionId,
+            @RequestBody Map<String, Object> body,
+            @CurrentUser UserPrincipal userPrincipal) {
+
+        projectService.getProject(projectId, userPrincipal.getId());
+
+        int page = body.get("page") != null ? ((Number) body.get("page")).intValue() : 0;
+        int size = body.get("size") != null ? ((Number) body.get("size")).intValue() : 20;
+        String searchColumn = (String) body.get("searchColumn");
+        String searchValue = (String) body.get("searchValue");
+        boolean exactMatch = Boolean.TRUE.equals(body.get("exactMatch"));
+        String excludeValue = (String) body.get("excludeValue");
+        boolean excludeExactMatch = Boolean.TRUE.equals(body.get("excludeExactMatch"));
+
+        @SuppressWarnings("unchecked")
+        List<Integer> withinClusterNumbers = (List<Integer>) body.get("withinClusterNumbers");
+
+        return ResponseEntity.ok(clusteringService.advancedSearch(
+                sessionId, page, size,
+                searchColumn, searchValue, exactMatch,
+                excludeValue, excludeExactMatch,
+                withinClusterNumbers));
+    }
+
+    @PostMapping("/advanced-search-ids")
+    public ResponseEntity<List<Integer>> getAdvancedSearchClusterNumbers(
+            @PathVariable String projectId,
+            @PathVariable String sessionId,
+            @RequestBody Map<String, Object> body,
+            @CurrentUser UserPrincipal userPrincipal) {
+
+        projectService.getProject(projectId, userPrincipal.getId());
+
+        String searchColumn = (String) body.get("searchColumn");
+        String searchValue = (String) body.get("searchValue");
+        boolean exactMatch = Boolean.TRUE.equals(body.get("exactMatch"));
+        String excludeValue = (String) body.get("excludeValue");
+        boolean excludeExactMatch = Boolean.TRUE.equals(body.get("excludeExactMatch"));
+
+        @SuppressWarnings("unchecked")
+        List<Integer> withinClusterNumbers = (List<Integer>) body.get("withinClusterNumbers");
+
+        return ResponseEntity.ok(clusteringService.getAdvancedSearchClusterNumbers(
+                sessionId,
+                searchColumn, searchValue, exactMatch,
+                excludeValue, excludeExactMatch,
+                withinClusterNumbers));
+    }
+
+    @GetMapping("/searchable-columns")
+    public ResponseEntity<List<Map<String, String>>> getSearchableColumns(
+            @PathVariable String projectId,
+            @PathVariable String sessionId,
+            @CurrentUser UserPrincipal userPrincipal) {
+
+        projectService.getProject(projectId, userPrincipal.getId());
+        return ResponseEntity.ok(clusteringService.getSearchableColumns(sessionId));
+    }
+
+    // ============================================================
+    // 키워드 계층 API (Lv1/Lv2/Lv3)
+    // ============================================================
+
+    @GetMapping("/keyword-hierarchy")
+    public ResponseEntity<List<Map<String, Object>>> getKeywordHierarchy(
+            @PathVariable String projectId,
+            @PathVariable String sessionId,
+            @CurrentUser UserPrincipal userPrincipal) {
+
+        projectService.getProject(projectId, userPrincipal.getId());
+        return ResponseEntity.ok(clusteringService.getKeywordHierarchy(sessionId));
+    }
+
+    @PostMapping("/keyword-hierarchy")
+    public ResponseEntity<Map<String, Object>> addKeywordHierarchy(
+            @PathVariable String projectId,
+            @PathVariable String sessionId,
+            @RequestBody Map<String, Object> body,
+            @CurrentUser UserPrincipal userPrincipal) {
+
+        projectService.getProject(projectId, userPrincipal.getId());
+
+        Integer level = ((Number) body.get("level")).intValue();
+        String parentId = (String) body.get("parentId");
+        String keyword = (String) body.get("keyword");
+
+        return ResponseEntity.ok(clusteringService.addKeywordHierarchy(sessionId, level, parentId, keyword));
+    }
+
+    @PutMapping("/keyword-hierarchy/{id}")
+    public ResponseEntity<Map<String, Object>> updateKeywordHierarchy(
+            @PathVariable String projectId,
+            @PathVariable String sessionId,
+            @PathVariable String id,
+            @RequestBody Map<String, Object> body,
+            @CurrentUser UserPrincipal userPrincipal) {
+
+        projectService.getProject(projectId, userPrincipal.getId());
+        String keyword = (String) body.get("keyword");
+        return ResponseEntity.ok(clusteringService.updateKeywordHierarchy(id, keyword));
+    }
+
+    @DeleteMapping("/keyword-hierarchy/{id}")
+    public ResponseEntity<Map<String, Object>> deleteKeywordHierarchy(
+            @PathVariable String projectId,
+            @PathVariable String sessionId,
+            @PathVariable String id,
+            @CurrentUser UserPrincipal userPrincipal) {
+
+        projectService.getProject(projectId, userPrincipal.getId());
+        return ResponseEntity.ok(clusteringService.deleteKeywordHierarchy(sessionId, id));
+    }
 }

@@ -3,7 +3,9 @@ package com.example.finance.service.data;
 import com.example.finance.exception.BusinessException;
 import com.example.finance.model.data.ClusteringResult;
 import com.example.finance.model.data.ColumnMappingDocument;
+import com.example.finance.model.data.SearchKeywordHierarchy;
 import com.example.finance.repository.data.ClusteringResultRepository;
+import com.example.finance.repository.data.SearchKeywordHierarchyRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.bson.Document;
@@ -17,6 +19,7 @@ import java.time.LocalDateTime;
 import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 @Service
@@ -26,6 +29,7 @@ public class ClusteringService {
 
     private final MongoTemplate mongoTemplate;
     private final ClusteringResultRepository clusteringResultRepository;
+    private final SearchKeywordHierarchyRepository keywordHierarchyRepository;
 
     private static final ExecutorService EXECUTOR = Executors.newFixedThreadPool(
             Math.max(2, Runtime.getRuntime().availableProcessors()));
@@ -825,5 +829,409 @@ public class ClusteringService {
             }
         }
         return result;
+    }
+
+    // ============================================================
+    // 14. 고급 검색 (컬럼 선택, 완전일치, 제외 항목, 결과내 재검색)
+    // ============================================================
+
+    public Map<String, Object> advancedSearch(
+            String sessionId, int page, int size,
+            String searchColumn, String searchValue, boolean exactMatch,
+            String excludeValue, boolean excludeExactMatch,
+            List<Integer> withinClusterNumbers) {
+
+        log.info("고급 검색: sessionId={}, column={}, value={}, exact={}, exclude={}, withinSize={}",
+                sessionId, searchColumn, searchValue, exactMatch, excludeValue,
+                withinClusterNumbers != null ? withinClusterNumbers.size() : 0);
+
+        // 기본 조건: 미병합 클러스터
+        Criteria criteria = Criteria.where("session_id").is(sessionId)
+                .and("cluster_id").is(-1);
+
+        // 병합 부모 제외
+        Set<Integer> mergedParentNumbers = getMergedParentNumbers(sessionId);
+        if (!mergedParentNumbers.isEmpty()) {
+            criteria = criteria.and("cluster_number").nin(mergedParentNumbers);
+        }
+
+        // 결과내 재검색: 이전 결과 내에서만 검색
+        if (withinClusterNumbers != null && !withinClusterNumbers.isEmpty()) {
+            criteria = criteria.and("cluster_number").in(withinClusterNumbers);
+        }
+
+        // 검색 컬럼별 조건 추가
+        if (searchValue != null && !searchValue.isBlank()) {
+            criteria = addSearchCriteria(criteria, searchColumn, searchValue, exactMatch);
+        }
+
+        // 제외 조건 추가
+        if (excludeValue != null && !excludeValue.isBlank()) {
+            criteria = addExcludeCriteria(criteria, searchColumn, excludeValue, excludeExactMatch);
+        }
+
+        // 병렬 조회: count와 visibleColumns
+        Criteria finalCriteria = criteria;
+        CompletableFuture<Long> countFuture = CompletableFuture.supplyAsync(
+                () -> mongoTemplate.count(new Query(finalCriteria), ClusteringResult.class), EXECUTOR);
+        CompletableFuture<List<String>> colFuture = CompletableFuture.supplyAsync(
+                () -> getVisibleColumns(sessionId), EXECUTOR);
+
+        // 페이징 조회
+        Query query = new Query(criteria)
+                .with(Sort.by("cluster_number"))
+                .skip((long) page * size)
+                .limit(size);
+        List<ClusteringResult> clusters = mongoTemplate.find(query, ClusteringResult.class);
+
+        // 대표 데이터 조회
+        Set<String> firstRawIds = new LinkedHashSet<>();
+        for (ClusteringResult c : clusters) {
+            if (c.getDataIndices() != null && !c.getDataIndices().isEmpty()) {
+                firstRawIds.add(c.getDataIndices().get(0));
+            }
+        }
+        Map<String, Map<String, Object>> rawIdToData = batchFetchSessionData(sessionId, firstRawIds);
+
+        long totalCount;
+        List<String> visibleColumns;
+        try {
+            totalCount = countFuture.get(10, TimeUnit.SECONDS);
+            visibleColumns = colFuture.get(10, TimeUnit.SECONDS);
+        } catch (Exception e) {
+            log.warn("병렬 조회 실패, 동기 조회로 fallback", e);
+            totalCount = mongoTemplate.count(new Query(finalCriteria), ClusteringResult.class);
+            visibleColumns = getVisibleColumns(sessionId);
+        }
+
+        // 결과 데이터 구성
+        List<Map<String, Object>> dataWithRepresentative = new ArrayList<>();
+        for (ClusteringResult c : clusters) {
+            Map<String, Object> row = new LinkedHashMap<>();
+            row.put("clusterNumber", c.getClusterNumber());
+            row.put("clusterName", c.getClusterName());
+            row.put("keywords", c.getKeywords());
+            row.put("count", c.getCount());
+            row.put("totalAmount", c.getTotalAmount());
+            row.put("supplier", c.getSupplier());
+            row.put("department", c.getDepartment());
+
+            if (c.getDataIndices() != null && !c.getDataIndices().isEmpty()) {
+                Map<String, Object> repData = rawIdToData.get(c.getDataIndices().get(0));
+                if (repData != null) {
+                    row.put("representativeData", repData);
+                }
+            }
+            dataWithRepresentative.add(row);
+        }
+
+        // 현재 검색 결과의 clusterNumber 목록 (재검색용)
+        List<Integer> resultClusterNumbers = clusters.stream()
+                .map(ClusteringResult::getClusterNumber)
+                .collect(Collectors.toList());
+
+        // 전체 결과 clusterNumber (재검색 시 필요)
+        List<Integer> allResultClusterNumbers = null;
+        if (totalCount <= 10000) {
+            Query allIdsQuery = new Query(finalCriteria);
+            allIdsQuery.fields().include("cluster_number");
+            allResultClusterNumbers = mongoTemplate.find(allIdsQuery, ClusteringResult.class).stream()
+                    .map(ClusteringResult::getClusterNumber)
+                    .collect(Collectors.toList());
+        }
+
+        Map<String, Object> result = new HashMap<>();
+        result.put("data", dataWithRepresentative);
+        result.put("columns", visibleColumns);
+        result.put("totalCount", totalCount);
+        result.put("page", page);
+        result.put("size", size);
+        result.put("totalPages", (int) Math.ceil((double) totalCount / size));
+        result.put("resultClusterNumbers", allResultClusterNumbers);
+        return result;
+    }
+
+    /**
+     * 고급 검색용 - 현재 검색 결과의 전체 clusterNumber 목록 조회
+     */
+    public List<Integer> getAdvancedSearchClusterNumbers(
+            String sessionId,
+            String searchColumn, String searchValue, boolean exactMatch,
+            String excludeValue, boolean excludeExactMatch,
+            List<Integer> withinClusterNumbers) {
+
+        Criteria criteria = Criteria.where("session_id").is(sessionId)
+                .and("cluster_id").is(-1);
+
+        Set<Integer> mergedParentNumbers = getMergedParentNumbers(sessionId);
+        if (!mergedParentNumbers.isEmpty()) {
+            criteria = criteria.and("cluster_number").nin(mergedParentNumbers);
+        }
+
+        if (withinClusterNumbers != null && !withinClusterNumbers.isEmpty()) {
+            criteria = criteria.and("cluster_number").in(withinClusterNumbers);
+        }
+
+        if (searchValue != null && !searchValue.isBlank()) {
+            criteria = addSearchCriteria(criteria, searchColumn, searchValue, exactMatch);
+        }
+
+        if (excludeValue != null && !excludeValue.isBlank()) {
+            criteria = addExcludeCriteria(criteria, searchColumn, excludeValue, excludeExactMatch);
+        }
+
+        Query query = new Query(criteria);
+        query.fields().include("cluster_number");
+
+        return mongoTemplate.find(query, ClusteringResult.class).stream()
+                .map(ClusteringResult::getClusterNumber)
+                .collect(Collectors.toList());
+    }
+
+    private Criteria addSearchCriteria(Criteria base, String column, String value, boolean exact) {
+        if (column == null || column.isBlank()) column = "keyword";
+
+        switch (column.toLowerCase()) {
+            case "keyword":
+                if (exact) {
+                    return base.and("keywords").is(value);
+                } else {
+                    return base.and("keywords").regex(Pattern.compile(Pattern.quote(value), Pattern.CASE_INSENSITIVE));
+                }
+            case "supplier":
+                if (exact) {
+                    return base.and("supplier").is(value);
+                } else {
+                    return base.and("supplier").regex(Pattern.compile(Pattern.quote(value), Pattern.CASE_INSENSITIVE));
+                }
+            case "department":
+            case "costcenter":
+                if (exact) {
+                    return base.and("department").is(value);
+                } else {
+                    return base.and("department").regex(Pattern.compile(Pattern.quote(value), Pattern.CASE_INSENSITIVE));
+                }
+            case "clustername":
+                if (exact) {
+                    return base.and("cluster_name").is(value);
+                } else {
+                    return base.and("cluster_name").regex(Pattern.compile(Pattern.quote(value), Pattern.CASE_INSENSITIVE));
+                }
+            default:
+                // 기본: 키워드 검색
+                if (exact) {
+                    return base.and("keywords").is(value);
+                } else {
+                    return base.and("keywords").regex(Pattern.compile(Pattern.quote(value), Pattern.CASE_INSENSITIVE));
+                }
+        }
+    }
+
+    private Criteria addExcludeCriteria(Criteria base, String column, String value, boolean exact) {
+        if (column == null || column.isBlank()) column = "keyword";
+
+        switch (column.toLowerCase()) {
+            case "keyword":
+                if (exact) {
+                    return base.and("keywords").ne(value);
+                } else {
+                    return base.and("keywords").not().regex(Pattern.compile(Pattern.quote(value), Pattern.CASE_INSENSITIVE));
+                }
+            case "supplier":
+                if (exact) {
+                    return base.and("supplier").ne(value);
+                } else {
+                    return base.and("supplier").not().regex(Pattern.compile(Pattern.quote(value), Pattern.CASE_INSENSITIVE));
+                }
+            case "department":
+            case "costcenter":
+                if (exact) {
+                    return base.and("department").ne(value);
+                } else {
+                    return base.and("department").not().regex(Pattern.compile(Pattern.quote(value), Pattern.CASE_INSENSITIVE));
+                }
+            case "clustername":
+                if (exact) {
+                    return base.and("cluster_name").ne(value);
+                } else {
+                    return base.and("cluster_name").not().regex(Pattern.compile(Pattern.quote(value), Pattern.CASE_INSENSITIVE));
+                }
+            default:
+                if (exact) {
+                    return base.and("keywords").ne(value);
+                } else {
+                    return base.and("keywords").not().regex(Pattern.compile(Pattern.quote(value), Pattern.CASE_INSENSITIVE));
+                }
+        }
+    }
+
+    /**
+     * 검색 가능한 컬럼 목록 조회
+     */
+    public List<Map<String, String>> getSearchableColumns(String sessionId) {
+        List<Map<String, String>> columns = new ArrayList<>();
+        columns.add(Map.of("key", "keyword", "label", "키워드"));
+        columns.add(Map.of("key", "clusterName", "label", "클러스터명"));
+
+        // supplier가 있는지 확인
+        if (hasSupplierClustering(sessionId)) {
+            columns.add(Map.of("key", "supplier", "label", "공급업체"));
+        }
+
+        // department가 있는지 확인
+        Query deptQuery = new Query(Criteria.where("session_id").is(sessionId)
+                .and("department").ne(null)).limit(1);
+        if (mongoTemplate.exists(deptQuery, ClusteringResult.class)) {
+            columns.add(Map.of("key", "department", "label", "코스트센터"));
+        }
+
+        return columns;
+    }
+
+    // ============================================================
+    // 15. 키워드 계층 CRUD (Lv1/Lv2/Lv3)
+    // ============================================================
+
+    /**
+     * 키워드 계층 전체 조회 (트리 구조로 반환)
+     */
+    public List<Map<String, Object>> getKeywordHierarchy(String sessionId) {
+        List<SearchKeywordHierarchy> all = keywordHierarchyRepository
+                .findBySessionIdOrderByLevelAscDisplayOrderAsc(sessionId);
+
+        // 레벨별 그룹핑
+        Map<Integer, List<SearchKeywordHierarchy>> byLevel = all.stream()
+                .collect(Collectors.groupingBy(SearchKeywordHierarchy::getLevel));
+
+        // parent_id로 인덱싱
+        Map<String, List<SearchKeywordHierarchy>> byParent = all.stream()
+                .filter(k -> k.getParentId() != null)
+                .collect(Collectors.groupingBy(SearchKeywordHierarchy::getParentId));
+
+        // Lv1부터 트리 구성
+        List<Map<String, Object>> result = new ArrayList<>();
+        List<SearchKeywordHierarchy> lv1List = byLevel.getOrDefault(1, Collections.emptyList());
+
+        for (SearchKeywordHierarchy lv1 : lv1List) {
+            Map<String, Object> lv1Node = buildKeywordNode(lv1, byParent);
+            result.add(lv1Node);
+        }
+
+        return result;
+    }
+
+    private Map<String, Object> buildKeywordNode(SearchKeywordHierarchy kw,
+                                                  Map<String, List<SearchKeywordHierarchy>> byParent) {
+        Map<String, Object> node = new LinkedHashMap<>();
+        node.put("id", kw.getId());
+        node.put("keyword", kw.getKeyword());
+        node.put("level", kw.getLevel());
+        node.put("displayOrder", kw.getDisplayOrder());
+
+        List<SearchKeywordHierarchy> children = byParent.getOrDefault(kw.getId(), Collections.emptyList());
+        if (!children.isEmpty()) {
+            List<Map<String, Object>> childNodes = children.stream()
+                    .map(c -> buildKeywordNode(c, byParent))
+                    .collect(Collectors.toList());
+            node.put("children", childNodes);
+        } else {
+            node.put("children", Collections.emptyList());
+        }
+
+        return node;
+    }
+
+    /**
+     * 키워드 추가
+     */
+    public Map<String, Object> addKeywordHierarchy(
+            String sessionId, Integer level, String parentId, String keyword) {
+
+        if (level < 1 || level > 3) {
+            throw new BusinessException("INVALID_LEVEL", "레벨은 1, 2, 3 중 하나여야 합니다.");
+        }
+        if (level > 1 && (parentId == null || parentId.isBlank())) {
+            throw new BusinessException("PARENT_REQUIRED", "Lv2, Lv3는 상위 키워드 ID가 필요합니다.");
+        }
+        if (keyword == null || keyword.isBlank()) {
+            throw new BusinessException("KEYWORD_REQUIRED", "키워드는 필수입니다.");
+        }
+
+        // 같은 레벨에서 최대 order 조회
+        int maxOrder = keywordHierarchyRepository
+                .findBySessionIdAndLevelOrderByDisplayOrderAsc(sessionId, level)
+                .stream()
+                .mapToInt(SearchKeywordHierarchy::getDisplayOrder)
+                .max()
+                .orElse(0);
+
+        SearchKeywordHierarchy newKw = SearchKeywordHierarchy.builder()
+                .sessionId(sessionId)
+                .level(level)
+                .parentId(level > 1 ? parentId : null)
+                .keyword(keyword)
+                .displayOrder(maxOrder + 1)
+                .createdAt(LocalDateTime.now())
+                .build();
+
+        keywordHierarchyRepository.save(newKw);
+
+        Map<String, Object> result = new HashMap<>();
+        result.put("id", newKw.getId());
+        result.put("keyword", newKw.getKeyword());
+        result.put("level", newKw.getLevel());
+        result.put("parentId", newKw.getParentId());
+        result.put("displayOrder", newKw.getDisplayOrder());
+        return result;
+    }
+
+    /**
+     * 키워드 수정
+     */
+    public Map<String, Object> updateKeywordHierarchy(String id, String keyword) {
+        SearchKeywordHierarchy kw = keywordHierarchyRepository.findById(id)
+                .orElseThrow(() -> new BusinessException("KEYWORD_NOT_FOUND", "키워드를 찾을 수 없습니다."));
+
+        kw.setKeyword(keyword);
+        keywordHierarchyRepository.save(kw);
+
+        Map<String, Object> result = new HashMap<>();
+        result.put("id", kw.getId());
+        result.put("keyword", kw.getKeyword());
+        result.put("level", kw.getLevel());
+        return result;
+    }
+
+    /**
+     * 키워드 삭제 (하위 키워드도 함께 삭제)
+     */
+    public Map<String, Object> deleteKeywordHierarchy(String sessionId, String id) {
+        SearchKeywordHierarchy kw = keywordHierarchyRepository.findById(id)
+                .orElseThrow(() -> new BusinessException("KEYWORD_NOT_FOUND", "키워드를 찾을 수 없습니다."));
+
+        int deletedCount = 1;
+
+        // 하위 키워드 삭제 (재귀적)
+        deletedCount += deleteChildKeywords(sessionId, id);
+
+        keywordHierarchyRepository.delete(kw);
+
+        Map<String, Object> result = new HashMap<>();
+        result.put("deletedId", id);
+        result.put("deletedCount", deletedCount);
+        return result;
+    }
+
+    private int deleteChildKeywords(String sessionId, String parentId) {
+        List<SearchKeywordHierarchy> children = keywordHierarchyRepository
+                .findBySessionIdAndParentIdOrderByDisplayOrderAsc(sessionId, parentId);
+
+        int count = 0;
+        for (SearchKeywordHierarchy child : children) {
+            count += deleteChildKeywords(sessionId, child.getId());
+            keywordHierarchyRepository.delete(child);
+            count++;
+        }
+        return count;
     }
 }

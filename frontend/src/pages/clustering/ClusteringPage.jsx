@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
-  ChevronRight, Home, GitMerge, Eye, Edit2, Trash2, Plus,
+  ChevronRight, ChevronDown, Home, GitMerge, Eye, Edit2, Trash2, Plus,
   Loader2, Search, RefreshCw, ArrowUpDown, ArrowUp, ArrowDown,
+  X, Folder, FolderOpen, Tag,
 } from 'lucide-react';
 import {
   Breadcrumb, BreadcrumbItem, BreadcrumbLink, BreadcrumbList,
@@ -188,9 +189,25 @@ function ClusteringPage() {
   const [amountUnit, setAmountUnit] = useState('원');
   const divisor = { '원': 1, '천원': 1000, '백만원': 1000000, '억원': 100000000 };
 
-  /* 검색 */
+  /* 고급 검색 */
+  const [searchableColumns, setSearchableColumns] = useState([]);
+  const [searchColumn, setSearchColumn] = useState('keyword');
   const [searchKeyword, setSearchKeyword] = useState('');
-  const [appliedKeyword, setAppliedKeyword] = useState(null);
+  const [exactMatch, setExactMatch] = useState(false);
+  const [excludeKeyword, setExcludeKeyword] = useState('');
+  const [excludeExactMatch, setExcludeExactMatch] = useState(false);
+  const [searchWithinResults, setSearchWithinResults] = useState(false);
+  const [previousResultIds, setPreviousResultIds] = useState(null); // 결과내 재검색용
+  const [appliedSearchParams, setAppliedSearchParams] = useState(null); // 현재 적용된 검색 조건
+  const [searchTabMode, setSearchTabMode] = useState('basic'); // 'basic' | 'keyword-hierarchy'
+
+  /* 키워드 계층 (Lv1/Lv2/Lv3) */
+  const [keywordHierarchy, setKeywordHierarchy] = useState([]);
+  const [kwHierarchyLoading, setKwHierarchyLoading] = useState(false);
+  const [expandedLv1, setExpandedLv1] = useState(new Set());
+  const [expandedLv2, setExpandedLv2] = useState(new Set());
+  const [newKeywordInput, setNewKeywordInput] = useState({ level: 0, parentId: null, value: '' });
+  const [keywordHierarchyDialog, setKeywordHierarchyDialog] = useState({ open: false, parentId: null, parentKeyword: '', level: 2 });
 
   /* 미병합 테이블 */
   const [clusterData, setClusterData] = useState([]);
@@ -291,34 +308,187 @@ function ClusteringPage() {
     try { setMergedClusters(await clusteringService.getMergedClusters(projectId, sessionId) || []); } catch (e) { console.error(e); }
   }, [projectId, sessionId]);
 
+  const loadSearchableColumns = useCallback(async () => {
+    try {
+      const cols = await clusteringService.getSearchableColumns(projectId, sessionId);
+      setSearchableColumns(cols || []);
+    } catch (e) { console.error(e); }
+  }, [projectId, sessionId]);
+
+  const loadKeywordHierarchy = useCallback(async () => {
+    setKwHierarchyLoading(true);
+    try {
+      const hierarchy = await clusteringService.getKeywordHierarchy(projectId, sessionId);
+      setKeywordHierarchy(hierarchy || []);
+    } catch (e) { console.error(e); }
+    finally { setKwHierarchyLoading(false); }
+  }, [projectId, sessionId]);
+
   const loadAll = useCallback(() =>
-    Promise.all([loadStatistics(), loadUnmerged(0, clusterPageSize, null), loadKwStats(), loadSupStats(), loadMerged()]),
-    [loadStatistics, loadUnmerged, clusterPageSize, loadKwStats, loadSupStats, loadMerged]);
+    Promise.all([loadStatistics(), loadUnmerged(0, clusterPageSize, null), loadKwStats(), loadSupStats(), loadMerged(), loadSearchableColumns(), loadKeywordHierarchy()]),
+    [loadStatistics, loadUnmerged, clusterPageSize, loadKwStats, loadSupStats, loadMerged, loadSearchableColumns, loadKeywordHierarchy]);
 
   const refreshAll = useCallback(async () => {
-    await Promise.all([loadStatistics(), loadUnmerged(clusterPage, clusterPageSize, appliedKeyword), loadKwStats(), loadSupStats(), loadMerged()]);
-  }, [loadStatistics, loadUnmerged, clusterPage, clusterPageSize, appliedKeyword, loadKwStats, loadSupStats, loadMerged]);
+    await Promise.all([loadStatistics(), loadUnmerged(clusterPage, clusterPageSize, appliedSearchParams), loadKwStats(), loadSupStats(), loadMerged()]);
+  }, [loadStatistics, loadUnmerged, clusterPage, clusterPageSize, appliedSearchParams, loadKwStats, loadSupStats, loadMerged]);
 
   useEffect(() => { loadAll(); }, [projectId, sessionId]);
 
   /* ============================================================
-     검색
+     고급 검색
      ============================================================ */
-  const handleSearch = () => {
-    const kw = searchKeyword.trim() || null;
-    setAppliedKeyword(kw); setClusterPage(0);
-    setSelectAllMode(false); setExceptions(new Set());
-    loadUnmerged(0, clusterPageSize, kw);
+  const handleAdvancedSearch = async (isSearchWithin = false) => {
+    setLoading(true);
+    setClusterPage(0);
+    setSelectAllMode(false);
+    setExceptions(new Set());
+
+    try {
+      const params = {
+        page: 0,
+        size: clusterPageSize,
+        searchColumn,
+        searchValue: searchKeyword.trim() || null,
+        exactMatch,
+        excludeValue: excludeKeyword.trim() || null,
+        excludeExactMatch,
+        withinClusterNumbers: isSearchWithin && previousResultIds ? previousResultIds : null,
+      };
+
+      const r = await clusteringService.advancedSearch(projectId, sessionId, params);
+      setClusterData(r.data || []);
+      setVisibleColumns(r.columns || []);
+      setClusterTotalCount(r.totalCount || 0);
+      setClusterTotalPages(r.totalPages || 0);
+
+      // 결과 ID 저장 (다음 결과내 재검색용)
+      if (r.resultClusterNumbers) {
+        setPreviousResultIds(r.resultClusterNumbers);
+      }
+
+      // 적용된 검색 조건 저장
+      setAppliedSearchParams({
+        searchColumn,
+        searchValue: searchKeyword.trim() || null,
+        exactMatch,
+        excludeValue: excludeKeyword.trim() || null,
+        excludeExactMatch,
+        isSearchWithin,
+      });
+    } catch (e) {
+      console.error(e);
+      alert('검색 실패: ' + (e.response?.data?.message || e.message));
+    } finally {
+      setLoading(false);
+    }
   };
+
+  const handleSearch = () => {
+    if (searchWithinResults && previousResultIds) {
+      handleAdvancedSearch(true);
+    } else {
+      handleAdvancedSearch(false);
+    }
+  };
+
   const handleClearSearch = () => {
-    setSearchKeyword(''); setAppliedKeyword(null); setClusterPage(0);
-    setSelectAllMode(false); setExceptions(new Set());
+    setSearchKeyword('');
+    setExcludeKeyword('');
+    setExactMatch(false);
+    setExcludeExactMatch(false);
+    setSearchWithinResults(false);
+    setPreviousResultIds(null);
+    setAppliedSearchParams(null);
+    setClusterPage(0);
+    setSelectAllMode(false);
+    setExceptions(new Set());
     loadUnmerged(0, clusterPageSize, null);
   };
 
-  /* 페이징 */
-  const handlePageChange = (p) => { setClusterPage(p); loadUnmerged(p, clusterPageSize, appliedKeyword); };
-  const handlePageSizeChange = (s) => { setClusterPageSize(s); setClusterPage(0); loadUnmerged(0, s, appliedKeyword); };
+  /* 페이징 - 고급 검색 지원 */
+  const handlePageChange = async (p) => {
+    setClusterPage(p);
+    if (appliedSearchParams) {
+      setLoading(true);
+      try {
+        const params = {
+          page: p,
+          size: clusterPageSize,
+          searchColumn: appliedSearchParams.searchColumn,
+          searchValue: appliedSearchParams.searchValue,
+          exactMatch: appliedSearchParams.exactMatch,
+          excludeValue: appliedSearchParams.excludeValue,
+          excludeExactMatch: appliedSearchParams.excludeExactMatch,
+          withinClusterNumbers: appliedSearchParams.isSearchWithin ? previousResultIds : null,
+        };
+        const r = await clusteringService.advancedSearch(projectId, sessionId, params);
+        setClusterData(r.data || []);
+        setVisibleColumns(r.columns || []);
+      } catch (e) { console.error(e); } finally { setLoading(false); }
+    } else {
+      loadUnmerged(p, clusterPageSize, null);
+    }
+  };
+
+  const handlePageSizeChange = async (s) => {
+    setClusterPageSize(s);
+    setClusterPage(0);
+    if (appliedSearchParams) {
+      setLoading(true);
+      try {
+        const params = {
+          page: 0,
+          size: s,
+          searchColumn: appliedSearchParams.searchColumn,
+          searchValue: appliedSearchParams.searchValue,
+          exactMatch: appliedSearchParams.exactMatch,
+          excludeValue: appliedSearchParams.excludeValue,
+          excludeExactMatch: appliedSearchParams.excludeExactMatch,
+          withinClusterNumbers: appliedSearchParams.isSearchWithin ? previousResultIds : null,
+        };
+        const r = await clusteringService.advancedSearch(projectId, sessionId, params);
+        setClusterData(r.data || []);
+        setVisibleColumns(r.columns || []);
+        setClusterTotalCount(r.totalCount || 0);
+        setClusterTotalPages(r.totalPages || 0);
+      } catch (e) { console.error(e); } finally { setLoading(false); }
+    } else {
+      loadUnmerged(0, s, null);
+    }
+  };
+
+  /* 키워드 계층 검색 (Lv1/2/3 키워드 클릭 시) */
+  const handleKeywordHierarchySearch = (keyword) => {
+    setSearchKeyword(keyword);
+    setSearchColumn('keyword');
+    setExactMatch(true); // 계층 키워드는 완전일치로 검색
+    setExcludeKeyword('');
+    setSearchWithinResults(false);
+    setPreviousResultIds(null);
+    setTimeout(() => handleAdvancedSearch(false), 0);
+  };
+
+  /* 키워드 계층 CRUD */
+  const handleAddKeyword = async (level, parentId, keyword) => {
+    if (!keyword.trim()) return;
+    try {
+      await clusteringService.addKeywordHierarchy(projectId, sessionId, level, parentId, keyword.trim());
+      await loadKeywordHierarchy();
+      setNewKeywordInput({ level: 0, parentId: null, value: '' });
+    } catch (e) {
+      alert('키워드 추가 실패: ' + (e.response?.data?.message || e.message));
+    }
+  };
+
+  const handleDeleteKeyword = async (id) => {
+    if (!window.confirm('키워드를 삭제하시겠습니까? 하위 키워드도 함께 삭제됩니다.')) return;
+    try {
+      await clusteringService.deleteKeywordHierarchy(projectId, sessionId, id);
+      await loadKeywordHierarchy();
+    } catch (e) {
+      alert('키워드 삭제 실패: ' + (e.response?.data?.message || e.message));
+    }
+  };
 
   /* ============================================================
      체크박스 (selectAllMode + exceptions)
@@ -349,11 +519,24 @@ function ClusteringPage() {
 
   const getSelectedClusterNumbers = useCallback(async () => {
     if (selectAllMode) {
-      const all = await clusteringService.getAllUnmergedClusterNumbers(projectId, sessionId, appliedKeyword);
+      let all;
+      if (appliedSearchParams) {
+        // 고급 검색이 적용된 경우
+        all = await clusteringService.getAdvancedSearchClusterNumbers(projectId, sessionId, {
+          searchColumn: appliedSearchParams.searchColumn,
+          searchValue: appliedSearchParams.searchValue,
+          exactMatch: appliedSearchParams.exactMatch,
+          excludeValue: appliedSearchParams.excludeValue,
+          excludeExactMatch: appliedSearchParams.excludeExactMatch,
+          withinClusterNumbers: appliedSearchParams.isSearchWithin ? previousResultIds : null,
+        });
+      } else {
+        all = await clusteringService.getAllUnmergedClusterNumbers(projectId, sessionId, null);
+      }
       return all.filter(id => !exceptions.has(id));
     }
     return Array.from(exceptions);
-  }, [selectAllMode, exceptions, projectId, sessionId, appliedKeyword]);
+  }, [selectAllMode, exceptions, projectId, sessionId, appliedSearchParams, previousResultIds]);
 
   /* ============================================================
      드래그 선택 (미병합 테이블)
@@ -758,26 +941,252 @@ function ClusteringPage() {
           {/* === 좌측 (8/12): 미병합 클러스터 === */}
           <div className="xl:col-span-8 h-full flex flex-col min-h-0 gap-3">
 
-            {/* 검색 섹션 (별도 탭/카드 - 추후 확장용) */}
+            {/* 고급 검색 섹션 */}
             <Card className="flex-shrink-0 shadow-sm">
               <CardContent className="py-2 px-4">
-                {/* 검색 탭 헤더 (추후 다양한 검색 조건 탭 확장 가능) */}
+                {/* 검색 탭 헤더 */}
                 <div className="flex items-center gap-2 mb-2 border-b pb-2">
-                  <span className="text-xs font-semibold text-muted-foreground">검색</span>
-                  {/* 추후 탭 확장 영역 */}
+                  <Button
+                    variant={searchTabMode === 'basic' ? 'default' : 'ghost'}
+                    size="sm"
+                    className="h-6 text-xs px-2"
+                    onClick={() => setSearchTabMode('basic')}
+                  >
+                    <Search className="h-3 w-3 mr-1" />검색 설정
+                  </Button>
+                  <Button
+                    variant={searchTabMode === 'keyword-hierarchy' ? 'default' : 'ghost'}
+                    size="sm"
+                    className="h-6 text-xs px-2"
+                    onClick={() => setSearchTabMode('keyword-hierarchy')}
+                  >
+                    <Folder className="h-3 w-3 mr-1" />추천 키워드
+                  </Button>
                 </div>
-                {/* 검색 입력 영역 */}
-                <div className="flex items-center gap-2 flex-wrap">
-                  <Input className="h-8 text-sm w-[200px]" placeholder="키워드 검색..."
-                    value={searchKeyword} onChange={e => setSearchKeyword(e.target.value)}
-                    onKeyDown={e => e.key === 'Enter' && handleSearch()} />
-                  <Button size="sm" className="h-8" onClick={handleSearch}><Search className="h-3 w-3 mr-1" />검색</Button>
-                  {appliedKeyword && <Button size="sm" variant="outline" className="h-8" onClick={handleClearSearch}>초기화</Button>}
-                </div>
-                {appliedKeyword && (
-                  <div className="mt-2">
-                    <Badge variant="secondary" className="text-[10px]">검색: {appliedKeyword}</Badge>
-                    <span className="text-xs text-muted-foreground ml-2">{clusterTotalCount.toLocaleString()}건</span>
+
+                {/* 검색 설정 탭 */}
+                {searchTabMode === 'basic' && (
+                  <div className="space-y-2">
+                    {/* 1행: 검색 기준 + 검색어 + 완전일치 */}
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <Select value={searchColumn} onValueChange={setSearchColumn}>
+                        <SelectTrigger className="w-[120px] h-8 text-xs">
+                          <SelectValue placeholder="검색 기준" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {searchableColumns.map(col => (
+                            <SelectItem key={col.key} value={col.key}>{col.label}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <Input
+                        className="h-8 text-sm flex-1 min-w-[150px]"
+                        placeholder="검색 키워드 입력..."
+                        value={searchKeyword}
+                        onChange={e => setSearchKeyword(e.target.value)}
+                        onKeyDown={e => e.key === 'Enter' && handleSearch()}
+                      />
+                      <label className="flex items-center gap-1 text-xs cursor-pointer whitespace-nowrap">
+                        <Checkbox checked={exactMatch} onCheckedChange={setExactMatch} />
+                        완전일치
+                      </label>
+                    </div>
+
+                    {/* 2행: 제외 키워드 + 완전일치 */}
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-xs text-muted-foreground w-[120px]">제외 키워드:</span>
+                      <Input
+                        className="h-8 text-sm flex-1 min-w-[150px]"
+                        placeholder="제외 항목 입력..."
+                        value={excludeKeyword}
+                        onChange={e => setExcludeKeyword(e.target.value)}
+                        onKeyDown={e => e.key === 'Enter' && handleSearch()}
+                      />
+                      <label className="flex items-center gap-1 text-xs cursor-pointer whitespace-nowrap">
+                        <Checkbox checked={excludeExactMatch} onCheckedChange={setExcludeExactMatch} />
+                        완전일치
+                      </label>
+                    </div>
+
+                    {/* 3행: 결과내 재검색 + 버튼 */}
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <label className="flex items-center gap-1 text-xs cursor-pointer">
+                        <Checkbox
+                          checked={searchWithinResults}
+                          onCheckedChange={setSearchWithinResults}
+                          disabled={!previousResultIds || previousResultIds.length === 0}
+                        />
+                        결과 내 재검색
+                      </label>
+                      {previousResultIds && previousResultIds.length > 0 && (
+                        <span className="text-[10px] text-muted-foreground">
+                          (이전 결과: {previousResultIds.length.toLocaleString()}건)
+                        </span>
+                      )}
+                      <div className="flex-1" />
+                      <Button size="sm" className="h-8" onClick={handleSearch}>
+                        <Search className="h-3 w-3 mr-1" />검색
+                      </Button>
+                      {appliedSearchParams && (
+                        <Button size="sm" variant="outline" className="h-8" onClick={handleClearSearch}>
+                          <X className="h-3 w-3 mr-1" />초기화
+                        </Button>
+                      )}
+                    </div>
+
+                    {/* 적용된 검색 조건 표시 */}
+                    {appliedSearchParams && (
+                      <div className="mt-2 flex items-center gap-2 flex-wrap text-xs">
+                        <Badge variant="secondary" className="text-[10px]">
+                          {searchableColumns.find(c => c.key === appliedSearchParams.searchColumn)?.label || appliedSearchParams.searchColumn}
+                          {appliedSearchParams.exactMatch ? '=' : '~'}
+                          "{appliedSearchParams.searchValue || ''}"
+                        </Badge>
+                        {appliedSearchParams.excludeValue && (
+                          <Badge variant="outline" className="text-[10px] text-red-600">
+                            제외: {appliedSearchParams.excludeExactMatch ? '=' : '~'}"{appliedSearchParams.excludeValue}"
+                          </Badge>
+                        )}
+                        {appliedSearchParams.isSearchWithin && (
+                          <Badge variant="outline" className="text-[10px] text-blue-600">결과내 재검색</Badge>
+                        )}
+                        <span className="text-muted-foreground">{clusterTotalCount.toLocaleString()}건</span>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* 추천 키워드 (Lv1/Lv2/Lv3) 탭 */}
+                {searchTabMode === 'keyword-hierarchy' && (
+                  <div className="space-y-2">
+                    {/* Lv1 추가 입력 */}
+                    <div className="flex items-center gap-2">
+                      <Input
+                        className="h-7 text-xs flex-1"
+                        placeholder="새 Lv1 키워드 입력..."
+                        value={newKeywordInput.level === 1 && !newKeywordInput.parentId ? newKeywordInput.value : ''}
+                        onChange={e => setNewKeywordInput({ level: 1, parentId: null, value: e.target.value })}
+                        onKeyDown={e => e.key === 'Enter' && handleAddKeyword(1, null, newKeywordInput.value)}
+                      />
+                      <Button size="sm" className="h-7 px-2 text-xs" onClick={() => handleAddKeyword(1, null, newKeywordInput.value)}>
+                        <Plus className="h-3 w-3" />
+                      </Button>
+                      <Button size="sm" variant="ghost" className="h-7 px-2" onClick={loadKeywordHierarchy} disabled={kwHierarchyLoading}>
+                        <RefreshCw className={`h-3 w-3 ${kwHierarchyLoading ? 'animate-spin' : ''}`} />
+                      </Button>
+                    </div>
+
+                    {/* 키워드 계층 트리 */}
+                    <div className="max-h-[200px] overflow-y-auto border rounded p-2 text-xs space-y-1">
+                      {keywordHierarchy.length === 0 ? (
+                        <div className="text-center text-muted-foreground py-4">등록된 추천 키워드가 없습니다</div>
+                      ) : keywordHierarchy.map(lv1 => (
+                        <div key={lv1.id} className="space-y-1">
+                          {/* Lv1 */}
+                          <div className="flex items-center gap-1 p-1 rounded hover:bg-gray-100">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-5 w-5 p-0"
+                              onClick={() => setExpandedLv1(prev => {
+                                const next = new Set(prev);
+                                next.has(lv1.id) ? next.delete(lv1.id) : next.add(lv1.id);
+                                return next;
+                              })}
+                            >
+                              {expandedLv1.has(lv1.id) ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+                            </Button>
+                            <FolderOpen className="h-3 w-3 text-yellow-600" />
+                            <span
+                              className="flex-1 cursor-pointer hover:text-blue-600 hover:underline"
+                              onClick={() => handleKeywordHierarchySearch(lv1.keyword)}
+                            >
+                              {lv1.keyword}
+                            </span>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-5 px-1 text-[10px] text-blue-600"
+                              onClick={() => setKeywordHierarchyDialog({ open: true, parentId: lv1.id, parentKeyword: lv1.keyword, level: 2 })}
+                            >
+                              자세히
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-5 w-5 p-0 text-red-500"
+                              onClick={() => handleDeleteKeyword(lv1.id)}
+                            >
+                              <X className="h-3 w-3" />
+                            </Button>
+                          </div>
+
+                          {/* Lv2 (펼쳐진 경우) */}
+                          {expandedLv1.has(lv1.id) && lv1.children && lv1.children.length > 0 && (
+                            <div className="ml-6 space-y-1">
+                              {lv1.children.map(lv2 => (
+                                <div key={lv2.id} className="space-y-1">
+                                  <div className="flex items-center gap-1 p-1 rounded hover:bg-gray-50">
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      className="h-4 w-4 p-0"
+                                      onClick={() => setExpandedLv2(prev => {
+                                        const next = new Set(prev);
+                                        next.has(lv2.id) ? next.delete(lv2.id) : next.add(lv2.id);
+                                        return next;
+                                      })}
+                                    >
+                                      {lv2.children?.length > 0 ? (expandedLv2.has(lv2.id) ? <ChevronDown className="h-2 w-2" /> : <ChevronRight className="h-2 w-2" />) : <span className="w-2" />}
+                                    </Button>
+                                    <Folder className="h-3 w-3 text-blue-500" />
+                                    <span
+                                      className="flex-1 cursor-pointer hover:text-blue-600 hover:underline"
+                                      onClick={() => handleKeywordHierarchySearch(lv2.keyword)}
+                                    >
+                                      {lv2.keyword}
+                                    </span>
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      className="h-4 w-4 p-0 text-red-500"
+                                      onClick={() => handleDeleteKeyword(lv2.id)}
+                                    >
+                                      <X className="h-2 w-2" />
+                                    </Button>
+                                  </div>
+
+                                  {/* Lv3 */}
+                                  {expandedLv2.has(lv2.id) && lv2.children && lv2.children.length > 0 && (
+                                    <div className="ml-5 space-y-0.5">
+                                      {lv2.children.map(lv3 => (
+                                        <div key={lv3.id} className="flex items-center gap-1 p-0.5 rounded hover:bg-gray-50">
+                                          <Tag className="h-2 w-2 text-green-500" />
+                                          <span
+                                            className="flex-1 cursor-pointer hover:text-blue-600 hover:underline text-[10px]"
+                                            onClick={() => handleKeywordHierarchySearch(lv3.keyword)}
+                                          >
+                                            {lv3.keyword}
+                                          </span>
+                                          <Button
+                                            variant="ghost"
+                                            size="sm"
+                                            className="h-4 w-4 p-0 text-red-500"
+                                            onClick={() => handleDeleteKeyword(lv3.id)}
+                                          >
+                                            <X className="h-2 w-2" />
+                                          </Button>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  )}
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 )}
               </CardContent>
@@ -1107,6 +1516,103 @@ function ClusteringPage() {
               onRowMouseEnter={handleDetailRowMouseEnter}
               maxHeight="100%"
             />
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* ===== 키워드 계층 자세히 다이얼로그 (Lv2/Lv3 관리) ===== */}
+      <Dialog open={keywordHierarchyDialog.open} onOpenChange={o => {
+        setKeywordHierarchyDialog({ ...keywordHierarchyDialog, open: o });
+        if (!o) setNewKeywordInput({ level: 0, parentId: null, value: '' });
+      }}>
+        <DialogContent className="max-w-[500px]">
+          <DialogHeader>
+            <DialogTitle>
+              {keywordHierarchyDialog.level === 2 ? 'Lv2' : 'Lv3'} 키워드 관리: {keywordHierarchyDialog.parentKeyword}
+            </DialogTitle>
+            <DialogDescription>
+              하위 키워드를 추가하거나 삭제할 수 있습니다.
+            </DialogDescription>
+          </DialogHeader>
+
+          {/* 새 키워드 추가 */}
+          <div className="flex items-center gap-2 mb-4">
+            <Input
+              className="h-8 text-sm flex-1"
+              placeholder={`새 ${keywordHierarchyDialog.level === 2 ? 'Lv2' : 'Lv3'} 키워드 입력...`}
+              value={newKeywordInput.level === keywordHierarchyDialog.level && newKeywordInput.parentId === keywordHierarchyDialog.parentId ? newKeywordInput.value : ''}
+              onChange={e => setNewKeywordInput({ level: keywordHierarchyDialog.level, parentId: keywordHierarchyDialog.parentId, value: e.target.value })}
+              onKeyDown={e => {
+                if (e.key === 'Enter') {
+                  handleAddKeyword(keywordHierarchyDialog.level, keywordHierarchyDialog.parentId, newKeywordInput.value);
+                }
+              }}
+            />
+            <Button
+              size="sm"
+              className="h-8"
+              onClick={() => handleAddKeyword(keywordHierarchyDialog.level, keywordHierarchyDialog.parentId, newKeywordInput.value)}
+            >
+              <Plus className="h-3 w-3 mr-1" />추가
+            </Button>
+          </div>
+
+          {/* 기존 키워드 목록 */}
+          <div className="max-h-[300px] overflow-y-auto border rounded p-2 space-y-1">
+            {(() => {
+              // 현재 부모의 자식 키워드 찾기
+              let children = [];
+              if (keywordHierarchyDialog.level === 2) {
+                const parent = keywordHierarchy.find(lv1 => lv1.id === keywordHierarchyDialog.parentId);
+                children = parent?.children || [];
+              } else if (keywordHierarchyDialog.level === 3) {
+                for (const lv1 of keywordHierarchy) {
+                  const lv2 = (lv1.children || []).find(c => c.id === keywordHierarchyDialog.parentId);
+                  if (lv2) {
+                    children = lv2.children || [];
+                    break;
+                  }
+                }
+              }
+
+              if (children.length === 0) {
+                return <div className="text-center text-xs text-muted-foreground py-4">하위 키워드가 없습니다</div>;
+              }
+
+              return children.map(child => (
+                <div key={child.id} className="flex items-center gap-2 p-2 rounded hover:bg-gray-50 text-sm">
+                  {keywordHierarchyDialog.level === 2 ? (
+                    <Folder className="h-4 w-4 text-blue-500 flex-shrink-0" />
+                  ) : (
+                    <Tag className="h-4 w-4 text-green-500 flex-shrink-0" />
+                  )}
+                  <span
+                    className="flex-1 cursor-pointer hover:text-blue-600 hover:underline"
+                    onClick={() => handleKeywordHierarchySearch(child.keyword)}
+                  >
+                    {child.keyword}
+                  </span>
+                  {keywordHierarchyDialog.level === 2 && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-6 px-2 text-xs text-blue-600"
+                      onClick={() => setKeywordHierarchyDialog({ open: true, parentId: child.id, parentKeyword: child.keyword, level: 3 })}
+                    >
+                      Lv3
+                    </Button>
+                  )}
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-6 w-6 p-0 text-red-500"
+                    onClick={() => handleDeleteKeyword(child.id)}
+                  >
+                    <Trash2 className="h-3 w-3" />
+                  </Button>
+                </div>
+              ));
+            })()}
           </div>
         </DialogContent>
       </Dialog>
