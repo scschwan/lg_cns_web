@@ -434,7 +434,7 @@ function ExportPage() {
       return;
     }
     // Detail Clustering 페이지로 이동 (cluster_id 전달)
-    navigate(`/projects/${projectId}/sessions/${sessionId}/detail-clustering?clusterId=${selectedCluster.number}`);
+    navigate(`/projects/${projectId}/sessions/${sessionId}/detailclustering?clusterId=${selectedCluster.number}`);
   };
 
   // ===== 숫자 포맷팅 =====

@@ -98,6 +98,13 @@ const clusteringService = {
         return response.data;
     },
 
+    autoMergeUndefined: async (projectId, sessionId) => {
+        const response = await api.post(
+            `/api/projects/${projectId}/sessions/${sessionId}/clustering/auto-merge-undefined`
+        );
+        return response.data;
+    },
+
     renameCluster: async (projectId, sessionId, clusterNumber, newName) => {
         const response = await api.put(
             `/api/projects/${projectId}/sessions/${sessionId}/clustering/rename`,
