@@ -125,52 +125,38 @@ public class ExportService {
     /**
      * raw_data_id → ClusterInfo 매핑 생성
      *
-     * 세부클러스터명은 세부병합 부모 레코드의 이름을 사용.
-     * 세부병합 부모: cluster_number가 다른 레코드의 cluster_sub_id로 참조되는 레코드.
+     * 병합 부모: cluster_number == cluster_id (자기 자신)
+     * 세부병합 부모: cluster_number == cluster_sub_id (자기 자신)
+     * 독립 클러스터: cluster_id == -1
      */
     private Map<String, ClusterInfo> buildRawIdToClusterMap(String sessionId) {
         Map<String, ClusterInfo> map = new HashMap<>();
 
-        // 독립/부모 클러스터 조회 (cluster_id = -1)
-        Query mergedQuery = new Query(Criteria.where("session_id").is(sessionId)
-                .and("cluster_id").is(-1));
-        List<ClusteringResult> parentClusters = mongoTemplate.find(mergedQuery, ClusteringResult.class);
+        // 전체 클러스터 로드
+        List<ClusteringResult> allClusters = mongoTemplate.find(
+                new Query(Criteria.where("session_id").is(sessionId)), ClusteringResult.class);
 
-        // cluster_number → cluster 맵
-        Map<Integer, ClusteringResult> clusterByNumber = parentClusters.stream()
-                .collect(Collectors.toMap(ClusteringResult::getClusterNumber, c -> c, (a, b) -> a));
-
-        // 부모 클러스터의 data_indices를 순회하며 매핑 (클러스터명만, 세부클러스터명 없음)
-        for (ClusteringResult cluster : parentClusters) {
-            for (String rawDataId : cluster.getDataIndices()) {
-                map.put(rawDataId, new ClusterInfo(cluster.getClusterName(), null, cluster.getClusterNumber()));
+        // 1) 독립(cluster_id=-1) + 병합부모(cluster_id==cluster_number) → 클러스터명 매핑
+        Map<Integer, ClusteringResult> topLevelByNumber = new HashMap<>();
+        for (ClusteringResult c : allClusters) {
+            boolean isIndependent = c.getClusterId() == -1;
+            boolean isMergeParent = c.getClusterId() > 0 && c.getClusterId().equals(c.getClusterNumber());
+            if (isIndependent || isMergeParent) {
+                topLevelByNumber.put(c.getClusterNumber(), c);
+                for (String rawDataId : c.getDataIndices()) {
+                    map.put(rawDataId, new ClusterInfo(c.getClusterName(), null, c.getClusterNumber()));
+                }
             }
         }
 
-        // 세부병합 부모 찾기: cluster_sub_id > 0인 레코드들의 cluster_sub_id 값 수집
-        Query subChildQuery = new Query(Criteria.where("session_id").is(sessionId)
-                .and("cluster_sub_id").gt(0));
-        subChildQuery.fields().include("cluster_sub_id");
-        List<ClusteringResult> subChildren = mongoTemplate.find(subChildQuery, ClusteringResult.class);
-
-        Set<Integer> subParentNumbers = subChildren.stream()
-                .map(ClusteringResult::getClusterSubId)
-                .collect(Collectors.toSet());
-
-        if (!subParentNumbers.isEmpty()) {
-            // 세부병합 부모 레코드 로드
-            Query subParentQuery = new Query(Criteria.where("session_id").is(sessionId)
-                    .and("cluster_number").in(subParentNumbers));
-            List<ClusteringResult> subParents = mongoTemplate.find(subParentQuery, ClusteringResult.class);
-
-            // 세부병합 부모의 data_indices에 세부클러스터명 설정
-            for (ClusteringResult subParent : subParents) {
-                Integer mergedParentNumber = subParent.getClusterId();
-                ClusteringResult parent = clusterByNumber.get(mergedParentNumber);
+        // 2) 세부병합 부모(cluster_sub_id==cluster_number) → 세부클러스터명 매핑
+        for (ClusteringResult c : allClusters) {
+            boolean isSubMergeParent = c.getClusterSubId() > 0 && c.getClusterSubId().equals(c.getClusterNumber());
+            if (isSubMergeParent) {
+                ClusteringResult parent = topLevelByNumber.get(c.getClusterId());
                 String parentName = parent != null ? parent.getClusterName() : "Unknown";
-
-                for (String rawDataId : subParent.getDataIndices()) {
-                    map.put(rawDataId, new ClusterInfo(parentName, subParent.getClusterName(), subParent.getClusterNumber()));
+                for (String rawDataId : c.getDataIndices()) {
+                    map.put(rawDataId, new ClusterInfo(parentName, c.getClusterName(), c.getClusterNumber()));
                 }
             }
         }
@@ -185,37 +171,30 @@ public class ExportService {
     /**
      * 병합된 클러스터 목록 조회 - 세부 클러스터 정보 포함
      *
-     * 세부클러스터는 세부병합 부모 레코드를 기준으로 표시.
-     * 세부병합 부모: cluster_number가 다른 레코드의 cluster_sub_id로 참조되는 레코드.
+     * 병합 부모: cluster_number == cluster_id (자기 자신)
+     * 세부병합 부모: cluster_number == cluster_sub_id (자기 자신)
+     * 독립 클러스터: cluster_id == -1
      */
     public List<Map<String, Object>> getMergedClustersWithSubClusters(String sessionId) {
-        // 병합된 클러스터 조회 (cluster_id = -1: 독립/부모 클러스터)
-        Query mergedQuery = new Query(Criteria.where("session_id").is(sessionId)
-                .and("cluster_id").is(-1))
-                .with(Sort.by("cluster_number"));
-        List<ClusteringResult> mergedClusters = mongoTemplate.find(mergedQuery, ClusteringResult.class);
+        // 전체 클러스터 로드
+        List<ClusteringResult> allClusters = mongoTemplate.find(
+                new Query(Criteria.where("session_id").is(sessionId))
+                        .with(Sort.by("cluster_number")),
+                ClusteringResult.class);
 
-        // 세부병합 부모 찾기: cluster_sub_id > 0인 레코드들의 cluster_sub_id 값 수집
-        Query subChildQuery = new Query(Criteria.where("session_id").is(sessionId)
-                .and("cluster_sub_id").gt(0));
-        subChildQuery.fields().include("cluster_sub_id");
-        List<ClusteringResult> subChildren = mongoTemplate.find(subChildQuery, ClusteringResult.class);
+        // 최상위 클러스터: 독립(cluster_id=-1) + 병합부모(cluster_id==cluster_number)
+        List<ClusteringResult> mergedClusters = allClusters.stream()
+                .filter(c -> c.getClusterId() == -1 ||
+                        (c.getClusterId() > 0 && c.getClusterId().equals(c.getClusterNumber())))
+                .collect(Collectors.toList());
 
-        Set<Integer> subParentNumbers = subChildren.stream()
-                .map(ClusteringResult::getClusterSubId)
-                .collect(Collectors.toSet());
+        // 세부병합 부모: cluster_sub_id == cluster_number (자기 자신)
+        List<ClusteringResult> subMergeParents = allClusters.stream()
+                .filter(c -> c.getClusterSubId() > 0 && c.getClusterSubId().equals(c.getClusterNumber()))
+                .collect(Collectors.toList());
 
-        // 세부병합 부모 레코드 로드
-        List<ClusteringResult> subParents = Collections.emptyList();
-        if (!subParentNumbers.isEmpty()) {
-            Query subParentQuery = new Query(Criteria.where("session_id").is(sessionId)
-                    .and("cluster_number").in(subParentNumbers))
-                    .with(Sort.by("cluster_id", "cluster_number"));
-            subParents = mongoTemplate.find(subParentQuery, ClusteringResult.class);
-        }
-
-        // 부모별로 세부병합 부모 그룹핑
-        Map<Integer, List<ClusteringResult>> subClustersByParent = subParents.stream()
+        // 병합부모 cluster_id 기준으로 세부병합 부모 그룹핑
+        Map<Integer, List<ClusteringResult>> subClustersByParent = subMergeParents.stream()
                 .collect(Collectors.groupingBy(ClusteringResult::getClusterId));
 
         // 결과 구성
@@ -489,11 +468,15 @@ public class ExportService {
     public ExportResult exportAllClusters(String sessionId, String projectId) throws IOException {
         log.info("전체 클러스터 Export 시작: sessionId={}", sessionId);
 
-        // 병합된 클러스터만 조회 (cluster_id = -1)
-        Query query = new Query(Criteria.where("session_id").is(sessionId)
-                .and("cluster_id").is(-1))
-                .with(Sort.by("cluster_number"));
-        List<ClusteringResult> allClusters = mongoTemplate.find(query, ClusteringResult.class);
+        // 최상위 클러스터 조회: 독립(cluster_id=-1) + 병합부모(cluster_id==cluster_number)
+        List<ClusteringResult> all = mongoTemplate.find(
+                new Query(Criteria.where("session_id").is(sessionId))
+                        .with(Sort.by("cluster_number")),
+                ClusteringResult.class);
+        List<ClusteringResult> allClusters = all.stream()
+                .filter(c -> c.getClusterId() == -1 ||
+                        (c.getClusterId() > 0 && c.getClusterId().equals(c.getClusterNumber())))
+                .collect(Collectors.toList());
 
         ExportResult result = generateExcel(sessionId, projectId, allClusters, true);
 
