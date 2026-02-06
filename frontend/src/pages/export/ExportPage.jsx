@@ -325,23 +325,23 @@ function ExportPage() {
 
   // ===== 전체 데이터 컬럼 정의 =====
   const allDataTableColumns = useMemo(() => {
-    return allDataColumns.map(col => ({
-      key: col,
-      label: col,
-      width: col === '클러스터명' || col === '세부클러스터명' ? 120 : 100,
-      sticky: col === '클러스터명' || col === '세부클러스터명',
-      render: (val) => <span className="text-xs">{formatNumber(val)}</span>
+    return allDataColumns.map(colName => ({
+      key: colName,
+      label: colName,
+      width: colName === '클러스터명' || colName === '세부클러스터명' ? 120 : 100,
+      sticky: colName === '클러스터명' || colName === '세부클러스터명',
+      render: (row) => <span className="text-xs">{formatNumber(row[colName])}</span>
     }));
   }, [allDataColumns]);
 
   // ===== 클러스터별 세부 항목 컬럼 정의 =====
   const detailTableColumns = useMemo(() => {
-    return detailColumns.map(col => ({
-      key: col,
-      label: col,
-      width: col === '클러스터명' || col === '세부클러스터명' ? 120 : 100,
-      sticky: col === '클러스터명' || col === '세부클러스터명',
-      render: (val) => <span className="text-xs">{formatNumber(val)}</span>
+    return detailColumns.map(colName => ({
+      key: colName,
+      label: colName,
+      width: colName === '클러스터명' || colName === '세부클러스터명' ? 120 : 100,
+      sticky: colName === '클러스터명' || colName === '세부클러스터명',
+      render: (row) => <span className="text-xs">{formatNumber(row[colName])}</span>
     }));
   }, [detailColumns]);
 
