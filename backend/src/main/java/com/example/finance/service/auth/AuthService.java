@@ -80,7 +80,7 @@ public class AuthService {
             throw new InvalidCredentialsException("비활성화된 계정입니다");
         }
 
-        if (!Boolean.TRUE.equals(user.getIsApproved())) {
+        if (Boolean.FALSE.equals(user.getIsApproved())) {
             throw new InvalidCredentialsException("관리자 승인을 기다려주세요");
         }
 
@@ -115,7 +115,7 @@ public class AuthService {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new UserNotFoundException("사용자를 찾을 수 없습니다: " + userId));
 
-        if (!user.getIsActive() || !Boolean.TRUE.equals(user.getIsApproved())) {
+        if (!user.getIsActive() || Boolean.FALSE.equals(user.getIsApproved())) {
             throw new InvalidCredentialsException("비활성화된 계정입니다");
         }
 
