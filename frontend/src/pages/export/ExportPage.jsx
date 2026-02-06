@@ -21,7 +21,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import exportService from '@/services/exportService';
 
 // Shared component
-import AdvancedTable from '@/components/shared/AdvancedTable';
+import AdvancedTable from '@/components/AdvancedTable';
 
 function ExportPage() {
   const { projectId, sessionId } = useParams();
