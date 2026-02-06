@@ -1,1153 +1,864 @@
-// frontend/src/pages/clustering/ClusteringPage.jsx
-
-import React, { useState, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import {
-  ChevronRight,
-  Home,
-  Search,
-  GitMerge,
-  Eye,
-  Edit2,
-  RotateCcw,
+  ChevronRight, ChevronDown, Home, GitMerge, Eye, Edit2, Trash2, Plus,
+  Loader2, Search, RefreshCw, ArrowUpDown, ArrowUp, ArrowDown,
+  X, Folder, FolderOpen, Tag,
 } from 'lucide-react';
-
-// shadcn/ui components
 import {
-  Breadcrumb,
-  BreadcrumbItem,
-  BreadcrumbLink,
-  BreadcrumbList,
-  BreadcrumbPage,
-  BreadcrumbSeparator,
+  Breadcrumb, BreadcrumbItem, BreadcrumbLink, BreadcrumbList,
+  BreadcrumbPage, BreadcrumbSeparator,
 } from '@/components/ui/breadcrumb';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
 import { Checkbox } from '@/components/ui/checkbox';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
+import { Input } from '@/components/ui/input';
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
+  Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle,
 } from '@/components/ui/dialog';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import AdvancedTable from '@/components/AdvancedTable';
+import detailClusteringService from '@/services/detailClusteringService';
+import uploadService from '@/services/uploadService';
 
-function ClusteringPage() {
+const truncateName = (name, maxLen = 30) => {
+  if (!name) return '';
+  return name.length > maxLen ? name.slice(0, maxLen) + '...' : name;
+};
+
+function Pagination({ currentPage, totalPages, totalCount, pageSize, onPageChange, onPageSizeChange }) {
+  if (totalCount === 0) return null;
+  const s = currentPage * pageSize + 1;
+  const e = Math.min((currentPage + 1) * pageSize, totalCount);
+  return (
+    <div className="p-3 border-t bg-white flex-shrink-0">
+      <div className="flex items-center justify-between text-xs">
+        <span className="text-muted-foreground hidden sm:block">{s}-{e} / 총 {totalCount.toLocaleString()}건</span>
+        <div className="flex items-center gap-2 w-full sm:w-auto justify-between sm:justify-end">
+          <Select value={pageSize.toString()} onValueChange={v => onPageSizeChange(+v)}>
+            <SelectTrigger className="w-[100px] h-8 text-xs"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              {[20, 50, 100, 500].map(n => <SelectItem key={n} value={n.toString()}>{n}개씩</SelectItem>)}
+            </SelectContent>
+          </Select>
+          <div className="flex gap-1">
+            <Button variant="outline" size="sm" className="h-8 px-2" onClick={() => onPageChange(0)} disabled={currentPage === 0}>처음</Button>
+            <Button variant="outline" size="sm" className="h-8 px-2" onClick={() => onPageChange(currentPage - 1)} disabled={currentPage === 0}>이전</Button>
+            <span className="flex items-center px-2 text-xs font-medium">{currentPage + 1}/{totalPages || 1}</span>
+            <Button variant="outline" size="sm" className="h-8 px-2" onClick={() => onPageChange(currentPage + 1)} disabled={currentPage >= totalPages - 1}>다음</Button>
+            <Button variant="outline" size="sm" className="h-8 px-2" onClick={() => onPageChange(totalPages - 1)} disabled={currentPage >= totalPages - 1}>마지막</Button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+const SortIcon = ({ field, cur, dir }) => {
+  if (cur !== field) return <ArrowUpDown className="h-3 w-3 ml-1 opacity-40" />;
+  return dir === 'asc' ? <ArrowUp className="h-3 w-3 ml-1" /> : <ArrowDown className="h-3 w-3 ml-1" />;
+};
+
+function StatsListView({
+  items, checkedSet, onCheckedChange, nameKey, nameLabel,
+  sortField, sortDir, onSort, formatAmount, amountUnit,
+  onDetail, isDragging, setIsDragging, dragStartRef,
+}) {
+  const handleMouseDown = (e, key, idx) => {
+    if (e.button !== 0) return;
+    if (e.target.closest('[role="checkbox"]')) return;
+    e.preventDefault();
+    if (e.ctrlKey || e.metaKey) {
+      onCheckedChange(prev => {
+        const next = new Set(prev);
+        next.has(key) ? next.delete(key) : next.add(key);
+        return next;
+      });
+      return;
+    }
+    setIsDragging(true);
+    dragStartRef.current = { idx, key };
+    onCheckedChange(new Set([key]));
+  };
+  const handleMouseEnter = (key, idx) => {
+    if (!isDragging || !dragStartRef.current) return;
+    const sIdx = dragStartRef.current.idx;
+    const lo = Math.min(sIdx, idx), hi = Math.max(sIdx, idx);
+    const next = new Set();
+    for (let i = lo; i <= hi; i++) next.add(items[i][nameKey]);
+    onCheckedChange(next);
+  };
+  const toggleCheck = (key) => {
+    onCheckedChange(prev => {
+      const next = new Set(prev);
+      next.has(key) ? next.delete(key) : next.add(key);
+      return next;
+    });
+  };
+  return (
+    <div className="select-none" onMouseUp={() => setIsDragging(false)}>
+      <div className="grid grid-cols-[28px_1fr_70px_100px_auto] gap-1 items-center px-2 py-2 border-b bg-gray-100 text-xs font-semibold text-muted-foreground sticky top-0 z-10">
+        <div></div>
+        <div className="cursor-pointer flex items-center" onClick={() => onSort(nameKey)}>{nameLabel}<SortIcon field={nameKey} cur={sortField} dir={sortDir} /></div>
+        <div className="text-right cursor-pointer flex items-center justify-end" onClick={() => onSort('count')}>Count<SortIcon field="count" cur={sortField} dir={sortDir} /></div>
+        <div className="text-right cursor-pointer flex items-center justify-end" onClick={() => onSort('totalAmount')}>합계({amountUnit})<SortIcon field="totalAmount" cur={sortField} dir={sortDir} /></div>
+        {onDetail && <div></div>}
+      </div>
+      {items.length === 0 ? (
+        <div className="text-center text-xs text-muted-foreground py-8">통계가 없습니다</div>
+      ) : items.map((item, idx) => {
+        const key = item[nameKey];
+        const checked = checkedSet.has(key);
+        return (
+          <div key={key} className={`grid grid-cols-[28px_1fr_70px_100px_auto] gap-1 items-center px-2 py-1.5 border-b cursor-pointer transition-colors ${checked ? 'bg-blue-50' : 'hover:bg-gray-50'}`}
+            onMouseDown={e => handleMouseDown(e, key, idx)} onMouseEnter={() => handleMouseEnter(key, idx)}>
+            <Checkbox checked={checked} onCheckedChange={() => toggleCheck(key)} onMouseDown={e => e.stopPropagation()} onClick={e => e.stopPropagation()} />
+            <div className="truncate"><Badge variant="outline" className="text-[10px] font-medium max-w-[140px] truncate inline-block">{key}</Badge></div>
+            <div className="text-right text-xs tabular-nums">{(item.count || 0).toLocaleString()}</div>
+            <div className="text-right text-xs tabular-nums">{formatAmount(item.totalAmount || 0)}</div>
+            {onDetail && (
+              <Button variant="ghost" size="sm" className="h-5 px-1.5 text-[10px] text-blue-600 hover:text-blue-800 hover:bg-blue-100"
+                onMouseDown={e => e.stopPropagation()} onClick={e => { e.stopPropagation(); onDetail(key); }}>자세히</Button>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+/* ============================================================
+   메인 DetailClusteringPage
+   ============================================================ */
+function DetailClusteringPage() {
   const { projectId, sessionId } = useParams();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const clusterId = parseInt(searchParams.get('clusterId'), 10);
 
-  // ===== 상태 관리 =====
-  const [sessionInfo] = useState({
-    sessionName: '지급수수료_sample1_2025-10-11',
-    totalRecords: 6270,
-  });
-
-  // 통계
-  const [statistics, setStatistics] = useState({
-    totalRows: 6270,
-    unmergedClusters: 450,
-    unmergedTotalAmount: 500000000,
-  });
-
-  // 검색
-  const [searchMethod, setSearchMethod] = useState('keyword');
-  const [searchInput, setSearchInput] = useState('');
-  const [exactMatch, setExactMatch] = useState(false);
-  const [excludeKeywords, setExcludeKeywords] = useState('');
-  const [searchInResults, setSearchInResults] = useState(false);
-
-  // 검색 결과 테이블 + 페이징
-  const [searchResults, setSearchResults] = useState([]);
-  const [selectedResults, setSelectedResults] = useState([]);
-  const [selectAllResults, setSelectAllResults] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [merging, setMerging] = useState(false);
+  const [mergingProgress, setMergingProgress] = useState(0);
+  const [mergingClusters, setMergingClusters] = useState(new Set());
+  const [unmerging, setUnmerging] = useState(false);
+  const [unmergingProgress, setUnmergingProgress] = useState(0);
+  const [unmergingClusters, setUnmergingClusters] = useState(new Set());
+  const [statistics, setStatistics] = useState({ totalRows: 0, unmergedCount: 0, unmergedTotalAmount: 0, mergedGroupCount: 0, hasSupplier: false });
   const [amountUnit, setAmountUnit] = useState('원');
+  const divisor = { '원': 1, '천원': 1000, '백만원': 1000000, '억원': 100000000 };
 
-  // ===== ✅ 페이징 state 추가 (이 부분이 누락되었습니다!) =====
-  const [currentPage, setCurrentPage] = useState(1);
-  const [pageSize, setPageSize] = useState(20);
+  const [searchableColumns, setSearchableColumns] = useState([]);
+  const [searchColumn, setSearchColumn] = useState('keyword');
+  const [searchKeyword, setSearchKeyword] = useState('');
+  const [exactMatch, setExactMatch] = useState(false);
+  const [excludeKeyword, setExcludeKeyword] = useState('');
+  const [excludeExactMatch, setExcludeExactMatch] = useState(false);
+  const [searchWithinResults, setSearchWithinResults] = useState(false);
+  const [previousResultIds, setPreviousResultIds] = useState(null);
+  const [searchCollapsed, setSearchCollapsed] = useState(false);
+  const [appliedSearchParams, setAppliedSearchParams] = useState(null);
+  const [searchTabMode, setSearchTabMode] = useState('basic');
 
-  // 계산된 값
-  const totalPages = Math.ceil(searchResults.length / pageSize);
-  const startRow = (currentPage - 1) * pageSize + 1;
-  const endRow = Math.min(currentPage * pageSize, searchResults.length);
+  const [keywordHierarchy, setKeywordHierarchy] = useState([]);
+  const [kwHierarchyLoading, setKwHierarchyLoading] = useState(false);
+  const [expandedLv1, setExpandedLv1] = useState(new Set());
+  const [expandedLv2, setExpandedLv2] = useState(new Set());
+  const [newKeywordInput, setNewKeywordInput] = useState({ level: 0, parentId: null, value: '' });
+  const [keywordHierarchyDialog, setKeywordHierarchyDialog] = useState({ open: false, parentId: null, parentKeyword: '', level: 2 });
 
+  const [clusterData, setClusterData] = useState([]);
+  const [visibleColumns, setVisibleColumns] = useState([]);
+  const [clusterPage, setClusterPage] = useState(0);
+  const [clusterPageSize, setClusterPageSize] = useState(20);
+  const [clusterTotalCount, setClusterTotalCount] = useState(0);
+  const [clusterTotalPages, setClusterTotalPages] = useState(0);
+  const [sort, setSort] = useState(null);
 
+  const [selectAllMode, setSelectAllMode] = useState(false);
+  const [exceptions, setExceptions] = useState(new Set());
+  const [isDraggingRow, setIsDraggingRow] = useState(false);
+  const dragRowStart = useRef(null);
+  const dragRowAction = useRef(null);
 
-  // 키워드/공급업체 통계 (탭)
-  const [statsTab, setStatsTab] = useState('keyword');
+  const [activeTab, setActiveTab] = useState('keyword');
   const [keywordStats, setKeywordStats] = useState([]);
-  const [selectedKeywordStats, setSelectedKeywordStats] = useState([]);
+  const [kwLoading, setKwLoading] = useState(false);
+  const [kwCheckedSet, setKwCheckedSet] = useState(new Set());
+  const [kwSortField, setKwSortField] = useState('count');
+  const [kwSortDir, setKwSortDir] = useState('desc');
+  const [kwDragging, setKwDragging] = useState(false);
+  const kwDragRef = useRef(null);
+
   const [supplierStats, setSupplierStats] = useState([]);
-  const [selectedSupplierStats, setSelectedSupplierStats] = useState([]);
+  const [supLoading, setSupLoading] = useState(false);
+  const [supCheckedSet, setSupCheckedSet] = useState(new Set());
+  const [supSortField, setSupSortField] = useState('count');
+  const [supSortDir, setSupSortDir] = useState('desc');
+  const [supDragging, setSupDragging] = useState(false);
+  const supDragRef = useRef(null);
 
-  // lv1 선택
-  const [lv1Items, setLv1Items] = useState([]);
-  const [selectedLv1, setSelectedLv1] = useState(null);
-
-  // 추천 키워드
-  const [recommendedKeywords, setRecommendedKeywords] = useState([]);
-  const [selectedRecommended, setSelectedRecommended] = useState(null);
-
-  // 병합 결과 (테이블)
   const [mergedClusters, setMergedClusters] = useState([]);
-  const [selectedMergedClusters, setSelectedMergedClusters] = useState([]);
-  const [detailDialog, setDetailDialog] = useState({ open: false, cluster: null });
-  const [selectedDetailItems, setSelectedDetailItems] = useState([]);
+  const [selectedMerged, setSelectedMerged] = useState(new Set());
 
-  // 클러스터명 수정 다이얼로그
+  const [detailDialog, setDetailDialog] = useState({ open: false, cluster: null });
+  const [detailChecked, setDetailChecked] = useState(new Set());
+  const [detailDragging, setDetailDragging] = useState(false);
+  const detailDragStart = useRef(null);
+  const detailDragAction = useRef(null);
   const [renameDialog, setRenameDialog] = useState({ open: false, cluster: null });
   const [newClusterName, setNewClusterName] = useState('');
-
-
-
-  // ===== Mock 데이터 생성 =====
-  const generateKeywordStats = () => {
-    const keywords = ['이커머스', '실비', '안분', '지급수수료', '물류용역', '인터넷몰', 'SAP'];
-    return keywords.map((kw, idx) => ({
-      id: idx + 1,
-      keyword: kw,
-      count: Math.floor(Math.random() * 500) + 100,
-      totalAmount: Math.floor(Math.random() * 100000000) + 10000000,
-      isMerged: false,
-    }));
-  };
-
-  const generateSupplierStats = () => {
-    const suppliers = ['지급수수료(물류용역)', '광고선전비', '전산비', '임차료', '운반비'];
-    return suppliers.map((sup, idx) => ({
-      id: idx + 1,
-      supplier: sup,
-      count: Math.floor(Math.random() * 300) + 50,
-      totalAmount: Math.floor(Math.random() * 80000000) + 5000000,
-      isMerged: false,
-    }));
-  };
-
-  const generateSearchResults = (count = 100) => {
-    const companies = ['더데이걸', '로엠', '포인포인트', '오휴', '핸트메이드'];
-    return Array.from({ length: count }, (_, idx) => ({
-      id: idx + 1,
-      clusterNumber: idx + 1,
-      keywords: ['이커머스', '실비', '안분'],
-      department: `인터넷몰 ${companies[idx % companies.length]}`,
-      supplier: '지급수수료(물류용역)',
-      amount: Math.floor(Math.random() * 10000000) + 100000,
-      costCenter: 'CC1000',
-    }));
-  };
-
-  const generateLv1Items = () => {
-    return ['이커머스', '지급수수료', '인터넷몰', '실비', '안분'].map((item, idx) => ({
-      id: idx + 1,
-      name: item,
-    }));
-  };
-
-  const generateRecommendedKeywords = () => {
-    return ['물류용역', 'SAP', '더데이걸', '로엠'].map((item, idx) => ({
-      id: idx + 1,
-      keyword: item,
-    }));
-  };
-
-  const generateMergedClusters = () => {
-    return [
-      {
-        id: 1,
-        clusterNumber: 500,
-        clusterName: '병합_이커머스_실비_안분',
-        keywords: ['이커머스', '실비', '안분'],
-        count: 1500,
-        totalAmount: 50000000,
-        subClusters: [
-          { id: 1, clusterNumber: 1, clusterName: '이커머스_실비', count: 500, totalAmount: 15000000 },
-          { id: 2, clusterNumber: 2, clusterName: '실비_안분', count: 600, totalAmount: 20000000 },
-          { id: 3, clusterNumber: 3, clusterName: '이커머스_안분', count: 400, totalAmount: 15000000 },
-        ],
-      },
-      {
-        id: 2,
-        clusterNumber: 501,
-        clusterName: '병합_지급수수료_물류용역',
-        keywords: ['지급수수료', '물류용역'],
-        count: 800,
-        totalAmount: 30000000,
-        subClusters: [
-          { id: 4, clusterNumber: 4, clusterName: '지급수수료', count: 400, totalAmount: 15000000 },
-          { id: 5, clusterNumber: 5, clusterName: '물류용역', count: 400, totalAmount: 15000000 },
-        ],
-      },
-    ];
-  };
-
-  // ===== useEffect =====
-  useEffect(() => {
-    loadData();
-  }, [sessionId]);
+  const [addMergeDialog, setAddMergeDialog] = useState(false);
 
   useEffect(() => {
-    // 페이지 변경 시 검색 결과 업데이트 (실제 API 호출 위치)
-    // 여기서 currentPage, pageSize를 API에 전달
-  }, [currentPage]);
+    const handler = () => { setIsDraggingRow(false); setKwDragging(false); setSupDragging(false); setDetailDragging(false); };
+    window.addEventListener('mouseup', handler);
+    return () => window.removeEventListener('mouseup', handler);
+  }, []);
 
-// 수정 후
-    const loadData = async () => {
+  const formatAmount = useCallback((amount) => {
+    if (amount == null || isNaN(amount)) return '0';
+    const v = amount / divisor[amountUnit];
+    if (amountUnit === '원') return Math.round(v).toLocaleString();
+    return v.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 });
+  }, [amountUnit]);
+
+  /* === 데이터 로드 (clusterId 스코핑) === */
+  const loadStatistics = useCallback(async () => {
+    try { setStatistics(await detailClusteringService.getStatistics(projectId, sessionId, clusterId)); } catch (e) { console.error(e); }
+  }, [projectId, sessionId, clusterId]);
+
+  const loadUnmerged = useCallback(async (page, size, kw) => {
+    setLoading(true);
+    try {
+      const r = await detailClusteringService.getUnmergedClusters(projectId, sessionId, clusterId, page, size, kw);
+      setClusterData(r.data || []); setVisibleColumns(r.columns || []);
+      setClusterTotalCount(r.totalCount || 0); setClusterTotalPages(r.totalPages || 0);
+    } catch (e) { console.error(e); } finally { setLoading(false); }
+  }, [projectId, sessionId, clusterId]);
+
+  const loadKwStats = useCallback(async () => {
+    setKwLoading(true);
+    try { setKeywordStats(await detailClusteringService.getKeywordStats(projectId, sessionId, clusterId) || []); } catch (e) { console.error(e); } finally { setKwLoading(false); }
+  }, [projectId, sessionId, clusterId]);
+
+  const loadSupStats = useCallback(async () => {
+    setSupLoading(true);
+    try { setSupplierStats(await detailClusteringService.getSupplierStats(projectId, sessionId, clusterId) || []); } catch (e) { console.error(e); } finally { setSupLoading(false); }
+  }, [projectId, sessionId, clusterId]);
+
+  const loadMerged = useCallback(async () => {
+    try { setMergedClusters(await detailClusteringService.getMergedClusters(projectId, sessionId, clusterId) || []); } catch (e) { console.error(e); }
+  }, [projectId, sessionId, clusterId]);
+
+  const loadSearchableColumns = useCallback(async () => {
+    try { setSearchableColumns(await detailClusteringService.getSearchableColumns(projectId, sessionId, clusterId) || []); } catch (e) { console.error(e); }
+  }, [projectId, sessionId, clusterId]);
+
+  const loadKeywordHierarchy = useCallback(async () => {
+    setKwHierarchyLoading(true);
+    try { setKeywordHierarchy(await detailClusteringService.getKeywordHierarchy(projectId, sessionId) || []); } catch (e) { console.error(e); } finally { setKwHierarchyLoading(false); }
+  }, [projectId, sessionId]);
+
+  const loadAll = useCallback(() =>
+    Promise.all([loadStatistics(), loadUnmerged(0, clusterPageSize, null), loadKwStats(), loadSupStats(), loadMerged(), loadSearchableColumns(), loadKeywordHierarchy()]),
+    [loadStatistics, loadUnmerged, clusterPageSize, loadKwStats, loadSupStats, loadMerged, loadSearchableColumns, loadKeywordHierarchy]);
+
+  const refreshAll = useCallback(async () => {
+    await Promise.all([loadStatistics(), loadUnmerged(clusterPage, clusterPageSize, appliedSearchParams), loadKwStats(), loadSupStats(), loadMerged()]);
+  }, [loadStatistics, loadUnmerged, clusterPage, clusterPageSize, appliedSearchParams, loadKwStats, loadSupStats, loadMerged]);
+
+  useEffect(() => { if (!isNaN(clusterId)) loadAll(); }, [projectId, sessionId, clusterId]);
+
+  /* === 고급 검색 === */
+  const handleAdvancedSearch = async (isSearchWithin = false) => {
+    setLoading(true); setClusterPage(0); setSelectAllMode(false); setExceptions(new Set());
+    try {
+      const params = { clusterId, page: 0, size: clusterPageSize, searchColumn, searchValue: searchKeyword.trim() || null, exactMatch, excludeValue: excludeKeyword.trim() || null, excludeExactMatch, withinClusterNumbers: isSearchWithin && previousResultIds ? previousResultIds : null };
+      const r = await detailClusteringService.advancedSearch(projectId, sessionId, params);
+      setClusterData(r.data || []); setVisibleColumns(r.columns || []); setClusterTotalCount(r.totalCount || 0); setClusterTotalPages(r.totalPages || 0);
+      if (r.resultClusterNumbers) setPreviousResultIds(r.resultClusterNumbers);
+      setAppliedSearchParams({ searchColumn, searchValue: searchKeyword.trim() || null, exactMatch, excludeValue: excludeKeyword.trim() || null, excludeExactMatch, isSearchWithin });
+    } catch (e) { console.error(e); alert('검색 실패: ' + (e.response?.data?.message || e.message)); } finally { setLoading(false); }
+  };
+  const handleSearch = () => { searchWithinResults && previousResultIds ? handleAdvancedSearch(true) : handleAdvancedSearch(false); };
+  const handleClearSearch = () => {
+    setSearchKeyword(''); setExcludeKeyword(''); setExactMatch(false); setExcludeExactMatch(false); setSearchWithinResults(false); setPreviousResultIds(null); setAppliedSearchParams(null);
+    setClusterPage(0); setSelectAllMode(false); setExceptions(new Set()); loadUnmerged(0, clusterPageSize, null);
+  };
+
+  const handlePageChange = async (p) => {
+    setClusterPage(p);
+    if (appliedSearchParams) {
+      setLoading(true);
       try {
-        setKeywordStats(generateKeywordStats());
-        setSupplierStats(generateSupplierStats());
+        const params = { clusterId, page: p, size: clusterPageSize, searchColumn: appliedSearchParams.searchColumn, searchValue: appliedSearchParams.searchValue, exactMatch: appliedSearchParams.exactMatch, excludeValue: appliedSearchParams.excludeValue, excludeExactMatch: appliedSearchParams.excludeExactMatch, withinClusterNumbers: appliedSearchParams.isSearchWithin ? previousResultIds : null };
+        const r = await detailClusteringService.advancedSearch(projectId, sessionId, params);
+        setClusterData(r.data || []); setVisibleColumns(r.columns || []);
+      } catch (e) { console.error(e); } finally { setLoading(false); }
+    } else { loadUnmerged(p, clusterPageSize, null); }
+  };
 
-        const allResults = generateSearchResults(100);
-        setSearchResults(allResults);
+  const handlePageSizeChange = async (s) => {
+    setClusterPageSize(s); setClusterPage(0);
+    if (appliedSearchParams) {
+      setLoading(true);
+      try {
+        const params = { clusterId, page: 0, size: s, searchColumn: appliedSearchParams.searchColumn, searchValue: appliedSearchParams.searchValue, exactMatch: appliedSearchParams.exactMatch, excludeValue: appliedSearchParams.excludeValue, excludeExactMatch: appliedSearchParams.excludeExactMatch, withinClusterNumbers: appliedSearchParams.isSearchWithin ? previousResultIds : null };
+        const r = await detailClusteringService.advancedSearch(projectId, sessionId, params);
+        setClusterData(r.data || []); setVisibleColumns(r.columns || []); setClusterTotalCount(r.totalCount || 0); setClusterTotalPages(r.totalPages || 0);
+      } catch (e) { console.error(e); } finally { setLoading(false); }
+    } else { loadUnmerged(0, s, null); }
+  };
 
-        // ❌ 삭제: totalPages는 state가 아니라 계산된 변수이므로 set 함수가 없습니다.
-        // setTotalPages(Math.ceil(allResults.length / pageSize));
+  const handleKeywordHierarchySearch = async (keyword) => {
+    setSearchKeyword(keyword); setSearchColumn('keyword'); setExactMatch(true); setExcludeKeyword(''); setExcludeExactMatch(false); setSearchWithinResults(false); setPreviousResultIds(null);
+    setClusterPage(0); setSelectAllMode(false); setExceptions(new Set()); setSearchTabMode('basic'); setSearchCollapsed(false);
+    setLoading(true);
+    try {
+      const params = { clusterId, page: 0, size: clusterPageSize, searchColumn: 'keyword', searchValue: keyword, exactMatch: true, excludeValue: null, excludeExactMatch: false, withinClusterNumbers: null };
+      const r = await detailClusteringService.advancedSearch(projectId, sessionId, params);
+      setClusterData(r.data || []); setVisibleColumns(r.columns || []); setClusterTotalCount(r.totalCount || 0); setClusterTotalPages(r.totalPages || 0);
+      if (r.resultClusterNumbers) setPreviousResultIds(r.resultClusterNumbers);
+      setAppliedSearchParams({ searchColumn: 'keyword', searchValue: keyword, exactMatch: true, excludeValue: null, excludeExactMatch: false, isSearchWithin: false });
+    } catch (e) { console.error(e); alert('검색 실패: ' + (e.response?.data?.message || e.message)); } finally { setLoading(false); }
+  };
 
-        setLv1Items(generateLv1Items());
-        setRecommendedKeywords(generateRecommendedKeywords());
-        setMergedClusters(generateMergedClusters());
-      } catch (error) {
-        console.error('데이터 로드 실패:', error);
+  const handleAddKeyword = async (level, parentId, keyword) => {
+    if (!keyword.trim()) return;
+    try { await detailClusteringService.addKeywordHierarchy(projectId, sessionId, level, parentId, keyword.trim()); await loadKeywordHierarchy(); setNewKeywordInput({ level: 0, parentId: null, value: '' }); }
+    catch (e) { alert('키워드 추가 실패: ' + (e.response?.data?.message || e.message)); }
+  };
+  const handleDeleteKeyword = async (id) => {
+    if (!window.confirm('키워드를 삭제하시겠습니까? 하위 키워드도 함께 삭제됩니다.')) return;
+    try { await detailClusteringService.deleteKeywordHierarchy(projectId, sessionId, id); await loadKeywordHierarchy(); }
+    catch (e) { alert('키워드 삭제 실패: ' + (e.response?.data?.message || e.message)); }
+  };
+
+  /* === 체크박스 === */
+  const isRowChecked = useCallback((cn) => selectAllMode ? !exceptions.has(cn) : exceptions.has(cn), [selectAllMode, exceptions]);
+  const handleHeaderCheck = (checked) => { setSelectAllMode(!!checked); setExceptions(new Set()); };
+  const handleRowCheck = useCallback((cn, checked) => {
+    setExceptions(prev => { const next = new Set(prev); if (selectAllMode) { checked ? next.delete(cn) : next.add(cn); } else { checked ? next.add(cn) : next.delete(cn); } return next; });
+  }, [selectAllMode]);
+
+  const selectedCount = useMemo(() => selectAllMode ? clusterTotalCount - exceptions.size : exceptions.size, [selectAllMode, exceptions, clusterTotalCount]);
+  const isHeaderChecked = useMemo(() => clusterTotalCount > 0 && selectAllMode && exceptions.size === 0, [selectAllMode, exceptions, clusterTotalCount]);
+  const isHeaderIndeterminate = useMemo(() => {
+    if (selectAllMode && exceptions.size > 0 && exceptions.size < clusterTotalCount) return true;
+    if (!selectAllMode && exceptions.size > 0 && exceptions.size < clusterTotalCount) return true;
+    return false;
+  }, [selectAllMode, exceptions, clusterTotalCount]);
+
+  const getSelectedClusterNumbers = useCallback(async () => {
+    if (selectAllMode) {
+      let all;
+      if (appliedSearchParams) {
+        all = await detailClusteringService.getAdvancedSearchClusterNumbers(projectId, sessionId, { clusterId, searchColumn: appliedSearchParams.searchColumn, searchValue: appliedSearchParams.searchValue, exactMatch: appliedSearchParams.exactMatch, excludeValue: appliedSearchParams.excludeValue, excludeExactMatch: appliedSearchParams.excludeExactMatch, withinClusterNumbers: appliedSearchParams.isSearchWithin ? previousResultIds : null });
+      } else {
+        all = await detailClusteringService.getAllUnmergedClusterNumbers(projectId, sessionId, clusterId, null);
       }
-    };
-
-  // ===== 페이징 처리 =====
-    const getPaginatedResults = () => {
-      const startIndex = (currentPage - 1) * pageSize;
-      const endIndex = startIndex + pageSize;
-      return searchResults.slice(startIndex, endIndex);
-    };
-
-  // 수정 후
-  const handlePageChange = (page) => {
-    setCurrentPage(page); // ✅ 매개변수 page 사용
-    setSelectedResults([]); // ✅ 올바른 state 함수 사용
-  };
-
-  // ===== 원 단위 변환 =====
-  const formatAmount = (amount) => {
-    const units = { 원: 1, 천원: 1000, 백만원: 1000000, 억원: 100000000 };
-    const divisor = units[amountUnit] || 1;
-    return (amount / divisor).toLocaleString('ko-KR', { maximumFractionDigits: 0 });
-  };
-
-  // ===== 검색 핸들러 =====
-  const handleSearch = () => {
-    if (!searchInput.trim()) {
-      alert('검색어를 입력하세요.');
-
-      // ✅ 검색 후 페이지 1로 초기화
-      setCurrentPage(1);
-      return;
+      return all.filter(id => !exceptions.has(id));
     }
+    return Array.from(exceptions);
+  }, [selectAllMode, exceptions, projectId, sessionId, clusterId, appliedSearchParams, previousResultIds]);
 
-    let message = `${searchMethod === 'keyword' ? '키워드' : '공급업체'} 검색: ${searchInput}`;
-    if (exactMatch) message += ' (완전 일치)';
-    if (excludeKeywords) message += ` / 제외: ${excludeKeywords}`;
-    if (searchInResults) message += ' (결과 내 재검색)';
+  /* === 드래그 선택 === */
+  const handleTableRowMouseDown = useCallback((row, idx, e) => {
+    if (e.button !== 0) return; if (e.target.closest('[role="checkbox"]')) return; e.preventDefault();
+    const cn = row.clusterNumber;
+    if (e.ctrlKey || e.metaKey) { handleRowCheck(cn, !isRowChecked(cn)); return; }
+    setIsDraggingRow(true); const currentlyChecked = isRowChecked(cn); dragRowAction.current = currentlyChecked ? 'uncheck' : 'check'; dragRowStart.current = idx; handleRowCheck(cn, !currentlyChecked);
+  }, [isRowChecked, handleRowCheck]);
 
-    alert(message);
-    setCurrentPage(1); // 검색 시 첫 페이지로
+  const handleTableRowMouseEnter = useCallback((row, idx) => {
+    if (!isDraggingRow || dragRowStart.current === null) return;
+    const lo = Math.min(dragRowStart.current, idx), hi = Math.max(dragRowStart.current, idx);
+    const action = dragRowAction.current;
+    setExceptions(prev => { const next = new Set(prev); for (let i = lo; i <= hi; i++) { const cn = clusterData[i]?.clusterNumber; if (cn == null) continue; if (selectAllMode) { action === 'check' ? next.delete(cn) : next.add(cn); } else { action === 'check' ? next.add(cn) : next.delete(cn); } } return next; });
+  }, [isDraggingRow, selectAllMode, clusterData]);
+
+  /* === 세부 병합 === */
+  const handleMerge = async () => {
+    if (selectedCount < 2) { alert('2개 이상의 클러스터를 선택하세요.'); return; }
+    if (!window.confirm(`선택한 ${selectedCount}개 클러스터를 세부 병합하시겠습니까?`)) return;
+    setMerging(true); setMergingProgress(0);
+    try {
+      const pi = setInterval(() => setMergingProgress(prev => Math.min(prev + 10, 90)), 200);
+      const nums = await getSelectedClusterNumbers();
+      await detailClusteringService.mergeClusters(projectId, sessionId, clusterId, nums);
+      clearInterval(pi); setMergingProgress(100); await new Promise(r => setTimeout(r, 300));
+      setSelectAllMode(false); setExceptions(new Set()); await refreshAll();
+    } catch (e) { alert('세부 병합 실패: ' + (e.response?.data?.message || e.message)); } finally { setMerging(false); setMergingProgress(0); }
   };
 
-  // ===== 검색 결과 선택 =====
-  const handleSelectAllResults = (checked) => {
-    setSelectAllResults(checked);
-    if (checked) {
-      // 전체 선택 (모든 페이지의 모든 데이터)
-      setSelectedResults(searchResults.map((r) => r.id));
-    } else {
-      setSelectedResults([]);
-    }
+  const handleAddToMerged = async (targetMergedNumber) => {
+    if (selectedCount === 0) return;
+    setMerging(true); setMergingProgress(0); setMergingClusters(new Set([targetMergedNumber]));
+    try {
+      const pi = setInterval(() => setMergingProgress(prev => Math.min(prev + 10, 90)), 200);
+      const nums = await getSelectedClusterNumbers();
+      await detailClusteringService.addToMergedCluster(projectId, sessionId, clusterId, targetMergedNumber, nums);
+      clearInterval(pi); setMergingProgress(100); await new Promise(r => setTimeout(r, 300));
+      setSelectAllMode(false); setExceptions(new Set()); setAddMergeDialog(false); await refreshAll();
+    } catch (e) { alert('추가 세부 병합 실패: ' + (e.response?.data?.message || e.message)); } finally { setMerging(false); setMergingProgress(0); setMergingClusters(new Set()); }
   };
 
-  const handleToggleResult = (id, checked) => {
-    if (checked) {
-      setSelectedResults([...selectedResults, id]);
-    } else {
-      setSelectedResults(selectedResults.filter((rid) => rid !== id));
-      setSelectAllResults(false);
-    }
+  /* === 키워드/공급업체 자세히 === */
+  const handleKwDetail = async (keyword) => {
+    setSearchColumn('keyword'); setSearchKeyword(keyword); setExactMatch(true); setExcludeKeyword(''); setExcludeExactMatch(false); setSearchWithinResults(false); setPreviousResultIds(null);
+    setClusterPage(0); setSelectAllMode(false); setExceptions(new Set()); setSearchTabMode('basic'); setSearchCollapsed(false);
+    setLoading(true);
+    try {
+      const params = { clusterId, page: 0, size: clusterPageSize, searchColumn: 'keyword', searchValue: keyword, exactMatch: true, excludeValue: null, excludeExactMatch: false, withinClusterNumbers: null };
+      const r = await detailClusteringService.advancedSearch(projectId, sessionId, params);
+      setClusterData(r.data || []); setVisibleColumns(r.columns || []); setClusterTotalCount(r.totalCount || 0); setClusterTotalPages(r.totalPages || 0);
+      if (r.resultClusterNumbers) setPreviousResultIds(r.resultClusterNumbers);
+      setAppliedSearchParams({ searchColumn: 'keyword', searchValue: keyword, exactMatch: true, excludeValue: null, excludeExactMatch: false, isSearchWithin: false });
+    } catch (e) { console.error(e); alert('검색 실패: ' + (e.response?.data?.message || e.message)); } finally { setLoading(false); }
   };
 
-  // ===== 병합/추가병합 =====
-  const handleMerge = () => {
-    if (selectedResults.length === 0) {
-      alert('병합할 항목을 선택하세요.');
-      return;
-    }
-    const newName = prompt('병합 클러스터 이름을 입력하세요:');
-    if (!newName) return;
-    alert(`${selectedResults.length}개 항목을 [${newName}]로 병합합니다.`);
-    setSelectedResults([]);
-    loadData();
+  const handleSupDetail = async (supplier) => {
+    setSearchColumn('supplier'); setSearchKeyword(supplier); setExactMatch(true); setExcludeKeyword(''); setExcludeExactMatch(false); setSearchWithinResults(false); setPreviousResultIds(null);
+    setClusterPage(0); setSelectAllMode(false); setExceptions(new Set()); setSearchTabMode('basic'); setSearchCollapsed(false);
+    setLoading(true);
+    try {
+      const params = { clusterId, page: 0, size: clusterPageSize, searchColumn: 'supplier', searchValue: supplier, exactMatch: true, excludeValue: null, excludeExactMatch: false, withinClusterNumbers: null };
+      const r = await detailClusteringService.advancedSearch(projectId, sessionId, params);
+      setClusterData(r.data || []); setVisibleColumns(r.columns || []); setClusterTotalCount(r.totalCount || 0); setClusterTotalPages(r.totalPages || 0);
+      if (r.resultClusterNumbers) setPreviousResultIds(r.resultClusterNumbers);
+      setAppliedSearchParams({ searchColumn: 'supplier', searchValue: supplier, exactMatch: true, excludeValue: null, excludeExactMatch: false, isSearchWithin: false });
+    } catch (e) { console.error(e); alert('검색 실패: ' + (e.response?.data?.message || e.message)); } finally { setLoading(false); }
   };
 
-  const handleAddMerge = () => {
-    if (selectedResults.length === 0) {
-      alert('추가 병합할 항목을 선택하세요.');
-      return;
-    }
-    alert('선택한 항목을 기존 병합 클러스터에 추가합니다.');
-    setSelectedResults([]);
-    loadData();
+  const handleAutoMergeByKeywords = async () => {
+    if (kwCheckedSet.size === 0) { alert('키워드를 선택해주세요.'); return; }
+    if (!window.confirm(`선택한 ${kwCheckedSet.size}개 키워드의 클러스터를 자동 세부 병합합니다.`)) return;
+    setMerging(true);
+    try {
+      for (const keyword of kwCheckedSet) {
+        const ids = await detailClusteringService.getAllUnmergedClusterNumbers(projectId, sessionId, clusterId, keyword);
+        if (ids.length >= 2) await detailClusteringService.mergeClusters(projectId, sessionId, clusterId, ids);
+      }
+      setKwCheckedSet(new Set()); setSelectAllMode(false); setExceptions(new Set()); await refreshAll();
+    } catch (e) { alert('자동 세부 클러스터링 실패: ' + (e.response?.data?.message || e.message)); } finally { setMerging(false); }
   };
 
-  // ===== 키워드/공급업체 통계 선택 =====
-  const handleToggleKeywordStat = (id, checked) => {
-    if (checked) {
-      setSelectedKeywordStats([...selectedKeywordStats, id]);
-    } else {
-      setSelectedKeywordStats(selectedKeywordStats.filter((sid) => sid !== id));
-    }
+  const handleAutoMergeBySuppliers = async () => {
+    if (supCheckedSet.size === 0) { alert('공급업체를 선택해주세요.'); return; }
+    alert('공급업체 기준 자동 세부 클러스터링은 추후 확장됩니다.');
   };
 
-  const handleToggleSupplierStat = (id, checked) => {
-    if (checked) {
-      setSelectedSupplierStats([...selectedSupplierStats, id]);
-    } else {
-      setSelectedSupplierStats(selectedSupplierStats.filter((sid) => sid !== id));
-    }
+  /* === 통계 정렬 === */
+  const handleKwSort = (f) => { if (kwSortField === f) setKwSortDir(d => d === 'asc' ? 'desc' : 'asc'); else { setKwSortField(f); setKwSortDir('desc'); } };
+  const handleSupSort = (f) => { if (supSortField === f) setSupSortDir(d => d === 'asc' ? 'desc' : 'asc'); else { setSupSortField(f); setSupSortDir('desc'); } };
+  const sortedKwStats = useMemo(() => { const s = [...keywordStats]; s.sort((a, b) => { const av = a[kwSortField], bv = b[kwSortField]; if (typeof av === 'string') return kwSortDir === 'asc' ? av.localeCompare(bv) : bv.localeCompare(av); return kwSortDir === 'asc' ? (av || 0) - (bv || 0) : (bv || 0) - (av || 0); }); return s; }, [keywordStats, kwSortField, kwSortDir]);
+  const sortedSupStats = useMemo(() => { const s = [...supplierStats]; s.sort((a, b) => { const av = a[supSortField], bv = b[supSortField]; if (typeof av === 'string') return supSortDir === 'asc' ? av.localeCompare(bv) : bv.localeCompare(av); return supSortDir === 'asc' ? (av || 0) - (bv || 0) : (bv || 0) - (av || 0); }); return s; }, [supplierStats, supSortField, supSortDir]);
+
+  /* === 세부 병합 결과 관리 === */
+  const handleUnmerge = async (cn) => {
+    if (!window.confirm(`클러스터 #${cn}의 세부 병합을 해제하시겠습니까?`)) return;
+    setUnmergingClusters(prev => new Set(prev).add(cn));
+    try { await detailClusteringService.unmergeClusters(projectId, sessionId, clusterId, cn); setSelectedMerged(new Set()); await refreshAll(); }
+    catch (e) { alert('세부 병합 해제 실패: ' + (e.response?.data?.message || e.message)); }
+    finally { setUnmergingClusters(prev => { const n = new Set(prev); n.delete(cn); return n; }); }
   };
 
-  const handleClickKeywordStat = (stat) => {
-    setSearchInput(stat.keyword);
-    setSearchMethod('keyword');
-    handleSearch();
+  const handleBulkUnmerge = async () => {
+    if (selectedMerged.size === 0) return;
+    if (!window.confirm(`${selectedMerged.size}개 세부 병합 클러스터를 해제하시겠습니까?`)) return;
+    setUnmerging(true); setUnmergingProgress(0); setUnmergingClusters(new Set(selectedMerged));
+    try {
+      const total = selectedMerged.size; let done = 0;
+      for (const cn of selectedMerged) { await detailClusteringService.unmergeClusters(projectId, sessionId, clusterId, cn); done++; setUnmergingProgress(Math.round((done / total) * 100)); }
+      await new Promise(r => setTimeout(r, 300)); setSelectedMerged(new Set()); await refreshAll();
+    } catch (e) { alert('세부 병합 해제 실패: ' + (e.response?.data?.message || e.message)); }
+    finally { setUnmerging(false); setUnmergingProgress(0); setUnmergingClusters(new Set()); }
   };
 
-  const handleClickSupplierStat = (stat) => {
-    setSearchInput(stat.supplier);
-    setSearchMethod('supplier');
-    handleSearch();
+  const handleMergeMerged = async () => {
+    if (selectedMerged.size < 2) { alert('2개 이상의 세부 병합 클러스터를 선택하세요.'); return; }
+    if (!window.confirm(`${selectedMerged.size}개 세부 병합 클러스터를 하나로 합치시겠습니까?`)) return;
+    setMerging(true); setMergingClusters(new Set(selectedMerged)); setMergingProgress(0);
+    try {
+      const pi = setInterval(() => setMergingProgress(prev => Math.min(prev + 10, 90)), 200);
+      await detailClusteringService.mergeMergedClusters(projectId, sessionId, clusterId, Array.from(selectedMerged));
+      clearInterval(pi); setMergingProgress(100); await new Promise(r => setTimeout(r, 300));
+      setSelectedMerged(new Set()); await refreshAll();
+    } catch (e) { alert('세부 병합 실패: ' + (e.response?.data?.message || e.message)); }
+    finally { setMerging(false); setMergingClusters(new Set()); setMergingProgress(0); }
   };
 
-  // ===== 병합 클러스터링 =====
-  const handleMergeClustering = () => {
-    const totalSelected = selectedKeywordStats.length + selectedSupplierStats.length;
-    if (totalSelected === 0) {
-      alert('병합할 항목을 선택하세요.');
-      return;
-    }
-    const newName = prompt('병합 클러스터 이름을 입력하세요:');
-    if (!newName) return;
-    alert(`${totalSelected}개 항목을 [${newName}]로 병합 클러스터링합니다.`);
-    setSelectedKeywordStats([]);
-    setSelectedSupplierStats([]);
-    loadData();
+  /* === 상세 다이얼로그 === */
+  const handleOpenDetail = (cluster) => { setDetailDialog({ open: true, cluster }); setDetailChecked(new Set()); setDetailDragging(false); detailDragStart.current = null; detailDragAction.current = null; };
+  const handleDetailRowMouseDown = useCallback((row, idx, e) => {
+    if (e.button !== 0) return; if (e.target.closest('[role="checkbox"]')) return; e.preventDefault();
+    const cn = row.clusterNumber;
+    if (e.ctrlKey || e.metaKey) { setDetailChecked(prev => { const next = new Set(prev); next.has(cn) ? next.delete(cn) : next.add(cn); return next; }); return; }
+    setDetailDragging(true); const cc = detailChecked.has(cn); detailDragAction.current = cc ? 'uncheck' : 'check'; detailDragStart.current = idx;
+    setDetailChecked(prev => { const next = new Set(prev); cc ? next.delete(cn) : next.add(cn); return next; });
+  }, [detailChecked]);
+  const handleDetailRowMouseEnter = useCallback((row, idx) => {
+    if (!detailDragging || detailDragStart.current === null) return;
+    const children = detailDialog.cluster?.children || []; const lo = Math.min(detailDragStart.current, idx), hi = Math.max(detailDragStart.current, idx); const action = detailDragAction.current;
+    setDetailChecked(prev => { const next = new Set(prev); for (let i = lo; i <= hi; i++) { const cn = children[i]?.clusterNumber; if (cn == null) continue; action === 'check' ? next.add(cn) : next.delete(cn); } return next; });
+  }, [detailDragging, detailDialog.cluster]);
+  const handlePartialUnmerge = async () => {
+    if (detailChecked.size === 0) { alert('해제할 항목을 선택하세요.'); return; }
+    if (!window.confirm(`선택한 ${detailChecked.size}개 클러스터를 세부 병합 해제하시겠습니까?`)) return;
+    try { await detailClusteringService.unmergePartialClusters(projectId, sessionId, clusterId, detailDialog.cluster.clusterNumber, Array.from(detailChecked)); setDetailDialog({ open: false, cluster: null }); setDetailChecked(new Set()); await refreshAll(); }
+    catch (e) { alert('부분 해제 실패: ' + (e.response?.data?.message || e.message)); }
   };
 
-  // ===== 미병합 클러스터 자동 병합 =====
-  const handleAutoMergeUnmerged = () => {
-    if (!window.confirm('모든 미병합 클러스터를 하나로 병합하시겠습니까?')) return;
-
-    const newName = prompt('자동 병합 클러스터 이름을 입력하세요:', '미병합_자동병합');
-    if (!newName) return;
-
-    alert(`모든 미병합 클러스터를 [${newName}]로 병합합니다.`);
-    loadData();
+  const handleOpenRename = (c) => { setRenameDialog({ open: true, cluster: c }); setNewClusterName(c.clusterName); };
+  const handleRename = async () => {
+    if (!newClusterName.trim()) return;
+    try { await detailClusteringService.renameCluster(projectId, sessionId, renameDialog.cluster.clusterNumber, newClusterName); setRenameDialog({ open: false, cluster: null }); await refreshAll(); }
+    catch (e) { alert('이름 변경 실패: ' + (e.response?.data?.message || e.message)); }
   };
 
-  // ===== lv1/추천 키워드 선택 =====
-  const handleSelectLv1 = (item) => {
-    setSelectedLv1(item);
-    setSearchInput(item.name);
-    setSearchMethod('keyword');
-  };
-
-  const handleSelectRecommended = (item) => {
-    setSelectedRecommended(item);
-    setSearchInput(item.keyword);
-    setSearchMethod('keyword');
-  };
-
-  // ===== 병합 결과 관리 =====
-  const handleToggleMergedCluster = (id, checked) => {
-    if (checked) {
-      setSelectedMergedClusters([...selectedMergedClusters, id]);
-    } else {
-      setSelectedMergedClusters(selectedMergedClusters.filter((cid) => cid !== id));
-    }
-  };
-
-  const handleMergeMergedClusters = () => {
-    if (selectedMergedClusters.length < 2) {
-      alert('병합할 클러스터를 2개 이상 선택하세요.');
-      return;
-    }
-    const newName = prompt('병합된 클러스터 이름을 입력하세요:');
-    if (!newName) return;
-    alert(`${selectedMergedClusters.length}개 병합 클러스터를 [${newName}]로 재병합합니다.`);
-    setSelectedMergedClusters([]);
-    loadData();
-  };
-
-  const handleUnmergeClusters = () => {
-    if (selectedMergedClusters.length === 0) {
-      alert('병합 해제할 클러스터를 선택하세요.');
-      return;
-    }
-    if (!window.confirm(`선택한 ${selectedMergedClusters.length}개 클러스터를 병합 해제하시겠습니까?`)) return;
-
-    alert('병합 해제 완료');
-    setSelectedMergedClusters([]);
-    loadData();
-  };
-
-  const handleOpenRenameMergedDialog = (cluster) => {
-    setRenameDialog({ open: true, cluster });
-    setNewClusterName(cluster.clusterName);
-  };
-
-  const handleRenameMergedCluster = () => {
-    if (!newClusterName.trim()) {
-      alert('클러스터 이름을 입력하세요.');
-      return;
-    }
-    alert(`클러스터 이름을 [${newClusterName}]로 변경합니다.`);
-    setRenameDialog({ open: false, cluster: null });
-    loadData();
-  };
-
-  // ===== 병합 결과 상세 보기 =====
-  const handleOpenDetail = (cluster) => {
-    setDetailDialog({ open: true, cluster });
-    setSelectedDetailItems([]);
-  };
-
-  const handleToggleDetailItem = (id, checked) => {
-    if (checked) {
-      setSelectedDetailItems([...selectedDetailItems, id]);
-    } else {
-      setSelectedDetailItems(selectedDetailItems.filter((did) => did !== id));
-    }
-  };
-
-  const handleUnmergeDetailItems = () => {
-    if (selectedDetailItems.length === 0) {
-      alert('미병합으로 되돌릴 항목을 선택하세요.');
-      return;
-    }
-    if (!window.confirm(`선택한 ${selectedDetailItems.length}개 항목을 미병합으로 되돌리시겠습니까?`)) return;
-
-    alert('미병합으로 되돌리기 완료');
-    setSelectedDetailItems([]);
-    setDetailDialog({ open: false, cluster: null });
-    loadData();
-  };
-
-  // ===== 완료 =====
-  const handleComplete = () => {
+  const handleComplete = async () => {
+    try { await uploadService.updateStepHistory(projectId, sessionId, 7); } catch (e) { console.error(e); }
     navigate(`/projects/${projectId}/sessions/${sessionId}/export`);
   };
+
+  /* === 테이블 컬럼 === */
+  const clusterColumns = useMemo(() => {
+    const cols = [
+      { key: '_cb', label: '', pinned: true, sortable: false, resizable: false, width: 50,
+        headerRender: () => <Checkbox checked={isHeaderChecked} ref={el => { if (el) el.indeterminate = isHeaderIndeterminate; }} onCheckedChange={handleHeaderCheck} />,
+        render: (row) => <Checkbox checked={isRowChecked(row.clusterNumber)} onCheckedChange={c => handleRowCheck(row.clusterNumber, c)} />,
+      },
+      { key: 'clusterNumber', label: '클러스터번호', pinned: true, sortable: true, width: 110, render: r => <Badge variant="outline" className="text-[10px] font-mono">#{r.clusterNumber}</Badge> },
+      { key: 'clusterName', label: '클러스터명', sortable: true, minWidth: 150, render: r => <span className="whitespace-nowrap" title={r.clusterName}>{truncateName(r.clusterName)}</span> },
+      { key: 'keywords', label: '키워드', sortable: false, minWidth: 200, render: r => <div className="flex flex-wrap gap-1">{(r.keywords || []).map((k, i) => <Badge key={i} variant="secondary" className="text-[10px]">{k}</Badge>)}</div> },
+      { key: 'count', label: 'Count', sortable: true, width: 90, cellClassName: 'text-right', headerClassName: 'text-right', render: r => <span className="block text-right">{(r.count || 0).toLocaleString()}</span> },
+      { key: 'totalAmount', label: `금액(${amountUnit})`, sortable: true, width: 130, cellClassName: 'text-right', headerClassName: 'text-right', render: r => <span className="block text-right">{formatAmount(r.totalAmount || 0)}</span> },
+    ];
+    if (visibleColumns?.length) { for (const colName of visibleColumns) { cols.push({ key: `rep_${colName}`, label: colName, sortable: false, minWidth: 100, render: r => { const v = r.representativeData?.[colName]; return <span className="whitespace-nowrap text-xs">{v != null ? String(v) : ''}</span>; } }); } }
+    return cols;
+  }, [isHeaderChecked, isHeaderIndeterminate, selectAllMode, exceptions, visibleColumns, amountUnit, formatAmount]);
+
+  const detailColumns = useMemo(() => {
+    const all = detailDialog.cluster?.children?.length || 0;
+    const isAllChecked = detailChecked.size === all && all > 0;
+    const isIndeterminate = detailChecked.size > 0 && detailChecked.size < all;
+    const cols = [
+      { key: '_cb', label: '', pinned: true, sortable: false, resizable: false, width: 40,
+        headerRender: () => <Checkbox checked={isAllChecked} ref={el => { if (el) el.indeterminate = isIndeterminate; }} onCheckedChange={c => { if (c) setDetailChecked(new Set((detailDialog.cluster?.children || []).map(ch => ch.clusterNumber))); else setDetailChecked(new Set()); }} />,
+        render: r => <Checkbox checked={detailChecked.has(r.clusterNumber)} onCheckedChange={c => setDetailChecked(prev => { const n = new Set(prev); c ? n.add(r.clusterNumber) : n.delete(r.clusterNumber); return n; })} />,
+      },
+      { key: 'clusterNumber', label: '#', pinned: true, sortable: false, width: 70, render: r => <Badge variant="outline" className="text-[10px] font-mono">#{r.clusterNumber}</Badge> },
+      { key: 'clusterName', label: '클러스터명', sortable: false, minWidth: 120, render: r => <span className="whitespace-nowrap">{truncateName(r.clusterName)}</span> },
+      { key: 'keywords', label: '키워드', sortable: false, minWidth: 160, render: r => <div className="flex flex-wrap gap-0.5">{(r.keywords||[]).map((k,i)=><Badge key={i} variant="secondary" className="text-[9px]">{k}</Badge>)}</div> },
+      { key: 'count', label: 'Count', sortable: false, width: 70, cellClassName: 'text-right', render: r => <span className="block text-right text-xs">{(r.count||0).toLocaleString()}</span> },
+      { key: 'totalAmount', label: `금액(${amountUnit})`, sortable: false, width: 100, cellClassName: 'text-right', render: r => <span className="block text-right text-xs">{formatAmount(r.totalAmount||0)}</span> },
+    ];
+    const visCols = detailDialog.cluster?.columns || [];
+    for (const colName of visCols) { cols.push({ key: `rep_${colName}`, label: colName, sortable: false, minWidth: 80, render: r => { const v = r.representativeData?.[colName]; return <span className="text-xs whitespace-nowrap">{v != null ? String(v) : ''}</span>; } }); }
+    return cols;
+  }, [detailDialog.cluster, detailChecked, amountUnit, formatAmount]);
+
+  /* === 렌더 === */
+  if (isNaN(clusterId)) {
+    return (<div className="flex items-center justify-center h-full"><Card className="p-8"><p className="text-lg font-semibold text-red-600">clusterId가 지정되지 않았습니다.</p><Button className="mt-4" onClick={() => navigate(`/projects/${projectId}/sessions/${sessionId}/export`)}>Export 페이지로 돌아가기</Button></Card></div>);
+  }
 
   return (
     <div className="flex flex-col h-full bg-gray-50 overflow-hidden">
       <div className="container mx-auto px-4 py-4 h-full flex flex-col min-h-0 max-w-[98vw]">
-
-        {/* 상단 헤더 (고정) */}
         <div className="flex-shrink-0 space-y-4 mb-4">
-          <Breadcrumb>
-            <BreadcrumbList>
-              <BreadcrumbItem>
-                <BreadcrumbLink href="/projects">
-                  <Home className="h-4 w-4" />
-                </BreadcrumbLink>
-              </BreadcrumbItem>
-              <BreadcrumbSeparator>
-                <ChevronRight className="h-4 w-4" />
-              </BreadcrumbSeparator>
-              <BreadcrumbItem>
-                <BreadcrumbLink href={`/projects/${projectId}/upload`}>
-                  프로젝트
-                </BreadcrumbLink>
-              </BreadcrumbItem>
-              <BreadcrumbSeparator>
-                <ChevronRight className="h-4 w-4" />
-              </BreadcrumbSeparator>
-              <BreadcrumbItem>
-                <BreadcrumbPage className="font-semibold">
-                  Step 5: Clustering
-                </BreadcrumbPage>
-              </BreadcrumbItem>
-            </BreadcrumbList>
-          </Breadcrumb>
-
-          <Card>
-            <CardHeader className="py-3">
-              <CardTitle className="text-lg flex items-center justify-between">
-                <span>📂 {sessionInfo.sessionName}</span>
-                <div className="text-sm font-normal text-muted-foreground">
-                  총 {sessionInfo.totalRecords.toLocaleString()}건
-                </div>
-              </CardTitle>
-            </CardHeader>
-          </Card>
+          <Breadcrumb><BreadcrumbList>
+            <BreadcrumbItem><BreadcrumbLink href="/projects"><Home className="h-4 w-4" /></BreadcrumbLink></BreadcrumbItem>
+            <BreadcrumbSeparator><ChevronRight className="h-4 w-4" /></BreadcrumbSeparator>
+            <BreadcrumbItem><BreadcrumbLink href={`/projects/${projectId}/upload`}>프로젝트</BreadcrumbLink></BreadcrumbItem>
+            <BreadcrumbSeparator><ChevronRight className="h-4 w-4" /></BreadcrumbSeparator>
+            <BreadcrumbItem><BreadcrumbLink href={`/projects/${projectId}/sessions/${sessionId}/export`}>Export</BreadcrumbLink></BreadcrumbItem>
+            <BreadcrumbSeparator><ChevronRight className="h-4 w-4" /></BreadcrumbSeparator>
+            <BreadcrumbItem><BreadcrumbPage className="font-semibold">Step 7: 세부 클러스터링 (클러스터 #{clusterId})</BreadcrumbPage></BreadcrumbItem>
+          </BreadcrumbList></Breadcrumb>
+          <Card className="shadow-sm"><CardContent className="py-3">
+            <div className="flex items-center gap-6 text-sm flex-wrap">
+              <span><span className="font-semibold">전체 행수:</span> <Badge variant="secondary">{(statistics.totalRows||0).toLocaleString()}</Badge></span>
+              <span><span className="font-semibold">미세부병합 클러스터:</span> <Badge variant="secondary">{(statistics.unmergedCount||0).toLocaleString()}</Badge></span>
+              <span><span className="font-semibold">미세부병합 합산:</span> <Badge variant="secondary">{formatAmount(statistics.unmergedTotalAmount||0)}</Badge></span>
+              <span><span className="font-semibold">세부 병합 그룹:</span> <Badge variant="secondary">{(statistics.mergedGroupCount||0).toLocaleString()}</Badge></span>
+            </div>
+          </CardContent></Card>
         </div>
 
-        {/* 메인 콘텐츠 그리드 */}
         <div className="flex-1 min-h-0 grid grid-cols-1 xl:grid-cols-12 gap-4">
-
-          {/* 좌측 (8/12) */}
-          <div className="xl:col-span-8 h-full flex flex-col min-h-0 gap-4">
-
-            {/* 통계 1줄 */}
+          {/* 좌측: 미세부병합 클러스터 */}
+          <div className="xl:col-span-8 h-full flex flex-col min-h-0 gap-3">
+            {/* 검색 */}
             <Card className="flex-shrink-0 shadow-sm">
-              <CardContent className="py-3">
-                <div className="flex items-center justify-between gap-4 text-sm">
-                  <div className="flex items-center gap-2">
-                    <span className="font-semibold">전체 클러스터 행수:</span>
-                    <Badge variant="secondary">{statistics.totalRows.toLocaleString()}건</Badge>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <span className="font-semibold">미병합 클러스터 개수:</span>
-                    <Badge variant="secondary">{statistics.unmergedClusters.toLocaleString()}개</Badge>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <span className="font-semibold">미병합 합산 금액:</span>
-                    <Badge variant="secondary">
-                      {(statistics.unmergedTotalAmount / 100000000).toFixed(1)}억원
-                    </Badge>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* 검색 섹션 */}
-            <Card className="flex-shrink-0 shadow-sm">
-              <CardHeader className="py-3 border-b">
-                <CardTitle className="text-sm font-bold">검색</CardTitle>
-              </CardHeader>
-              <CardContent className="pt-4 space-y-3">
-                <div className="flex items-center gap-2">
-                  <Select value={searchMethod} onValueChange={setSearchMethod}>
-                    <SelectTrigger className="w-[140px]">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="keyword">키워드</SelectItem>
-                      <SelectItem value="supplier">공급업체</SelectItem>
-                    </SelectContent>
-                  </Select>
-                  <Input
-                    placeholder="검색어 입력"
-                    value={searchInput}
-                    onChange={(e) => setSearchInput(e.target.value)}
-                    onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
-                    className="flex-1"
-                  />
-                  <Button size="sm" onClick={handleSearch}>
-                    <Search className="h-4 w-4 mr-1" />
-                    검색
-                  </Button>
-                </div>
-
-                <div className="flex items-center gap-4 text-xs">
-                  <div className="flex items-center gap-2">
-                    <Checkbox
-                      id="exact-match"
-                      checked={exactMatch}
-                      onCheckedChange={setExactMatch}
-                    />
-                    <label htmlFor="exact-match" className="cursor-pointer">
-                      키워드 완전 일치
-                    </label>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Checkbox
-                      id="search-in-results"
-                      checked={searchInResults}
-                      onCheckedChange={setSearchInResults}
-                    />
-                    <label htmlFor="search-in-results" className="cursor-pointer">
-                      결과 내 재검색
-                    </label>
-                  </div>
-                  <div className="flex items-center gap-2 flex-1">
-                    <label className="whitespace-nowrap">제외 키워드:</label>
-                    <Input
-                      placeholder="쉼표(,)로 구분"
-                      value={excludeKeywords}
-                      onChange={(e) => setExcludeKeywords(e.target.value)}
-                      className="h-8 text-xs"
-                    />
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* 검색 결과 테이블 */}
-            <Card className="flex-1 flex flex-col min-h-0 shadow-sm overflow-hidden">
-              <CardHeader className="py-3 px-4 border-b bg-white flex-shrink-0">
+              <CardHeader className="py-2 px-4 cursor-pointer hover:bg-gray-50 transition-colors" onClick={() => setSearchCollapsed(!searchCollapsed)}>
                 <div className="flex items-center justify-between">
-                  <CardTitle className="text-sm font-bold">
-                    검색 결과 ({searchResults.length.toLocaleString()}건)
-                  </CardTitle>
-                  <div className="flex items-center gap-2">
-                    <Select value={amountUnit} onValueChange={setAmountUnit}>
-                      <SelectTrigger className="w-[100px] h-8">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="원">원</SelectItem>
-                        <SelectItem value="천원">천원</SelectItem>
-                        <SelectItem value="백만원">백만원</SelectItem>
-                        <SelectItem value="억원">억원</SelectItem>
-                      </SelectContent>
-                    </Select>
-                    <Button
-                      size="sm"
-                      onClick={handleMerge}
-                      disabled={selectedResults.length === 0}
-                    >
-                      병합
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={handleAddMerge}
-                      disabled={selectedResults.length === 0}
-                    >
-                      추가병합
-                    </Button>
-                  </div>
+                  <CardTitle className="text-sm font-bold flex items-center gap-2"><Search className="h-4 w-4" />검색 설정{appliedSearchParams && <Badge variant="secondary" className="text-[10px] ml-2">검색 적용됨</Badge>}</CardTitle>
+                  <Button variant="ghost" size="sm" className="h-6 w-6 p-0">{searchCollapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}</Button>
                 </div>
               </CardHeader>
-
-              <CardContent className="p-0 flex-1 relative min-h-0 flex flex-col">
-                <div className="flex-1 overflow-auto custom-scrollbar">
-                  <Table>
-                    <TableHeader className="bg-gray-100 sticky top-0 z-10">
-                      <TableRow>
-                        <TableHead className="w-[50px] bg-gray-100">
-                          <Checkbox
-                            checked={selectAllResults}
-                            onCheckedChange={handleSelectAllResults}
-                          />
-                        </TableHead>
-                        <TableHead className="font-semibold bg-gray-100">클러스터번호</TableHead>
-                        <TableHead className="font-semibold bg-gray-100">키워드</TableHead>
-                        <TableHead className="font-semibold bg-gray-100">CO 오브젝트이름</TableHead>
-                        <TableHead className="font-semibold bg-gray-100">상계계정이름</TableHead>
-                        <TableHead className="font-semibold text-right bg-gray-100">
-                          금액({amountUnit})
-                        </TableHead>
-                        <TableHead className="font-semibold bg-gray-100">코스트센터</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                   <TableBody>
-                     {getPaginatedResults().map((row) => (
-                       <TableRow key={row.id}>
-                         <TableCell>
-                           <Checkbox
-                             checked={selectedResults.includes(row.id)} // ✅ 수정됨
-                             onCheckedChange={(checked) => {
-                               if (checked) {
-                                 setSelectedResults([...selectedResults, row.id]); // ✅ 수정됨
-                               } else {
-                                 setSelectedResults(selectedResults.filter((id) => id !== row.id)); // ✅ 수정됨
-                               }
-                             }}
-                           />
-                         </TableCell>
-                          <TableCell className="text-xs">#{row.clusterNumber}</TableCell>
-                          <TableCell className="text-xs">
-                            <div className="flex flex-wrap gap-1">
-                              {row.keywords.map((kw, idx) => (
-                                <Badge key={idx} variant="secondary" className="text-[10px]">
-                                  {kw}
-                                </Badge>
-                              ))}
-                            </div>
-                          </TableCell>
-                          <TableCell className="text-xs">{row.department}</TableCell>
-                          <TableCell className="text-xs">{row.supplier}</TableCell>
-                          <TableCell className="text-xs text-right">
-                            {formatAmount(row.amount)}
-                          </TableCell>
-                          <TableCell className="text-xs">{row.costCenter}</TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
+              {!searchCollapsed && (
+              <CardContent className="py-2 px-4 pt-0">
+                <div className="flex items-center gap-2 mb-2 border-b pb-2">
+                  <Button variant={searchTabMode === 'basic' ? 'default' : 'ghost'} size="sm" className="h-6 text-xs px-2" onClick={() => setSearchTabMode('basic')}><Search className="h-3 w-3 mr-1" />검색 설정</Button>
+                  <Button variant={searchTabMode === 'keyword-hierarchy' ? 'default' : 'ghost'} size="sm" className="h-6 text-xs px-2" onClick={() => setSearchTabMode('keyword-hierarchy')}><Folder className="h-3 w-3 mr-1" />추천 키워드</Button>
                 </div>
-              </CardContent>
-
-              {/* 페이징 Footer */}
-              {totalPages > 1 && (
-                <div className="p-3 border-t bg-white flex-shrink-0">
-                  <div className="flex items-center justify-between text-xs">
-                    <div className="text-muted-foreground hidden sm:block">
-                      {/* ✅ totalSearchResults → searchResults.length */}
-                      {startRow} - {endRow} / 총 {searchResults.length}건
+                {searchTabMode === 'basic' && (
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <Select value={searchColumn} onValueChange={setSearchColumn}><SelectTrigger className="w-[120px] h-8 text-xs"><SelectValue placeholder="검색 기준" /></SelectTrigger><SelectContent>{searchableColumns.map(col => <SelectItem key={col.key} value={col.key}>{col.label}</SelectItem>)}</SelectContent></Select>
+                      <Input className="h-8 text-sm flex-1 min-w-[150px]" placeholder="검색 키워드 입력..." value={searchKeyword} onChange={e => setSearchKeyword(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleSearch()} />
+                      <label className="flex items-center gap-1 text-xs cursor-pointer whitespace-nowrap"><Checkbox checked={exactMatch} onCheckedChange={setExactMatch} />완전일치</label>
                     </div>
-
-                      <div className="flex items-center gap-2 w-full sm:w-auto justify-between sm:justify-end">
-                        <Select
-                          value={pageSize.toString()}
-                          onValueChange={(value) => {
-                            setPageSize(Number(value));
-                            setCurrentPage(1);
-                          }}
-                        >
-                          <SelectTrigger className="w-[100px] h-8 text-xs">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="20">20개씩</SelectItem>
-                            <SelectItem value="50">50개씩</SelectItem>
-                            <SelectItem value="100">100개씩</SelectItem>
-                            <SelectItem value="500">500개씩</SelectItem>
-                          </SelectContent>
-                        </Select>
-
-                        <div className="flex gap-1">
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            className="h-8 px-2"
-                            onClick={() => handlePageChange(1)}
-                            disabled={currentPage === 1}
-                          >
-                            처음
-                          </Button>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            className="h-8 px-2"
-                            onClick={() => handlePageChange(Math.max(1, currentPage - 1))}
-                            disabled={currentPage === 1}
-                          >
-                            이전
-                          </Button>
-                          <span  className="flex items-center px-2 text-xs font-medium">{currentPage} / {totalPages}</span>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            className="h-8 px-2"
-                            onClick={() => handlePageChange(Math.min(totalPages, currentPage + 1))}
-                            disabled={currentPage === totalPages}
-                          >
-                            다음
-                          </Button>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            className="h-8 px-2"
-                            onClick={() => handlePageChange(totalPages)}
-                            disabled={currentPage === totalPages}
-                          >
-                            마지막
-                          </Button>
-                        </div>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-xs text-muted-foreground w-[120px]">제외 키워드:</span>
+                      <Input className="h-8 text-sm flex-1 min-w-[150px]" placeholder="제외 항목 입력..." value={excludeKeyword} onChange={e => setExcludeKeyword(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleSearch()} />
+                      <label className="flex items-center gap-1 text-xs cursor-pointer whitespace-nowrap"><Checkbox checked={excludeExactMatch} onCheckedChange={setExcludeExactMatch} />완전일치</label>
+                    </div>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <label className="flex items-center gap-1 text-xs cursor-pointer"><Checkbox checked={searchWithinResults} onCheckedChange={setSearchWithinResults} disabled={!previousResultIds || previousResultIds.length === 0} />결과 내 재검색</label>
+                      {previousResultIds && previousResultIds.length > 0 && <span className="text-[10px] text-muted-foreground">(이전 결과: {previousResultIds.length.toLocaleString()}건)</span>}
+                      <div className="flex-1" />
+                      <Button size="sm" className="h-8" onClick={handleSearch}><Search className="h-3 w-3 mr-1" />검색</Button>
+                      {appliedSearchParams && <Button size="sm" variant="outline" className="h-8" onClick={handleClearSearch}><X className="h-3 w-3 mr-1" />초기화</Button>}
+                    </div>
+                    {appliedSearchParams && (
+                      <div className="mt-2 flex items-center gap-2 flex-wrap text-xs">
+                        <Badge variant="secondary" className="text-[10px]">{searchableColumns.find(c => c.key === appliedSearchParams.searchColumn)?.label || appliedSearchParams.searchColumn}{appliedSearchParams.exactMatch ? '=' : '~'}"{appliedSearchParams.searchValue || ''}"</Badge>
+                        {appliedSearchParams.excludeValue && <Badge variant="outline" className="text-[10px] text-red-600">제외: {appliedSearchParams.excludeExactMatch ? '=' : '~'}"{appliedSearchParams.excludeValue}"</Badge>}
+                        {appliedSearchParams.isSearchWithin && <Badge variant="outline" className="text-[10px] text-blue-600">결과내 재검색</Badge>}
+                        <span className="text-muted-foreground">{clusterTotalCount.toLocaleString()}건</span>
                       </div>
+                    )}
+                  </div>
+                )}
+                {searchTabMode === 'keyword-hierarchy' && (
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-2">
+                      <Input className="h-7 text-xs flex-1" placeholder="새 Lv1 키워드 입력..." value={newKeywordInput.level === 1 && !newKeywordInput.parentId ? newKeywordInput.value : ''} onChange={e => setNewKeywordInput({ level: 1, parentId: null, value: e.target.value })} onKeyDown={e => e.key === 'Enter' && handleAddKeyword(1, null, newKeywordInput.value)} />
+                      <Button size="sm" className="h-7 px-2 text-xs" onClick={() => handleAddKeyword(1, null, newKeywordInput.value)}><Plus className="h-3 w-3" /></Button>
+                      <Button size="sm" variant="ghost" className="h-7 px-2" onClick={loadKeywordHierarchy} disabled={kwHierarchyLoading}><RefreshCw className={`h-3 w-3 ${kwHierarchyLoading ? 'animate-spin' : ''}`} /></Button>
+                    </div>
+                    <div className="max-h-[200px] overflow-y-auto border rounded p-2 text-xs space-y-1">
+                      {keywordHierarchy.length === 0 ? <div className="text-center text-muted-foreground py-4">등록된 추천 키워드가 없습니다</div> : keywordHierarchy.map(lv1 => (
+                        <div key={lv1.id} className="space-y-1">
+                          <div className="flex items-center gap-1 p-1 rounded hover:bg-gray-100">
+                            <Button variant="ghost" size="sm" className="h-5 w-5 p-0" onClick={() => setExpandedLv1(prev => { const next = new Set(prev); next.has(lv1.id) ? next.delete(lv1.id) : next.add(lv1.id); return next; })}>{expandedLv1.has(lv1.id) ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}</Button>
+                            <FolderOpen className="h-3 w-3 text-yellow-600" />
+                            <span className="flex-1 cursor-pointer hover:text-blue-600 hover:underline" onClick={() => handleKeywordHierarchySearch(lv1.keyword)}>{lv1.keyword}</span>
+                            <Button variant="ghost" size="sm" className="h-5 px-1 text-[10px] text-blue-600" onClick={() => setKeywordHierarchyDialog({ open: true, parentId: lv1.id, parentKeyword: lv1.keyword, level: 2 })}>자세히</Button>
+                            <Button variant="ghost" size="sm" className="h-5 w-5 p-0 text-red-500" onClick={() => handleDeleteKeyword(lv1.id)}><X className="h-3 w-3" /></Button>
+                          </div>
+                          {expandedLv1.has(lv1.id) && lv1.children && lv1.children.length > 0 && (
+                            <div className="ml-6 space-y-1">{lv1.children.map(lv2 => (
+                              <div key={lv2.id} className="space-y-1">
+                                <div className="flex items-center gap-1 p-1 rounded hover:bg-gray-50">
+                                  <Button variant="ghost" size="sm" className="h-4 w-4 p-0" onClick={() => setExpandedLv2(prev => { const next = new Set(prev); next.has(lv2.id) ? next.delete(lv2.id) : next.add(lv2.id); return next; })}>{lv2.children?.length > 0 ? (expandedLv2.has(lv2.id) ? <ChevronDown className="h-2 w-2" /> : <ChevronRight className="h-2 w-2" />) : <span className="w-2" />}</Button>
+                                  <Folder className="h-3 w-3 text-blue-500" />
+                                  <span className="flex-1 cursor-pointer hover:text-blue-600 hover:underline" onClick={() => handleKeywordHierarchySearch(lv2.keyword)}>{lv2.keyword}</span>
+                                  <Button variant="ghost" size="sm" className="h-4 w-4 p-0 text-red-500" onClick={() => handleDeleteKeyword(lv2.id)}><X className="h-2 w-2" /></Button>
+                                </div>
+                                {expandedLv2.has(lv2.id) && lv2.children && lv2.children.length > 0 && (
+                                  <div className="ml-5 space-y-0.5">{lv2.children.map(lv3 => (
+                                    <div key={lv3.id} className="flex items-center gap-1 p-0.5 rounded hover:bg-gray-50">
+                                      <Tag className="h-2 w-2 text-green-500" /><span className="flex-1 cursor-pointer hover:text-blue-600 hover:underline text-[10px]" onClick={() => handleKeywordHierarchySearch(lv3.keyword)}>{lv3.keyword}</span>
+                                      <Button variant="ghost" size="sm" className="h-4 w-4 p-0 text-red-500" onClick={() => handleDeleteKeyword(lv3.id)}><X className="h-2 w-2" /></Button>
+                                    </div>
+                                  ))}</div>
+                                )}
+                              </div>
+                            ))}</div>
+                          )}
+                        </div>
+                      ))}
                     </div>
                   </div>
                 )}
+              </CardContent>)}
+            </Card>
+
+            {/* 세부 병합 액션 */}
+            <Card className="flex-shrink-0 shadow-sm"><CardContent className="py-3 px-4">
+              <div className="flex items-center gap-2 flex-wrap">
+                <div className="relative">
+                  <Button size="sm" className="h-8 min-w-[120px] relative overflow-hidden" onClick={handleMerge} disabled={selectedCount < 2 || merging || unmerging}>
+                    {merging && mergingClusters.size === 0 && <div className="absolute inset-0 bg-blue-300/50 transition-all" style={{ width: `${mergingProgress}%` }} />}
+                    <span className="relative z-10 flex items-center">{merging && mergingClusters.size === 0 ? <><Loader2 className="h-3 w-3 mr-1 animate-spin" />{mergingProgress}%</> : <><GitMerge className="h-3 w-3 mr-1" />세부 병합 ({selectedCount})</>}</span>
+                  </Button>
+                </div>
+                <Button size="sm" variant="outline" className="h-8" onClick={() => setAddMergeDialog(true)} disabled={selectedCount === 0 || mergedClusters.length === 0 || merging || unmerging}><Plus className="h-3 w-3 mr-1" />추가 세부 병합</Button>
+                <div className="flex-1" />
+                <Select value={amountUnit} onValueChange={setAmountUnit}><SelectTrigger className="w-[80px] h-8 text-xs"><SelectValue /></SelectTrigger><SelectContent>{['원','천원','백만원','억원'].map(u => <SelectItem key={u} value={u}>{u}</SelectItem>)}</SelectContent></Select>
+              </div>
+            </CardContent></Card>
+
+            {/* 미세부병합 테이블 */}
+            <Card className="flex-1 flex flex-col min-h-0 shadow-sm overflow-hidden">
+              <CardHeader className="py-2.5 px-4 border-b bg-white flex-shrink-0"><CardTitle className="text-sm font-bold">미세부병합 클러스터 ({clusterTotalCount.toLocaleString()}건)</CardTitle></CardHeader>
+              <CardContent className="p-0 flex-1 min-h-0 flex flex-col">
+                <AdvancedTable columns={clusterColumns} data={clusterData} rowKey={r => r.clusterNumber} sort={sort} onSortChange={(f, d) => setSort({ field: f, direction: d })} loading={loading} emptyMessage="클러스터 데이터가 없습니다." onRowMouseDown={handleTableRowMouseDown} onRowMouseEnter={handleTableRowMouseEnter} rowClassName={(r) => isRowChecked(r.clusterNumber) ? 'bg-blue-50' : ''} />
+              </CardContent>
+              <Pagination currentPage={clusterPage} totalPages={clusterTotalPages} totalCount={clusterTotalCount} pageSize={clusterPageSize} onPageChange={handlePageChange} onPageSizeChange={handlePageSizeChange} />
             </Card>
           </div>
 
-          {/* 우측 (4/12) */}
+          {/* 우측 */}
           <div className="xl:col-span-4 h-full flex flex-col min-h-0">
-
-            {/* 스크롤 영역 */}
-            <div className="flex-1 overflow-y-auto pr-1 space-y-4 pb-2">
-
-              {/* 키워드/공급업체 통계 (탭) */}
-              <Card>
-                <Tabs value={statsTab} onValueChange={setStatsTab}>
-                  <CardHeader className="py-3 border-b">
-                    <TabsList className="grid w-full grid-cols-2">
-                      <TabsTrigger value="keyword" className="text-xs">
-                        키워드 통계
-                      </TabsTrigger>
-                      <TabsTrigger value="supplier" className="text-xs">
-                        공급업체 통계
-                      </TabsTrigger>
-                    </TabsList>
-                  </CardHeader>
-
-                  <TabsContent value="keyword" className="m-0 p-0">
-                    <CardContent className="p-0">
-                      <div className="overflow-auto max-h-[220px] custom-scrollbar">
-                        <Table>
-                          <TableHeader className="bg-gray-100 sticky top-0 z-10">
-                            <TableRow>
-                              <TableHead className="w-[50px] bg-gray-100">
-                                <Checkbox disabled />
-                              </TableHead>
-                              <TableHead className="font-semibold text-xs bg-gray-100">순위</TableHead>
-                              <TableHead className="font-semibold text-xs bg-gray-100">키워드</TableHead>
-                              <TableHead className="font-semibold text-xs text-right bg-gray-100">Count</TableHead>
-                              <TableHead className="font-semibold text-xs text-right bg-gray-100">
-                                합계({amountUnit})
-                              </TableHead>
-                            </TableRow>
-                          </TableHeader>
-                          <TableBody>
-                            {keywordStats.filter((s) => !s.isMerged).map((stat, idx) => (
-                              <TableRow
-                                key={stat.id}
-                                className="hover:bg-muted/50 cursor-pointer"
-                                onClick={() => handleClickKeywordStat(stat)}
-                              >
-                                <TableCell onClick={(e) => e.stopPropagation()}>
-                                  <Checkbox
-                                    checked={selectedKeywordStats.includes(stat.id)}
-                                    onCheckedChange={(checked) => handleToggleKeywordStat(stat.id, checked)}
-                                  />
-                                </TableCell>
-                                <TableCell className="text-xs">{idx + 1}</TableCell>
-                                <TableCell className="text-xs">
-                                  <Badge variant="secondary" className="text-[10px]">
-                                    {stat.keyword}
-                                  </Badge>
-                                </TableCell>
-                                <TableCell className="text-xs text-right">
-                                  {stat.count.toLocaleString()}
-                                </TableCell>
-                                <TableCell className="text-xs text-right">
-                                  {formatAmount(stat.totalAmount)}
-                                </TableCell>
-                              </TableRow>
-                            ))}
-                          </TableBody>
-                        </Table>
-                      </div>
-                    </CardContent>
-                  </TabsContent>
-
-                  <TabsContent value="supplier" className="m-0 p-0">
-                    <CardContent className="p-0">
-                      <div className="overflow-auto max-h-[220px] custom-scrollbar">
-                        <Table>
-                          <TableHeader className="bg-gray-100 sticky top-0 z-10">
-                            <TableRow>
-                              <TableHead className="w-[50px] bg-gray-100">
-                                <Checkbox disabled />
-                              </TableHead>
-                              <TableHead className="font-semibold text-xs bg-gray-100">순위</TableHead>
-                              <TableHead className="font-semibold text-xs bg-gray-100">공급업체</TableHead>
-                              <TableHead className="font-semibold text-xs text-right bg-gray-100">Count</TableHead>
-                              <TableHead className="font-semibold text-xs text-right bg-gray-100">
-                                합계({amountUnit})
-                              </TableHead>
-                            </TableRow>
-                          </TableHeader>
-                          <TableBody>
-                            {supplierStats.filter((s) => !s.isMerged).map((stat, idx) => (
-                              <TableRow
-                                key={stat.id}
-                                className="hover:bg-muted/50 cursor-pointer"
-                                onClick={() => handleClickSupplierStat(stat)}
-                              >
-                                <TableCell onClick={(e) => e.stopPropagation()}>
-                                  <Checkbox
-                                    checked={selectedSupplierStats.includes(stat.id)}
-                                    onCheckedChange={(checked) => handleToggleSupplierStat(stat.id, checked)}
-                                  />
-                                </TableCell>
-                                <TableCell className="text-xs">{idx + 1}</TableCell>
-                                <TableCell className="text-xs">{stat.supplier}</TableCell>
-                                <TableCell className="text-xs text-right">
-                                  {stat.count.toLocaleString()}
-                                </TableCell>
-                                <TableCell className="text-xs text-right">
-                                  {formatAmount(stat.totalAmount)}
-                                </TableCell>
-                              </TableRow>
-                            ))}
-                          </TableBody>
-                        </Table>
-                      </div>
-                    </CardContent>
-                  </TabsContent>
-                </Tabs>
-              </Card>
-
-              {/* 병합 클러스터링 버튼 */}
-              <Button
-                className="w-full bg-purple-600 hover:bg-purple-700"
-                onClick={handleMergeClustering}
-                disabled={selectedKeywordStats.length + selectedSupplierStats.length === 0}
-              >
-                <GitMerge className="h-4 w-4 mr-2" />
-                병합 클러스터링 ({selectedKeywordStats.length + selectedSupplierStats.length})
-              </Button>
-
-              {/* 미병합 클러스터 자동 병합 */}
-              <Button
-                className="w-full bg-orange-600 hover:bg-orange-700"
-                onClick={handleAutoMergeUnmerged}
-              >
-                <GitMerge className="h-4 w-4 mr-2" />
-                미병합 클러스터 자동 병합
-              </Button>
-
-              {/* lv1 선택 */}
-              <Card>
-                <CardHeader className="py-3 border-b">
-                  <CardTitle className="text-sm font-bold">lv1 선택</CardTitle>
-                </CardHeader>
-                <CardContent className="pt-3">
-                  <div className="flex flex-wrap gap-2">
-                    {lv1Items.map((item) => (
-                      <Badge
-                        key={item.id}
-                        variant={selectedLv1?.id === item.id ? 'default' : 'outline'}
-                        className="cursor-pointer text-xs"
-                        onClick={() => handleSelectLv1(item)}
-                      >
-                        {item.name}
-                      </Badge>
-                    ))}
+            <div className="flex flex-col" style={{ height: '60%', minHeight: '200px' }}>
+              <Tabs value={activeTab} onValueChange={setActiveTab} className="h-full flex flex-col">
+                <TabsList className={`grid w-full flex-shrink-0 ${statistics.hasSupplier ? 'grid-cols-2' : 'grid-cols-1'}`}>
+                  <TabsTrigger value="keyword">키워드별</TabsTrigger>
+                  {statistics.hasSupplier && <TabsTrigger value="supplier">공급업체별</TabsTrigger>}
+                </TabsList>
+                <div className="flex-1 min-h-0 mt-2 relative">
+                  <div className={`absolute inset-0 flex flex-col ${activeTab === 'keyword' ? '' : 'hidden'}`}>
+                    <Card className="flex-1 flex flex-col min-h-0 overflow-hidden">
+                      <CardHeader className="py-2 px-3 border-b flex-shrink-0"><div className="flex items-center justify-between"><CardTitle className="text-sm font-bold">키워드 통계 ({keywordStats.length}건)</CardTitle><Button variant="ghost" size="sm" className="h-7 px-2" onClick={loadKwStats} disabled={kwLoading}><RefreshCw className={`h-3 w-3 ${kwLoading ? 'animate-spin' : ''}`} /></Button></div></CardHeader>
+                      <CardContent className="p-0 flex-1 overflow-auto"><StatsListView items={sortedKwStats} checkedSet={kwCheckedSet} onCheckedChange={setKwCheckedSet} nameKey="keyword" nameLabel="키워드" sortField={kwSortField} sortDir={kwSortDir} onSort={handleKwSort} formatAmount={formatAmount} amountUnit={amountUnit} onDetail={handleKwDetail} isDragging={kwDragging} setIsDragging={setKwDragging} dragStartRef={kwDragRef} /></CardContent>
+                    </Card>
+                    <Button className="w-full mt-2 bg-purple-600 hover:bg-purple-700 h-8 text-sm font-semibold flex-shrink-0" onClick={handleAutoMergeByKeywords} disabled={kwCheckedSet.size === 0 || merging}>{merging && <Loader2 className="h-3 w-3 mr-1 animate-spin" />}<GitMerge className="h-3 w-3 mr-1" />선택항목 자동 세부 클러스터링 ({kwCheckedSet.size})</Button>
                   </div>
-                </CardContent>
-              </Card>
+                  {statistics.hasSupplier && (
+                    <div className={`absolute inset-0 flex flex-col ${activeTab === 'supplier' ? '' : 'hidden'}`}>
+                      <Card className="flex-1 flex flex-col min-h-0 overflow-hidden">
+                        <CardHeader className="py-2 px-3 border-b flex-shrink-0"><div className="flex items-center justify-between"><CardTitle className="text-sm font-bold">공급업체 통계 ({supplierStats.length}건)</CardTitle><Button variant="ghost" size="sm" className="h-7 px-2" onClick={loadSupStats} disabled={supLoading}><RefreshCw className={`h-3 w-3 ${supLoading ? 'animate-spin' : ''}`} /></Button></div></CardHeader>
+                        <CardContent className="p-0 flex-1 overflow-auto"><StatsListView items={sortedSupStats} checkedSet={supCheckedSet} onCheckedChange={setSupCheckedSet} nameKey="supplier" nameLabel="공급업체" sortField={supSortField} sortDir={supSortDir} onSort={handleSupSort} formatAmount={formatAmount} amountUnit={amountUnit} onDetail={handleSupDetail} isDragging={supDragging} setIsDragging={setSupDragging} dragStartRef={supDragRef} /></CardContent>
+                      </Card>
+                      <Button className="w-full mt-2 bg-purple-600 hover:bg-purple-700 h-8 text-sm font-semibold flex-shrink-0" onClick={handleAutoMergeBySuppliers} disabled={supCheckedSet.size === 0 || merging}>{merging && <Loader2 className="h-3 w-3 mr-1 animate-spin" />}<GitMerge className="h-3 w-3 mr-1" />선택항목 자동 세부 클러스터링 ({supCheckedSet.size})</Button>
+                    </div>
+                  )}
+                </div>
+              </Tabs>
+            </div>
 
-              {/* 추천 키워드 */}
-              <Card>
-                <CardHeader className="py-3 border-b">
-                  <CardTitle className="text-sm font-bold">추천 키워드</CardTitle>
-                </CardHeader>
-                <CardContent className="pt-3">
-                  <div className="flex flex-wrap gap-2">
-                    {recommendedKeywords.map((item) => (
-                      <Badge
-                        key={item.id}
-                        variant={selectedRecommended?.id === item.id ? 'default' : 'outline'}
-                        className="cursor-pointer text-xs"
-                        onClick={() => handleSelectRecommended(item)}
-                      >
-                        {item.keyword}
-                      </Badge>
-                    ))}
-                  </div>
-                </CardContent>
-              </Card>
-
-              {/* 병합 결과 확인 (테이블) */}
-              <Card>
-                <CardHeader className="py-3 border-b">
-                  <div className="flex items-center justify-between">
-                    <CardTitle className="text-sm font-bold">
-                      Clustering 병합 결과 확인 ({mergedClusters.length})
-                    </CardTitle>
+            {/* 세부 병합 결과 */}
+            <div className="flex flex-col mt-3" style={{ height: '40%', minHeight: '150px' }}>
+              <Card className="flex-1 flex flex-col min-h-0 overflow-hidden shadow-sm">
+                <CardHeader className="py-2 px-3 border-b flex-shrink-0">
+                  <div className="flex items-center justify-between gap-1">
+                    <CardTitle className="text-sm font-bold">세부 병합 결과 ({mergedClusters.length})</CardTitle>
                     <div className="flex items-center gap-1">
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={handleMergeMergedClusters}
-                        disabled={selectedMergedClusters.length < 2}
-                      >
-                        병합
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={handleUnmergeClusters}
-                        disabled={selectedMergedClusters.length === 0}
-                      >
-                        <RotateCcw className="h-3 w-3 mr-1" />
-                        해제
-                      </Button>
+                      <div className="relative">
+                        <Button size="sm" variant="outline" className="h-7 px-2 text-xs min-w-[120px] relative overflow-hidden" onClick={handleMergeMerged} disabled={selectedMerged.size < 2 || merging}>
+                          {merging && mergingClusters.size > 0 && <div className="absolute inset-0 bg-blue-100 transition-all" style={{ width: `${mergingProgress}%` }} />}
+                          <span className="relative z-10 flex items-center">{merging && mergingClusters.size > 0 ? <><Loader2 className="h-3 w-3 mr-1 animate-spin" />{mergingProgress}%</> : <><GitMerge className="h-3 w-3 mr-1" />세부 병합 merge ({selectedMerged.size})</>}</span>
+                        </Button>
+                      </div>
+                      <div className="relative">
+                        <Button size="sm" variant="outline" className="h-7 px-2 text-xs text-red-600 min-w-[100px] relative overflow-hidden" onClick={handleBulkUnmerge} disabled={selectedMerged.size === 0 || merging || unmerging}>
+                          {unmerging && <div className="absolute inset-0 bg-red-100 transition-all" style={{ width: `${unmergingProgress}%` }} />}
+                          <span className="relative z-10 flex items-center">{unmerging ? <><Loader2 className="h-3 w-3 mr-1 animate-spin" />{unmergingProgress}%</> : <><Trash2 className="h-3 w-3 mr-1" />해제 ({selectedMerged.size})</>}</span>
+                        </Button>
+                      </div>
                     </div>
                   </div>
                 </CardHeader>
-                <CardContent className="p-0">
-                  <div className="overflow-auto max-h-[300px] custom-scrollbar">
-                    <Table>
-                      <TableHeader className="bg-gray-100 sticky top-0 z-10">
-                        <TableRow>
-                          <TableHead className="w-[50px] bg-gray-100">
-                            <Checkbox disabled />
-                          </TableHead>
-                          <TableHead className="font-semibold text-xs bg-gray-100">클러스터명</TableHead>
-                          <TableHead className="font-semibold text-xs text-right bg-gray-100">Count</TableHead>
-                          <TableHead className="font-semibold text-xs text-right bg-gray-100">
-                            금액({amountUnit})
-                          </TableHead>
-                          <TableHead className="font-semibold text-xs bg-gray-100 text-center">
-                            관리
-                          </TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {mergedClusters.map((cluster) => (
-                          <TableRow key={cluster.id} className="hover:bg-muted/50">
-                            <TableCell>
-                              <Checkbox
-                                checked={selectedMergedClusters.includes(cluster.id)}
-                                onCheckedChange={(checked) => handleToggleMergedCluster(cluster.id, checked)}
-                              />
-                            </TableCell>
-                            <TableCell className="text-xs">
+                <CardContent className="p-0 flex-1 overflow-auto">
+                  {mergedClusters.length === 0 ? <div className="text-center py-8 text-xs text-muted-foreground">세부 병합된 클러스터가 없습니다</div> : (
+                    <div className="text-xs">
+                      <div className="grid grid-cols-[28px_1fr_60px_90px_60px] gap-1 items-center px-2 py-2 border-b bg-gray-100 font-semibold text-muted-foreground sticky top-0 z-10">
+                        <Checkbox checked={selectedMerged.size === mergedClusters.length && mergedClusters.length > 0} disabled={merging && mergingClusters.size > 0} onCheckedChange={c => { if (c) setSelectedMerged(new Set(mergedClusters.map(m => m.clusterNumber))); else setSelectedMerged(new Set()); }} />
+                        <div>클러스터명</div><div className="text-right">Count</div><div className="text-right">금액({amountUnit})</div><div className="text-center">관리</div>
+                      </div>
+                      {mergedClusters.map(c => {
+                        const isMergingThis = mergingClusters.has(c.clusterNumber); const isUnmergingThis = unmergingClusters.has(c.clusterNumber); const isBusy = isMergingThis || isUnmergingThis;
+                        return (
+                          <div key={c.clusterNumber} className={`grid grid-cols-[28px_1fr_60px_90px_60px] gap-1 items-center px-2 py-1.5 border-b transition-colors ${isMergingThis ? 'bg-yellow-50 opacity-70' : isUnmergingThis ? 'bg-red-50 opacity-70' : selectedMerged.has(c.clusterNumber) ? 'bg-blue-50' : 'hover:bg-muted/50'}`}>
+                            <Checkbox checked={selectedMerged.has(c.clusterNumber)} disabled={isBusy} onCheckedChange={ch => setSelectedMerged(prev => { const n = new Set(prev); ch ? n.add(c.clusterNumber) : n.delete(c.clusterNumber); return n; })} />
+                            <div className="min-w-0">
                               <div className="flex items-center gap-1">
-                                <Badge variant="outline" className="text-[9px]">
-                                  #{cluster.clusterNumber}
-                                </Badge>
-                                <span>{cluster.clusterName}</span>
+                                <Badge variant="outline" className="text-[9px] font-mono flex-shrink-0">#{c.clusterNumber}</Badge>
+                                <span className="truncate" title={c.clusterName}>{isMergingThis ? <span className="text-yellow-600 font-semibold">세부 병합중...</span> : isUnmergingThis ? <span className="text-red-600 font-semibold">해제중...</span> : truncateName(c.clusterName)}</span>
                               </div>
-                            </TableCell>
-                            <TableCell className="text-xs text-right">
-                              {cluster.count.toLocaleString()}
-                            </TableCell>
-                            <TableCell className="text-xs text-right">
-                              {formatAmount(cluster.totalAmount)}
-                            </TableCell>
-                            <TableCell className="text-center">
-                              <div className="flex items-center justify-center gap-1">
-                                <Button
-                                  size="sm"
-                                  variant="ghost"
-                                  className="h-6 w-6 p-0"
-                                  onClick={() => handleOpenDetail(cluster)}
-                                >
-                                  <Eye className="h-3 w-3" />
-                                </Button>
-                                <Button
-                                  size="sm"
-                                  variant="ghost"
-                                  className="h-6 w-6 p-0"
-                                  onClick={() => handleOpenRenameMergedDialog(cluster)}
-                                >
-                                  <Edit2 className="h-3 w-3" />
-                                </Button>
-                              </div>
-                            </TableCell>
-                          </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
-                  </div>
+                              <div className="flex flex-wrap gap-0.5 mt-0.5">{(c.keywords || []).slice(0, 4).map((k, i) => <Badge key={i} variant="secondary" className="text-[8px]">{k}</Badge>)}{(c.keywords || []).length > 4 && <Badge variant="secondary" className="text-[8px]">+{c.keywords.length - 4}</Badge>}</div>
+                            </div>
+                            <div className="text-right tabular-nums">{(c.count||0).toLocaleString()}</div>
+                            <div className="text-right tabular-nums">{formatAmount(c.totalAmount||0)}</div>
+                            <div className="flex items-center justify-center gap-0.5">
+                              <Button size="sm" variant="ghost" className="h-6 w-6 p-0" onClick={() => handleOpenDetail(c)} title="상세" disabled={isBusy}><Eye className="h-3 w-3" /></Button>
+                              <Button size="sm" variant="ghost" className="h-6 w-6 p-0" onClick={() => handleOpenRename(c)} title="이름변경" disabled={isBusy}><Edit2 className="h-3 w-3" /></Button>
+                              <Button size="sm" variant="ghost" className="h-6 w-6 p-0 text-red-500" onClick={() => handleUnmerge(c.clusterNumber)} title="세부 병합해제" disabled={isBusy}><Trash2 className="h-3 w-3" /></Button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
                 </CardContent>
               </Card>
-            </div>
-
-            {/* 완료 버튼 (하단 고정) */}
-            <div className="pt-3 mt-auto flex-shrink-0 z-20 bg-gray-50 pb-2">
-              <Button
-                className="w-full bg-green-600 hover:bg-green-700 text-white shadow-lg h-12 text-base font-semibold"
-                onClick={handleComplete}
-              >
-                완료 → Step 6: Export
-              </Button>
+              <Button className="w-full mt-3 bg-green-600 hover:bg-green-700 text-white shadow-lg h-12 text-base font-semibold flex-shrink-0" onClick={handleComplete}>완료 → Step 6: Export</Button>
             </div>
           </div>
         </div>
       </div>
 
-      {/* 클러스터명 수정 다이얼로그 */}
-      <Dialog
-        open={renameDialog.open}
-        onOpenChange={(open) => setRenameDialog({ ...renameDialog, open })}
-      >
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>클러스터 이름 변경</DialogTitle>
-            <DialogDescription>
-              새로운 클러스터 이름을 입력하세요.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="py-4">
-            <Input
-              placeholder="클러스터 이름"
-              value={newClusterName}
-              onChange={(e) => setNewClusterName(e.target.value)}
-            />
+      {/* 추가 세부 병합 다이얼로그 */}
+      <Dialog open={addMergeDialog} onOpenChange={setAddMergeDialog}><DialogContent className="max-w-[500px]">
+        <DialogHeader><DialogTitle>추가 세부 병합 - 대상 선택</DialogTitle><DialogDescription>선택한 {selectedCount}개 미세부병합 클러스터를 추가할 세부 병합 클러스터를 선택하세요.</DialogDescription></DialogHeader>
+        <div className="max-h-[400px] overflow-auto space-y-1">
+          {mergedClusters.map(c => (
+            <div key={c.clusterNumber} className="flex items-center justify-between p-2 border rounded hover:bg-blue-50 cursor-pointer" onClick={() => handleAddToMerged(c.clusterNumber)}>
+              <div className="min-w-0 flex-1"><div className="flex items-center gap-1 text-sm"><Badge variant="outline" className="text-[10px] font-mono">#{c.clusterNumber}</Badge><span className="truncate font-medium">{c.clusterName}</span></div><div className="text-xs text-muted-foreground mt-0.5">{c.childCount}개 하위 | Count: {(c.count||0).toLocaleString()} | {formatAmount(c.totalAmount||0)}</div></div>
+              <Plus className="h-4 w-4 text-blue-600 flex-shrink-0 ml-2" />
+            </div>
+          ))}
+          {mergedClusters.length === 0 && <div className="text-center text-xs text-muted-foreground py-8">세부 병합 클러스터가 없습니다</div>}
+        </div>
+      </DialogContent></Dialog>
+
+      {/* 이름 변경 다이얼로그 */}
+      <Dialog open={renameDialog.open} onOpenChange={o => setRenameDialog({ ...renameDialog, open: o })}><DialogContent>
+        <DialogHeader><DialogTitle>클러스터 이름 변경</DialogTitle><DialogDescription>클러스터 #{renameDialog.cluster?.clusterNumber}의 새 이름을 입력하세요.</DialogDescription></DialogHeader>
+        <Input placeholder="클러스터 이름" value={newClusterName} onChange={e => setNewClusterName(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleRename()} />
+        <div className="flex justify-end gap-2 mt-2"><Button variant="outline" onClick={() => setRenameDialog({ open: false, cluster: null })}>취소</Button><Button onClick={handleRename}>변경</Button></div>
+      </DialogContent></Dialog>
+
+      {/* 상세 다이얼로그 */}
+      <Dialog open={detailDialog.open} onOpenChange={o => { setDetailDialog({ ...detailDialog, open: o }); if (!o) { setDetailChecked(new Set()); setDetailDragging(false); } }}>
+        <DialogContent className="max-w-[900px] max-h-[80vh] flex flex-col">
+          <DialogHeader><DialogTitle>세부 병합 상세: #{detailDialog.cluster?.clusterNumber} {truncateName(detailDialog.cluster?.clusterName)}</DialogTitle><DialogDescription>드래그 또는 Ctrl+클릭으로 복수 선택 가능</DialogDescription></DialogHeader>
+          <div className="flex items-center gap-4 p-3 bg-gray-50 rounded-md border mb-2 text-sm">
+            <div className="flex items-center gap-2"><span className="text-muted-foreground">Row Data:</span><Badge variant="secondary">{(detailDialog.cluster?.count || 0).toLocaleString()}건</Badge></div>
+            <div className="flex items-center gap-2"><span className="text-muted-foreground">하위 클러스터:</span><Badge variant="secondary">{(detailDialog.cluster?.childCount || 0).toLocaleString()}개</Badge></div>
+            <div className="flex items-center gap-2"><span className="text-muted-foreground">합산 금액:</span><Badge variant="secondary">{formatAmount(detailDialog.cluster?.totalAmount || 0)} {amountUnit}</Badge></div>
           </div>
-          <div className="flex justify-end gap-2">
-            <Button
-              variant="outline"
-              onClick={() => setRenameDialog({ open: false, cluster: null })}
-            >
-              취소
-            </Button>
-            <Button onClick={handleRenameMergedCluster}>변경</Button>
+          <div className="flex items-center gap-2 mb-2">
+            <Button size="sm" variant="destructive" onClick={handlePartialUnmerge} disabled={detailChecked.size === 0}><Trash2 className="h-3 w-3 mr-1" />선택 항목 세부 병합 해제 ({detailChecked.size})</Button>
+            <span className="text-xs text-muted-foreground ml-2">{detailChecked.size > 0 && `${detailChecked.size}개 선택됨`}</span>
+          </div>
+          <div className="border rounded-md" style={{ height: 'calc(80vh - 220px)', minHeight: '200px' }}>
+            <AdvancedTable columns={detailColumns} data={detailDialog.cluster?.children || []} rowKey={r => r.clusterNumber} emptyMessage="하위 클러스터가 없습니다." rowClassName={r => detailChecked.has(r.clusterNumber) ? 'bg-blue-50' : ''} onRowMouseDown={handleDetailRowMouseDown} onRowMouseEnter={handleDetailRowMouseEnter} maxHeight="100%" />
           </div>
         </DialogContent>
       </Dialog>
 
-      {/* 상세 보기 다이얼로그 */}
-      <Dialog
-        open={detailDialog.open}
-        onOpenChange={(open) => setDetailDialog({ ...detailDialog, open })}
-      >
-        <DialogContent className="max-w-[90vw] max-h-[90vh] flex flex-col">
-          <DialogHeader>
-            <DialogTitle>
-              병합 클러스터 상세: {detailDialog.cluster?.clusterName}
-            </DialogTitle>
-            <DialogDescription className="flex items-center justify-between">
-              <span>병합된 클러스터 내부의 미병합 클러스터 목록입니다.</span>
-              <Button
-                size="sm"
-                variant="destructive"
-                onClick={handleUnmergeDetailItems}
-                disabled={selectedDetailItems.length === 0}
-              >
-                <RotateCcw className="h-3 w-3 mr-1" />
-                미병합으로 되돌리기 ({selectedDetailItems.length})
-              </Button>
-            </DialogDescription>
-          </DialogHeader>
-          <div className="flex-1 overflow-auto">
-            <Table>
-              <TableHeader className="bg-gray-100 sticky top-0 z-10">
-                <TableRow>
-                  <TableHead className="w-[50px] bg-gray-100">
-                    <Checkbox disabled />
-                  </TableHead>
-                  <TableHead className="font-semibold bg-gray-100">클러스터번호</TableHead>
-                  <TableHead className="font-semibold bg-gray-100">클러스터명</TableHead>
-                  <TableHead className="font-semibold text-right bg-gray-100">Count</TableHead>
-                  <TableHead className="font-semibold text-right bg-gray-100">
-                    금액({amountUnit})
-                  </TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {detailDialog.cluster?.subClusters?.map((sub) => (
-                  <TableRow key={sub.id} className="hover:bg-muted/50">
-                    <TableCell>
-                      <Checkbox
-                        checked={selectedDetailItems.includes(sub.id)}
-                        onCheckedChange={(checked) => handleToggleDetailItem(sub.id, checked)}
-                      />
-                    </TableCell>
-                    <TableCell className="text-xs">
-                      <Badge variant="outline" className="text-[10px]">
-                        #{sub.clusterNumber}
-                      </Badge>
-                    </TableCell>
-                    <TableCell className="text-xs">{sub.clusterName}</TableCell>
-                    <TableCell className="text-xs text-right">
-                      {sub.count.toLocaleString()}
-                    </TableCell>
-                    <TableCell className="text-xs text-right">
-                      {formatAmount(sub.totalAmount)}
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+      {/* 키워드 계층 자세히 다이얼로그 */}
+      <Dialog open={keywordHierarchyDialog.open} onOpenChange={o => { setKeywordHierarchyDialog({ ...keywordHierarchyDialog, open: o }); if (!o) setNewKeywordInput({ level: 0, parentId: null, value: '' }); }}>
+        <DialogContent className="max-w-[500px]">
+          <DialogHeader><DialogTitle>{keywordHierarchyDialog.level === 2 ? 'Lv2' : 'Lv3'} 키워드 관리: {keywordHierarchyDialog.parentKeyword}</DialogTitle><DialogDescription>하위 키워드를 추가하거나 삭제할 수 있습니다.</DialogDescription></DialogHeader>
+          <div className="flex items-center gap-2 mb-4">
+            <Input className="h-8 text-sm flex-1" placeholder={`새 ${keywordHierarchyDialog.level === 2 ? 'Lv2' : 'Lv3'} 키워드 입력...`} value={newKeywordInput.level === keywordHierarchyDialog.level && newKeywordInput.parentId === keywordHierarchyDialog.parentId ? newKeywordInput.value : ''} onChange={e => setNewKeywordInput({ level: keywordHierarchyDialog.level, parentId: keywordHierarchyDialog.parentId, value: e.target.value })} onKeyDown={e => { if (e.key === 'Enter') handleAddKeyword(keywordHierarchyDialog.level, keywordHierarchyDialog.parentId, newKeywordInput.value); }} />
+            <Button size="sm" className="h-8" onClick={() => handleAddKeyword(keywordHierarchyDialog.level, keywordHierarchyDialog.parentId, newKeywordInput.value)}><Plus className="h-3 w-3 mr-1" />추가</Button>
+          </div>
+          <div className="max-h-[300px] overflow-y-auto border rounded p-2 space-y-1">
+            {(() => {
+              let children = [];
+              if (keywordHierarchyDialog.level === 2) { const parent = keywordHierarchy.find(lv1 => lv1.id === keywordHierarchyDialog.parentId); children = parent?.children || []; }
+              else if (keywordHierarchyDialog.level === 3) { for (const lv1 of keywordHierarchy) { const lv2 = (lv1.children || []).find(c => c.id === keywordHierarchyDialog.parentId); if (lv2) { children = lv2.children || []; break; } } }
+              if (children.length === 0) return <div className="text-center text-xs text-muted-foreground py-4">하위 키워드가 없습니다</div>;
+              return children.map(child => (
+                <div key={child.id} className="flex items-center gap-2 p-2 rounded hover:bg-gray-50 text-sm">
+                  {keywordHierarchyDialog.level === 2 ? <Folder className="h-4 w-4 text-blue-500 flex-shrink-0" /> : <Tag className="h-4 w-4 text-green-500 flex-shrink-0" />}
+                  <span className="flex-1 cursor-pointer hover:text-blue-600 hover:underline" onClick={() => handleKeywordHierarchySearch(child.keyword)}>{child.keyword}</span>
+                  {keywordHierarchyDialog.level === 2 && <Button variant="ghost" size="sm" className="h-6 px-2 text-xs text-blue-600" onClick={() => setKeywordHierarchyDialog({ open: true, parentId: child.id, parentKeyword: child.keyword, level: 3 })}>Lv3</Button>}
+                  <Button variant="ghost" size="sm" className="h-6 w-6 p-0 text-red-500" onClick={() => handleDeleteKeyword(child.id)}><Trash2 className="h-3 w-3" /></Button>
+                </div>
+              ));
+            })()}
           </div>
         </DialogContent>
       </Dialog>
@@ -1155,4 +866,4 @@ function ClusteringPage() {
   );
 }
 
-export default ClusteringPage;
+export default DetailClusteringPage;

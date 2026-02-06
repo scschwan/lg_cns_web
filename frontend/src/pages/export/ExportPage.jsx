@@ -345,40 +345,57 @@ function ExportPage() {
   };
 
   // ===== Export =====
+  const [exportProgress, setExportProgress] = useState(0);
+  const [exportingType, setExportingType] = useState(null); // 'selected' | 'all'
+
   const handleExportSelected = async () => {
     if (clusterCheckedSet.size === 0) {
       alert('Export할 클러스터를 선택해주세요.');
       return;
     }
     setExporting(true);
+    setExportingType('selected');
+    setExportProgress(10);
     try {
+      setExportProgress(30);
       const result = await exportService.exportSelectedClusters(
         projectId, sessionId, Array.from(clusterCheckedSet)
       );
+      setExportProgress(80);
       if (result.downloadUrl) {
         exportService.downloadExcel(result.downloadUrl, `clusters_${sessionId}.xlsx`);
-        alert('Excel 파일이 다운로드됩니다.');
       }
+      setExportProgress(100);
+      await new Promise(r => setTimeout(r, 500));
     } catch (e) {
       alert('Export 실패: ' + (e.response?.data?.message || e.message));
     } finally {
       setExporting(false);
+      setExportingType(null);
+      setExportProgress(0);
     }
   };
 
   const handleExportAll = async () => {
     if (!window.confirm('전체 클러스터를 Excel로 내보내시겠습니까?')) return;
     setExporting(true);
+    setExportingType('all');
+    setExportProgress(10);
     try {
+      setExportProgress(30);
       const result = await exportService.exportAllClusters(projectId, sessionId);
+      setExportProgress(80);
       if (result.downloadUrl) {
         exportService.downloadExcel(result.downloadUrl, `all_clusters_${sessionId}.xlsx`);
-        alert('Excel 파일이 다운로드됩니다.');
       }
+      setExportProgress(100);
+      await new Promise(r => setTimeout(r, 500));
     } catch (e) {
       alert('Export 실패: ' + (e.response?.data?.message || e.message));
     } finally {
       setExporting(false);
+      setExportingType(null);
+      setExportProgress(0);
     }
   };
 
@@ -417,7 +434,7 @@ function ExportPage() {
       return;
     }
     // Detail Clustering 페이지로 이동 (cluster_id 전달)
-    navigate(`/projects/${projectId}/sessions/${sessionId}/detail-clustering?clusterId=${selectedCluster.number}`);
+    navigate(`/projects/${projectId}/sessions/${sessionId}/detailclustering?clusterId=${selectedCluster.number}`);
   };
 
   // ===== 숫자 포맷팅 =====
@@ -633,20 +650,21 @@ function ExportPage() {
                           onMouseDown={(e) => isParent && handleRowMouseDown(e, cluster.clusterNumber)}
                           onMouseEnter={() => isParent && handleRowMouseEnter(cluster.clusterNumber)}
                         >
-                          <td className="px-2 py-1.5">
+                          {/* 체크박스 - mouseDown 이벤트 전파 차단 */}
+                          <td className="px-2 py-1.5" onMouseDown={(e) => e.stopPropagation()}>
                             {isParent && (
                               <Checkbox
                                 checked={isChecked}
                                 onCheckedChange={() => handleClusterCheck(cluster.clusterNumber)}
-                                onClick={(e) => e.stopPropagation()}
                               />
                             )}
                           </td>
-                          <td className="px-2 py-1.5">
-                            {isEditing ? (
+                          {isEditing ? (
+                            /* 편집 모드: 클러스터명 입력이 나머지 공간을 모두 사용 */
+                            <td className="px-2 py-1.5" colSpan={6} onMouseDown={(e) => e.stopPropagation()}>
                               <div className="flex items-center gap-1">
                                 <Input
-                                  className="h-6 text-xs w-24"
+                                  className="h-6 text-xs flex-1"
                                   value={editingName}
                                   onChange={(e) => setEditingName(e.target.value)}
                                   onKeyDown={(e) => {
@@ -655,48 +673,52 @@ function ExportPage() {
                                   }}
                                   autoFocus
                                 />
-                                <Button size="sm" variant="ghost" className="h-5 w-5 p-0" onClick={() => handleSaveClusterName(cluster.clusterNumber)}>
+                                <Button size="sm" variant="ghost" className="h-5 w-5 p-0 flex-shrink-0" onClick={() => handleSaveClusterName(cluster.clusterNumber)}>
                                   <Save className="h-3 w-3 text-green-600" />
                                 </Button>
-                                <Button size="sm" variant="ghost" className="h-5 w-5 p-0" onClick={handleCancelEdit}>
+                                <Button size="sm" variant="ghost" className="h-5 w-5 p-0 flex-shrink-0" onClick={handleCancelEdit}>
                                   <X className="h-3 w-3 text-red-600" />
                                 </Button>
                               </div>
-                            ) : (
-                              <span
-                                className={`cursor-pointer hover:underline ${isParent ? 'font-medium' : 'pl-3 text-gray-600'}`}
-                                onClick={() => isParent && handleEditClusterName(cluster)}
-                              >
-                                {isParent ? cluster.clusterName : ''}
-                              </span>
-                            )}
-                          </td>
-                          <td className="px-2 py-1.5">
-                            <span className={isSub ? 'text-blue-600' : isUndef ? 'text-orange-600' : ''}>
-                              {cluster.subClusterName}
-                            </span>
-                          </td>
-                          <td className="px-2 py-1.5 max-w-[100px] truncate" title={(cluster.keywords || []).join(', ')}>
-                            {(cluster.keywords || []).slice(0, 3).join(', ')}
-                            {(cluster.keywords || []).length > 3 && '...'}
-                          </td>
-                          <td className="px-2 py-1.5 text-right">{formatNumber(cluster.count)}</td>
-                          <td className="px-2 py-1.5 text-right">{formatAmount(cluster.totalAmount)}</td>
-                          <td className="px-2 py-1.5 text-center">
-                            {isParent && (
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                className="h-6 px-2 text-xs"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  loadClusterDetail(cluster.clusterNumber);
-                                }}
-                              >
-                                <Eye className="h-3 w-3 mr-1" />자세히
-                              </Button>
-                            )}
-                          </td>
+                            </td>
+                          ) : (
+                            <>
+                              <td className="px-2 py-1.5" onMouseDown={(e) => e.stopPropagation()}>
+                                <span
+                                  className={`cursor-pointer hover:underline ${isParent ? 'font-medium' : 'pl-3 text-gray-600'}`}
+                                  onClick={() => isParent && handleEditClusterName(cluster)}
+                                >
+                                  {isParent ? cluster.clusterName : ''}
+                                </span>
+                              </td>
+                              <td className="px-2 py-1.5">
+                                <span className={isSub ? 'text-blue-600' : isUndef ? 'text-orange-600' : ''}>
+                                  {cluster.subClusterName}
+                                </span>
+                              </td>
+                              <td className="px-2 py-1.5 max-w-[100px] truncate" title={(cluster.keywords || []).join(', ')}>
+                                {(cluster.keywords || []).slice(0, 3).join(', ')}
+                                {(cluster.keywords || []).length > 3 && '...'}
+                              </td>
+                              <td className="px-2 py-1.5 text-right">{formatNumber(cluster.count)}</td>
+                              <td className="px-2 py-1.5 text-right">{formatAmount(cluster.totalAmount)}</td>
+                              <td className="px-2 py-1.5 text-center">
+                                {isParent && (
+                                  <Button
+                                    size="sm"
+                                    variant="ghost"
+                                    className="h-6 px-2 text-xs"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      loadClusterDetail(cluster.clusterNumber);
+                                    }}
+                                  >
+                                    <Eye className="h-3 w-3 mr-1" />자세히
+                                  </Button>
+                                )}
+                              </td>
+                            </>
+                          )}
                         </tr>
                       );
                     })}
@@ -752,21 +774,43 @@ function ExportPage() {
               <div className="grid grid-cols-2 gap-2">
                 <Button
                   variant="outline"
-                  className="h-10"
+                  className="h-10 relative overflow-hidden"
                   onClick={handleExportSelected}
                   disabled={exporting || selectedClusterCount === 0}
                 >
-                  <Download className="h-4 w-4 mr-1" />
-                  개별 Export ({selectedClusterCount})
+                  {exportingType === 'selected' && exportProgress > 0 && (
+                    <div
+                      className="absolute left-0 top-0 bottom-0 bg-blue-100 transition-all duration-300"
+                      style={{ width: `${exportProgress}%` }}
+                    />
+                  )}
+                  <span className="relative z-10 flex items-center">
+                    {exportingType === 'selected' ? (
+                      <><RefreshCw className="h-4 w-4 mr-1 animate-spin" />{exportProgress}%</>
+                    ) : (
+                      <><Download className="h-4 w-4 mr-1" />개별 Export ({selectedClusterCount})</>
+                    )}
+                  </span>
                 </Button>
                 <Button
                   variant="outline"
-                  className="h-10"
+                  className="h-10 relative overflow-hidden"
                   onClick={handleExportAll}
                   disabled={exporting}
                 >
-                  <Download className="h-4 w-4 mr-1" />
-                  전체 Export
+                  {exportingType === 'all' && exportProgress > 0 && (
+                    <div
+                      className="absolute left-0 top-0 bottom-0 bg-blue-100 transition-all duration-300"
+                      style={{ width: `${exportProgress}%` }}
+                    />
+                  )}
+                  <span className="relative z-10 flex items-center">
+                    {exportingType === 'all' ? (
+                      <><RefreshCw className="h-4 w-4 mr-1 animate-spin" />{exportProgress}%</>
+                    ) : (
+                      <><Download className="h-4 w-4 mr-1" />전체 Export</>
+                    )}
+                  </span>
                 </Button>
               </div>
               <Button

@@ -261,6 +261,8 @@ function ClusteringPage() {
   const [renameDialog, setRenameDialog] = useState({ open: false, cluster: null });
   const [newClusterName, setNewClusterName] = useState('');
   const [addMergeDialog, setAddMergeDialog] = useState(false);
+  const [undefinedMergeDialog, setUndefinedMergeDialog] = useState(false);
+  const [undefinedMerging, setUndefinedMerging] = useState(false);
 
   /* ----- 글로벌 mouse up ----- */
   useEffect(() => {
@@ -952,6 +954,31 @@ function ClusteringPage() {
 
   /* 완료 */
   const handleComplete = async () => {
+    // 미병합 항목이 남아있는지 확인
+    if (statistics.unmergedCount > 0) {
+      setUndefinedMergeDialog(true);
+      return;
+    }
+    try { await uploadService.updateStepHistory(projectId, sessionId, 6); } catch (e) { console.error(e); }
+    navigate(`/projects/${projectId}/sessions/${sessionId}/export`);
+  };
+
+  const handleUndefinedMergeConfirm = async () => {
+    setUndefinedMerging(true);
+    try {
+      await clusteringService.autoMergeUndefined(projectId, sessionId);
+      setUndefinedMergeDialog(false);
+      try { await uploadService.updateStepHistory(projectId, sessionId, 6); } catch (e) { console.error(e); }
+      navigate(`/projects/${projectId}/sessions/${sessionId}/export`);
+    } catch (e) {
+      alert('Undefined Cluster 일괄 병합 실패: ' + (e.response?.data?.message || e.message));
+    } finally {
+      setUndefinedMerging(false);
+    }
+  };
+
+  const handleUndefinedMergeSkip = async () => {
+    setUndefinedMergeDialog(false);
     try { await uploadService.updateStepHistory(projectId, sessionId, 6); } catch (e) { console.error(e); }
     navigate(`/projects/${projectId}/sessions/${sessionId}/export`);
   };
@@ -1790,6 +1817,27 @@ function ClusteringPage() {
                 </div>
               ));
             })()}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* ===== Undefined Cluster 일괄 병합 확인 다이얼로그 ===== */}
+      <Dialog open={undefinedMergeDialog} onOpenChange={o => { if (!undefinedMerging) setUndefinedMergeDialog(o); }}>
+        <DialogContent className="max-w-[450px]">
+          <DialogHeader>
+            <DialogTitle>미병합 항목 처리</DialogTitle>
+            <DialogDescription>
+              병합되지 않은 {statistics.unmergedCount}개 항목이 남아있습니다.
+              Undefined Cluster로 일괄 병합하시겠습니까?
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex justify-end gap-2 mt-4">
+            <Button variant="outline" onClick={handleUndefinedMergeSkip} disabled={undefinedMerging}>
+              건너뛰기
+            </Button>
+            <Button onClick={handleUndefinedMergeConfirm} disabled={undefinedMerging}>
+              {undefinedMerging ? <><Loader2 className="h-4 w-4 mr-1 animate-spin" />병합 중...</> : '일괄 병합'}
+            </Button>
           </div>
         </DialogContent>
       </Dialog>

@@ -2,7 +2,7 @@ package com.example.finance.controller.data;
 
 import com.example.finance.security.CurrentUser;
 import com.example.finance.security.UserPrincipal;
-import com.example.finance.service.data.ClusteringService;
+import com.example.finance.service.data.DetailClusteringService;
 import com.example.finance.service.project.ProjectService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -12,97 +12,88 @@ import org.springframework.web.bind.annotation.*;
 import java.util.List;
 import java.util.Map;
 
+/**
+ * 세부 클러스터링 컨트롤러 (Step 7)
+ * ClusteringController와 동일한 엔드포인트 구조이지만 clusterId 파라미터가 추가됨.
+ * 모든 작업은 cluster_sub_id 기준으로 동작하며 cluster_id는 절대 수정하지 않음.
+ */
 @Slf4j
 @RestController
-@RequestMapping("/api/projects/{projectId}/sessions/{sessionId}/clustering")
+@RequestMapping("/api/projects/{projectId}/sessions/{sessionId}/detail-clustering")
 @RequiredArgsConstructor
-public class ClusteringController {
+public class DetailClusteringController {
 
-    private final ClusteringService clusteringService;
+    private final DetailClusteringService detailClusteringService;
     private final ProjectService projectService;
-
-    @PostMapping("/generate")
-    public ResponseEntity<Map<String, Object>> generateClusters(
-            @PathVariable String projectId,
-            @PathVariable String sessionId,
-            @RequestBody(required = false) Map<String, Object> body,
-            @CurrentUser UserPrincipal userPrincipal) {
-
-        projectService.getProject(projectId, userPrincipal.getId());
-
-        boolean includeSupplier = false;
-        boolean includeCostCenter = false;
-        if (body != null) {
-            includeSupplier = Boolean.TRUE.equals(body.get("includeSupplier"));
-            includeCostCenter = Boolean.TRUE.equals(body.get("includeCostCenter"));
-        }
-
-        return ResponseEntity.ok(
-                clusteringService.generateUnmergedClusters(sessionId, includeSupplier, includeCostCenter));
-    }
 
     @GetMapping("/unmerged")
     public ResponseEntity<Map<String, Object>> getUnmergedClusters(
             @PathVariable String projectId,
             @PathVariable String sessionId,
+            @RequestParam int clusterId,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size,
             @RequestParam(required = false) String keyword,
             @CurrentUser UserPrincipal userPrincipal) {
 
         projectService.getProject(projectId, userPrincipal.getId());
-        return ResponseEntity.ok(clusteringService.getUnmergedClusters(sessionId, page, size, keyword));
+        return ResponseEntity.ok(detailClusteringService.getUnmergedClusters(sessionId, clusterId, page, size, keyword));
     }
 
     @GetMapping("/unmerged-ids")
     public ResponseEntity<List<Integer>> getAllUnmergedClusterNumbers(
             @PathVariable String projectId,
             @PathVariable String sessionId,
+            @RequestParam int clusterId,
             @RequestParam(required = false) String keyword,
             @CurrentUser UserPrincipal userPrincipal) {
 
         projectService.getProject(projectId, userPrincipal.getId());
-        return ResponseEntity.ok(clusteringService.getAllUnmergedClusterNumbers(sessionId, keyword));
+        return ResponseEntity.ok(detailClusteringService.getAllUnmergedClusterNumbers(sessionId, clusterId, keyword));
     }
 
     @GetMapping("/keyword-stats")
     public ResponseEntity<List<Map<String, Object>>> getKeywordStats(
             @PathVariable String projectId,
             @PathVariable String sessionId,
+            @RequestParam int clusterId,
             @CurrentUser UserPrincipal userPrincipal) {
 
         projectService.getProject(projectId, userPrincipal.getId());
-        return ResponseEntity.ok(clusteringService.getKeywordStats(sessionId));
+        return ResponseEntity.ok(detailClusteringService.getKeywordStats(sessionId, clusterId));
     }
 
     @GetMapping("/supplier-stats")
     public ResponseEntity<List<Map<String, Object>>> getSupplierStats(
             @PathVariable String projectId,
             @PathVariable String sessionId,
+            @RequestParam int clusterId,
             @CurrentUser UserPrincipal userPrincipal) {
 
         projectService.getProject(projectId, userPrincipal.getId());
-        return ResponseEntity.ok(clusteringService.getSupplierStats(sessionId));
+        return ResponseEntity.ok(detailClusteringService.getSupplierStats(sessionId, clusterId));
     }
 
     @GetMapping("/merged")
     public ResponseEntity<List<Map<String, Object>>> getMergedClusters(
             @PathVariable String projectId,
             @PathVariable String sessionId,
+            @RequestParam int clusterId,
             @CurrentUser UserPrincipal userPrincipal) {
 
         projectService.getProject(projectId, userPrincipal.getId());
-        return ResponseEntity.ok(clusteringService.getMergedClusters(sessionId));
+        return ResponseEntity.ok(detailClusteringService.getMergedClusters(sessionId, clusterId));
     }
 
     @GetMapping("/statistics")
     public ResponseEntity<Map<String, Object>> getStatistics(
             @PathVariable String projectId,
             @PathVariable String sessionId,
+            @RequestParam int clusterId,
             @CurrentUser UserPrincipal userPrincipal) {
 
         projectService.getProject(projectId, userPrincipal.getId());
-        return ResponseEntity.ok(clusteringService.getStatistics(sessionId));
+        return ResponseEntity.ok(detailClusteringService.getStatistics(sessionId, clusterId));
     }
 
     @PostMapping("/merge")
@@ -113,9 +104,10 @@ public class ClusteringController {
             @CurrentUser UserPrincipal userPrincipal) {
 
         projectService.getProject(projectId, userPrincipal.getId());
+        Integer clusterId = ((Number) body.get("clusterId")).intValue();
         @SuppressWarnings("unchecked")
         List<Integer> clusterNumbers = (List<Integer>) body.get("clusterNumbers");
-        return ResponseEntity.ok(clusteringService.mergeClusters(sessionId, clusterNumbers));
+        return ResponseEntity.ok(detailClusteringService.mergeClusters(sessionId, clusterId, clusterNumbers));
     }
 
     @PostMapping("/unmerge")
@@ -126,8 +118,9 @@ public class ClusteringController {
             @CurrentUser UserPrincipal userPrincipal) {
 
         projectService.getProject(projectId, userPrincipal.getId());
+        Integer clusterId = ((Number) body.get("clusterId")).intValue();
         Integer mergedClusterNumber = (Integer) body.get("mergedClusterNumber");
-        return ResponseEntity.ok(clusteringService.unmergeClusters(sessionId, mergedClusterNumber));
+        return ResponseEntity.ok(detailClusteringService.unmergeClusters(sessionId, clusterId, mergedClusterNumber));
     }
 
     @PostMapping("/unmerge-partial")
@@ -138,11 +131,12 @@ public class ClusteringController {
             @CurrentUser UserPrincipal userPrincipal) {
 
         projectService.getProject(projectId, userPrincipal.getId());
+        Integer clusterId = ((Number) body.get("clusterId")).intValue();
         Integer mergedClusterNumber = (Integer) body.get("mergedClusterNumber");
         @SuppressWarnings("unchecked")
         List<Integer> childClusterNumbers = (List<Integer>) body.get("childClusterNumbers");
         return ResponseEntity.ok(
-                clusteringService.unmergePartialClusters(sessionId, mergedClusterNumber, childClusterNumbers));
+                detailClusteringService.unmergePartialClusters(sessionId, clusterId, mergedClusterNumber, childClusterNumbers));
     }
 
     @PostMapping("/merge-merged")
@@ -153,9 +147,10 @@ public class ClusteringController {
             @CurrentUser UserPrincipal userPrincipal) {
 
         projectService.getProject(projectId, userPrincipal.getId());
+        Integer clusterId = ((Number) body.get("clusterId")).intValue();
         @SuppressWarnings("unchecked")
         List<Integer> mergedClusterNumbers = (List<Integer>) body.get("mergedClusterNumbers");
-        return ResponseEntity.ok(clusteringService.mergeMergedClusters(sessionId, mergedClusterNumbers));
+        return ResponseEntity.ok(detailClusteringService.mergeMergedClusters(sessionId, clusterId, mergedClusterNumbers));
     }
 
     @PostMapping("/add-to-merged")
@@ -166,11 +161,12 @@ public class ClusteringController {
             @CurrentUser UserPrincipal userPrincipal) {
 
         projectService.getProject(projectId, userPrincipal.getId());
+        Integer clusterId = ((Number) body.get("clusterId")).intValue();
         Integer targetMergedClusterNumber = (Integer) body.get("targetMergedClusterNumber");
         @SuppressWarnings("unchecked")
         List<Integer> clusterNumbers = (List<Integer>) body.get("clusterNumbers");
         return ResponseEntity.ok(
-                clusteringService.addToMergedCluster(sessionId, targetMergedClusterNumber, clusterNumbers));
+                detailClusteringService.addToMergedCluster(sessionId, clusterId, targetMergedClusterNumber, clusterNumbers));
     }
 
     @PutMapping("/rename")
@@ -183,18 +179,8 @@ public class ClusteringController {
         projectService.getProject(projectId, userPrincipal.getId());
         Integer clusterNumber = (Integer) body.get("clusterNumber");
         String newName = (String) body.get("newName");
-        clusteringService.updateClusterName(sessionId, clusterNumber, newName);
+        detailClusteringService.updateClusterName(sessionId, clusterNumber, newName);
         return ResponseEntity.ok(Map.of("success", true));
-    }
-
-    @PostMapping("/auto-merge-undefined")
-    public ResponseEntity<Map<String, Object>> autoMergeUndefined(
-            @PathVariable String projectId,
-            @PathVariable String sessionId,
-            @CurrentUser UserPrincipal userPrincipal) {
-
-        projectService.getProject(projectId, userPrincipal.getId());
-        return ResponseEntity.ok(clusteringService.autoMergeUndefined(sessionId));
     }
 
     // ============================================================
@@ -210,6 +196,7 @@ public class ClusteringController {
 
         projectService.getProject(projectId, userPrincipal.getId());
 
+        int clusterId = ((Number) body.get("clusterId")).intValue();
         int page = body.get("page") != null ? ((Number) body.get("page")).intValue() : 0;
         int size = body.get("size") != null ? ((Number) body.get("size")).intValue() : 20;
         String searchColumn = (String) body.get("searchColumn");
@@ -221,8 +208,8 @@ public class ClusteringController {
         @SuppressWarnings("unchecked")
         List<Integer> withinClusterNumbers = (List<Integer>) body.get("withinClusterNumbers");
 
-        return ResponseEntity.ok(clusteringService.advancedSearch(
-                sessionId, page, size,
+        return ResponseEntity.ok(detailClusteringService.advancedSearch(
+                sessionId, clusterId, page, size,
                 searchColumn, searchValue, exactMatch,
                 excludeValue, excludeExactMatch,
                 withinClusterNumbers));
@@ -237,6 +224,7 @@ public class ClusteringController {
 
         projectService.getProject(projectId, userPrincipal.getId());
 
+        int clusterId = ((Number) body.get("clusterId")).intValue();
         String searchColumn = (String) body.get("searchColumn");
         String searchValue = (String) body.get("searchValue");
         boolean exactMatch = Boolean.TRUE.equals(body.get("exactMatch"));
@@ -246,8 +234,8 @@ public class ClusteringController {
         @SuppressWarnings("unchecked")
         List<Integer> withinClusterNumbers = (List<Integer>) body.get("withinClusterNumbers");
 
-        return ResponseEntity.ok(clusteringService.getAdvancedSearchClusterNumbers(
-                sessionId,
+        return ResponseEntity.ok(detailClusteringService.getAdvancedSearchClusterNumbers(
+                sessionId, clusterId,
                 searchColumn, searchValue, exactMatch,
                 excludeValue, excludeExactMatch,
                 withinClusterNumbers));
@@ -257,10 +245,11 @@ public class ClusteringController {
     public ResponseEntity<List<Map<String, String>>> getSearchableColumns(
             @PathVariable String projectId,
             @PathVariable String sessionId,
+            @RequestParam int clusterId,
             @CurrentUser UserPrincipal userPrincipal) {
 
         projectService.getProject(projectId, userPrincipal.getId());
-        return ResponseEntity.ok(clusteringService.getSearchableColumns(sessionId));
+        return ResponseEntity.ok(detailClusteringService.getSearchableColumns(sessionId, clusterId));
     }
 
     // ============================================================
@@ -274,7 +263,7 @@ public class ClusteringController {
             @CurrentUser UserPrincipal userPrincipal) {
 
         projectService.getProject(projectId, userPrincipal.getId());
-        return ResponseEntity.ok(clusteringService.getKeywordHierarchy(sessionId));
+        return ResponseEntity.ok(detailClusteringService.getKeywordHierarchy(sessionId));
     }
 
     @PostMapping("/keyword-hierarchy")
@@ -285,12 +274,10 @@ public class ClusteringController {
             @CurrentUser UserPrincipal userPrincipal) {
 
         projectService.getProject(projectId, userPrincipal.getId());
-
         Integer level = ((Number) body.get("level")).intValue();
         String parentId = (String) body.get("parentId");
         String keyword = (String) body.get("keyword");
-
-        return ResponseEntity.ok(clusteringService.addKeywordHierarchy(sessionId, level, parentId, keyword));
+        return ResponseEntity.ok(detailClusteringService.addKeywordHierarchy(sessionId, level, parentId, keyword));
     }
 
     @PutMapping("/keyword-hierarchy/{id}")
@@ -303,7 +290,7 @@ public class ClusteringController {
 
         projectService.getProject(projectId, userPrincipal.getId());
         String keyword = (String) body.get("keyword");
-        return ResponseEntity.ok(clusteringService.updateKeywordHierarchy(id, keyword));
+        return ResponseEntity.ok(detailClusteringService.updateKeywordHierarchy(id, keyword));
     }
 
     @DeleteMapping("/keyword-hierarchy/{id}")
@@ -314,6 +301,6 @@ public class ClusteringController {
             @CurrentUser UserPrincipal userPrincipal) {
 
         projectService.getProject(projectId, userPrincipal.getId());
-        return ResponseEntity.ok(clusteringService.deleteKeywordHierarchy(sessionId, id));
+        return ResponseEntity.ok(detailClusteringService.deleteKeywordHierarchy(sessionId, id));
     }
 }
