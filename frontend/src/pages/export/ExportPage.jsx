@@ -23,6 +23,99 @@ import exportService from '@/services/exportService';
 // Shared component
 import AdvancedTable from '@/components/AdvancedTable';
 
+// ===== 멀티셀렉트 체크박스 리스트 컴포넌트 =====
+// 드래그 선택 + Ctrl+클릭 복수 커서 지원
+function MultiSelectCheckList({ items, checkedSet, onCheckedChange, renderLabel, getKey, className = '' }) {
+  const [cursorSet, setCursorSet] = useState(new Set());
+  const [isDragging, setIsDragging] = useState(false);
+  const dragStartRef = useRef(null);
+  const listRef = useRef(null);
+
+  const handleMouseDown = (e, key, idx) => {
+    if (e.ctrlKey || e.metaKey) {
+      e.preventDefault();
+      setCursorSet(prev => {
+        const next = new Set(prev);
+        if (next.has(key)) next.delete(key);
+        else next.add(key);
+        return next;
+      });
+      return;
+    }
+    e.preventDefault();
+    setIsDragging(true);
+    dragStartRef.current = idx;
+    setCursorSet(new Set([key]));
+  };
+
+  const handleMouseEnter = (key, idx) => {
+    if (!isDragging || dragStartRef.current === null) return;
+    const startIdx = dragStartRef.current;
+    const minIdx = Math.min(startIdx, idx);
+    const maxIdx = Math.max(startIdx, idx);
+    const newSet = new Set();
+    for (let i = minIdx; i <= maxIdx; i++) {
+      newSet.add(getKey(items[i]));
+    }
+    setCursorSet(newSet);
+  };
+
+  const handleMouseUp = () => {
+    setIsDragging(false);
+  };
+
+  useEffect(() => {
+    const handleGlobalMouseUp = () => setIsDragging(false);
+    window.addEventListener('mouseup', handleGlobalMouseUp);
+    return () => window.removeEventListener('mouseup', handleGlobalMouseUp);
+  }, []);
+
+  const handleCheckToggle = (key) => {
+    if (cursorSet.size > 0 && cursorSet.has(key)) {
+      const isCurrentlyChecked = checkedSet.has(key);
+      const newChecked = new Set(checkedSet);
+      cursorSet.forEach(k => {
+        if (isCurrentlyChecked) newChecked.delete(k);
+        else newChecked.add(k);
+      });
+      onCheckedChange(newChecked);
+    } else {
+      const newChecked = new Set(checkedSet);
+      if (newChecked.has(key)) newChecked.delete(key);
+      else newChecked.add(key);
+      onCheckedChange(newChecked);
+    }
+  };
+
+  return (
+    <div ref={listRef} className={`select-none ${className}`} onMouseUp={handleMouseUp}>
+      {items.map((item, idx) => {
+        const key = getKey(item);
+        const isCursor = cursorSet.has(key);
+        const isChecked = checkedSet.has(key);
+        return (
+          <div
+            key={key}
+            className={`flex items-center gap-2 p-1.5 rounded cursor-pointer transition-colors
+              ${isCursor ? 'bg-blue-100 ring-1 ring-blue-300' : 'hover:bg-gray-50'}
+              ${isChecked ? 'bg-blue-50' : ''}`}
+            onMouseDown={(e) => handleMouseDown(e, key, idx)}
+            onMouseEnter={() => handleMouseEnter(key, idx)}
+          >
+            <Checkbox
+              checked={isChecked}
+              onCheckedChange={() => handleCheckToggle(key)}
+              onMouseDown={(e) => e.stopPropagation()}
+              onClick={(e) => e.stopPropagation()}
+            />
+            {renderLabel(item, isChecked)}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 function ExportPage() {
   const { projectId, sessionId } = useParams();
   const navigate = useNavigate();
@@ -56,7 +149,7 @@ function ExportPage() {
 
   // 제거열 설정
   const [columnSettings, setColumnSettings] = useState([]);
-  const [columnSelectAll, setColumnSelectAll] = useState(true);
+  const [columnCheckedSet, setColumnCheckedSet] = useState(new Set());
 
   // 드래그 선택
   const [isDragging, setIsDragging] = useState(false);
@@ -129,7 +222,10 @@ function ExportPage() {
     try {
       const result = await exportService.getColumnSettings(projectId, sessionId);
       setColumnSettings(result || []);
-      setColumnSelectAll(result.every(c => c.isVisible));
+      const checkedSet = new Set(
+        (result || []).filter(c => c.isVisible).map(c => c.originalName)
+      );
+      setColumnCheckedSet(checkedSet);
     } catch (e) {
       console.error('컬럼 설정 로드 실패:', e);
     }
@@ -205,29 +301,46 @@ function ExportPage() {
     return () => window.removeEventListener('mouseup', handleMouseUp);
   }, []);
 
-  // ===== 컬럼 설정 토글 =====
-  const handleColumnToggle = (originalName) => {
-    setColumnSettings(prev => prev.map(c =>
-      c.originalName === originalName ? { ...c, isVisible: !c.isVisible } : c
-    ));
-  };
+  // ===== 컬럼 설정 변경 (즉시 적용 + DB 업데이트) =====
+  const handleColumnCheckedChange = async (newCheckedSet) => {
+    const prevSet = columnCheckedSet;
+    setColumnCheckedSet(newCheckedSet);
 
-  const handleColumnSelectAll = (checked) => {
-    setColumnSelectAll(checked);
-    setColumnSettings(prev => prev.map(c => ({ ...c, isVisible: checked })));
-  };
+    // 변경된 항목 찾기
+    const updates = [];
+    columnSettings.forEach(c => {
+      const wasChecked = prevSet.has(c.originalName);
+      const isNowChecked = newCheckedSet.has(c.originalName);
+      if (wasChecked !== isNowChecked) {
+        updates.push({ originalName: c.originalName, isVisible: isNowChecked });
+      }
+    });
 
-  const handleSaveColumnSettings = async () => {
+    if (updates.length === 0) return;
+
+    // UI 즉시 반영
+    setColumnSettings(prev =>
+      prev.map(c => ({
+        ...c,
+        isVisible: newCheckedSet.has(c.originalName),
+      }))
+    );
+
+    // 서버 업데이트
     try {
-      await exportService.updateColumnSettings(projectId, sessionId, columnSettings);
-      alert('컬럼 설정이 저장되었습니다.');
+      await exportService.updateColumnSettings(projectId, sessionId, updates);
       // 데이터 새로고침
       await loadAllData(allDataPage, allDataPageSize);
       if (selectedCluster) {
         await loadClusterDetail(selectedCluster.number, detailPage, detailPageSize);
       }
     } catch (e) {
-      alert('컬럼 설정 저장 실패: ' + (e.response?.data?.message || e.message));
+      console.error('컬럼 가시성 변경 실패:', e);
+      // 롤백
+      setColumnCheckedSet(prevSet);
+      setColumnSettings(prev =>
+        prev.map(c => ({ ...c, isVisible: prevSet.has(c.originalName) }))
+      );
     }
   };
 
@@ -600,33 +713,38 @@ function ExportPage() {
               <CardHeader className="py-2 px-4 border-b flex flex-row items-center justify-between">
                 <CardTitle className="text-sm font-bold">제거열 설정</CardTitle>
                 <div className="flex items-center gap-1">
-                  <Checkbox checked={columnSelectAll} onCheckedChange={handleColumnSelectAll} />
+                  <Checkbox
+                    checked={columnSettings.length > 0 && columnCheckedSet.size === columnSettings.length}
+                    onCheckedChange={(checked) => {
+                      const newSet = checked
+                        ? new Set(columnSettings.map(c => c.originalName))
+                        : new Set();
+                      handleColumnCheckedChange(newSet);
+                    }}
+                  />
                   <span className="text-xs text-muted-foreground">전체선택</span>
                 </div>
               </CardHeader>
               <CardContent className="p-2 flex-1 overflow-auto min-h-0">
-                <p className="text-[10px] text-pink-600 mb-2">* 체크 해제한 열은 Export에서 제외됩니다.</p>
-                <div className="space-y-1">
-                  {columnSettings.map((col) => (
-                    <div
-                      key={col.originalName}
-                      className={`flex items-center gap-2 px-2 py-1.5 rounded cursor-pointer transition-colors ${
-                        col.isVisible ? 'bg-blue-50 hover:bg-blue-100' : 'bg-gray-100 hover:bg-gray-200'
-                      }`}
-                      onClick={() => handleColumnToggle(col.originalName)}
-                    >
-                      <Checkbox checked={col.isVisible} onChange={() => {}} />
-                      <span className="text-xs flex-1">{col.displayName || col.originalName}</span>
-                      <Badge variant="outline" className="text-[9px]">{col.dataType || 'text'}</Badge>
-                    </div>
-                  ))}
-                </div>
+                <p className="text-[10px] text-pink-600 mb-2">* 체크 해제한 열은 Export에서 제외됩니다. 드래그 또는 Ctrl+클릭으로 여러 항목을 선택한 후 한번에 체크/해제할 수 있습니다.</p>
+                <MultiSelectCheckList
+                  items={columnSettings}
+                  checkedSet={columnCheckedSet}
+                  onCheckedChange={handleColumnCheckedChange}
+                  getKey={(item) => item.originalName}
+                  renderLabel={(item, isChecked) => (
+                    <>
+                      <span className={`text-xs flex-1 ${!isChecked ? 'text-gray-400 line-through' : ''}`}>
+                        {item.displayName || item.originalName}
+                      </span>
+                      <Badge variant="outline" className="text-[9px]">{item.dataType || 'text'}</Badge>
+                    </>
+                  )}
+                />
+                {columnSettings.length === 0 && (
+                  <p className="text-xs text-gray-400 p-2">컬럼 정보가 없습니다.</p>
+                )}
               </CardContent>
-              <div className="p-2 border-t bg-white">
-                <Button size="sm" className="w-full h-8" onClick={handleSaveColumnSettings}>
-                  <Save className="h-3 w-3 mr-1" />컬럼 설정 저장
-                </Button>
-              </div>
             </Card>
 
             {/* Export 버튼 영역 */}
