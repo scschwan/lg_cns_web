@@ -23,7 +23,7 @@ import {
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import AdvancedTable from '@/components/AdvancedTable';
 import detailClusteringService from '@/services/detailClusteringService';
-import uploadService from '@/services/uploadService';
+
 
 const truncateName = (name, maxLen = 30) => {
   if (!name) return '';
@@ -521,7 +521,6 @@ function DetailClusteringPage() {
   };
 
   const handleComplete = async () => {
-    try { await uploadService.updateStepHistory(projectId, sessionId, 7); } catch (e) { console.error(e); }
     navigate(`/projects/${projectId}/sessions/${sessionId}/export`);
   };
 
