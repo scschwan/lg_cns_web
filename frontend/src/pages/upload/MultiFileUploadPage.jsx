@@ -813,13 +813,22 @@ function MultiFileUploadPage() {
 {/*                                                     <TableHead className="w-[80px] text-center">파일</TableHead> */}
                                                     <TableHead className="w-[100px] text-center">행수</TableHead>
                                                     <TableHead className="w-[130px]">합산금액</TableHead>
-                                                    <TableHead className="w-[80px] text-center">완료</TableHead>
+                                                    <TableHead className="w-[80px] text-center">진행상태</TableHead>
                                                     <TableHead className="w-[80px]">다운</TableHead>
                                                 </TableRow>
                                             </TableHeader>
                                             <TableBody>
                                                 {sessions.map((session) => (
-                                                    <TableRow key={session.sessionId}>
+                                                    <TableRow
+                                                        key={session.sessionId}
+                                                        className={
+                                                            session.analysisStatus === '완료'
+                                                                ? 'bg-sky-50'
+                                                                : session.analysisStatus === '진행중'
+                                                                    ? 'bg-yellow-50'
+                                                                    : ''
+                                                        }
+                                                    >
                                                         <TableCell>
                                                             <Checkbox
                                                                 checked={selectedSessions.includes(session.sessionId)}
@@ -923,10 +932,12 @@ function MultiFileUploadPage() {
                                                                 : '0 원'}
                                                         </TableCell>
                                                         <TableCell className="text-center">
-                                                            {session.isCompleted ? (
-                                                                <Badge>완료</Badge>
+                                                            {session.analysisStatus === '완료' ? (
+                                                                <Badge className="bg-sky-500">완료</Badge>
+                                                            ) : session.analysisStatus === '진행중' ? (
+                                                                <Badge variant="outline" className="border-yellow-500 text-yellow-700">진행중</Badge>
                                                             ) : (
-                                                                <Badge variant="outline">진행중</Badge>
+                                                                <Badge variant="outline" className="text-muted-foreground">시작전</Badge>
                                                             )}
                                                         </TableCell>
                                                         <TableCell>

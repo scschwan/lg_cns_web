@@ -18,6 +18,7 @@ import com.example.finance.repository.data.PreprocessingConfigRepository;
 import com.example.finance.repository.data.ProcessViewDataRepository;
 import com.example.finance.repository.data.ProcessDataRepository;
 import com.example.finance.repository.data.RawDataRepository;
+import com.example.finance.repository.data.SessionDataRepository;
 import com.example.finance.repository.project.ProjectRepository;
 import com.example.finance.repository.session.FileSessionRepository;
 import com.example.finance.repository.upload.UploadSessionRepository;
@@ -60,6 +61,7 @@ public class FileSessionService {
     private final ClusteringResultRepository clusteringResultRepository;
     private final PreprocessingConfigRepository preprocessingConfigRepository;
     private final ProcessViewDataRepository processViewDataRepository;
+    private final SessionDataRepository sessionDataRepository;
     private final SessionDataService sessionDataService;
 
     // 클래스 상단에 추가
@@ -536,7 +538,17 @@ public class FileSessionService {
         return sessions.stream()
                 // ⭐ [신규 추가] 세션명이 있는(유효한) 세션만 필터링
                 .filter(s -> s.getSessionName() != null && !s.getSessionName().trim().isEmpty())
-                .map(this::toFileSessionResponse)
+                .map(s -> {
+                    FileSessionResponse response = toFileSessionResponse(s);
+                    // 분석 상태 계산
+                    if (Boolean.TRUE.equals(s.getIsCompleted())) {
+                        response.setAnalysisStatus("완료");
+                    } else {
+                        long sessionDataCount = sessionDataRepository.countBySessionId(s.getSessionId());
+                        response.setAnalysisStatus(sessionDataCount > 0 ? "진행중" : "시작전");
+                    }
+                    return response;
+                })
                 .collect(Collectors.toList());
     }
 
