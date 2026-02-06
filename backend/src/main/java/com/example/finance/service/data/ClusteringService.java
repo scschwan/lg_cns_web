@@ -849,15 +849,17 @@ public class ClusteringService {
         Criteria criteria = Criteria.where("session_id").is(sessionId)
                 .and("cluster_id").is(-1);
 
-        // 병합 부모 제외
+        // 병합 부모 제외 + 결과내 재검색 조건 결합
         Set<Integer> mergedParentNumbers = getMergedParentNumbers(sessionId);
-        if (!mergedParentNumbers.isEmpty()) {
-            criteria = criteria.and("cluster_number").nin(mergedParentNumbers);
-        }
 
-        // 결과내 재검색: 이전 결과 내에서만 검색
         if (withinClusterNumbers != null && !withinClusterNumbers.isEmpty()) {
-            criteria = criteria.and("cluster_number").in(withinClusterNumbers);
+            // 결과내 재검색: withinClusterNumbers에서 mergedParentNumbers 제외 후 $in 적용
+            Set<Integer> filteredIds = new HashSet<>(withinClusterNumbers);
+            filteredIds.removeAll(mergedParentNumbers);
+            criteria = criteria.and("cluster_number").in(filteredIds);
+        } else if (!mergedParentNumbers.isEmpty()) {
+            // 일반 검색: 병합 부모만 제외
+            criteria = criteria.and("cluster_number").nin(mergedParentNumbers);
         }
 
         // 검색 컬럼별 조건 추가
@@ -963,13 +965,17 @@ public class ClusteringService {
         Criteria criteria = Criteria.where("session_id").is(sessionId)
                 .and("cluster_id").is(-1);
 
+        // 병합 부모 제외 + 결과내 재검색 조건 결합 (동일 필드 중복 방지)
         Set<Integer> mergedParentNumbers = getMergedParentNumbers(sessionId);
-        if (!mergedParentNumbers.isEmpty()) {
-            criteria = criteria.and("cluster_number").nin(mergedParentNumbers);
-        }
 
         if (withinClusterNumbers != null && !withinClusterNumbers.isEmpty()) {
-            criteria = criteria.and("cluster_number").in(withinClusterNumbers);
+            // 결과내 재검색: withinClusterNumbers에서 mergedParentNumbers 제외 후 $in 적용
+            Set<Integer> filteredIds = new HashSet<>(withinClusterNumbers);
+            filteredIds.removeAll(mergedParentNumbers);
+            criteria = criteria.and("cluster_number").in(filteredIds);
+        } else if (!mergedParentNumbers.isEmpty()) {
+            // 일반 검색: 병합 부모만 제외
+            criteria = criteria.and("cluster_number").nin(mergedParentNumbers);
         }
 
         if (searchValue != null && !searchValue.isBlank()) {
