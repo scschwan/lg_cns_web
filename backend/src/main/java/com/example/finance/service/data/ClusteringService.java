@@ -862,14 +862,20 @@ public class ClusteringService {
             criteria = criteria.and("cluster_number").nin(mergedParentNumbers);
         }
 
-        // 검색 컬럼별 조건 추가
+        // 검색 및 제외 조건 결합 (동일 필드 충돌 방지를 위해 andOperator 사용)
+        List<Criteria> additionalCriteria = new ArrayList<>();
+
         if (searchValue != null && !searchValue.isBlank()) {
-            criteria = addSearchCriteria(criteria, searchColumn, searchValue, exactMatch);
+            additionalCriteria.add(buildSearchCriteria(searchColumn, searchValue, exactMatch));
         }
 
-        // 제외 조건 추가
         if (excludeValue != null && !excludeValue.isBlank()) {
-            criteria = addExcludeCriteria(criteria, searchColumn, excludeValue, excludeExactMatch);
+            additionalCriteria.add(buildExcludeCriteria(searchColumn, excludeValue, excludeExactMatch));
+        }
+
+        if (!additionalCriteria.isEmpty()) {
+            additionalCriteria.add(0, criteria);
+            criteria = new Criteria().andOperator(additionalCriteria.toArray(new Criteria[0]));
         }
 
         // 병렬 조회: count와 visibleColumns
@@ -978,12 +984,20 @@ public class ClusteringService {
             criteria = criteria.and("cluster_number").nin(mergedParentNumbers);
         }
 
+        // 검색 및 제외 조건 결합 (동일 필드 충돌 방지를 위해 andOperator 사용)
+        List<Criteria> additionalCriteria = new ArrayList<>();
+
         if (searchValue != null && !searchValue.isBlank()) {
-            criteria = addSearchCriteria(criteria, searchColumn, searchValue, exactMatch);
+            additionalCriteria.add(buildSearchCriteria(searchColumn, searchValue, exactMatch));
         }
 
         if (excludeValue != null && !excludeValue.isBlank()) {
-            criteria = addExcludeCriteria(criteria, searchColumn, excludeValue, excludeExactMatch);
+            additionalCriteria.add(buildExcludeCriteria(searchColumn, excludeValue, excludeExactMatch));
+        }
+
+        if (!additionalCriteria.isEmpty()) {
+            additionalCriteria.add(0, criteria);
+            criteria = new Criteria().andOperator(additionalCriteria.toArray(new Criteria[0]));
         }
 
         Query query = new Query(criteria);
@@ -994,6 +1008,57 @@ public class ClusteringService {
                 .collect(Collectors.toList());
     }
 
+    /**
+     * 검색 조건 Criteria 생성 (독립적인 Criteria 반환)
+     */
+    private Criteria buildSearchCriteria(String column, String value, boolean exact) {
+        if (column == null || column.isBlank()) column = "keyword";
+        String fieldName = getFieldNameForColumn(column);
+
+        if (exact) {
+            return Criteria.where(fieldName).is(value);
+        } else {
+            return Criteria.where(fieldName).regex(Pattern.compile(Pattern.quote(value), Pattern.CASE_INSENSITIVE));
+        }
+    }
+
+    /**
+     * 제외 조건 Criteria 생성 (독립적인 Criteria 반환)
+     */
+    private Criteria buildExcludeCriteria(String column, String value, boolean exact) {
+        if (column == null || column.isBlank()) column = "keyword";
+        String fieldName = getFieldNameForColumn(column);
+
+        if (exact) {
+            return Criteria.where(fieldName).ne(value);
+        } else {
+            return Criteria.where(fieldName).not().regex(Pattern.compile(Pattern.quote(value), Pattern.CASE_INSENSITIVE));
+        }
+    }
+
+    /**
+     * 컬럼명을 MongoDB 필드명으로 변환
+     */
+    private String getFieldNameForColumn(String column) {
+        switch (column.toLowerCase()) {
+            case "keyword":
+                return "keywords";
+            case "supplier":
+                return "supplier";
+            case "department":
+            case "costcenter":
+                return "department";
+            case "clustername":
+                return "cluster_name";
+            case "target":
+                return "keywords"; // 타겟열은 키워드 필드에 저장됨
+            default:
+                return "keywords";
+        }
+    }
+
+    // Legacy methods - 기존 호환성을 위해 유지 (향후 제거 예정)
+    @Deprecated
     private Criteria addSearchCriteria(Criteria base, String column, String value, boolean exact) {
         if (column == null || column.isBlank()) column = "keyword";
 
@@ -1072,23 +1137,42 @@ public class ClusteringService {
     }
 
     /**
-     * 검색 가능한 컬럼 목록 조회
+     * 검색 가능한 컬럼 목록 조회 (실제 컬럼명 반환)
      */
     public List<Map<String, String>> getSearchableColumns(String sessionId) {
         List<Map<String, String>> columns = new ArrayList<>();
+
+        // FileSession에서 실제 컬럼명 조회
+        Query sessionQuery = new Query(Criteria.where("session_id").is(sessionId));
+        Document sessionDoc = mongoTemplate.findOne(sessionQuery, Document.class, "file_sessions");
+
+        String supplierColumnName = sessionDoc != null ? sessionDoc.getString("supplier_column") : null;
+        String costCenterColumnName = sessionDoc != null ? sessionDoc.getString("cost_center_column") : null;
+        String targetColumnName = sessionDoc != null ? sessionDoc.getString("target_column") : null;
+
+        // 기본 항목: 키워드, 클러스터명
         columns.add(Map.of("key", "keyword", "label", "키워드"));
         columns.add(Map.of("key", "clusterName", "label", "클러스터명"));
 
-        // supplier가 있는지 확인
-        if (hasSupplierClustering(sessionId)) {
-            columns.add(Map.of("key", "supplier", "label", "공급업체"));
+        // 타겟열 (설정된 경우)
+        if (targetColumnName != null && !targetColumnName.isBlank()) {
+            columns.add(Map.of("key", "target", "label", targetColumnName));
         }
 
-        // department가 있는지 확인
+        // 공급업체 (데이터가 있는 경우)
+        if (hasSupplierClustering(sessionId)) {
+            String label = (supplierColumnName != null && !supplierColumnName.isBlank())
+                    ? supplierColumnName : "공급업체";
+            columns.add(Map.of("key", "supplier", "label", label));
+        }
+
+        // 코스트센터 (데이터가 있는 경우)
         Query deptQuery = new Query(Criteria.where("session_id").is(sessionId)
                 .and("department").ne(null)).limit(1);
         if (mongoTemplate.exists(deptQuery, ClusteringResult.class)) {
-            columns.add(Map.of("key", "department", "label", "코스트센터"));
+            String label = (costCenterColumnName != null && !costCenterColumnName.isBlank())
+                    ? costCenterColumnName : "코스트센터";
+            columns.add(Map.of("key", "department", "label", label));
         }
 
         return columns;
