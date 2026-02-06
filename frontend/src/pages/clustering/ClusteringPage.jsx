@@ -977,10 +977,8 @@ function ClusteringPage() {
     }
   };
 
-  const handleUndefinedMergeSkip = async () => {
+  const handleUndefinedMergeSkip = () => {
     setUndefinedMergeDialog(false);
-    try { await uploadService.updateStepHistory(projectId, sessionId, 6); } catch (e) { console.error(e); }
-    navigate(`/projects/${projectId}/sessions/${sessionId}/export`);
   };
 
   /* ============================================================
@@ -1833,7 +1831,7 @@ function ClusteringPage() {
           </DialogHeader>
           <div className="flex justify-end gap-2 mt-4">
             <Button variant="outline" onClick={handleUndefinedMergeSkip} disabled={undefinedMerging}>
-              건너뛰기
+              취소
             </Button>
             <Button onClick={handleUndefinedMergeConfirm} disabled={undefinedMerging}>
               {undefinedMerging ? <><Loader2 className="h-4 w-4 mr-1 animate-spin" />병합 중...</> : '일괄 병합'}

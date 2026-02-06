@@ -48,6 +48,7 @@ public class DetailClusteringService {
 
         Criteria criteria = Criteria.where("session_id").is(sessionId)
                 .and("cluster_id").is(clusterId)
+                .and("cluster_number").ne(clusterId)
                 .and("cluster_sub_id").is(-1);
 
         if (keyword != null && !keyword.isBlank()) {
@@ -189,6 +190,7 @@ public class DetailClusteringService {
     public boolean hasSupplierClustering(String sessionId, int clusterId) {
         Query query = new Query(Criteria.where("session_id").is(sessionId)
                 .and("cluster_id").is(clusterId)
+                .and("cluster_number").ne(clusterId)
                 .and("supplier").ne(null))
                 .limit(1);
         return mongoTemplate.exists(query, ClusteringResult.class);
@@ -624,6 +626,7 @@ public class DetailClusteringService {
     public List<Integer> getAllUnmergedClusterNumbers(String sessionId, int clusterId, String keyword) {
         Criteria criteria = Criteria.where("session_id").is(sessionId)
                 .and("cluster_id").is(clusterId)
+                .and("cluster_number").ne(clusterId)
                 .and("cluster_sub_id").is(-1);
 
         if (keyword != null && !keyword.isBlank()) {
@@ -653,6 +656,7 @@ public class DetailClusteringService {
 
         Criteria criteria = Criteria.where("session_id").is(sessionId)
                 .and("cluster_id").is(clusterId)
+                .and("cluster_number").ne(clusterId)
                 .and("cluster_sub_id").is(-1);
 
         if (withinClusterNumbers != null && !withinClusterNumbers.isEmpty()) {
@@ -747,6 +751,7 @@ public class DetailClusteringService {
 
         Criteria criteria = Criteria.where("session_id").is(sessionId)
                 .and("cluster_id").is(clusterId)
+                .and("cluster_number").ne(clusterId)
                 .and("cluster_sub_id").is(-1);
 
         if (withinClusterNumbers != null && !withinClusterNumbers.isEmpty()) {
@@ -798,6 +803,7 @@ public class DetailClusteringService {
 
         Query deptQuery = new Query(Criteria.where("session_id").is(sessionId)
                 .and("cluster_id").is(clusterId)
+                .and("cluster_number").ne(clusterId)
                 .and("department").ne(null)).limit(1);
         if (mongoTemplate.exists(deptQuery, ClusteringResult.class)) {
             String label = (costCenterColumnName != null && !costCenterColumnName.isBlank())
@@ -940,10 +946,11 @@ public class DetailClusteringService {
         return (last != null && last.getClusterNumber() != null) ? last.getClusterNumber() + 1 : 1;
     }
 
-    /** 스코프 내 모든 클러스터 (cluster_id = clusterId) */
+    /** 스코프 내 모든 클러스터 (cluster_id = clusterId, 병합부모 자신은 제외) */
     private List<ClusteringResult> getAllClustersInScope(String sessionId, int clusterId) {
         Query query = new Query(Criteria.where("session_id").is(sessionId)
-                .and("cluster_id").is(clusterId))
+                .and("cluster_id").is(clusterId)
+                .and("cluster_number").ne(clusterId))
                 .with(Sort.by("cluster_number"));
         return mongoTemplate.find(query, ClusteringResult.class);
     }

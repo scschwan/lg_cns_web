@@ -236,30 +236,24 @@ public class ExportService {
                 parentRow.put("childCount", subs.size());
                 result.add(parentRow);
 
-                // 2) 세부 클러스터에 포함되지 않은 데이터 (undefined)
-                Set<String> subRawIds = new HashSet<>();
-                for (ClusteringResult sub : subs) {
-                    subRawIds.addAll(sub.getDataIndices());
-                }
-                Set<String> parentRawIds = new HashSet<>(merged.getDataIndices());
-                parentRawIds.removeAll(subRawIds);
+                // 2) 세부 클러스터에 소속되지 않은 잔여 데이터 ("기타")
+                int subsCount = subs.stream().mapToInt(ClusteringResult::getCount).sum();
+                double subsAmount = subs.stream().mapToDouble(ClusteringResult::getTotalAmount).sum();
+                int etcCount = totalCount - subsCount;
+                double etcAmount = totalAmount - subsAmount;
 
-                if (!parentRawIds.isEmpty()) {
-                    // undefined 데이터 계산
-                    int undefCount = parentRawIds.size();
-                    double undefAmount = calculateAmountForRawIds(sessionId, parentRawIds);
-
-                    Map<String, Object> undefRow = new LinkedHashMap<>();
-                    undefRow.put("clusterNumber", merged.getClusterNumber());
-                    undefRow.put("clusterName", merged.getClusterName());
-                    undefRow.put("subClusterName", "undefined");
-                    undefRow.put("keywords", Collections.emptyList());
-                    undefRow.put("count", undefCount);
-                    undefRow.put("totalAmount", undefAmount);
-                    undefRow.put("hasSubClusters", false);
-                    undefRow.put("isParentRow", false);
-                    undefRow.put("isUndefined", true);
-                    result.add(undefRow);
+                if (etcCount > 0) {
+                    Map<String, Object> etcRow = new LinkedHashMap<>();
+                    etcRow.put("clusterNumber", merged.getClusterNumber());
+                    etcRow.put("clusterName", merged.getClusterName());
+                    etcRow.put("subClusterName", "기타");
+                    etcRow.put("keywords", List.of("기타"));
+                    etcRow.put("count", etcCount);
+                    etcRow.put("totalAmount", etcAmount);
+                    etcRow.put("hasSubClusters", false);
+                    etcRow.put("isParentRow", false);
+                    etcRow.put("isUndefined", true);
+                    result.add(etcRow);
                 }
 
                 // 3) 각 세부 클러스터 행
@@ -281,29 +275,6 @@ public class ExportService {
         }
 
         return result;
-    }
-
-    /**
-     * raw_data_id 집합에 대한 금액 합계 계산
-     */
-    private double calculateAmountForRawIds(String sessionId, Set<String> rawIds) {
-        if (rawIds.isEmpty()) return 0.0;
-
-        Query query = new Query(Criteria.where("session_id").is(sessionId)
-                .and("raw_data_id").in(rawIds));
-        query.fields().include("money");
-
-        List<Document> docs = mongoTemplate.find(query, Document.class, "process_view_data");
-        double total = 0.0;
-        for (Document doc : docs) {
-            Object money = doc.get("money");
-            if (money != null) {
-                try {
-                    total += Double.parseDouble(money.toString().replaceAll("[^\\d.-]", ""));
-                } catch (NumberFormatException ignored) {}
-            }
-        }
-        return total;
     }
 
     // ============================================================
