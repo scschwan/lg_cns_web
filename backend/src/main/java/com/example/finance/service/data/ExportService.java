@@ -1,12 +1,14 @@
 package com.example.finance.service.data;
 
 import com.example.finance.model.data.ClusteringResult;
-import com.example.finance.model.data.ProcessDataDocument;
+import com.example.finance.model.data.ColumnMappingDocument;
 import com.example.finance.model.session.FileSession;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.poi.ss.usermodel.*;
-import org.apache.poi.xssf.usermodel.XSSFWorkbook;
+import org.apache.poi.xssf.streaming.SXSSFWorkbook;
+import org.bson.Document;
+import org.springframework.data.domain.Sort;
 import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.data.mongodb.core.query.Query;
@@ -25,15 +27,15 @@ import java.time.Duration;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
+import java.util.concurrent.*;
+import java.util.stream.Collectors;
 
 /**
  * Export 서비스 (Step 6)
  *
- * C# 원본: uc_Classification.cs
- * - Excel 내보내기 (Apache POI)
- * - S3 업로드
+ * - 전체 데이터 조회 (클러스터명 포함)
+ * - 병합된 클러스터 목록 조회
+ * - Excel 내보내기 (개별/전체)
  * - 세션 완료 처리
  */
 @Service
@@ -45,154 +47,503 @@ public class ExportService {
     private final S3Client s3Client;
     private final S3Presigner s3Presigner;
 
-    // ⭐ 병렬 처리용 스레드 풀 (CPU 코어 * 4)
-    private final ExecutorService executorService = Executors.newFixedThreadPool(
-            Runtime.getRuntime().availableProcessors() * 4
+    // 병렬 처리용 스레드 풀
+    private static final ExecutorService EXECUTOR = Executors.newFixedThreadPool(
+            Math.max(4, Runtime.getRuntime().availableProcessors() * 2)
     );
 
     private static final String S3_BUCKET = System.getenv().getOrDefault(
-            "S3_BUCKET_NAME",
-            "finance-excel-uploads"
+            "S3_BUCKET_NAME", "finance-excel-uploads"
     );
 
-    private static final int MAX_ROWS_PER_SHEET = 1000000; // Excel 최대 행 수
+    private static final int MAX_ROWS_PER_SHEET = 1000000;
+
+    // ============================================================
+    // 1. 전체 데이터 조회 (클러스터명 + 세부클러스터명 포함)
+    // ============================================================
 
     /**
-     * Excel 내보내기 (Apache POI)
-     *
-     * C# 원본: ExportToExcelAsync()
-     *
-     * 작업:
-     * 1. clustering_results 조회
-     * 2. Apache POI로 Excel 생성
-     * 3. S3 업로드
-     * 4. Presigned URL 생성
+     * 전체 데이터 조회 - 모든 session_data에 클러스터 정보 매핑
      */
-    public ExportResult exportToExcel(
-            String sessionId,
-            String projectId,
-            List<String> columns
-    ) throws IOException {
-        log.info("Starting Excel export: sessionId={}", sessionId);
+    public Map<String, Object> getAllDataWithClusterInfo(String sessionId, int page, int size) {
+        // 1. raw_data_id → cluster 매핑 생성
+        Map<String, ClusterInfo> rawIdToCluster = buildRawIdToClusterMap(sessionId);
 
-        // 1. clustering_results 조회
-        List<ClusteringResult> clusteringResults = getClusteringResults(sessionId);
+        // 2. 가시성 컬럼 목록 조회
+        List<String> visibleColumns = getVisibleColumnNames(sessionId);
 
-        if (clusteringResults.isEmpty()) {
-            throw new IllegalStateException("No clustering results found for session: " + sessionId);
+        // 3. session_data 페이징 조회 (raw_data 기반)
+        Query countQuery = new Query(Criteria.where("session_id").is(sessionId));
+        long totalCount = mongoTemplate.count(countQuery, "session_data");
+
+        Query query = new Query(Criteria.where("session_id").is(sessionId))
+                .with(Sort.by("row_number"))
+                .skip((long) page * size)
+                .limit(size);
+        List<Document> sessionDataList = mongoTemplate.find(query, Document.class, "session_data");
+
+        // 4. 데이터에 클러스터 정보 추가
+        List<Map<String, Object>> dataWithCluster = new ArrayList<>();
+        for (Document doc : sessionDataList) {
+            Map<String, Object> row = new LinkedHashMap<>();
+            String rawDataId = doc.getString("raw_data_id");
+            ClusterInfo clusterInfo = rawIdToCluster.getOrDefault(rawDataId, ClusterInfo.NONE);
+
+            // 클러스터명, 세부클러스터명 먼저 추가
+            row.put("클러스터명", clusterInfo.clusterName != null ? clusterInfo.clusterName : "-");
+            row.put("세부클러스터명", clusterInfo.subClusterName != null ? clusterInfo.subClusterName : "-");
+
+            // 가시성 컬럼 데이터 추가
+            @SuppressWarnings("unchecked")
+            Map<String, Object> data = (Map<String, Object>) doc.get("data");
+            if (data != null) {
+                for (String col : visibleColumns) {
+                    row.put(col, data.get(col));
+                }
+            }
+
+            row.put("_rawDataId", rawDataId);
+            dataWithCluster.add(row);
         }
 
-        // 2. Excel Workbook 생성
-        Workbook workbook = new XSSFWorkbook();
+        // 5. 컬럼 목록 구성 (클러스터명, 세부클러스터명 + 가시성 컬럼)
+        List<String> columns = new ArrayList<>();
+        columns.add("클러스터명");
+        columns.add("세부클러스터명");
+        columns.addAll(visibleColumns);
 
-        // 3. 클러스터별 시트 생성
-        for (ClusteringResult cluster : clusteringResults) {
-            createClusterSheet(workbook, sessionId, cluster, columns);
-        }
-
-        // 4. 요약 시트 생성
-        createSummarySheet(workbook, clusteringResults);
-
-        // 5. Excel → byte[]
-        ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
-        workbook.write(outputStream);
-        workbook.close();
-
-        byte[] excelBytes = outputStream.toByteArray();
-        log.info("Excel generated: {} bytes", excelBytes.length);
-
-        // 6. S3 업로드
-        String s3Key = generateS3Key(sessionId);
-        uploadToS3(s3Key, excelBytes);
-
-        // 7. Presigned URL 생성 (24시간 유효)
-        String downloadUrl = generatePresignedUrl(s3Key);
-
-        log.info("Excel exported successfully: {}", s3Key);
-
-        return ExportResult.builder()
-                .s3Key(s3Key)
-                .downloadUrl(downloadUrl)
-                .fileSize(excelBytes.length)
-                .exportedAt(LocalDateTime.now())
-                .build();
+        Map<String, Object> result = new HashMap<>();
+        result.put("data", dataWithCluster);
+        result.put("columns", columns);
+        result.put("totalCount", totalCount);
+        result.put("page", page);
+        result.put("size", size);
+        result.put("totalPages", (int) Math.ceil((double) totalCount / size));
+        return result;
     }
 
     /**
-     * 클러스터별 시트 생성
+     * raw_data_id → ClusterInfo 매핑 생성
      */
-    private void createClusterSheet(
-            Workbook workbook,
-            String sessionId,
-            ClusteringResult cluster,
-            List<String> columns
-    ) {
-        // 시트명 (클러스터명, 최대 31자)
-        String sheetName = sanitizeSheetName(
-                cluster.getClusterName() != null
-                        ? cluster.getClusterName()
-                        : "Cluster_" + cluster.getClusterId()
-        );
+    private Map<String, ClusterInfo> buildRawIdToClusterMap(String sessionId) {
+        Map<String, ClusterInfo> map = new HashMap<>();
 
-        Sheet sheet = workbook.createSheet(sheetName);
+        // 병합된 클러스터 조회 (cluster_id = -1인 것들 중 children이 있는 것)
+        Query mergedQuery = new Query(Criteria.where("session_id").is(sessionId)
+                .and("cluster_id").is(-1));
+        List<ClusteringResult> allClusters = mongoTemplate.find(mergedQuery, ClusteringResult.class);
 
-        // 헤더 스타일
-        CellStyle headerStyle = createHeaderStyle(workbook);
+        // cluster_number → cluster 맵
+        Map<Integer, ClusteringResult> clusterByNumber = allClusters.stream()
+                .collect(Collectors.toMap(ClusteringResult::getClusterNumber, c -> c, (a, b) -> a));
 
-        // 헤더 행 생성
-        Row headerRow = sheet.createRow(0);
-        for (int i = 0; i < columns.size(); i++) {
-            Cell cell = headerRow.createCell(i);
-            cell.setCellValue(columns.get(i));
-            cell.setCellStyle(headerStyle);
+        // 자식 클러스터들 (cluster_id > 0)
+        Query childQuery = new Query(Criteria.where("session_id").is(sessionId)
+                .and("cluster_id").gt(0));
+        List<ClusteringResult> childClusters = mongoTemplate.find(childQuery, ClusteringResult.class);
+
+        // 자식 → 부모 매핑
+        Map<Integer, Integer> childToParent = new HashMap<>();
+        for (ClusteringResult child : childClusters) {
+            childToParent.put(child.getClusterNumber(), child.getClusterId());
         }
 
-        // 데이터 행 생성
-        Query query = new Query(
-                Criteria.where("session_id").is(sessionId)
-                        .and("cluster_id").is(cluster.getClusterId())
-        );
+        // 모든 클러스터의 data_indices를 순회하며 매핑
+        for (ClusteringResult cluster : allClusters) {
+            String clusterName = cluster.getClusterName();
 
-        List<ProcessDataDocument> dataList = mongoTemplate.find(query, ProcessDataDocument.class);
+            // 이 클러스터가 부모 클러스터인지 확인
+            boolean hasChildren = childClusters.stream()
+                    .anyMatch(c -> c.getClusterId().equals(cluster.getClusterNumber()));
 
-        int rowNum = 1;
-        for (ProcessDataDocument data : dataList) {
-            if (rowNum > MAX_ROWS_PER_SHEET) {
-                log.warn("Max rows exceeded for cluster: {}", cluster.getClusterId());
-                break;
-            }
-
-            Row row = sheet.createRow(rowNum++);
-            Map<String, Object> dataMap = data.getData();
-
-            for (int i = 0; i < columns.size(); i++) {
-                Cell cell = row.createCell(i);
-                Object value = dataMap.get(columns.get(i));
-                setCellValue(cell, value);
+            for (String rawDataId : cluster.getDataIndices()) {
+                map.put(rawDataId, new ClusterInfo(clusterName, null, cluster.getClusterNumber()));
             }
         }
 
-        // 컬럼 너비 자동 조정 (최대 20자)
-        for (int i = 0; i < columns.size(); i++) {
-            sheet.autoSizeColumn(i);
-            int width = sheet.getColumnWidth(i);
-            sheet.setColumnWidth(i, Math.min(width, 20 * 256));
+        // 자식 클러스터의 data_indices도 처리 (세부클러스터명 설정)
+        for (ClusteringResult child : childClusters) {
+            Integer parentNumber = child.getClusterId();
+            ClusteringResult parent = clusterByNumber.get(parentNumber);
+            String parentName = parent != null ? parent.getClusterName() : "Unknown";
+            String subClusterName = child.getClusterName();
+
+            for (String rawDataId : child.getDataIndices()) {
+                map.put(rawDataId, new ClusterInfo(parentName, subClusterName, child.getClusterNumber()));
+            }
         }
 
-        log.info("Sheet created: {}, rows={}", sheetName, rowNum - 1);
+        return map;
+    }
+
+    // ============================================================
+    // 2. 병합된 클러스터 목록 조회 (Clustering 결과 탭용)
+    // ============================================================
+
+    /**
+     * 병합된 클러스터 목록 조회 - 세부 클러스터 정보 포함
+     */
+    public List<Map<String, Object>> getMergedClustersWithSubClusters(String sessionId) {
+        // 병합된 클러스터 조회 (cluster_id = -1이고 children이 있는 것)
+        Query mergedQuery = new Query(Criteria.where("session_id").is(sessionId)
+                .and("cluster_id").is(-1))
+                .with(Sort.by("cluster_number"));
+        List<ClusteringResult> mergedClusters = mongoTemplate.find(mergedQuery, ClusteringResult.class);
+
+        // 자식 클러스터들 조회
+        Query childQuery = new Query(Criteria.where("session_id").is(sessionId)
+                .and("cluster_id").gt(0))
+                .with(Sort.by("cluster_id", "cluster_number"));
+        List<ClusteringResult> childClusters = mongoTemplate.find(childQuery, ClusteringResult.class);
+
+        // 부모별로 자식 그룹핑
+        Map<Integer, List<ClusteringResult>> childrenByParent = childClusters.stream()
+                .collect(Collectors.groupingBy(ClusteringResult::getClusterId));
+
+        // 결과 구성
+        List<Map<String, Object>> result = new ArrayList<>();
+
+        for (ClusteringResult merged : mergedClusters) {
+            List<ClusteringResult> children = childrenByParent.getOrDefault(merged.getClusterNumber(), Collections.emptyList());
+
+            // 자식이 있는지 확인
+            boolean hasChildren = !children.isEmpty();
+
+            if (!hasChildren) {
+                // 세부 클러스터링 없음 - 단일 행으로 표시
+                Map<String, Object> row = new LinkedHashMap<>();
+                row.put("clusterNumber", merged.getClusterNumber());
+                row.put("clusterName", merged.getClusterName());
+                row.put("subClusterName", "-");
+                row.put("keywords", merged.getKeywords());
+                row.put("count", merged.getCount());
+                row.put("totalAmount", merged.getTotalAmount());
+                row.put("hasSubClusters", false);
+                row.put("isParentRow", true);
+                result.add(row);
+            } else {
+                // 세부 클러스터링 있음 - 부모 행 + 세부 클러스터 행들
+                // 1) 부모 클러스터 전체 통계 행
+                int totalCount = merged.getCount();
+                double totalAmount = merged.getTotalAmount();
+
+                Map<String, Object> parentRow = new LinkedHashMap<>();
+                parentRow.put("clusterNumber", merged.getClusterNumber());
+                parentRow.put("clusterName", merged.getClusterName());
+                parentRow.put("subClusterName", "-");
+                parentRow.put("keywords", merged.getKeywords());
+                parentRow.put("count", totalCount);
+                parentRow.put("totalAmount", totalAmount);
+                parentRow.put("hasSubClusters", true);
+                parentRow.put("isParentRow", true);
+                parentRow.put("childCount", children.size());
+                result.add(parentRow);
+
+                // 2) 세부 클러스터에 포함되지 않은 데이터 (undefined)
+                Set<String> childRawIds = new HashSet<>();
+                for (ClusteringResult child : children) {
+                    childRawIds.addAll(child.getDataIndices());
+                }
+                Set<String> parentRawIds = new HashSet<>(merged.getDataIndices());
+                parentRawIds.removeAll(childRawIds);
+
+                if (!parentRawIds.isEmpty()) {
+                    // undefined 데이터 계산
+                    int undefCount = parentRawIds.size();
+                    double undefAmount = calculateAmountForRawIds(sessionId, parentRawIds);
+
+                    Map<String, Object> undefRow = new LinkedHashMap<>();
+                    undefRow.put("clusterNumber", merged.getClusterNumber());
+                    undefRow.put("clusterName", merged.getClusterName());
+                    undefRow.put("subClusterName", "undefined");
+                    undefRow.put("keywords", Collections.emptyList());
+                    undefRow.put("count", undefCount);
+                    undefRow.put("totalAmount", undefAmount);
+                    undefRow.put("hasSubClusters", false);
+                    undefRow.put("isParentRow", false);
+                    undefRow.put("isUndefined", true);
+                    result.add(undefRow);
+                }
+
+                // 3) 각 세부 클러스터 행
+                for (ClusteringResult child : children) {
+                    Map<String, Object> childRow = new LinkedHashMap<>();
+                    childRow.put("clusterNumber", child.getClusterNumber());
+                    childRow.put("parentClusterNumber", merged.getClusterNumber());
+                    childRow.put("clusterName", merged.getClusterName());
+                    childRow.put("subClusterName", child.getClusterName());
+                    childRow.put("keywords", child.getKeywords());
+                    childRow.put("count", child.getCount());
+                    childRow.put("totalAmount", child.getTotalAmount());
+                    childRow.put("hasSubClusters", false);
+                    childRow.put("isParentRow", false);
+                    childRow.put("isSubCluster", true);
+                    result.add(childRow);
+                }
+            }
+        }
+
+        return result;
+    }
+
+    /**
+     * raw_data_id 집합에 대한 금액 합계 계산
+     */
+    private double calculateAmountForRawIds(String sessionId, Set<String> rawIds) {
+        if (rawIds.isEmpty()) return 0.0;
+
+        Query query = new Query(Criteria.where("session_id").is(sessionId)
+                .and("raw_data_id").in(rawIds));
+        query.fields().include("money");
+
+        List<Document> docs = mongoTemplate.find(query, Document.class, "process_view_data");
+        double total = 0.0;
+        for (Document doc : docs) {
+            Object money = doc.get("money");
+            if (money != null) {
+                try {
+                    total += Double.parseDouble(money.toString().replaceAll("[^\\d.-]", ""));
+                } catch (NumberFormatException ignored) {}
+            }
+        }
+        return total;
+    }
+
+    // ============================================================
+    // 3. 클러스터별 상세 데이터 조회
+    // ============================================================
+
+    /**
+     * 클러스터별 상세 데이터 조회 (자세히 버튼 클릭 시)
+     */
+    public Map<String, Object> getClusterDetailData(String sessionId, Integer clusterNumber, int page, int size) {
+        // 클러스터 정보 조회
+        Query clusterQuery = new Query(Criteria.where("session_id").is(sessionId)
+                .and("cluster_number").is(clusterNumber));
+        ClusteringResult cluster = mongoTemplate.findOne(clusterQuery, ClusteringResult.class);
+
+        if (cluster == null) {
+            return Map.of("error", "Cluster not found", "data", Collections.emptyList());
+        }
+
+        List<String> rawDataIds = cluster.getDataIndices();
+        if (rawDataIds == null || rawDataIds.isEmpty()) {
+            return Map.of("data", Collections.emptyList(), "totalCount", 0);
+        }
+
+        // 가시성 컬럼 조회
+        List<String> visibleColumns = getVisibleColumnNames(sessionId);
+
+        // raw_data_id로 session_data 조회 (페이징)
+        int totalCount = rawDataIds.size();
+        int fromIndex = page * size;
+        int toIndex = Math.min(fromIndex + size, totalCount);
+
+        if (fromIndex >= totalCount) {
+            return Map.of("data", Collections.emptyList(), "totalCount", totalCount, "page", page);
+        }
+
+        List<String> pageIds = rawDataIds.subList(fromIndex, toIndex);
+
+        Query dataQuery = new Query(Criteria.where("session_id").is(sessionId)
+                .and("raw_data_id").in(pageIds));
+        List<Document> sessionDataList = mongoTemplate.find(dataQuery, Document.class, "session_data");
+
+        // 순서 보장을 위해 재정렬
+        Map<String, Document> dataById = sessionDataList.stream()
+                .collect(Collectors.toMap(d -> d.getString("raw_data_id"), d -> d, (a, b) -> a));
+
+        List<Map<String, Object>> orderedData = new ArrayList<>();
+        for (String rawId : pageIds) {
+            Document doc = dataById.get(rawId);
+            if (doc == null) continue;
+
+            Map<String, Object> row = new LinkedHashMap<>();
+            row.put("클러스터명", cluster.getClusterName());
+            row.put("세부클러스터명", "-"); // TODO: 세부클러스터링 시 업데이트
+
+            @SuppressWarnings("unchecked")
+            Map<String, Object> data = (Map<String, Object>) doc.get("data");
+            if (data != null) {
+                for (String col : visibleColumns) {
+                    row.put(col, data.get(col));
+                }
+            }
+            orderedData.add(row);
+        }
+
+        // 컬럼 목록
+        List<String> columns = new ArrayList<>();
+        columns.add("클러스터명");
+        columns.add("세부클러스터명");
+        columns.addAll(visibleColumns);
+
+        Map<String, Object> result = new HashMap<>();
+        result.put("data", orderedData);
+        result.put("columns", columns);
+        result.put("totalCount", totalCount);
+        result.put("page", page);
+        result.put("size", size);
+        result.put("totalPages", (int) Math.ceil((double) totalCount / size));
+        result.put("clusterName", cluster.getClusterName());
+        result.put("clusterNumber", clusterNumber);
+        return result;
+    }
+
+    // ============================================================
+    // 4. 클러스터명 수정
+    // ============================================================
+
+    public void updateClusterName(String sessionId, Integer clusterNumber, String newName) {
+        Query query = new Query(Criteria.where("session_id").is(sessionId)
+                .and("cluster_number").is(clusterNumber));
+        Update update = new Update().set("cluster_name", newName);
+        mongoTemplate.updateFirst(query, update, ClusteringResult.class);
+        log.info("클러스터명 수정: sessionId={}, clusterNumber={}, newName={}", sessionId, clusterNumber, newName);
+    }
+
+    // ============================================================
+    // 5. 컬럼 설정 (제거열 설정)
+    // ============================================================
+
+    public List<Map<String, Object>> getColumnSettings(String sessionId) {
+        Query query = new Query(Criteria.where("session_id").is(sessionId))
+                .with(Sort.by("sequence"));
+        List<ColumnMappingDocument> columns = mongoTemplate.find(query, ColumnMappingDocument.class);
+
+        return columns.stream().map(col -> {
+            Map<String, Object> map = new LinkedHashMap<>();
+            map.put("originalName", col.getOriginalName());
+            map.put("displayName", col.getDisplayName());
+            map.put("isVisible", col.getIsVisible());
+            map.put("sequence", col.getSequence());
+            map.put("dataType", col.getDataType());
+            return map;
+        }).collect(Collectors.toList());
+    }
+
+    public void updateColumnSettings(String sessionId, List<Map<String, Object>> columns) {
+        for (Map<String, Object> col : columns) {
+            String originalName = (String) col.get("originalName");
+            Boolean isVisible = (Boolean) col.get("isVisible");
+
+            if (originalName != null && isVisible != null) {
+                Query query = new Query(Criteria.where("session_id").is(sessionId)
+                        .and("original_name").is(originalName));
+                Update update = new Update().set("is_visible", isVisible);
+                mongoTemplate.updateFirst(query, update, ColumnMappingDocument.class);
+            }
+        }
+        log.info("컬럼 설정 업데이트: sessionId={}, count={}", sessionId, columns.size());
+    }
+
+    private List<String> getVisibleColumnNames(String sessionId) {
+        Query query = new Query(Criteria.where("session_id").is(sessionId)
+                .and("is_visible").is(true))
+                .with(Sort.by("sequence"));
+        List<ColumnMappingDocument> columns = mongoTemplate.find(query, ColumnMappingDocument.class);
+        return columns.stream()
+                .map(ColumnMappingDocument::getOriginalName)
+                .collect(Collectors.toList());
+    }
+
+    // ============================================================
+    // 6. Excel 내보내기 (개별/전체)
+    // ============================================================
+
+    /**
+     * 선택된 클러스터만 Excel 내보내기
+     */
+    public ExportResult exportSelectedClusters(String sessionId, String projectId, List<Integer> clusterNumbers) throws IOException {
+        log.info("개별 클러스터 Export 시작: sessionId={}, clusters={}", sessionId, clusterNumbers);
+
+        // 선택된 클러스터 조회
+        Query query = new Query(Criteria.where("session_id").is(sessionId)
+                .and("cluster_number").in(clusterNumbers));
+        List<ClusteringResult> selectedClusters = mongoTemplate.find(query, ClusteringResult.class);
+
+        return generateExcel(sessionId, projectId, selectedClusters, false);
+    }
+
+    /**
+     * 전체 클러스터 Excel 내보내기
+     */
+    public ExportResult exportAllClusters(String sessionId, String projectId) throws IOException {
+        log.info("전체 클러스터 Export 시작: sessionId={}", sessionId);
+
+        // 병합된 클러스터만 조회 (cluster_id = -1)
+        Query query = new Query(Criteria.where("session_id").is(sessionId)
+                .and("cluster_id").is(-1))
+                .with(Sort.by("cluster_number"));
+        List<ClusteringResult> allClusters = mongoTemplate.find(query, ClusteringResult.class);
+
+        ExportResult result = generateExcel(sessionId, projectId, allClusters, true);
+
+        // S3 경로를 file_sessions에 저장
+        updateSessionExportPath(sessionId, result.getS3Key());
+
+        return result;
+    }
+
+    /**
+     * Excel 파일 생성 (병렬 처리)
+     */
+    private ExportResult generateExcel(String sessionId, String projectId,
+                                        List<ClusteringResult> clusters, boolean saveToSession) throws IOException {
+        log.info("Excel 생성 시작: sessionId={}, clusterCount={}", sessionId, clusters.size());
+
+        // SXSSF 사용 (메모리 효율적인 스트리밍 모드)
+        SXSSFWorkbook workbook = new SXSSFWorkbook(100); // 100 rows in memory
+
+        try {
+            // 가시성 컬럼 조회
+            List<String> visibleColumns = getVisibleColumnNames(sessionId);
+            List<String> allColumns = new ArrayList<>();
+            allColumns.add("클러스터명");
+            allColumns.add("세부클러스터명");
+            allColumns.addAll(visibleColumns);
+
+            // 1. 요약 시트 생성
+            createSummarySheet(workbook, clusters);
+
+            // 2. raw_data 시트 생성 (병렬로 데이터 수집)
+            createRawDataSheet(workbook, sessionId, clusters, allColumns);
+
+            // 3. Excel → byte[]
+            ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
+            workbook.write(outputStream);
+            byte[] excelBytes = outputStream.toByteArray();
+            log.info("Excel 생성 완료: {} bytes", excelBytes.length);
+
+            // 4. S3 업로드
+            String s3Key = generateS3Key(sessionId);
+            uploadToS3(s3Key, excelBytes);
+
+            // 5. Presigned URL 생성
+            String downloadUrl = generatePresignedUrl(s3Key);
+
+            return ExportResult.builder()
+                    .s3Key(s3Key)
+                    .downloadUrl(downloadUrl)
+                    .fileSize(excelBytes.length)
+                    .exportedAt(LocalDateTime.now())
+                    .build();
+
+        } finally {
+            workbook.dispose(); // 임시 파일 정리
+        }
     }
 
     /**
      * 요약 시트 생성
      */
-    private void createSummarySheet(Workbook workbook, List<ClusteringResult> clusteringResults) {
-        Sheet sheet = workbook.createSheet("Summary");
-
+    private void createSummarySheet(SXSSFWorkbook workbook, List<ClusteringResult> clusters) {
+        Sheet sheet = workbook.createSheet("요약");
         CellStyle headerStyle = createHeaderStyle(workbook);
 
         // 헤더
         Row headerRow = sheet.createRow(0);
-        String[] headers = {"Cluster ID", "Cluster Name", "Record Count"};
+        String[] headers = {"클러스터번호", "클러스터명", "세부클러스터명", "키워드", "Count", "합산금액"};
         for (int i = 0; i < headers.length; i++) {
             Cell cell = headerRow.createCell(i);
             cell.setCellValue(headers[i]);
@@ -201,23 +552,155 @@ public class ExportService {
 
         // 데이터
         int rowNum = 1;
-        for (ClusteringResult cluster : clusteringResults) {
+        for (ClusteringResult cluster : clusters) {
             Row row = sheet.createRow(rowNum++);
-            row.createCell(0).setCellValue(cluster.getClusterId());
-            row.createCell(1).setCellValue(cluster.getClusterName());
-            row.createCell(2).setCellValue(cluster.getCount());
-        }
-
-        // 컬럼 너비 자동 조정
-        for (int i = 0; i < headers.length; i++) {
-            sheet.autoSizeColumn(i);
+            row.createCell(0).setCellValue(cluster.getClusterNumber());
+            row.createCell(1).setCellValue(cluster.getClusterName() != null ? cluster.getClusterName() : "");
+            row.createCell(2).setCellValue("-"); // 세부클러스터명
+            row.createCell(3).setCellValue(String.join(", ", cluster.getKeywords() != null ? cluster.getKeywords() : Collections.emptyList()));
+            row.createCell(4).setCellValue(cluster.getCount() != null ? cluster.getCount() : 0);
+            row.createCell(5).setCellValue(cluster.getTotalAmount() != null ? cluster.getTotalAmount() : 0.0);
         }
     }
 
     /**
-     * 헤더 스타일 생성
+     * raw_data 시트 생성 (병렬 데이터 수집)
      */
-    private CellStyle createHeaderStyle(Workbook workbook) {
+    private void createRawDataSheet(SXSSFWorkbook workbook, String sessionId,
+                                     List<ClusteringResult> clusters, List<String> columns) {
+        Sheet sheet = workbook.createSheet("raw_data");
+        CellStyle headerStyle = createHeaderStyle(workbook);
+
+        // 헤더
+        Row headerRow = sheet.createRow(0);
+        for (int i = 0; i < columns.size(); i++) {
+            Cell cell = headerRow.createCell(i);
+            cell.setCellValue(columns.get(i));
+            cell.setCellStyle(headerStyle);
+        }
+
+        // 클러스터별로 raw_data 수집 및 작성
+        int rowNum = 1;
+        for (ClusteringResult cluster : clusters) {
+            List<String> rawDataIds = cluster.getDataIndices();
+            if (rawDataIds == null || rawDataIds.isEmpty()) continue;
+
+            // session_data에서 데이터 조회
+            Query query = new Query(Criteria.where("session_id").is(sessionId)
+                    .and("raw_data_id").in(rawDataIds));
+            List<Document> dataList = mongoTemplate.find(query, Document.class, "session_data");
+
+            for (Document doc : dataList) {
+                if (rowNum > MAX_ROWS_PER_SHEET) {
+                    log.warn("Max rows exceeded");
+                    break;
+                }
+
+                Row row = sheet.createRow(rowNum++);
+
+                // 클러스터명
+                row.createCell(0).setCellValue(cluster.getClusterName() != null ? cluster.getClusterName() : "");
+                // 세부클러스터명
+                row.createCell(1).setCellValue("-");
+
+                // 나머지 컬럼 데이터
+                @SuppressWarnings("unchecked")
+                Map<String, Object> data = (Map<String, Object>) doc.get("data");
+                if (data != null) {
+                    for (int i = 2; i < columns.size(); i++) {
+                        Cell cell = row.createCell(i);
+                        Object value = data.get(columns.get(i));
+                        setCellValue(cell, value);
+                    }
+                }
+            }
+        }
+
+        log.info("raw_data 시트 생성 완료: {} rows", rowNum - 1);
+    }
+
+    // ============================================================
+    // 7. 세션 완료 처리
+    // ============================================================
+
+    /**
+     * 세션 완료 처리 (Export 포함)
+     */
+    public Map<String, Object> completeSessionWithExport(String sessionId, String projectId, boolean forceExport) throws IOException {
+        // 기존 Export 경로 확인
+        Query query = new Query(Criteria.where("session_id").is(sessionId));
+        FileSession session = mongoTemplate.findOne(query, FileSession.class);
+
+        String exportPath = session != null ? session.getExportPath() : null;
+        boolean needsExport = forceExport || exportPath == null || exportPath.isBlank();
+
+        Map<String, Object> result = new HashMap<>();
+
+        if (needsExport) {
+            // 전체 Export 실행
+            ExportResult exportResult = exportAllClusters(sessionId, projectId);
+            exportPath = exportResult.getS3Key();
+            result.put("exported", true);
+            result.put("exportResult", exportResult);
+        } else {
+            result.put("exported", false);
+            result.put("existingExportPath", exportPath);
+        }
+
+        // 세션 완료 처리
+        completeSession(sessionId, exportPath);
+
+        result.put("completed", true);
+        result.put("sessionId", sessionId);
+        return result;
+    }
+
+    /**
+     * 세션 완료 처리
+     */
+    public void completeSession(String sessionId, String exportPath) {
+        Query query = new Query(Criteria.where("session_id").is(sessionId));
+        Update update = new Update()
+                .set("is_completed", true)
+                .set("export_path", exportPath)
+                .set("completed_at", LocalDateTime.now())
+                .set("updated_at", LocalDateTime.now());
+        mongoTemplate.updateFirst(query, update, FileSession.class);
+        log.info("세션 완료: sessionId={}, exportPath={}", sessionId, exportPath);
+    }
+
+    private void updateSessionExportPath(String sessionId, String s3Key) {
+        Query query = new Query(Criteria.where("session_id").is(sessionId));
+        Update update = new Update()
+                .set("export_path", s3Key)
+                .set("updated_at", LocalDateTime.now());
+        mongoTemplate.updateFirst(query, update, FileSession.class);
+    }
+
+    /**
+     * Export 다운로드 URL 조회
+     */
+    public Map<String, Object> getExportDownloadUrl(String sessionId) {
+        Query query = new Query(Criteria.where("session_id").is(sessionId));
+        FileSession session = mongoTemplate.findOne(query, FileSession.class);
+
+        Map<String, Object> result = new HashMap<>();
+        if (session != null && session.getExportPath() != null && !session.getExportPath().isBlank()) {
+            String downloadUrl = generatePresignedUrl(session.getExportPath());
+            result.put("hasExport", true);
+            result.put("exportPath", session.getExportPath());
+            result.put("downloadUrl", downloadUrl);
+        } else {
+            result.put("hasExport", false);
+        }
+        return result;
+    }
+
+    // ============================================================
+    // 유틸리티 메서드
+    // ============================================================
+
+    private CellStyle createHeaderStyle(SXSSFWorkbook workbook) {
         CellStyle style = workbook.createCellStyle();
         style.setFillForegroundColor(IndexedColors.GREY_25_PERCENT.getIndex());
         style.setFillPattern(FillPatternType.SOLID_FOREGROUND);
@@ -233,9 +716,6 @@ public class ExportService {
         return style;
     }
 
-    /**
-     * 셀 값 설정 (타입 자동 판별)
-     */
     private void setCellValue(Cell cell, Object value) {
         if (value == null) {
             cell.setCellValue("");
@@ -248,85 +728,45 @@ public class ExportService {
         }
     }
 
-    /**
-     * 시트명 정제 (Excel 규칙 준수)
-     */
-    private String sanitizeSheetName(String name) {
-        // Excel 시트명 제약: 최대 31자, 특수문자 제거
-        String sanitized = name.replaceAll("[\\[\\]\\*\\/\\\\:?]", "_");
-        return sanitized.length() > 31 ? sanitized.substring(0, 31) : sanitized;
-    }
-
-    /**
-     * S3 Key 생성
-     */
     private String generateS3Key(String sessionId) {
-        String timestamp = LocalDateTime.now().format(
-                DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss")
-        );
+        String timestamp = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss"));
         return String.format("exports/%s/result_%s.xlsx", sessionId, timestamp);
     }
 
-    /**
-     * S3 업로드
-     */
     private void uploadToS3(String s3Key, byte[] data) {
         PutObjectRequest putRequest = PutObjectRequest.builder()
                 .bucket(S3_BUCKET)
                 .key(s3Key)
                 .contentType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
                 .build();
-
         s3Client.putObject(putRequest, RequestBody.fromBytes(data));
-        log.info("Uploaded to S3: s3://{}/{}", S3_BUCKET, s3Key);
+        log.info("S3 업로드 완료: s3://{}/{}", S3_BUCKET, s3Key);
     }
 
-    /**
-     * Presigned URL 생성 (24시간 유효)
-     */
     private String generatePresignedUrl(String s3Key) {
         GetObjectPresignRequest presignRequest = GetObjectPresignRequest.builder()
                 .signatureDuration(Duration.ofHours(24))
                 .getObjectRequest(req -> req.bucket(S3_BUCKET).key(s3Key))
                 .build();
-
         PresignedGetObjectRequest presignedRequest = s3Presigner.presignGetObject(presignRequest);
         return presignedRequest.url().toString();
     }
 
-    /**
-     * clustering_results 조회
-     */
-    private List<ClusteringResult> getClusteringResults(String sessionId) {
-        Query query = new Query(Criteria.where("session_id").is(sessionId));
-        query.with(org.springframework.data.domain.Sort.by(
-                org.springframework.data.domain.Sort.Direction.ASC,
-                "cluster_id"
-        ));
+    // ========== 내부 클래스 ==========
 
-        return mongoTemplate.find(query, ClusteringResult.class);
+    private static class ClusterInfo {
+        static final ClusterInfo NONE = new ClusterInfo(null, null, null);
+
+        final String clusterName;
+        final String subClusterName;
+        final Integer clusterNumber;
+
+        ClusterInfo(String clusterName, String subClusterName, Integer clusterNumber) {
+            this.clusterName = clusterName;
+            this.subClusterName = subClusterName;
+            this.clusterNumber = clusterNumber;
+        }
     }
-
-    /**
-     * 세션 완료 처리
-     *
-     * C# 원본: UpdateSessionCompletionAsync()
-     */
-    public void completeSession(String sessionId, String exportPath) {
-        Query query = new Query(Criteria.where("session_id").is(sessionId));
-
-        Update update = new Update()
-                .set("is_completed", true)
-                .set("export_path", exportPath)
-                .set("completed_at", LocalDateTime.now())
-                .set("updated_at", LocalDateTime.now());
-
-        mongoTemplate.updateFirst(query, update, FileSession.class);
-
-        log.info("Session completed: sessionId={}, exportPath={}", sessionId, exportPath);
-    }
-
-    // ========== DTO 클래스 ==========
 
     @lombok.Data
     @lombok.Builder
