@@ -458,15 +458,57 @@ function ClusteringPage() {
     }
   };
 
-  /* 키워드 계층 검색 (Lv1/2/3 키워드 클릭 시) */
-  const handleKeywordHierarchySearch = (keyword) => {
+  /* 키워드 계층 검색 (Lv1/2/3 키워드 클릭 시) - 직접 값 사용으로 상태 비동기 문제 해결 */
+  const handleKeywordHierarchySearch = async (keyword) => {
+    // UI 상태 업데이트
     setSearchKeyword(keyword);
     setSearchColumn('keyword');
-    setExactMatch(true); // 계층 키워드는 완전일치로 검색
+    setExactMatch(true);
     setExcludeKeyword('');
+    setExcludeExactMatch(false);
     setSearchWithinResults(false);
     setPreviousResultIds(null);
-    setTimeout(() => handleAdvancedSearch(false), 0);
+    setClusterPage(0);
+    setSelectAllMode(false);
+    setExceptions(new Set());
+    setSearchTabMode('basic');
+    setSearchCollapsed(false);
+
+    // 직접 값으로 검색 실행 (상태 의존 X)
+    setLoading(true);
+    try {
+      const params = {
+        page: 0,
+        size: clusterPageSize,
+        searchColumn: 'keyword',
+        searchValue: keyword,
+        exactMatch: true,
+        excludeValue: null,
+        excludeExactMatch: false,
+        withinClusterNumbers: null,
+      };
+      const r = await clusteringService.advancedSearch(projectId, sessionId, params);
+      setClusterData(r.data || []);
+      setVisibleColumns(r.columns || []);
+      setClusterTotalCount(r.totalCount || 0);
+      setClusterTotalPages(r.totalPages || 0);
+      if (r.resultClusterNumbers) {
+        setPreviousResultIds(r.resultClusterNumbers);
+      }
+      setAppliedSearchParams({
+        searchColumn: 'keyword',
+        searchValue: keyword,
+        exactMatch: true,
+        excludeValue: null,
+        excludeExactMatch: false,
+        isSearchWithin: false,
+      });
+    } catch (e) {
+      console.error(e);
+      alert('검색 실패: ' + (e.response?.data?.message || e.message));
+    } finally {
+      setLoading(false);
+    }
   };
 
   /* 키워드 계층 CRUD */
@@ -628,13 +670,13 @@ function ClusteringPage() {
   };
 
   /* ============================================================
-     키워드 통계 → 자세히 (자동검색) / 자동 클러스터링
+     키워드 통계 → 자세히 (자동검색 - 완전일치) / 자동 클러스터링
      ============================================================ */
   const handleKwDetail = async (keyword) => {
     // 검색 설정 적용 후 자동 검색 실행
     setSearchColumn('keyword');
     setSearchKeyword(keyword);
-    setExactMatch(false); // LIKE 검색
+    setExactMatch(true); // 완전일치 검색
     setExcludeKeyword('');
     setExcludeExactMatch(false);
     setSearchWithinResults(false);
@@ -653,7 +695,7 @@ function ClusteringPage() {
         size: clusterPageSize,
         searchColumn: 'keyword',
         searchValue: keyword,
-        exactMatch: false,
+        exactMatch: true, // 완전일치
         excludeValue: null,
         excludeExactMatch: false,
         withinClusterNumbers: null,
@@ -669,7 +711,7 @@ function ClusteringPage() {
       setAppliedSearchParams({
         searchColumn: 'keyword',
         searchValue: keyword,
-        exactMatch: false,
+        exactMatch: true,
         excludeValue: null,
         excludeExactMatch: false,
         isSearchWithin: false,
@@ -683,10 +725,10 @@ function ClusteringPage() {
   };
 
   const handleSupDetail = async (supplier) => {
-    // 공급업체 기준 검색 설정 적용 후 자동 검색 실행
+    // 공급업체 기준 검색 설정 적용 후 자동 검색 실행 (완전일치)
     setSearchColumn('supplier');
     setSearchKeyword(supplier);
-    setExactMatch(false); // LIKE 검색
+    setExactMatch(true); // 완전일치 검색
     setExcludeKeyword('');
     setExcludeExactMatch(false);
     setSearchWithinResults(false);
@@ -705,7 +747,7 @@ function ClusteringPage() {
         size: clusterPageSize,
         searchColumn: 'supplier',
         searchValue: supplier,
-        exactMatch: false,
+        exactMatch: true, // 완전일치
         excludeValue: null,
         excludeExactMatch: false,
         withinClusterNumbers: null,
@@ -721,7 +763,7 @@ function ClusteringPage() {
       setAppliedSearchParams({
         searchColumn: 'supplier',
         searchValue: supplier,
-        exactMatch: false,
+        exactMatch: true,
         excludeValue: null,
         excludeExactMatch: false,
         isSearchWithin: false,
