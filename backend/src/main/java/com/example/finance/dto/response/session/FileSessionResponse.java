@@ -33,6 +33,11 @@ public class FileSessionResponse {
     private Integer progressPercentage;
     private Boolean isCompleted;
 
+    /**
+     * 분석 상태: "시작전" | "진행중" | "완료"
+     */
+    private String analysisStatus;
+
     // 시간
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
