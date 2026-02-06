@@ -198,6 +198,7 @@ function ClusteringPage() {
   const [excludeExactMatch, setExcludeExactMatch] = useState(false);
   const [searchWithinResults, setSearchWithinResults] = useState(false);
   const [previousResultIds, setPreviousResultIds] = useState(null); // 결과내 재검색용
+  const [searchCollapsed, setSearchCollapsed] = useState(false); // 검색 탭 접기/펼치기
   const [appliedSearchParams, setAppliedSearchParams] = useState(null); // 현재 적용된 검색 조건
   const [searchTabMode, setSearchTabMode] = useState('basic'); // 'basic' | 'keyword-hierarchy'
 
@@ -627,12 +628,110 @@ function ClusteringPage() {
   };
 
   /* ============================================================
-     키워드 통계 → 자세히 / 자동 클러스터링
+     키워드 통계 → 자세히 (자동검색) / 자동 클러스터링
      ============================================================ */
-  const handleKwDetail = (keyword) => {
-    setSearchKeyword(keyword); setAppliedKeyword(keyword); setClusterPage(0);
-    setSelectAllMode(false); setExceptions(new Set());
-    loadUnmerged(0, clusterPageSize, keyword);
+  const handleKwDetail = async (keyword) => {
+    // 검색 설정 적용 후 자동 검색 실행
+    setSearchColumn('keyword');
+    setSearchKeyword(keyword);
+    setExactMatch(false); // LIKE 검색
+    setExcludeKeyword('');
+    setExcludeExactMatch(false);
+    setSearchWithinResults(false);
+    setPreviousResultIds(null);
+    setClusterPage(0);
+    setSelectAllMode(false);
+    setExceptions(new Set());
+    setSearchTabMode('basic');
+    setSearchCollapsed(false); // 검색 탭 펼치기
+
+    // 자동 검색 실행
+    setLoading(true);
+    try {
+      const params = {
+        page: 0,
+        size: clusterPageSize,
+        searchColumn: 'keyword',
+        searchValue: keyword,
+        exactMatch: false,
+        excludeValue: null,
+        excludeExactMatch: false,
+        withinClusterNumbers: null,
+      };
+      const r = await clusteringService.advancedSearch(projectId, sessionId, params);
+      setClusterData(r.data || []);
+      setVisibleColumns(r.columns || []);
+      setClusterTotalCount(r.totalCount || 0);
+      setClusterTotalPages(r.totalPages || 0);
+      if (r.resultClusterNumbers) {
+        setPreviousResultIds(r.resultClusterNumbers);
+      }
+      setAppliedSearchParams({
+        searchColumn: 'keyword',
+        searchValue: keyword,
+        exactMatch: false,
+        excludeValue: null,
+        excludeExactMatch: false,
+        isSearchWithin: false,
+      });
+    } catch (e) {
+      console.error(e);
+      alert('검색 실패: ' + (e.response?.data?.message || e.message));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSupDetail = async (supplier) => {
+    // 공급업체 기준 검색 설정 적용 후 자동 검색 실행
+    setSearchColumn('supplier');
+    setSearchKeyword(supplier);
+    setExactMatch(false); // LIKE 검색
+    setExcludeKeyword('');
+    setExcludeExactMatch(false);
+    setSearchWithinResults(false);
+    setPreviousResultIds(null);
+    setClusterPage(0);
+    setSelectAllMode(false);
+    setExceptions(new Set());
+    setSearchTabMode('basic');
+    setSearchCollapsed(false); // 검색 탭 펼치기
+
+    // 자동 검색 실행
+    setLoading(true);
+    try {
+      const params = {
+        page: 0,
+        size: clusterPageSize,
+        searchColumn: 'supplier',
+        searchValue: supplier,
+        exactMatch: false,
+        excludeValue: null,
+        excludeExactMatch: false,
+        withinClusterNumbers: null,
+      };
+      const r = await clusteringService.advancedSearch(projectId, sessionId, params);
+      setClusterData(r.data || []);
+      setVisibleColumns(r.columns || []);
+      setClusterTotalCount(r.totalCount || 0);
+      setClusterTotalPages(r.totalPages || 0);
+      if (r.resultClusterNumbers) {
+        setPreviousResultIds(r.resultClusterNumbers);
+      }
+      setAppliedSearchParams({
+        searchColumn: 'supplier',
+        searchValue: supplier,
+        exactMatch: false,
+        excludeValue: null,
+        excludeExactMatch: false,
+        isSearchWithin: false,
+      });
+    } catch (e) {
+      console.error(e);
+      alert('검색 실패: ' + (e.response?.data?.message || e.message));
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleAutoMergeByKeywords = async () => {
@@ -941,9 +1040,29 @@ function ClusteringPage() {
           {/* === 좌측 (8/12): 미병합 클러스터 === */}
           <div className="xl:col-span-8 h-full flex flex-col min-h-0 gap-3">
 
-            {/* 고급 검색 섹션 */}
+            {/* 고급 검색 섹션 (접기/펼치기 가능) */}
             <Card className="flex-shrink-0 shadow-sm">
-              <CardContent className="py-2 px-4">
+              <CardHeader
+                className="py-2 px-4 cursor-pointer hover:bg-gray-50 transition-colors"
+                onClick={() => setSearchCollapsed(!searchCollapsed)}
+              >
+                <div className="flex items-center justify-between">
+                  <CardTitle className="text-sm font-bold flex items-center gap-2">
+                    <Search className="h-4 w-4" />
+                    검색 설정
+                    {appliedSearchParams && (
+                      <Badge variant="secondary" className="text-[10px] ml-2">
+                        검색 적용됨
+                      </Badge>
+                    )}
+                  </CardTitle>
+                  <Button variant="ghost" size="sm" className="h-6 w-6 p-0">
+                    {searchCollapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                  </Button>
+                </div>
+              </CardHeader>
+              {!searchCollapsed && (
+              <CardContent className="py-2 px-4 pt-0">
                 {/* 검색 탭 헤더 */}
                 <div className="flex items-center gap-2 mb-2 border-b pb-2">
                   <Button
@@ -1190,6 +1309,7 @@ function ClusteringPage() {
                   </div>
                 )}
               </CardContent>
+              )}
             </Card>
 
             {/* 병합 액션 카드: 병합 + 추가병합 + 단위선택 */}
@@ -1255,8 +1375,8 @@ function ClusteringPage() {
           {/* === 우측 (4/12) === */}
           <div className="xl:col-span-4 h-full flex flex-col min-h-0">
 
-            {/* 키워드/공급업체 통계 (60% 이하) */}
-            <div className="flex-shrink-0 flex flex-col" style={{ maxHeight: '55%', minHeight: '30%' }}>
+            {/* 키워드/공급업체 통계 (60%) */}
+            <div className="flex flex-col" style={{ height: '60%', minHeight: '200px' }}>
               <Tabs value={activeTab} onValueChange={setActiveTab} className="h-full flex flex-col">
                 <TabsList className={`grid w-full flex-shrink-0 ${statistics.hasSupplier ? 'grid-cols-2' : 'grid-cols-1'}`}>
                   <TabsTrigger value="keyword">키워드별</TabsTrigger>
@@ -1305,7 +1425,7 @@ function ClusteringPage() {
                         <CardContent className="p-0 flex-1 overflow-auto">
                           <StatsListView items={sortedSupStats} checkedSet={supCheckedSet} onCheckedChange={setSupCheckedSet}
                             nameKey="supplier" nameLabel="공급업체" sortField={supSortField} sortDir={supSortDir} onSort={handleSupSort}
-                            formatAmount={formatAmount} amountUnit={amountUnit}
+                            formatAmount={formatAmount} amountUnit={amountUnit} onDetail={handleSupDetail}
                             isDragging={supDragging} setIsDragging={setSupDragging} dragStartRef={supDragRef} />
                         </CardContent>
                       </Card>
@@ -1320,8 +1440,8 @@ function ClusteringPage() {
               </Tabs>
             </div>
 
-            {/* 병합결과 확인 (40%+) */}
-            <div className="flex-1 min-h-[40%] mt-3 flex flex-col">
+            {/* 병합결과 확인 (40%) */}
+            <div className="flex flex-col mt-3" style={{ height: '40%', minHeight: '150px' }}>
               <Card className="flex-1 flex flex-col min-h-0 overflow-hidden shadow-sm">
                 <CardHeader className="py-2 px-3 border-b flex-shrink-0">
                   <div className="flex items-center justify-between gap-1">
@@ -1493,9 +1613,24 @@ function ClusteringPage() {
               병합 상세: #{detailDialog.cluster?.clusterNumber} {truncateName(detailDialog.cluster?.clusterName)}
             </DialogTitle>
             <DialogDescription>
-              하위 클러스터 {detailDialog.cluster?.childCount || 0}개 | 드래그 또는 Ctrl+클릭으로 복수 선택 가능
+              드래그 또는 Ctrl+클릭으로 복수 선택 가능
             </DialogDescription>
           </DialogHeader>
+          {/* 병합 클러스터 통계 정보 */}
+          <div className="flex items-center gap-4 p-3 bg-gray-50 rounded-md border mb-2 text-sm">
+            <div className="flex items-center gap-2">
+              <span className="text-muted-foreground">Row Data:</span>
+              <Badge variant="secondary">{(detailDialog.cluster?.count || 0).toLocaleString()}건</Badge>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-muted-foreground">하위 클러스터:</span>
+              <Badge variant="secondary">{(detailDialog.cluster?.childCount || 0).toLocaleString()}개</Badge>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-muted-foreground">합산 금액:</span>
+              <Badge variant="secondary">{formatAmount(detailDialog.cluster?.totalAmount || 0)} {amountUnit}</Badge>
+            </div>
+          </div>
           <div className="flex items-center gap-2 mb-2">
             <Button size="sm" variant="destructive" onClick={handlePartialUnmerge} disabled={detailChecked.size === 0}>
               <Trash2 className="h-3 w-3 mr-1" />선택 항목 병합 해제 ({detailChecked.size})
