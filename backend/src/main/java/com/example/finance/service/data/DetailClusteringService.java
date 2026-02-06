@@ -50,11 +50,6 @@ public class DetailClusteringService {
                 .and("cluster_id").is(clusterId)
                 .and("cluster_sub_id").is(-1);
 
-        Set<Integer> subMergedParentNumbers = getSubMergedParentNumbers(sessionId, clusterId);
-        if (!subMergedParentNumbers.isEmpty()) {
-            criteria = criteria.and("cluster_number").nin(subMergedParentNumbers);
-        }
-
         if (keyword != null && !keyword.isBlank()) {
             criteria = criteria.and("keywords").is(keyword);
         }
@@ -224,7 +219,8 @@ public class DetailClusteringService {
         for (ClusteringResult cluster : all) {
             if (subMergedClusterNumbers.contains(cluster.getClusterNumber())) {
                 List<ClusteringResult> children = all.stream()
-                        .filter(c -> c.getClusterSubId().equals(cluster.getClusterNumber()))
+                        .filter(c -> c.getClusterSubId().equals(cluster.getClusterNumber())
+                                && !c.getClusterNumber().equals(cluster.getClusterNumber()))
                         .collect(Collectors.toList());
 
                 Map<String, Object> merged = new LinkedHashMap<>();
@@ -267,33 +263,28 @@ public class DetailClusteringService {
     public Map<String, Object> getStatistics(String sessionId, int clusterId) {
         List<ClusteringResult> all = getAllClustersInScope(sessionId, clusterId);
 
-        Set<Integer> subMergedParents = all.stream()
-                .filter(c -> c.getClusterSubId() > 0)
-                .map(ClusteringResult::getClusterSubId)
-                .collect(Collectors.toSet());
-
+        // 미세부병합: cluster_sub_id == -1
         List<ClusteringResult> unmerged = all.stream()
                 .filter(c -> c.getClusterSubId() == -1)
                 .collect(Collectors.toList());
 
-        long totalRows = unmerged.stream().mapToLong(ClusteringResult::getCount).sum();
+        // 세부병합 부모: cluster_sub_id == cluster_number (자기 자신)
+        List<ClusteringResult> subMergeParents = all.stream()
+                .filter(c -> c.getClusterSubId() > 0 && c.getClusterSubId().equals(c.getClusterNumber()))
+                .collect(Collectors.toList());
 
-        long pureUnmergedCount = unmerged.stream()
-                .filter(c -> !subMergedParents.contains(c.getClusterNumber()))
-                .count();
-        double pureUnmergedAmount = unmerged.stream()
-                .filter(c -> !subMergedParents.contains(c.getClusterNumber()))
-                .mapToDouble(ClusteringResult::getTotalAmount)
-                .sum();
+        // totalRows = 미세부병합 + 세부병합 부모 (부모가 자식 합산을 포함)
+        long totalRows = unmerged.stream().mapToLong(ClusteringResult::getCount).sum()
+                + subMergeParents.stream().mapToLong(ClusteringResult::getCount).sum();
 
         boolean hasSupplier = hasSupplierClustering(sessionId, clusterId);
 
         Map<String, Object> stats = new HashMap<>();
         stats.put("totalRows", totalRows);
         stats.put("totalClusters", all.size());
-        stats.put("unmergedCount", pureUnmergedCount);
-        stats.put("unmergedTotalAmount", pureUnmergedAmount);
-        stats.put("mergedGroupCount", subMergedParents.size());
+        stats.put("unmergedCount", (long) unmerged.size());
+        stats.put("unmergedTotalAmount", unmerged.stream().mapToDouble(ClusteringResult::getTotalAmount).sum());
+        stats.put("mergedGroupCount", subMergeParents.size());
         stats.put("hasSupplier", hasSupplier);
         return stats;
     }
@@ -349,7 +340,7 @@ public class DetailClusteringService {
                 .sessionId(sessionId)
                 .clusterNumber(newClusterNumber)
                 .clusterId(clusterId)       // cluster_id 유지
-                .clusterSubId(-1)           // 부모이므로 -1
+                .clusterSubId(newClusterNumber) // 자기 자신의 cluster_number
                 .clusterName(mergedName)
                 .keywords(new ArrayList<>(allKeywords))
                 .count(totalCount)
@@ -387,10 +378,11 @@ public class DetailClusteringService {
                 .orElseThrow(() -> new BusinessException("CLUSTER_NOT_FOUND",
                         "세부 병합 클러스터를 찾을 수 없습니다: #" + mergedClusterNumber));
 
-        // cluster_sub_id로 자식 찾기
+        // cluster_sub_id로 자식 찾기 (부모 자신 제외)
         Query childQuery = new Query(Criteria.where("session_id").is(sessionId)
                 .and("cluster_id").is(clusterId)
-                .and("cluster_sub_id").is(mergedClusterNumber));
+                .and("cluster_sub_id").is(mergedClusterNumber)
+                .and("cluster_number").ne(mergedClusterNumber));
         List<ClusteringResult> children = mongoTemplate.find(childQuery, ClusteringResult.class);
 
         if (children.isEmpty()) {
@@ -425,9 +417,11 @@ public class DetailClusteringService {
                 .orElseThrow(() -> new BusinessException("CLUSTER_NOT_FOUND",
                         "세부 병합 클러스터를 찾을 수 없습니다: #" + mergedClusterNumber));
 
+        // 부모 자신 제외하고 자식만 조회
         Query childQuery = new Query(Criteria.where("session_id").is(sessionId)
                 .and("cluster_id").is(clusterId)
-                .and("cluster_sub_id").is(mergedClusterNumber));
+                .and("cluster_sub_id").is(mergedClusterNumber)
+                .and("cluster_number").ne(mergedClusterNumber));
         List<ClusteringResult> allChildren = mongoTemplate.find(childQuery, ClusteringResult.class);
 
         List<ClusteringResult> toRemove = allChildren.stream()
@@ -495,9 +489,10 @@ public class DetailClusteringService {
             throw new BusinessException("CLUSTER_NOT_FOUND", "일부 세부 병합 클러스터를 찾을 수 없습니다.");
         }
 
-        // cluster_sub_id로 자식 수집
+        // cluster_sub_id로 자식 수집 (부모 자신 제외)
         List<ClusteringResult> allChildrenToMove = all.stream()
-                .filter(c -> mergedClusterNumbers.contains(c.getClusterSubId()))
+                .filter(c -> mergedClusterNumbers.contains(c.getClusterSubId())
+                        && !mergedClusterNumbers.contains(c.getClusterNumber()))
                 .collect(Collectors.toList());
 
         int newClusterNumber = getNextClusterNumber(sessionId);
@@ -519,7 +514,7 @@ public class DetailClusteringService {
                 .sessionId(sessionId)
                 .clusterNumber(newClusterNumber)
                 .clusterId(clusterId)       // cluster_id 유지!
-                .clusterSubId(-1)
+                .clusterSubId(newClusterNumber) // 자기 자신의 cluster_number
                 .clusterName(mergedName)
                 .keywords(new ArrayList<>(allKeywords))
                 .count(totalCount)
@@ -577,10 +572,11 @@ public class DetailClusteringService {
         }
         clusteringResultRepository.saveAll(targets);
 
-        // 부모 재계산
+        // 부모 재계산 (부모 자신 제외)
         Query childQuery = new Query(Criteria.where("session_id").is(sessionId)
                 .and("cluster_id").is(clusterId)
-                .and("cluster_sub_id").is(targetMergedClusterNumber));
+                .and("cluster_sub_id").is(targetMergedClusterNumber)
+                .and("cluster_number").ne(targetMergedClusterNumber));
         List<ClusteringResult> allChildren = mongoTemplate.find(childQuery, ClusteringResult.class);
 
         Set<String> allKeywords = new LinkedHashSet<>();
@@ -630,11 +626,6 @@ public class DetailClusteringService {
                 .and("cluster_id").is(clusterId)
                 .and("cluster_sub_id").is(-1);
 
-        Set<Integer> subMergedParentNumbers = getSubMergedParentNumbers(sessionId, clusterId);
-        if (!subMergedParentNumbers.isEmpty()) {
-            criteria = criteria.and("cluster_number").nin(subMergedParentNumbers);
-        }
-
         if (keyword != null && !keyword.isBlank()) {
             criteria = criteria.and("keywords").is(keyword);
         }
@@ -664,14 +655,8 @@ public class DetailClusteringService {
                 .and("cluster_id").is(clusterId)
                 .and("cluster_sub_id").is(-1);
 
-        Set<Integer> subMergedParentNumbers = getSubMergedParentNumbers(sessionId, clusterId);
-
         if (withinClusterNumbers != null && !withinClusterNumbers.isEmpty()) {
-            Set<Integer> filteredIds = new HashSet<>(withinClusterNumbers);
-            filteredIds.removeAll(subMergedParentNumbers);
-            criteria = criteria.and("cluster_number").in(filteredIds);
-        } else if (!subMergedParentNumbers.isEmpty()) {
-            criteria = criteria.and("cluster_number").nin(subMergedParentNumbers);
+            criteria = criteria.and("cluster_number").in(withinClusterNumbers);
         }
 
         List<Criteria> additionalCriteria = new ArrayList<>();
@@ -764,14 +749,8 @@ public class DetailClusteringService {
                 .and("cluster_id").is(clusterId)
                 .and("cluster_sub_id").is(-1);
 
-        Set<Integer> subMergedParentNumbers = getSubMergedParentNumbers(sessionId, clusterId);
-
         if (withinClusterNumbers != null && !withinClusterNumbers.isEmpty()) {
-            Set<Integer> filteredIds = new HashSet<>(withinClusterNumbers);
-            filteredIds.removeAll(subMergedParentNumbers);
-            criteria = criteria.and("cluster_number").in(filteredIds);
-        } else if (!subMergedParentNumbers.isEmpty()) {
-            criteria = criteria.and("cluster_number").nin(subMergedParentNumbers);
+            criteria = criteria.and("cluster_number").in(withinClusterNumbers);
         }
 
         List<Criteria> additionalCriteria = new ArrayList<>();
@@ -969,27 +948,12 @@ public class DetailClusteringService {
         return mongoTemplate.find(query, ClusteringResult.class);
     }
 
-    /** 스코프 내 활성(미세부병합) 클러스터 */
+    /** 스코프 내 활성(미세부병합) 클러스터 - cluster_sub_id == -1인 것만 */
     private List<ClusteringResult> getActiveUnmergedClusters(String sessionId, int clusterId) {
         List<ClusteringResult> all = getAllClustersInScope(sessionId, clusterId);
-
-        Set<Integer> subMergedParents = all.stream()
-                .filter(c -> c.getClusterSubId() > 0)
-                .map(ClusteringResult::getClusterSubId)
-                .collect(Collectors.toSet());
-
         return all.stream()
-                .filter(c -> c.getClusterSubId() == -1 && !subMergedParents.contains(c.getClusterNumber()))
+                .filter(c -> c.getClusterSubId() == -1)
                 .collect(Collectors.toList());
-    }
-
-    /** 세부 병합 부모 번호 집합 */
-    private Set<Integer> getSubMergedParentNumbers(String sessionId, int clusterId) {
-        List<ClusteringResult> all = getAllClustersInScope(sessionId, clusterId);
-        return all.stream()
-                .filter(c -> c.getClusterSubId() > 0)
-                .map(ClusteringResult::getClusterSubId)
-                .collect(Collectors.toSet());
     }
 
     private List<String> getVisibleColumns(String sessionId) {
