@@ -125,8 +125,8 @@ public class ExportService {
     /**
      * raw_data_id → ClusterInfo 매핑 생성
      *
-     * 세부클러스터명은 cluster_sub_id > 0인 실제 세부클러스터(Step 7)만 매핑.
-     * cluster_id > 0이고 cluster_sub_id = -1인 미병합클러스터는 세부클러스터가 아님.
+     * 세부클러스터명은 세부병합 부모 레코드의 이름을 사용.
+     * 세부병합 부모: cluster_number가 다른 레코드의 cluster_sub_id로 참조되는 레코드.
      */
     private Map<String, ClusterInfo> buildRawIdToClusterMap(String sessionId) {
         Map<String, ClusterInfo> map = new HashMap<>();
@@ -147,19 +147,31 @@ public class ExportService {
             }
         }
 
-        // 세부 클러스터 조회 (cluster_sub_id > 0: Step 7에서 생성된 실제 세부클러스터)
-        Query subClusterQuery = new Query(Criteria.where("session_id").is(sessionId)
+        // 세부병합 부모 찾기: cluster_sub_id > 0인 레코드들의 cluster_sub_id 값 수집
+        Query subChildQuery = new Query(Criteria.where("session_id").is(sessionId)
                 .and("cluster_sub_id").gt(0));
-        List<ClusteringResult> subClusters = mongoTemplate.find(subClusterQuery, ClusteringResult.class);
+        subChildQuery.fields().include("cluster_sub_id");
+        List<ClusteringResult> subChildren = mongoTemplate.find(subChildQuery, ClusteringResult.class);
 
-        // 세부 클러스터의 data_indices에 세부클러스터명 설정
-        for (ClusteringResult sub : subClusters) {
-            Integer parentNumber = sub.getClusterId();
-            ClusteringResult parent = clusterByNumber.get(parentNumber);
-            String parentName = parent != null ? parent.getClusterName() : "Unknown";
+        Set<Integer> subParentNumbers = subChildren.stream()
+                .map(ClusteringResult::getClusterSubId)
+                .collect(Collectors.toSet());
 
-            for (String rawDataId : sub.getDataIndices()) {
-                map.put(rawDataId, new ClusterInfo(parentName, sub.getClusterName(), sub.getClusterNumber()));
+        if (!subParentNumbers.isEmpty()) {
+            // 세부병합 부모 레코드 로드
+            Query subParentQuery = new Query(Criteria.where("session_id").is(sessionId)
+                    .and("cluster_number").in(subParentNumbers));
+            List<ClusteringResult> subParents = mongoTemplate.find(subParentQuery, ClusteringResult.class);
+
+            // 세부병합 부모의 data_indices에 세부클러스터명 설정
+            for (ClusteringResult subParent : subParents) {
+                Integer mergedParentNumber = subParent.getClusterId();
+                ClusteringResult parent = clusterByNumber.get(mergedParentNumber);
+                String parentName = parent != null ? parent.getClusterName() : "Unknown";
+
+                for (String rawDataId : subParent.getDataIndices()) {
+                    map.put(rawDataId, new ClusterInfo(parentName, subParent.getClusterName(), subParent.getClusterNumber()));
+                }
             }
         }
 
@@ -173,9 +185,8 @@ public class ExportService {
     /**
      * 병합된 클러스터 목록 조회 - 세부 클러스터 정보 포함
      *
-     * 세부클러스터는 cluster_sub_id > 0인 것만 해당 (Step 7 Detail Clustering).
-     * cluster_id > 0이고 cluster_sub_id = -1인 것은 미병합클러스터(병합 자식)이며,
-     * 세부클러스터가 아님.
+     * 세부클러스터는 세부병합 부모 레코드를 기준으로 표시.
+     * 세부병합 부모: cluster_number가 다른 레코드의 cluster_sub_id로 참조되는 레코드.
      */
     public List<Map<String, Object>> getMergedClustersWithSubClusters(String sessionId) {
         // 병합된 클러스터 조회 (cluster_id = -1: 독립/부모 클러스터)
@@ -184,14 +195,27 @@ public class ExportService {
                 .with(Sort.by("cluster_number"));
         List<ClusteringResult> mergedClusters = mongoTemplate.find(mergedQuery, ClusteringResult.class);
 
-        // 세부 클러스터 조회 (cluster_sub_id > 0: Step 7에서 생성된 실제 세부클러스터)
-        Query subClusterQuery = new Query(Criteria.where("session_id").is(sessionId)
-                .and("cluster_sub_id").gt(0))
-                .with(Sort.by("cluster_id", "cluster_sub_id"));
-        List<ClusteringResult> subClusters = mongoTemplate.find(subClusterQuery, ClusteringResult.class);
+        // 세부병합 부모 찾기: cluster_sub_id > 0인 레코드들의 cluster_sub_id 값 수집
+        Query subChildQuery = new Query(Criteria.where("session_id").is(sessionId)
+                .and("cluster_sub_id").gt(0));
+        subChildQuery.fields().include("cluster_sub_id");
+        List<ClusteringResult> subChildren = mongoTemplate.find(subChildQuery, ClusteringResult.class);
 
-        // 부모별로 세부클러스터 그룹핑
-        Map<Integer, List<ClusteringResult>> subClustersByParent = subClusters.stream()
+        Set<Integer> subParentNumbers = subChildren.stream()
+                .map(ClusteringResult::getClusterSubId)
+                .collect(Collectors.toSet());
+
+        // 세부병합 부모 레코드 로드
+        List<ClusteringResult> subParents = Collections.emptyList();
+        if (!subParentNumbers.isEmpty()) {
+            Query subParentQuery = new Query(Criteria.where("session_id").is(sessionId)
+                    .and("cluster_number").in(subParentNumbers))
+                    .with(Sort.by("cluster_id", "cluster_number"));
+            subParents = mongoTemplate.find(subParentQuery, ClusteringResult.class);
+        }
+
+        // 부모별로 세부병합 부모 그룹핑
+        Map<Integer, List<ClusteringResult>> subClustersByParent = subParents.stream()
                 .collect(Collectors.groupingBy(ClusteringResult::getClusterId));
 
         // 결과 구성
