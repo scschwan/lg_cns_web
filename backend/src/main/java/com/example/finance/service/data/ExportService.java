@@ -124,52 +124,42 @@ public class ExportService {
 
     /**
      * raw_data_id → ClusterInfo 매핑 생성
+     *
+     * 세부클러스터명은 cluster_sub_id > 0인 실제 세부클러스터(Step 7)만 매핑.
+     * cluster_id > 0이고 cluster_sub_id = -1인 미병합클러스터는 세부클러스터가 아님.
      */
     private Map<String, ClusterInfo> buildRawIdToClusterMap(String sessionId) {
         Map<String, ClusterInfo> map = new HashMap<>();
 
-        // 병합된 클러스터 조회 (cluster_id = -1인 것들 중 children이 있는 것)
+        // 독립/부모 클러스터 조회 (cluster_id = -1)
         Query mergedQuery = new Query(Criteria.where("session_id").is(sessionId)
                 .and("cluster_id").is(-1));
-        List<ClusteringResult> allClusters = mongoTemplate.find(mergedQuery, ClusteringResult.class);
+        List<ClusteringResult> parentClusters = mongoTemplate.find(mergedQuery, ClusteringResult.class);
 
         // cluster_number → cluster 맵
-        Map<Integer, ClusteringResult> clusterByNumber = allClusters.stream()
+        Map<Integer, ClusteringResult> clusterByNumber = parentClusters.stream()
                 .collect(Collectors.toMap(ClusteringResult::getClusterNumber, c -> c, (a, b) -> a));
 
-        // 자식 클러스터들 (cluster_id > 0)
-        Query childQuery = new Query(Criteria.where("session_id").is(sessionId)
-                .and("cluster_id").gt(0));
-        List<ClusteringResult> childClusters = mongoTemplate.find(childQuery, ClusteringResult.class);
-
-        // 자식 → 부모 매핑
-        Map<Integer, Integer> childToParent = new HashMap<>();
-        for (ClusteringResult child : childClusters) {
-            childToParent.put(child.getClusterNumber(), child.getClusterId());
-        }
-
-        // 모든 클러스터의 data_indices를 순회하며 매핑
-        for (ClusteringResult cluster : allClusters) {
-            String clusterName = cluster.getClusterName();
-
-            // 이 클러스터가 부모 클러스터인지 확인
-            boolean hasChildren = childClusters.stream()
-                    .anyMatch(c -> c.getClusterId().equals(cluster.getClusterNumber()));
-
+        // 부모 클러스터의 data_indices를 순회하며 매핑 (클러스터명만, 세부클러스터명 없음)
+        for (ClusteringResult cluster : parentClusters) {
             for (String rawDataId : cluster.getDataIndices()) {
-                map.put(rawDataId, new ClusterInfo(clusterName, null, cluster.getClusterNumber()));
+                map.put(rawDataId, new ClusterInfo(cluster.getClusterName(), null, cluster.getClusterNumber()));
             }
         }
 
-        // 자식 클러스터의 data_indices도 처리 (세부클러스터명 설정)
-        for (ClusteringResult child : childClusters) {
-            Integer parentNumber = child.getClusterId();
+        // 세부 클러스터 조회 (cluster_sub_id > 0: Step 7에서 생성된 실제 세부클러스터)
+        Query subClusterQuery = new Query(Criteria.where("session_id").is(sessionId)
+                .and("cluster_sub_id").gt(0));
+        List<ClusteringResult> subClusters = mongoTemplate.find(subClusterQuery, ClusteringResult.class);
+
+        // 세부 클러스터의 data_indices에 세부클러스터명 설정
+        for (ClusteringResult sub : subClusters) {
+            Integer parentNumber = sub.getClusterId();
             ClusteringResult parent = clusterByNumber.get(parentNumber);
             String parentName = parent != null ? parent.getClusterName() : "Unknown";
-            String subClusterName = child.getClusterName();
 
-            for (String rawDataId : child.getDataIndices()) {
-                map.put(rawDataId, new ClusterInfo(parentName, subClusterName, child.getClusterNumber()));
+            for (String rawDataId : sub.getDataIndices()) {
+                map.put(rawDataId, new ClusterInfo(parentName, sub.getClusterName(), sub.getClusterNumber()));
             }
         }
 
@@ -182,34 +172,38 @@ public class ExportService {
 
     /**
      * 병합된 클러스터 목록 조회 - 세부 클러스터 정보 포함
+     *
+     * 세부클러스터는 cluster_sub_id > 0인 것만 해당 (Step 7 Detail Clustering).
+     * cluster_id > 0이고 cluster_sub_id = -1인 것은 미병합클러스터(병합 자식)이며,
+     * 세부클러스터가 아님.
      */
     public List<Map<String, Object>> getMergedClustersWithSubClusters(String sessionId) {
-        // 병합된 클러스터 조회 (cluster_id = -1이고 children이 있는 것)
+        // 병합된 클러스터 조회 (cluster_id = -1: 독립/부모 클러스터)
         Query mergedQuery = new Query(Criteria.where("session_id").is(sessionId)
                 .and("cluster_id").is(-1))
                 .with(Sort.by("cluster_number"));
         List<ClusteringResult> mergedClusters = mongoTemplate.find(mergedQuery, ClusteringResult.class);
 
-        // 자식 클러스터들 조회
-        Query childQuery = new Query(Criteria.where("session_id").is(sessionId)
-                .and("cluster_id").gt(0))
-                .with(Sort.by("cluster_id", "cluster_number"));
-        List<ClusteringResult> childClusters = mongoTemplate.find(childQuery, ClusteringResult.class);
+        // 세부 클러스터 조회 (cluster_sub_id > 0: Step 7에서 생성된 실제 세부클러스터)
+        Query subClusterQuery = new Query(Criteria.where("session_id").is(sessionId)
+                .and("cluster_sub_id").gt(0))
+                .with(Sort.by("cluster_id", "cluster_sub_id"));
+        List<ClusteringResult> subClusters = mongoTemplate.find(subClusterQuery, ClusteringResult.class);
 
-        // 부모별로 자식 그룹핑
-        Map<Integer, List<ClusteringResult>> childrenByParent = childClusters.stream()
+        // 부모별로 세부클러스터 그룹핑
+        Map<Integer, List<ClusteringResult>> subClustersByParent = subClusters.stream()
                 .collect(Collectors.groupingBy(ClusteringResult::getClusterId));
 
         // 결과 구성
         List<Map<String, Object>> result = new ArrayList<>();
 
         for (ClusteringResult merged : mergedClusters) {
-            List<ClusteringResult> children = childrenByParent.getOrDefault(merged.getClusterNumber(), Collections.emptyList());
+            List<ClusteringResult> subs = subClustersByParent.getOrDefault(merged.getClusterNumber(), Collections.emptyList());
 
-            // 자식이 있는지 확인
-            boolean hasChildren = !children.isEmpty();
+            // 세부 클러스터가 있는지 확인
+            boolean hasSubClusters = !subs.isEmpty();
 
-            if (!hasChildren) {
+            if (!hasSubClusters) {
                 // 세부 클러스터링 없음 - 단일 행으로 표시
                 Map<String, Object> row = new LinkedHashMap<>();
                 row.put("clusterNumber", merged.getClusterNumber());
@@ -236,16 +230,16 @@ public class ExportService {
                 parentRow.put("totalAmount", totalAmount);
                 parentRow.put("hasSubClusters", true);
                 parentRow.put("isParentRow", true);
-                parentRow.put("childCount", children.size());
+                parentRow.put("childCount", subs.size());
                 result.add(parentRow);
 
                 // 2) 세부 클러스터에 포함되지 않은 데이터 (undefined)
-                Set<String> childRawIds = new HashSet<>();
-                for (ClusteringResult child : children) {
-                    childRawIds.addAll(child.getDataIndices());
+                Set<String> subRawIds = new HashSet<>();
+                for (ClusteringResult sub : subs) {
+                    subRawIds.addAll(sub.getDataIndices());
                 }
                 Set<String> parentRawIds = new HashSet<>(merged.getDataIndices());
-                parentRawIds.removeAll(childRawIds);
+                parentRawIds.removeAll(subRawIds);
 
                 if (!parentRawIds.isEmpty()) {
                     // undefined 데이터 계산
@@ -266,19 +260,19 @@ public class ExportService {
                 }
 
                 // 3) 각 세부 클러스터 행
-                for (ClusteringResult child : children) {
-                    Map<String, Object> childRow = new LinkedHashMap<>();
-                    childRow.put("clusterNumber", child.getClusterNumber());
-                    childRow.put("parentClusterNumber", merged.getClusterNumber());
-                    childRow.put("clusterName", merged.getClusterName());
-                    childRow.put("subClusterName", child.getClusterName());
-                    childRow.put("keywords", child.getKeywords());
-                    childRow.put("count", child.getCount());
-                    childRow.put("totalAmount", child.getTotalAmount());
-                    childRow.put("hasSubClusters", false);
-                    childRow.put("isParentRow", false);
-                    childRow.put("isSubCluster", true);
-                    result.add(childRow);
+                for (ClusteringResult sub : subs) {
+                    Map<String, Object> subRow = new LinkedHashMap<>();
+                    subRow.put("clusterNumber", sub.getClusterNumber());
+                    subRow.put("parentClusterNumber", merged.getClusterNumber());
+                    subRow.put("clusterName", merged.getClusterName());
+                    subRow.put("subClusterName", sub.getClusterName());
+                    subRow.put("keywords", sub.getKeywords());
+                    subRow.put("count", sub.getCount());
+                    subRow.put("totalAmount", sub.getTotalAmount());
+                    subRow.put("hasSubClusters", false);
+                    subRow.put("isParentRow", false);
+                    subRow.put("isSubCluster", true);
+                    result.add(subRow);
                 }
             }
         }
