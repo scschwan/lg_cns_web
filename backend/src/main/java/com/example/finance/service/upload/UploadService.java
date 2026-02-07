@@ -11,6 +11,7 @@ import com.example.finance.model.session.UploadedFileInfo;
 import com.example.finance.model.upload.UploadSession;
 import com.example.finance.repository.session.FileSessionRepository;
 import com.example.finance.repository.upload.UploadSessionRepository;
+import com.example.finance.service.common.ExcelParserService;
 import com.example.finance.service.common.S3Service;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -58,6 +59,7 @@ public class UploadService {
     private final FileSessionRepository fileSessionRepository;
     private final FileAnalysisService fileAnalysisService; // 주입 필요
     private final S3Service s3Service;
+    private final ExcelParserService excelParserService;
     private final MongoTemplate mongoTemplate;  // ← 추가
     // ★ 클래스 필드에 전용 스레드풀 추가
     private final ExecutorService metadataExecutor = Executors.newFixedThreadPool(2,
@@ -306,8 +308,11 @@ public class UploadService {
 
     /**
      * 비동기 메타데이터 업데이트 (전용 스레드풀에서 실행)
-     * ★ 개선: Redis 업로드 상태가 COMPLETED될 때까지 대기 후 메타데이터 업데이트
-     *    → 대용량 파일(10만건+)에서도 모든 raw_data 삽입 완료 후 정확한 rowCount 반영
+     *
+     * ★ 3단계 전략:
+     *   Phase 1: Lambda 처리 대기 (최대 2분) - Redis 상태 확인
+     *   Phase 2: Lambda 실패 시 → 백엔드 Fallback (ExcelParserService로 직접 파싱)
+     *   Phase 3: raw_data 완료 확인 후 FileSession 메타데이터 업데이트
      */
     private void updateFileMetadataAsync(String sessionId, String fileId, String s3Key) {
         String uploadId = extractUploadIdFromS3Key(s3Key);
@@ -316,28 +321,30 @@ public class UploadService {
         try {
             String statusKey = UPLOAD_STATUS_KEY_PREFIX + uploadId;
 
-            // ★ Phase 1: Redis 업로드 상태가 COMPLETED될 때까지 대기 (최대 10분)
+            // ━━━ Phase 1: Lambda 처리 대기 (최대 2분) ━━━
             boolean uploadCompleted = false;
-            for (int retry = 0; retry < 120; retry++) { // 5초 * 120 = 10분
+            boolean lambdaStarted = false;
+            for (int retry = 0; retry < 24; retry++) { // 5초 * 24 = 2분
                 try {
                     Object statusObj = redisTemplate.opsForHash().get(statusKey, "status");
                     String status = statusObj != null ? statusObj.toString() : "PENDING";
 
                     if ("COMPLETED".equals(status)) {
                         uploadCompleted = true;
-                        log.info("Lambda 업로드 완료 확인: uploadId={}, retry={}", uploadId, retry);
+                        log.info("Lambda 업로드 완료: uploadId={}, retry={}", uploadId, retry);
                         break;
                     } else if ("FAILED".equals(status)) {
                         log.error("Lambda 업로드 실패: uploadId={}", uploadId);
-                        return;
+                        break; // fallback으로 진행
+                    } else if ("PROCESSING".equals(status)) {
+                        lambdaStarted = true;
                     }
 
-                    // 진행률 로그 (10회 간격)
-                    if (retry % 10 == 0) {
+                    if (retry % 6 == 0) {
                         Object progressObj = redisTemplate.opsForHash().get(statusKey, "progress");
                         String progress = progressObj != null ? progressObj.toString() : "0";
-                        log.info("Lambda 업로드 진행 중: uploadId={}, progress={}%, retry={}",
-                                uploadId, progress, retry);
+                        log.info("Lambda 대기 중: uploadId={}, status={}, progress={}%, retry={}",
+                                uploadId, status, progress, retry);
                     }
                 } catch (Exception e) {
                     log.warn("Redis 상태 조회 실패 (재시도): uploadId={}", uploadId);
@@ -346,29 +353,55 @@ public class UploadService {
                 Thread.sleep(5000);
             }
 
-            // ★ Phase 2: Redis 완료 확인 실패 시 → raw_data 직접 확인으로 fallback
-            long rowCount = 0;
-            if (!uploadCompleted) {
-                log.warn("Redis 완료 대기 타임아웃, raw_data 직접 확인: uploadId={}", uploadId);
-                // raw_data가 존재하는지만 확인
-                for (int retry = 0; retry < 10; retry++) {
-                    rowCount = mongoTemplate.getCollection("raw_data")
-                            .countDocuments(new org.bson.Document("upload_id", uploadId));
-                    if (rowCount > 0) break;
-                    Thread.sleep(3000);
+            // Lambda가 아직 처리 중이면 추가 대기 (최대 8분 더)
+            if (lambdaStarted && !uploadCompleted) {
+                log.info("Lambda 처리 진행 중, 추가 대기: uploadId={}", uploadId);
+                for (int retry = 0; retry < 96; retry++) { // 5초 * 96 = 8분
+                    try {
+                        Object statusObj = redisTemplate.opsForHash().get(statusKey, "status");
+                        String status = statusObj != null ? statusObj.toString() : "PENDING";
+
+                        if ("COMPLETED".equals(status)) {
+                            uploadCompleted = true;
+                            log.info("Lambda 업로드 완료 (추가 대기 후): uploadId={}", uploadId);
+                            break;
+                        } else if ("FAILED".equals(status)) {
+                            break;
+                        }
+                    } catch (Exception ignored) {}
+                    Thread.sleep(5000);
                 }
-            } else {
-                // ★ 완료 후 최종 row count 확인
-                rowCount = mongoTemplate.getCollection("raw_data")
-                        .countDocuments(new org.bson.Document("upload_id", uploadId));
             }
 
+            // ━━━ Phase 2: Lambda 미처리 시 → 백엔드 Fallback ━━━
+            long rowCount = 0;
+            if (!uploadCompleted) {
+                // raw_data에 이미 데이터가 있는지 확인
+                rowCount = mongoTemplate.getCollection("raw_data")
+                        .countDocuments(new org.bson.Document("upload_id", uploadId));
+
+                if (rowCount == 0) {
+                    log.warn("★ Lambda 미처리 감지! 백엔드 Fallback 실행: uploadId={}", uploadId);
+                    try {
+                        excelParserService.parseExcel(uploadId);
+                        log.info("★ 백엔드 Fallback 완료: uploadId={}", uploadId);
+                    } catch (Exception e) {
+                        log.error("★ 백엔드 Fallback 실패: uploadId={}", uploadId, e);
+                        return;
+                    }
+                }
+            }
+
+            // ━━━ Phase 3: raw_data 확인 후 FileSession 메타데이터 업데이트 ━━━
+            rowCount = mongoTemplate.getCollection("raw_data")
+                    .countDocuments(new org.bson.Document("upload_id", uploadId));
+
             if (rowCount == 0) {
-                log.warn("raw_data 대기 타임아웃: uploadId={}", uploadId);
+                log.warn("raw_data 비어있음 (Lambda + Fallback 모두 실패): uploadId={}", uploadId);
                 return;
             }
 
-            // ★ Phase 3: 컬럼 추출
+            // 컬럼 추출
             org.bson.Document rawDoc = mongoTemplate.getCollection("raw_data")
                     .find(new org.bson.Document("upload_id", uploadId))
                     .limit(1)
@@ -385,7 +418,7 @@ public class UploadService {
             final long finalRowCount = rowCount;
             final List<String> finalColumns = columns;
 
-            // ★ Phase 4: DB 업데이트 (모든 raw_data 삽입 완료 후)
+            // DB 업데이트
             FileSession session = fileSessionRepository.findBySessionId(sessionId).orElse(null);
             if (session == null) return;
 
