@@ -557,6 +557,43 @@ function MultiFileUploadPage() {
         }
     };
 
+    const handleDeleteSingleSession = async (sessionId) => {
+        const confirmed = window.confirm('이 세션을 삭제하시겠습니까?');
+        if (!confirmed) return;
+
+        try {
+            await uploadService.deleteSessions(projectId, [sessionId]);
+            loadSessions();
+            setSelectedSessions(prev => prev.filter(id => id !== sessionId));
+            alert('세션이 삭제되었습니다.');
+        } catch (error) {
+            console.error('세션 삭제 실패:', error);
+            alert('세션 삭제 중 오류가 발생했습니다.');
+        }
+    };
+
+    const handleBulkDeleteFiles = async () => {
+        const checkedFiles = files.filter(f => f.checked);
+        if (checkedFiles.length === 0) {
+            alert('삭제할 파일을 선택해주세요.');
+            return;
+        }
+
+        const confirmed = window.confirm(`선택된 ${checkedFiles.length}개의 파일을 삭제하시겠습니까?`);
+        if (!confirmed) return;
+
+        try {
+            for (const file of checkedFiles) {
+                await uploadService.deleteFile(projectId, file.fileId);
+            }
+            loadFiles();
+            alert(`${checkedFiles.length}개의 파일이 삭제되었습니다.`);
+        } catch (error) {
+            console.error('파일 삭제 실패:', error);
+            alert('파일 삭제 중 오류가 발생했습니다.');
+        }
+    };
+
     const handleProjectComplete = async () => {
         try {
             await projectService.completeProject(projectId);
@@ -680,7 +717,23 @@ function MultiFileUploadPage() {
                                                     </TableHead>
                                                     <TableHead className="w-[160px]">계정명</TableHead>
                                                     <TableHead className="w-[150px]">합산금액</TableHead>
-                                                    <TableHead className="w-[80px]">삭제</TableHead>
+                                                    <TableHead className="w-[80px]">
+                                                        <div className="flex items-center gap-1">
+                                                            삭제
+                                                            {files.some(f => f.checked) && (
+                                                                <Button
+                                                                    variant="ghost"
+                                                                    size="icon"
+                                                                    className="h-6 w-6"
+                                                                    onClick={handleBulkDeleteFiles}
+                                                                    disabled={isViewer}
+                                                                    title="선택 파일 삭제"
+                                                                >
+                                                                    <Trash2 className="h-3.5 w-3.5 text-red-500" />
+                                                                </Button>
+                                                            )}
+                                                        </div>
+                                                    </TableHead>
                                                 </TableRow>
                                             </TableHeader>
                                             <TableBody>
@@ -776,49 +829,42 @@ function MultiFileUploadPage() {
                         </Card>
                     </div>
 
-                    {/* 중간: 세션 관리 버튼 */}
-                    <Card className="bg-muted/50">
-                        <CardContent className="py-3 px-6">
-                            <div className="flex items-center justify-between">
-                                <CardTitle className="text-base">세션 관리</CardTitle>
-                                <div className="flex gap-2">
-                                    <Button
-                                        onClick={handleMergeSessions}
-                                        variant="outline"
-                                        size="sm"
-                                        disabled={selectedSessions.length < 2 || isViewer}
-                                    >
-                                        <GitMerge className="h-4 w-4 mr-1" />
-                                        세션 병합
-                                    </Button>
-                                    <Button
-                                        onClick={handleDeleteSessions}
-                                        variant="destructive"
-                                        size="sm"
-                                        disabled={selectedSessions.length === 0 || isViewer}
-                                    >
-                                        <Trash2 className="h-4 w-4 mr-1" />
-                                        세션 삭제
-                                    </Button>
-                                    <Button
-                                        onClick={handleStartAnalysis}
-                                        size="sm"
-                                        disabled={selectedSessions.length !== 1 || isViewer}
-                                        className="bg-green-600 hover:bg-green-700"
-                                    >
-                                        <Play className="h-4 w-4 mr-1" />
-                                        계정 분석 시작
-                                    </Button>
-                                </div>
-                            </div>
-                        </CardContent>
-                    </Card>
-
                     {/* 하단: 세션 목록 */}
                     <div>
                         <Card>
                             <CardHeader>
-                                <CardTitle className="text-lg">생성된 세션 목록</CardTitle>
+                                <div className="flex items-center justify-between">
+                                    <CardTitle className="text-lg">생성된 세션 목록</CardTitle>
+                                    <div className="flex gap-2">
+                                        <Button
+                                            onClick={handleMergeSessions}
+                                            variant="outline"
+                                            size="sm"
+                                            disabled={selectedSessions.length < 2 || isViewer}
+                                        >
+                                            <GitMerge className="h-4 w-4 mr-1" />
+                                            세션 병합
+                                        </Button>
+                                        <Button
+                                            onClick={handleDeleteSessions}
+                                            variant="destructive"
+                                            size="sm"
+                                            disabled={selectedSessions.length === 0 || isViewer}
+                                        >
+                                            <Trash2 className="h-4 w-4 mr-1" />
+                                            세션 삭제
+                                        </Button>
+                                        <Button
+                                            onClick={handleStartAnalysis}
+                                            size="sm"
+                                            disabled={selectedSessions.length !== 1 || isViewer}
+                                            className="bg-green-600 hover:bg-green-700"
+                                        >
+                                            <Play className="h-4 w-4 mr-1" />
+                                            계정 분석 시작
+                                        </Button>
+                                    </div>
+                                </div>
                             </CardHeader>
                             <CardContent className="p-0">
                                 {sessions.length === 0 ? (
@@ -855,7 +901,8 @@ function MultiFileUploadPage() {
                                                     <TableHead className="w-[100px] text-center">행수</TableHead>
                                                     <TableHead className="w-[130px]">합산금액</TableHead>
                                                     <TableHead className="w-[80px] text-center">진행상태</TableHead>
-                                                    <TableHead className="w-[80px]">다운</TableHead>
+                                                    <TableHead className="w-[80px]">다운로드</TableHead>
+                                                    <TableHead className="w-[60px]">삭제</TableHead>
                                                 </TableRow>
                                             </TableHeader>
                                             <TableBody>
@@ -989,6 +1036,16 @@ function MultiFileUploadPage() {
                                                                 onClick={() => handleDownload(session.sessionId)}
                                                             >
                                                                 <Download className="h-4 w-4" />
+                                                            </Button>
+                                                        </TableCell>
+                                                        <TableCell>
+                                                            <Button
+                                                                variant="ghost"
+                                                                size="icon"
+                                                                onClick={() => handleDeleteSingleSession(session.sessionId)}
+                                                                disabled={isViewer}
+                                                            >
+                                                                <Trash2 className="h-4 w-4 text-red-500" />
                                                             </Button>
                                                         </TableCell>
                                                     </TableRow>

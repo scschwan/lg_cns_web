@@ -517,7 +517,7 @@ const uploadService = {
      */
     downloadResult: async (projectId, sessionId) => {
         const response = await api.get(
-            `/api/projects/${projectId}/upload/sessions/${sessionId}/download`
+            `/api/projects/${projectId}/upload/sessions/${sessionId}/result/download`
         );
         return response.data.downloadUrl;
     },
