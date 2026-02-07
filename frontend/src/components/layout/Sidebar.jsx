@@ -30,6 +30,7 @@ const Sidebar = () => {
   const { projectId, sessionId } = useParams();
   const location = useLocation();
   const [sessionName, setSessionName] = useState('');
+  const [sessionData, setSessionData] = useState(null);
 
   // Step 1 이동 확인 다이얼로그
   const [showStep1Confirm, setShowStep1Confirm] = useState(false);
@@ -38,10 +39,18 @@ const Sidebar = () => {
   useEffect(() => {
     if (projectId && sessionId) {
       uploadService.getSession(projectId, sessionId)
-        .then(session => setSessionName(session.sessionName || ''))
-        .catch(() => setSessionName(''));
+        .then(session => {
+          setSessionName(session.sessionName || '');
+          setSessionData(session);
+        })
+        .catch(() => {
+          setSessionName('');
+          setSessionData(null);
+        });
+    } else {
+      setSessionData(null);
     }
-  }, [projectId, sessionId]);
+  }, [projectId, sessionId, location.pathname]);
 
   const steps = [
     {
@@ -102,9 +111,24 @@ const Sidebar = () => {
     }
   ];
 
+  // Step ID → backend ProcessStep enum name
+  const stepIdToEnum = {
+    2: 'START_ANALYSIS',
+    3: 'PREPROCESSING',
+    4: 'TRANSFORM',
+    5: 'CLUSTERING',
+    6: 'EXPORT',
+    7: 'DETAIL_CLUSTERING',
+  };
+
   // 현재 페이지가 Step 2~7인지 판별
   const isOnSessionStep = () => {
     return !!sessionId;
+  };
+
+  // 현재 페이지가 Multi File Upload 페이지인지 판별
+  const isOnUploadPage = () => {
+    return location.pathname.includes('/upload') && !sessionId;
   };
 
   const isStepActive = (step) => {
@@ -112,46 +136,49 @@ const Sidebar = () => {
   };
 
   const isStepCompleted = (step) => {
-    // TODO: 나중에 실제 완료 상태 체크 로직 추가
-    return false;
+    if (!sessionData?.stepHistory) return false;
+    const stepEnum = stepIdToEnum[step.id];
+    if (!stepEnum) return false;
+    return sessionData.stepHistory.some(h => h.step === stepEnum && h.status === 'completed');
   };
 
   const isStepDisabled = (step) => {
-      // ⭐ 임시로 모든 Step 활성화 (개발 중)
-      return false;
+    // Step 1은 항상 활성화
+    if (step.id === 1) return false;
 
-      /* 나중에 다시 활성화할 코드 (주석 처리)
-      // Step 1은 항상 활성화
-      if (step.id === 1) return false;
+    // Step 7 (Detail Clustering): sidebar에서 직접 진입 불가
+    if (step.id === 7) return true;
 
-      // sessionId가 필요한 Step인데 없으면 비활성화
-      if (step.requiresSession && !sessionId) return true;
+    // Multi File Upload 화면에서는 step 2~7 전부 비활성화
+    if (isOnUploadPage()) return true;
 
-      // TODO: 나중에 순차 진행 validation 로직 추가
-      // 예: Step 2는 Step 1이 완료되어야만 활성화
-      return false;
-      */
+    // sessionId가 필요한데 없으면 비활성화
+    if (step.requiresSession && !sessionId) return true;
+
+    // 세션 데이터 로드 전이면 현재 페이지만 허용
+    if (!sessionData) {
+      return !isStepActive(step);
+    }
+
+    // stepHistory에서 방문한 step 확인
+    const stepEnum = stepIdToEnum[step.id];
+    if (!stepEnum) return true;
+
+    // stepHistory에 있으면 방문한 적 있음 → 활성화
+    const visited = sessionData.stepHistory?.some(h => h.step === stepEnum);
+    if (visited) return false;
+
+    // currentStep이면 활성화
+    if (sessionData.currentStep === stepEnum) return false;
+
+    // 방문한 적 없고 currentStep도 아니면 비활성화
+    return true;
   };
 
   const handleStepClick = (step) => {
-    // ⭐ 개발 중: 모든 제약 무시하고 이동
+    if (isStepDisabled(step)) return;
+
     let targetPath = step.path;
-
-    // sessionId가 없는 Step 2-7의 경우 임시 sessionId 사용
-    if (!targetPath && step.requiresSession) {
-      const tempSessionId = sessionId || 'temp-session-dev';
-      const stepRoutes = {
-        2: 'fileload',
-        3: 'preprocessing',
-        4: 'transform',
-        5: 'clustering',
-        6: 'export',
-        7: 'detailclustering'
-      };
-      const routeName = stepRoutes[step.id];
-      targetPath = `/projects/${projectId}/sessions/${tempSessionId}/${routeName}`;
-    }
-
     if (!targetPath) return;
 
     // Step 1 클릭 시 현재 Step 2~7에 있으면 확인 다이얼로그 표시
@@ -162,18 +189,6 @@ const Sidebar = () => {
     }
 
     navigate(targetPath);
-
-    /* 원래 코드 (나중에 복구용 - 주석 처리)
-    if (isStepDisabled(step)) {
-      return;
-    }
-
-    if (step.path) {
-      navigate(step.path);
-    } else {
-      alert('먼저 세션을 생성해주세요. (Step 1)');
-    }
-    */
   };
 
   const handleConfirmStep1 = () => {
@@ -217,7 +232,7 @@ const Sidebar = () => {
             const Icon = getStepIcon(step);
             const isActive = isStepActive(step);
             const isDisabled = isStepDisabled(step);
-            const isCompleted = isStepCompleted(step);
+            const completed = isStepCompleted(step);
 
             return (
               <button
@@ -254,7 +269,7 @@ const Sidebar = () => {
                     )}>
                       {step.name}
                     </p>
-                    {isCompleted && (
+                    {completed && (
                       <CheckCircle2 className="w-4 h-4 text-green-500" />
                     )}
                     {isDisabled && (

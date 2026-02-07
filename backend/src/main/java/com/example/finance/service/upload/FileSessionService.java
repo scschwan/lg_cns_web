@@ -642,6 +642,12 @@ public class FileSessionService {
      * @param step 현재 진입한 step
      */
     public void updateStepHistory(String sessionId, ProcessStep step) {
+        // Step 7 (Detail Clustering)는 step history에 기록하지 않음
+        if (step == ProcessStep.DETAIL_CLUSTERING) {
+            log.info("Detail Clustering(Step 7)은 step history에 기록하지 않음: sessionId={}", sessionId);
+            return;
+        }
+
         FileSession fileSession = fileSessionRepository.findBySessionId(sessionId)
                 .orElseThrow(() -> new RuntimeException("세션을 찾을 수 없습니다"));
 
