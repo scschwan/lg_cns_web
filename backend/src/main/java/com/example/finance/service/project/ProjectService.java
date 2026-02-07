@@ -11,6 +11,9 @@ import com.example.finance.model.auth.User;
 import com.example.finance.repository.session.FileSessionRepository;
 import com.example.finance.repository.project.ProjectRepository;
 import com.example.finance.repository.auth.UserRepository;
+import com.example.finance.repository.upload.UploadSessionRepository;
+import com.example.finance.service.upload.FileSessionService;
+import com.example.finance.service.common.S3Service;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -38,6 +41,9 @@ public class ProjectService {
     private final UserRepository userRepository;
     private final FileSessionRepository fileSessionRepository;
     private final com.example.finance.repository.data.SessionDataRepository sessionDataRepository;
+    private final UploadSessionRepository uploadSessionRepository;
+    private final FileSessionService fileSessionService;
+    private final S3Service s3Service;
 
     /**
      * 프로젝트 생성
@@ -395,14 +401,15 @@ public class ProjectService {
     }
 
     /**
-     * 프로젝트 삭제 (소프트 삭제)
+     * 프로젝트 삭제 (소프트 삭제 + 전체 cascade)
+     * 프로젝트 내 모든 세션, 파일, 관련 데이터를 일괄 삭제
      *
      * @param projectId 프로젝트 ID
      * @param userId 요청한 사용자 ID
      */
     @Transactional
     public void deleteProject(String projectId, String userId) {
-        log.info("프로젝트 삭제: projectId={}", projectId);
+        log.info("프로젝트 삭제 시작: projectId={}", projectId);
 
         Project project = projectRepository.findByProjectId(projectId)
                 .orElseThrow(() -> new ProjectNotFoundException("프로젝트를 찾을 수 없습니다"));
@@ -415,6 +422,41 @@ public class ProjectService {
             throw new RuntimeException("프로젝트를 삭제할 권한이 없습니다");
         }
 
+        // ★ 프로젝트 내 모든 세션에 대해 cascade 삭제 수행
+        List<com.example.finance.model.session.FileSession> allSessions =
+                fileSessionRepository.findByProjectId(projectId);
+
+        log.info("프로젝트 내 세션 {}개 cascade 삭제 시작", allSessions.size());
+
+        for (com.example.finance.model.session.FileSession session : allSessions) {
+            try {
+                // 세션 관련 모든 컬렉션 데이터 삭제
+                fileSessionService.cascadeDeleteSessionData(session.getSessionId(), projectId);
+                // FileSession 문서 삭제
+                fileSessionRepository.delete(session);
+                log.info("세션 삭제 완료: sessionId={}", session.getSessionId());
+            } catch (Exception e) {
+                log.error("세션 삭제 실패 (계속 진행): sessionId={}", session.getSessionId(), e);
+            }
+        }
+
+        // ★ 프로젝트 단위 upload_sessions 삭제 (혹시 남아있는 것)
+        try {
+            uploadSessionRepository.deleteByProjectId(projectId);
+            log.info("프로젝트 upload_sessions 일괄 삭제 완료");
+        } catch (Exception e) {
+            log.warn("프로젝트 upload_sessions 일괄 삭제 실패 (계속 진행)", e);
+        }
+
+        // ★ S3 프로젝트 폴더 전체 삭제
+        try {
+            String s3Prefix = String.format("projects/%s/", projectId);
+            s3Service.deleteFolder(s3Prefix);
+            log.info("S3 프로젝트 폴더 삭제 완료: prefix={}", s3Prefix);
+        } catch (Exception e) {
+            log.warn("S3 프로젝트 폴더 삭제 실패 (계속 진행)", e);
+        }
+
         // 소프트 삭제
         project.setIsDeleted(true);
         project.setDeletedAt(LocalDateTime.now());
@@ -422,12 +464,12 @@ public class ProjectService {
 
         projectRepository.save(project);
 
-        log.info("프로젝트 삭제 완료");
+        log.info("프로젝트 삭제 완료: projectId={}, 삭제된 세션 {}개", projectId, allSessions.size());
     }
 
     /**
      * 프로젝트 완료 처리
-     * - 미완료 세션의 session_data 삭제 + 세션 삭제
+     * - 미완료 세션의 모든 관련 데이터 cascade 삭제 + 세션 삭제
      * - 프로젝트 is_completed = true
      */
     @Transactional
@@ -440,10 +482,15 @@ public class ProjectService {
 
         for (var session : allSessions) {
             if (!Boolean.TRUE.equals(session.getIsCompleted())) {
-                // 미완료 세션: session_data 삭제 + 세션 삭제
-                sessionDataRepository.deleteBySessionId(session.getSessionId());
-                fileSessionRepository.delete(session);
-                deletedCount++;
+                // ★ 미완료 세션: 전체 cascade 삭제
+                try {
+                    fileSessionService.cascadeDeleteSessionData(session.getSessionId(), projectId);
+                    fileSessionRepository.delete(session);
+                    deletedCount++;
+                    log.info("미완료 세션 cascade 삭제 완료: sessionId={}", session.getSessionId());
+                } catch (Exception e) {
+                    log.error("미완료 세션 삭제 실패 (계속 진행): sessionId={}", session.getSessionId(), e);
+                }
             }
         }
 

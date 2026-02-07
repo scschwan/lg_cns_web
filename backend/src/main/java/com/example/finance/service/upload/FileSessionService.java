@@ -19,9 +19,11 @@ import com.example.finance.repository.data.ProcessViewDataRepository;
 import com.example.finance.repository.data.ProcessDataRepository;
 import com.example.finance.repository.data.RawDataRepository;
 import com.example.finance.repository.data.SessionDataRepository;
+import com.example.finance.repository.data.SearchKeywordHierarchyRepository;
 import com.example.finance.repository.project.ProjectRepository;
 import com.example.finance.repository.session.FileSessionRepository;
 import com.example.finance.repository.upload.UploadSessionRepository;
+import com.example.finance.service.common.S3Service;
 import com.example.finance.service.data.SessionDataService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
@@ -66,6 +68,8 @@ public class FileSessionService {
     private final ProcessViewDataRepository processViewDataRepository;
     private final SessionDataRepository sessionDataRepository;
     private final SessionDataService sessionDataService;
+    private final SearchKeywordHierarchyRepository searchKeywordHierarchyRepository;
+    private final S3Service s3Service;
 
     // 클래스 상단에 추가
     private final MongoTemplate mongoTemplate;
@@ -719,7 +723,24 @@ public class FileSessionService {
         sessionDataService.deleteProcessData(sessionId);
         preprocessingConfigRepository.deleteBySessionId(sessionId);
         processViewDataRepository.deleteBySessionId(sessionId);
-        log.info("session_data + column_mapping + process_data + preprocessing_config + process_view_data 삭제 완료: sessionId={}", sessionId);
+
+        // 3-2. search_keyword_hierarchy 삭제
+        try {
+            searchKeywordHierarchyRepository.deleteBySessionId(sessionId);
+            log.info("search_keyword_hierarchy 삭제 완료: sessionId={}", sessionId);
+        } catch (Exception e) {
+            log.warn("search_keyword_hierarchy 삭제 실패 (계속 진행): sessionId={}", sessionId, e);
+        }
+
+        // 3-3. upload_sessions 삭제
+        try {
+            uploadSessionRepository.deleteBySessionId(sessionId);
+            log.info("upload_sessions 삭제 완료: sessionId={}", sessionId);
+        } catch (Exception e) {
+            log.warn("upload_sessions 삭제 실패 (계속 진행): sessionId={}", sessionId, e);
+        }
+
+        log.info("session_data + column_mapping + process_data + preprocessing_config + process_view_data + search_keyword_hierarchy + upload_sessions 삭제 완료: sessionId={}", sessionId);
 
         // 4. 세션 상태 초기화
         fileSession.setCurrentStep(null);
@@ -736,7 +757,95 @@ public class FileSessionService {
     }
 
     /**
-     * 세션 삭제 (소프트 삭제)
+     * 세션 관련 모든 데이터 일괄 삭제 (cascade)
+     * raw_data, session_data, column_mapping, process_data, clustering_results,
+     * search_keyword_hierarchy, preprocessing_config, process_view_data, upload_sessions, S3 파일
+     */
+    public void cascadeDeleteSessionData(String sessionId, String projectId) {
+        log.info("세션 데이터 일괄 삭제 시작: sessionId={}, projectId={}", sessionId, projectId);
+
+        // 1. raw_data 삭제
+        try {
+            rawDataRepository.deleteByProjectIdAndSessionId(projectId, sessionId);
+            log.info("raw_data 삭제 완료: sessionId={}", sessionId);
+        } catch (Exception e) {
+            log.warn("raw_data 삭제 실패 (계속 진행): sessionId={}", sessionId, e);
+        }
+
+        // 2. session_data 삭제
+        try {
+            sessionDataService.deleteSessionData(sessionId);
+        } catch (Exception e) {
+            log.warn("session_data 삭제 실패 (계속 진행): sessionId={}", sessionId, e);
+        }
+
+        // 3. column_mapping 삭제
+        try {
+            sessionDataService.deleteColumnMappings(sessionId);
+        } catch (Exception e) {
+            log.warn("column_mapping 삭제 실패 (계속 진행): sessionId={}", sessionId, e);
+        }
+
+        // 4. process_data 삭제
+        try {
+            sessionDataService.deleteProcessData(sessionId);
+            processDataRepository.deleteByProjectIdAndSessionId(projectId, sessionId);
+        } catch (Exception e) {
+            log.warn("process_data 삭제 실패 (계속 진행): sessionId={}", sessionId, e);
+        }
+
+        // 5. clustering_results 삭제
+        try {
+            clusteringResultRepository.deleteBySessionId(sessionId);
+            log.info("clustering_results 삭제 완료: sessionId={}", sessionId);
+        } catch (Exception e) {
+            log.warn("clustering_results 삭제 실패 (계속 진행): sessionId={}", sessionId, e);
+        }
+
+        // 6. search_keyword_hierarchy 삭제
+        try {
+            searchKeywordHierarchyRepository.deleteBySessionId(sessionId);
+            log.info("search_keyword_hierarchy 삭제 완료: sessionId={}", sessionId);
+        } catch (Exception e) {
+            log.warn("search_keyword_hierarchy 삭제 실패 (계속 진행): sessionId={}", sessionId, e);
+        }
+
+        // 7. preprocessing_config 삭제
+        try {
+            preprocessingConfigRepository.deleteBySessionId(sessionId);
+        } catch (Exception e) {
+            log.warn("preprocessing_config 삭제 실패 (계속 진행): sessionId={}", sessionId, e);
+        }
+
+        // 8. process_view_data 삭제
+        try {
+            processViewDataRepository.deleteBySessionId(sessionId);
+        } catch (Exception e) {
+            log.warn("process_view_data 삭제 실패 (계속 진행): sessionId={}", sessionId, e);
+        }
+
+        // 9. upload_sessions 삭제
+        try {
+            uploadSessionRepository.deleteBySessionId(sessionId);
+            log.info("upload_sessions 삭제 완료: sessionId={}", sessionId);
+        } catch (Exception e) {
+            log.warn("upload_sessions 삭제 실패 (계속 진행): sessionId={}", sessionId, e);
+        }
+
+        // 10. S3 세션 폴더 삭제
+        try {
+            String s3Prefix = String.format("projects/%s/sessions/%s/", projectId, sessionId);
+            s3Service.deleteFolder(s3Prefix);
+            log.info("S3 세션 폴더 삭제 완료: prefix={}", s3Prefix);
+        } catch (Exception e) {
+            log.warn("S3 세션 폴더 삭제 실패 (계속 진행): sessionId={}", sessionId, e);
+        }
+
+        log.info("세션 데이터 일괄 삭제 완료: sessionId={}", sessionId);
+    }
+
+    /**
+     * 세션 삭제 (하드 삭제 + 전체 cascade)
      *
      * @param sessionId 세션 ID
      * @param userId 사용자 ID
@@ -759,13 +868,8 @@ public class FileSessionService {
             throw new RuntimeException("세션을 삭제할 권한이 없습니다");
         }
 
-        // session_data 삭제
-        sessionDataService.deleteSessionData(sessionId);
-        sessionDataService.deleteColumnMappings(sessionId);
-        sessionDataService.deleteProcessData(sessionId);
-        preprocessingConfigRepository.deleteBySessionId(sessionId);
-        processViewDataRepository.deleteBySessionId(sessionId);
-        log.info("session_data + column_mapping + process_data + preprocessing_config + process_view_data 삭제 완료: sessionId={}", sessionId);
+        // ★ 전체 cascade 삭제
+        cascadeDeleteSessionData(sessionId, fileSession.getProjectId());
 
         // 완전 삭제
         fileSessionRepository.delete(fileSession);
@@ -774,7 +878,7 @@ public class FileSessionService {
         project.setUpdatedAt(LocalDateTime.now());
         projectRepository.save(project);
 
-        log.info("세션 삭제 완료");
+        log.info("세션 삭제 완료: sessionId={}", sessionId);
     }
 
     /**
@@ -1202,12 +1306,8 @@ public class FileSessionService {
                 throw new BusinessException("FORBIDDEN", "프로젝트 세션이 아닙니다");
             }
 
-            // session_data + column_mapping + process_data + preprocessing_config + process_view_data 삭제
-            sessionDataService.deleteSessionData(sessionId);
-            sessionDataService.deleteColumnMappings(sessionId);
-            sessionDataService.deleteProcessData(sessionId);
-            preprocessingConfigRepository.deleteBySessionId(sessionId);
-            processViewDataRepository.deleteBySessionId(sessionId);
+            // ★ 전체 cascade 삭제
+            cascadeDeleteSessionData(sessionId, projectId);
 
             // 완전 삭제
             fileSessionRepository.delete(session);

@@ -97,6 +97,10 @@ function MultiFileUploadPage() {
 
     const [isProcessing, setIsProcessing] = useState(false);
 
+    // 파일 업로드 진행률 상태 (uploadId → progress%)
+    const [uploadProgress, setUploadProgress] = useState({});
+    const pollingRef = useRef(null);
+
     // 프로젝트 완료
     const [completeDialogOpen, setCompleteDialogOpen] = useState(false);
 
@@ -148,6 +152,74 @@ function MultiFileUploadPage() {
             console.error('세션 로드 실패:', error);
         }
     };
+
+    /**
+     * s3Key에서 uploadId 추출
+     * 형식: projects/{projectId}/sessions/{sessionId}/uploads/{uploadId}/{fileName}
+     */
+    const extractUploadId = (s3Key) => {
+        if (!s3Key) return null;
+        const parts = s3Key.split('/');
+        const uploadsIndex = parts.indexOf('uploads');
+        if (uploadsIndex >= 0 && uploadsIndex + 1 < parts.length) {
+            return parts[uploadsIndex + 1];
+        }
+        return null;
+    };
+
+    /**
+     * 업로드 중인 파일들의 진행률 폴링
+     */
+    useEffect(() => {
+        const processingFiles = files.filter(
+            f => f.uploadStatus === 'PROCESSING' ||
+                 ((!f.detectedColumns || f.detectedColumns.length === 0) && (!f.rowCount || f.rowCount === 0))
+        );
+
+        if (processingFiles.length === 0) {
+            if (pollingRef.current) {
+                clearInterval(pollingRef.current);
+                pollingRef.current = null;
+            }
+            return;
+        }
+
+        // 5초 간격으로 진행률 폴링
+        pollingRef.current = setInterval(async () => {
+            let hasChanges = false;
+            const newProgress = { ...uploadProgress };
+
+            for (const file of processingFiles) {
+                const uploadId = extractUploadId(file.s3Key);
+                if (!uploadId) continue;
+
+                try {
+                    const status = await uploadService.getUploadStatus(projectId, uploadId);
+                    newProgress[uploadId] = status.progress || 0;
+
+                    if (status.status === 'COMPLETED' || status.status === 'FAILED') {
+                        hasChanges = true;
+                    }
+                } catch (e) {
+                    // 상태 조회 실패 시 무시
+                }
+            }
+
+            setUploadProgress(newProgress);
+
+            // 완료된 파일이 있으면 파일 목록 새로고침
+            if (hasChanges) {
+                loadFiles();
+            }
+        }, 5000);
+
+        return () => {
+            if (pollingRef.current) {
+                clearInterval(pollingRef.current);
+                pollingRef.current = null;
+            }
+        };
+    }, [files.map(f => f.fileId + (f.uploadStatus || '') + (f.detectedColumns?.length || 0)).join(',')]);
 
    const handleFileUpload = async (event) => {
        if (!event.target.files || event.target.files.length === 0) {
@@ -766,38 +838,66 @@ function MultiFileUploadPage() {
                                                             {file.rowCount?.toLocaleString() || '0'}
                                                         </TableCell>
                                                         <TableCell>
-                                                            <Select
-                                                                value={file.accountColumnName || ''}
-                                                                onValueChange={(value) =>
-                                                                    handleColumnSelect(file.fileId, 'accountColumnName', value)
-                                                                }
-                                                            >
-                                                                <SelectTrigger className="h-8">
-                                                                    <SelectValue placeholder="선택..." />
-                                                                </SelectTrigger>
-                                                                <SelectContent>
-                                                                    {file.detectedColumns?.map((col) => (
-                                                                        <SelectItem key={col} value={col}>{col}</SelectItem>
-                                                                    ))}
-                                                                </SelectContent>
-                                                            </Select>
+                                                            {(file.uploadStatus === 'PROCESSING' || (!file.detectedColumns?.length && !file.rowCount)) ? (
+                                                                <div className="flex items-center gap-2 text-sm text-amber-600">
+                                                                    <Loader2 className="h-4 w-4 animate-spin" />
+                                                                    <span>
+                                                                        데이터 업로드 중
+                                                                        {(() => {
+                                                                            const uid = extractUploadId(file.s3Key);
+                                                                            const progress = uid && uploadProgress[uid];
+                                                                            return progress > 0 ? ` (${progress}%)` : '';
+                                                                        })()}
+                                                                    </span>
+                                                                </div>
+                                                            ) : (
+                                                                <Select
+                                                                    value={file.accountColumnName || ''}
+                                                                    onValueChange={(value) =>
+                                                                        handleColumnSelect(file.fileId, 'accountColumnName', value)
+                                                                    }
+                                                                >
+                                                                    <SelectTrigger className="h-8">
+                                                                        <SelectValue placeholder="선택..." />
+                                                                    </SelectTrigger>
+                                                                    <SelectContent>
+                                                                        {file.detectedColumns?.map((col) => (
+                                                                            <SelectItem key={col} value={col}>{col}</SelectItem>
+                                                                        ))}
+                                                                    </SelectContent>
+                                                                </Select>
+                                                            )}
                                                         </TableCell>
                                                         <TableCell>
-                                                            <Select
-                                                                value={file.amountColumnName || ''}
-                                                                onValueChange={(value) =>
-                                                                    handleColumnSelect(file.fileId, 'amountColumnName', value)
-                                                                }
-                                                            >
-                                                                <SelectTrigger className="h-8">
-                                                                    <SelectValue placeholder="선택..." />
-                                                                </SelectTrigger>
-                                                                <SelectContent>
-                                                                    {file.detectedColumns?.map((col) => (
-                                                                        <SelectItem key={col} value={col}>{col}</SelectItem>
-                                                                    ))}
-                                                                </SelectContent>
-                                                            </Select>
+                                                            {(file.uploadStatus === 'PROCESSING' || (!file.detectedColumns?.length && !file.rowCount)) ? (
+                                                                <div className="flex items-center gap-2 text-sm text-amber-600">
+                                                                    <Loader2 className="h-4 w-4 animate-spin" />
+                                                                    <span>
+                                                                        데이터 업로드 중
+                                                                        {(() => {
+                                                                            const uid = extractUploadId(file.s3Key);
+                                                                            const progress = uid && uploadProgress[uid];
+                                                                            return progress > 0 ? ` (${progress}%)` : '';
+                                                                        })()}
+                                                                    </span>
+                                                                </div>
+                                                            ) : (
+                                                                <Select
+                                                                    value={file.amountColumnName || ''}
+                                                                    onValueChange={(value) =>
+                                                                        handleColumnSelect(file.fileId, 'amountColumnName', value)
+                                                                    }
+                                                                >
+                                                                    <SelectTrigger className="h-8">
+                                                                        <SelectValue placeholder="선택..." />
+                                                                    </SelectTrigger>
+                                                                    <SelectContent>
+                                                                        {file.detectedColumns?.map((col) => (
+                                                                            <SelectItem key={col} value={col}>{col}</SelectItem>
+                                                                        ))}
+                                                                    </SelectContent>
+                                                                </Select>
+                                                            )}
                                                         </TableCell>
                                                         <TableCell>
                                                             {file.accountContents?.length > 0 ? (
