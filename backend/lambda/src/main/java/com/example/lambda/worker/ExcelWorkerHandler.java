@@ -42,9 +42,10 @@ public class ExcelWorkerHandler implements RequestHandler<SQSEvent, String> {
             ? System.getenv("AWS_REGION")
             : "ap-northeast-2";
 
-    // ⭐ Apache POI 메모리 제한 해제 (static 초기화)
+    // ⭐ Apache POI 메모리 제한 해제 + 한국 시간대 설정 (static 초기화)
     static {
         IOUtils.setByteArrayMaxOverride(Integer.MAX_VALUE);
+        java.util.TimeZone.setDefault(java.util.TimeZone.getTimeZone("Asia/Seoul"));
     }
 
     private final S3Client s3Client;

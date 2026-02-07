@@ -27,6 +27,11 @@ import java.util.*;
  */
 public class AccountAnalysisHandler implements RequestHandler<SQSEvent, String> {
 
+    // ★ 한국 시간대(KST) 설정
+    static {
+        java.util.TimeZone.setDefault(java.util.TimeZone.getTimeZone("Asia/Seoul"));
+    }
+
     private static final int BATCH_SIZE = 10_000;
     private static final int CURSOR_BATCH_SIZE = 5_000;
     private static final String ANALYSIS_STATUS_PREFIX = "analysis:status:";

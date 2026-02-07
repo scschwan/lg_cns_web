@@ -29,6 +29,11 @@ import java.util.zip.ZipInputStream;
  */
 public class ExcelCoordinatorHandler implements RequestHandler<S3Event, String> {
 
+    // ★ 한국 시간대(KST) 설정
+    static {
+        java.util.TimeZone.setDefault(java.util.TimeZone.getTimeZone("Asia/Seoul"));
+    }
+
     //private static final int CHUNK_SIZE = 100000; // 10만 행씩 분할
     private static final int CHUNK_SIZE = 2000; // 10만 행씩 분할
     private static final String SQS_QUEUE_URL = System.getenv("SQS_QUEUE_URL");
