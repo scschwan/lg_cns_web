@@ -11,18 +11,21 @@ import com.example.finance.model.session.UploadedFileInfo;
 import com.example.finance.model.upload.UploadSession;
 import com.example.finance.repository.session.FileSessionRepository;
 import com.example.finance.repository.upload.UploadSessionRepository;
-import com.example.finance.service.common.ExcelParserService;
 import com.example.finance.service.common.S3Service;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.poi.ss.usermodel.*;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.bson.types.ObjectId;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.redis.core.HashOperations;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import software.amazon.awssdk.services.sqs.SqsClient;
+import software.amazon.awssdk.services.sqs.model.SendMessageRequest;
 
 import java.io.ByteArrayInputStream;
 import java.io.File;
@@ -59,8 +62,14 @@ public class UploadService {
     private final FileSessionRepository fileSessionRepository;
     private final FileAnalysisService fileAnalysisService; // 주입 필요
     private final S3Service s3Service;
-    private final ExcelParserService excelParserService;
-    private final MongoTemplate mongoTemplate;  // ← 추가
+    private final SqsClient sqsClient;
+    private final MongoTemplate mongoTemplate;
+
+    @Value("${aws.sqs.excel-queue-url}")
+    private String sqsQueueUrl;
+
+    private static final int CHUNK_SIZE = 50000; // Worker Lambda 청크 크기
+
     // ★ 클래스 필드에 전용 스레드풀 추가
     private final ExecutorService metadataExecutor = Executors.newFixedThreadPool(2,
             r -> {
@@ -284,10 +293,18 @@ public class UploadService {
         fileSession.setUpdatedAt(LocalDateTime.now());
         fileSessionRepository.save(fileSession);
 
-        // 대용량만 비동기 처리
+        // 대용량만 비동기 처리: SQS로 Worker Lambda 직접 트리거
         if (!metadataReady) {
-            metadataExecutor.submit(() -> updateFileMetadataAsync(
-                    fileSession.getSessionId(), fileId, request.getS3Key()));
+            final String s3Key = request.getS3Key();
+            final Long fileSize = request.getFileSize();
+            final String fileName = request.getFileName();
+            metadataExecutor.submit(() -> {
+                // 1. SQS로 Worker Lambda 트리거
+                triggerWorkerLambda(projectId, fileSession.getSessionId(), uploadId,
+                        "finance-excel-uploads", s3Key, fileName, fileSize);
+                // 2. Lambda 완료 대기 후 메타데이터 업데이트
+                updateFileMetadataAsync(fileSession.getSessionId(), fileId, s3Key);
+            });
         }
 
         log.info("파일 업로드 완료: fileId={}, metadataReady={}, rowCount={}",
@@ -307,12 +324,72 @@ public class UploadService {
 
 
     /**
+     * ★ Backend SQS Coordinator: Worker Lambda 직접 트리거
+     *
+     * S3 Event Notification에 의존하지 않고 백엔드에서 직접 ProcessingMessage를
+     * SQS로 전송하여 ExcelWorker Lambda를 트리거함.
+     *
+     * - 행 수 추정: fileSize / 100 (보수적 추정, 빈 청크는 무해)
+     * - ProcessingMessage 포맷으로 전송 (ExcelWorkerHandler 호환)
+     */
+    private void triggerWorkerLambda(String projectId, String sessionId, String uploadId,
+                                     String s3Bucket, String s3Key, String fileName, Long fileSize) {
+        try {
+            // 행 수 추정 (보수적: 100바이트당 1행)
+            int estimatedRows = (int) Math.max(fileSize / 100, 1000);
+            int totalChunks = (int) Math.ceil((double) estimatedRows / CHUNK_SIZE);
+
+            log.info("★ Worker Lambda 트리거: uploadId={}, fileSize={}, estimatedRows={}, chunks={}",
+                    uploadId, fileSize, estimatedRows, totalChunks);
+
+            ObjectMapper mapper = new ObjectMapper();
+
+            for (int i = 0; i < totalChunks; i++) {
+                int startRow = i * CHUNK_SIZE + 2; // 1-based, 헤더(1행) 제외
+                int endRow = Math.min((i + 1) * CHUNK_SIZE + 1, estimatedRows + 1);
+
+                // ProcessingMessage 포맷 (ExcelWorkerHandler 호환)
+                Map<String, Object> message = new LinkedHashMap<>();
+                message.put("projectId", projectId);
+                message.put("sessionId", sessionId);
+                message.put("uploadId", uploadId);
+                message.put("s3Bucket", s3Bucket);
+                message.put("s3Key", s3Key);
+                message.put("fileName", fileName);
+                message.put("startRow", startRow);
+                message.put("endRow", endRow);
+                message.put("totalRows", estimatedRows);
+                message.put("chunkNumber", i + 1);
+                message.put("totalChunks", totalChunks);
+                message.put("isFirstChunk", i == 0);
+
+                String messageBody = mapper.writeValueAsString(message);
+
+                SendMessageRequest sqsRequest = SendMessageRequest.builder()
+                        .queueUrl(sqsQueueUrl)
+                        .messageBody(messageBody)
+                        .build();
+
+                sqsClient.sendMessage(sqsRequest);
+
+                log.info("SQS 메시지 발행: chunk={}/{}, rows={}~{}{}",
+                        i + 1, totalChunks, startRow, endRow,
+                        i == 0 ? " (첫 청크 - Redis 초기화)" : "");
+            }
+
+            log.info("★ Worker Lambda 트리거 완료: uploadId={}, {} chunks 발행", uploadId, totalChunks);
+
+        } catch (Exception e) {
+            log.error("★ Worker Lambda 트리거 실패: uploadId={}", uploadId, e);
+        }
+    }
+
+    /**
      * 비동기 메타데이터 업데이트 (전용 스레드풀에서 실행)
      *
-     * ★ 3단계 전략:
-     *   Phase 1: Lambda 처리 대기 (최대 2분) - Redis 상태 확인
-     *   Phase 2: Lambda 실패 시 → 백엔드 Fallback (ExcelParserService로 직접 파싱)
-     *   Phase 3: raw_data 완료 확인 후 FileSession 메타데이터 업데이트
+     * ★ 2단계 전략:
+     *   Phase 1: Lambda 처리 대기 (최대 10분) - Redis 상태 확인
+     *   Phase 2: raw_data 완료 확인 후 FileSession 메타데이터 업데이트
      */
     private void updateFileMetadataAsync(String sessionId, String fileId, String s3Key) {
         String uploadId = extractUploadIdFromS3Key(s3Key);
@@ -321,10 +398,9 @@ public class UploadService {
         try {
             String statusKey = UPLOAD_STATUS_KEY_PREFIX + uploadId;
 
-            // ━━━ Phase 1: Lambda 처리 대기 (최대 2분) ━━━
+            // ━━━ Phase 1: Lambda 처리 대기 (최대 10분) ━━━
             boolean uploadCompleted = false;
-            boolean lambdaStarted = false;
-            for (int retry = 0; retry < 24; retry++) { // 5초 * 24 = 2분
+            for (int retry = 0; retry < 120; retry++) { // 5초 * 120 = 10분
                 try {
                     Object statusObj = redisTemplate.opsForHash().get(statusKey, "status");
                     String status = statusObj != null ? statusObj.toString() : "PENDING";
@@ -335,16 +411,14 @@ public class UploadService {
                         break;
                     } else if ("FAILED".equals(status)) {
                         log.error("Lambda 업로드 실패: uploadId={}", uploadId);
-                        break; // fallback으로 진행
-                    } else if ("PROCESSING".equals(status)) {
-                        lambdaStarted = true;
+                        break;
                     }
 
-                    if (retry % 6 == 0) {
+                    if (retry % 12 == 0) { // 1분마다 로그
                         Object progressObj = redisTemplate.opsForHash().get(statusKey, "progress");
                         String progress = progressObj != null ? progressObj.toString() : "0";
-                        log.info("Lambda 대기 중: uploadId={}, status={}, progress={}%, retry={}",
-                                uploadId, status, progress, retry);
+                        log.info("Lambda 대기 중: uploadId={}, status={}, progress={}%, elapsed={}분",
+                                uploadId, status, progress, retry * 5 / 60);
                     }
                 } catch (Exception e) {
                     log.warn("Redis 상태 조회 실패 (재시도): uploadId={}", uploadId);
@@ -353,51 +427,12 @@ public class UploadService {
                 Thread.sleep(5000);
             }
 
-            // Lambda가 아직 처리 중이면 추가 대기 (최대 8분 더)
-            if (lambdaStarted && !uploadCompleted) {
-                log.info("Lambda 처리 진행 중, 추가 대기: uploadId={}", uploadId);
-                for (int retry = 0; retry < 96; retry++) { // 5초 * 96 = 8분
-                    try {
-                        Object statusObj = redisTemplate.opsForHash().get(statusKey, "status");
-                        String status = statusObj != null ? statusObj.toString() : "PENDING";
-
-                        if ("COMPLETED".equals(status)) {
-                            uploadCompleted = true;
-                            log.info("Lambda 업로드 완료 (추가 대기 후): uploadId={}", uploadId);
-                            break;
-                        } else if ("FAILED".equals(status)) {
-                            break;
-                        }
-                    } catch (Exception ignored) {}
-                    Thread.sleep(5000);
-                }
-            }
-
-            // ━━━ Phase 2: Lambda 미처리 시 → 백엔드 Fallback ━━━
-            long rowCount = 0;
-            if (!uploadCompleted) {
-                // raw_data에 이미 데이터가 있는지 확인
-                rowCount = mongoTemplate.getCollection("raw_data")
-                        .countDocuments(new org.bson.Document("upload_id", uploadId));
-
-                if (rowCount == 0) {
-                    log.warn("★ Lambda 미처리 감지! 백엔드 Fallback 실행: uploadId={}", uploadId);
-                    try {
-                        excelParserService.parseExcel(uploadId);
-                        log.info("★ 백엔드 Fallback 완료: uploadId={}", uploadId);
-                    } catch (Exception e) {
-                        log.error("★ 백엔드 Fallback 실패: uploadId={}", uploadId, e);
-                        return;
-                    }
-                }
-            }
-
-            // ━━━ Phase 3: raw_data 확인 후 FileSession 메타데이터 업데이트 ━━━
-            rowCount = mongoTemplate.getCollection("raw_data")
+            // ━━━ Phase 2: raw_data 확인 후 FileSession 메타데이터 업데이트 ━━━
+            long rowCount = mongoTemplate.getCollection("raw_data")
                     .countDocuments(new org.bson.Document("upload_id", uploadId));
 
             if (rowCount == 0) {
-                log.warn("raw_data 비어있음 (Lambda + Fallback 모두 실패): uploadId={}", uploadId);
+                log.warn("raw_data 비어있음 (Lambda 처리 실패): uploadId={}", uploadId);
                 return;
             }
 

@@ -52,7 +52,7 @@ Write-Host "massage: $Message" -ForegroundColor Cyan
 Write-Host "========================================`n" -ForegroundColor Cyan
 
 # 1. Git Commit
-Write-Host "[1/12] Git Commit..." -ForegroundColor Yellow
+Write-Host "[1/14] Git Commit..." -ForegroundColor Yellow
 git add .
 git commit -m "deploy: v$newVersion - $Message"
 git push
@@ -65,32 +65,32 @@ if ($LASTEXITCODE -ne 0) {
 # ========================================
 
 # 2. JAR 빌드 (Spring Boot + Lambda 동시 빌드)
-Write-Host "`n[2/12] JAR Build (Spring Boot + Lambda)..." -ForegroundColor Yellow
+Write-Host "`n[2/14] JAR Build (Spring Boot + Lambda)..." -ForegroundColor Yellow
 .\gradlew clean build
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 # 3. Docker 빌드
-Write-Host "`n[3/12] Docker Image Build..." -ForegroundColor Yellow
+Write-Host "`n[3/14] Docker Image Build..." -ForegroundColor Yellow
 docker build -t ${IMAGE_NAME}:latest .
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 # 4. ECR 로그인
-Write-Host "`n[4/12] ECR Login..." -ForegroundColor Yellow
+Write-Host "`n[4/14] ECR Login..." -ForegroundColor Yellow
 aws ecr get-login-password --region $AWS_REGION | docker login --username AWS --password-stdin "${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com"
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 # 5. 이미지 태그
-Write-Host "`n[5/12] Create Docker Image Tag..." -ForegroundColor Yellow
+Write-Host "`n[5/14] Create Docker Image Tag..." -ForegroundColor Yellow
 $ECR_REPO = "${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${IMAGE_NAME}"
 docker tag ${IMAGE_NAME}:latest ${ECR_REPO}:v${newVersion}
 
 # 6. ECR 푸시
-Write-Host "`n[6/12] ECR Push..." -ForegroundColor Yellow
+Write-Host "`n[6/14] ECR Push..." -ForegroundColor Yellow
 docker push ${ECR_REPO}:v${newVersion}
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 # 7. Task Definition 새 Revision 등록
-Write-Host "`n[7/12] Task Definition new Revision insert..." -ForegroundColor Yellow
+Write-Host "`n[7/14] Task Definition new Revision insert..." -ForegroundColor Yellow
 
 if (Test-Path "task-def-template.json") {
     Write-Host "use template File: task-def-template.json" -ForegroundColor Cyan
@@ -139,7 +139,7 @@ if ($LASTEXITCODE -ne 0) {
 Remove-Item "task-def-temp.json" -ErrorAction SilentlyContinue
 
 # 8. ECS 서비스 업데이트
-Write-Host "`n[8/12] ECS Service Update..." -ForegroundColor Yellow
+Write-Host "`n[8/14] ECS Service Update..." -ForegroundColor Yellow
 aws ecs update-service `
     --cluster $CLUSTER `
     --service $SERVICE `
@@ -155,7 +155,7 @@ if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 # ========================================
 
 # 9. Lambda ZIP 파일 확인
-Write-Host "`n[9/12] Lambda ZIP Check..." -ForegroundColor Yellow
+Write-Host "`n[9/14] Lambda ZIP Check..." -ForegroundColor Yellow
 $LAMBDA_ZIP = "lambda\build\distributions\finance-lambda.zip"
 if (!(Test-Path $LAMBDA_ZIP)) {
     Write-Host "Lambda ZIP not Found: $LAMBDA_ZIP" -ForegroundColor Red
@@ -164,8 +164,8 @@ if (!(Test-Path $LAMBDA_ZIP)) {
     $zipSize = (Get-Item $LAMBDA_ZIP).Length / 1MB
     Write-Host "Lambda ZIP Find: $LAMBDA_ZIP ($([math]::Round($zipSize, 2)) MB)" -ForegroundColor Green
 
-    # 10. Lambda Coordinator 배포
-    Write-Host "`n[10/12] Lambda Coordinator Deploy..." -ForegroundColor Yellow
+    # 10. Lambda Coordinator 배포 (코드 + 구성)
+    Write-Host "`n[10/14] Lambda Coordinator Code Deploy..." -ForegroundColor Yellow
     try {
         aws lambda update-function-code `
             --function-name ExcelCoordinator `
@@ -174,7 +174,26 @@ if (!(Test-Path $LAMBDA_ZIP)) {
             --no-cli-pager
 
         if ($LASTEXITCODE -eq 0) {
-            Write-Host "✅ Coordinator Deploy Complete!" -ForegroundColor Green
+            Write-Host "✅ Coordinator Code Deploy Complete!" -ForegroundColor Green
+
+            # 코드 업데이트 완료 대기
+            Write-Host "Waiting for Coordinator update..." -ForegroundColor Gray
+            aws lambda wait function-updated `
+                --function-name ExcelCoordinator `
+                --region $AWS_REGION
+
+            # 구성 업데이트 (Memory: 512MB, Timeout: 120s)
+            Write-Host "`n[11/14] Lambda Coordinator Config Update..." -ForegroundColor Yellow
+            aws lambda update-function-configuration `
+                --function-name ExcelCoordinator `
+                --memory-size 512 `
+                --timeout 120 `
+                --region $AWS_REGION `
+                --no-cli-pager
+
+            if ($LASTEXITCODE -eq 0) {
+                Write-Host "✅ Coordinator Config Updated (512MB, 120s)" -ForegroundColor Green
+            }
         } else {
             Write-Host "⚠️ Coordinator Deploy Failed! (Check if Function exists)" -ForegroundColor Yellow
         }
@@ -182,8 +201,8 @@ if (!(Test-Path $LAMBDA_ZIP)) {
         Write-Host "⚠️ Coordinator Deploy Failed: $($_.Exception.Message)" -ForegroundColor Yellow
     }
 
-    # 11. Lambda Worker 배포
-    Write-Host "`n[11/12] Lambda Worker Deploy..." -ForegroundColor Yellow
+    # 12. Lambda Worker 배포 (코드 + 구성)
+    Write-Host "`n[12/14] Lambda Worker Code Deploy..." -ForegroundColor Yellow
     try {
         aws lambda update-function-code `
             --function-name ExcelWorker `
@@ -192,7 +211,26 @@ if (!(Test-Path $LAMBDA_ZIP)) {
             --no-cli-pager
 
         if ($LASTEXITCODE -eq 0) {
-            Write-Host "✅ Worker Deploy Complete!" -ForegroundColor Green
+            Write-Host "✅ Worker Code Deploy Complete!" -ForegroundColor Green
+
+            # 코드 업데이트 완료 대기
+            Write-Host "Waiting for Worker update..." -ForegroundColor Gray
+            aws lambda wait function-updated `
+                --function-name ExcelWorker `
+                --region $AWS_REGION
+
+            # 구성 업데이트 (Memory: 1024MB, Timeout: 900s = 15분)
+            Write-Host "`n[13/14] Lambda Worker Config Update..." -ForegroundColor Yellow
+            aws lambda update-function-configuration `
+                --function-name ExcelWorker `
+                --memory-size 1024 `
+                --timeout 900 `
+                --region $AWS_REGION `
+                --no-cli-pager
+
+            if ($LASTEXITCODE -eq 0) {
+                Write-Host "✅ Worker Config Updated (1024MB, 900s)" -ForegroundColor Green
+            }
         } else {
             Write-Host "⚠️ Worker Deploy Failed! (Check if Function exists)" -ForegroundColor Yellow
         }
@@ -205,7 +243,7 @@ if (!(Test-Path $LAMBDA_ZIP)) {
 # 배포 완료
 # ========================================
 
-# 12. 완료
+# 14. 완료
 Write-Host "`n========================================" -ForegroundColor Green
 Write-Host "Deploy Complete! v$newVersion" -ForegroundColor Green
 Write-Host "========================================" -ForegroundColor Green
