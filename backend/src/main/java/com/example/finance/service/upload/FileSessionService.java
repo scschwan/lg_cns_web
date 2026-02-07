@@ -34,10 +34,13 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import software.amazon.awssdk.services.s3.presigner.S3Presigner;
+import software.amazon.awssdk.services.s3.presigner.model.GetObjectPresignRequest;
+import software.amazon.awssdk.services.s3.presigner.model.PresignedGetObjectRequest;
 import software.amazon.awssdk.services.sqs.SqsClient;
 import software.amazon.awssdk.services.sqs.model.SendMessageRequest;
 
-
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.*;
 import java.util.concurrent.TimeUnit;
@@ -69,6 +72,11 @@ public class FileSessionService {
     private final ObjectMapper objectMapper;
     private final SqsClient sqsClient;
     private final StringRedisTemplate redisTemplate;
+    private final S3Presigner s3Presigner;
+
+    private static final String S3_BUCKET = System.getenv().getOrDefault(
+            "S3_BUCKET_NAME", "finance-excel-uploads"
+    );
 
     @Value("${aws.sqs.excel-queue-url}")
     private String sqsQueueUrl;
@@ -1307,13 +1315,17 @@ public class FileSessionService {
                 .orElseThrow(() -> new BusinessException(
                         "SESSION_NOT_FOUND", "세션을 찾을 수 없습니다: " + sessionId));
 
-        // 2. 권한 확인
-        if (!session.getCreatedBy().equals(userId)) {
+        // 2. 권한 확인 (프로젝트 멤버이면 다운로드 가능)
+        Project project = projectRepository.findByProjectId(session.getProjectId())
+                .orElseThrow(() -> new ProjectNotFoundException("프로젝트를 찾을 수 없습니다"));
+        boolean isMember = project.getMembers().stream()
+                .anyMatch(m -> m.getUserId().equals(userId));
+        if (!isMember) {
             throw new BusinessException("FORBIDDEN", "세션 접근 권한이 없습니다");
         }
 
         // 3. 완료 여부 확인
-        if (!session.getIsCompleted()) {
+        if (!Boolean.TRUE.equals(session.getIsCompleted())) {
             throw new BusinessException("SESSION_NOT_COMPLETED", "세션이 완료되지 않았습니다");
         }
 
@@ -1337,9 +1349,12 @@ public class FileSessionService {
      * @return Presigned URL
      */
     private String generateDownloadPresignedUrl(String s3Key) {
-        // TODO: S3Service.generateDownloadPresignedUrl() 호출
-        // 임시로 s3Key 반환
-        return "https://s3.amazonaws.com/" + s3Key;
+        GetObjectPresignRequest presignRequest = GetObjectPresignRequest.builder()
+                .signatureDuration(Duration.ofHours(24))
+                .getObjectRequest(req -> req.bucket(S3_BUCKET).key(s3Key))
+                .build();
+        PresignedGetObjectRequest presignedRequest = s3Presigner.presignGetObject(presignRequest);
+        return presignedRequest.url().toString();
     }
 
     /**
