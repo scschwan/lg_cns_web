@@ -23,6 +23,7 @@ import software.amazon.awssdk.services.s3.model.GetObjectResponse;
 import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.net.URLDecoder;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
@@ -147,11 +148,23 @@ public class ExcelWorkerHandler implements RequestHandler<SQSEvent, String> {
         Path tempFile = Files.createTempFile("excel-", ".xlsx");
 
         try {
-            context.getLogger().log("S3 다운로드: " + message.getS3Key());
+            // ★ S3 키 URL 디코딩 (S3 Event → Coordinator 경로에서 인코딩될 수 있음)
+            String s3Key = message.getS3Key();
+            try {
+                String decoded = URLDecoder.decode(s3Key, java.nio.charset.StandardCharsets.UTF_8);
+                if (!decoded.equals(s3Key)) {
+                    context.getLogger().log("S3 키 URL 디코딩: " + s3Key + " → " + decoded);
+                    s3Key = decoded;
+                }
+            } catch (Exception e) {
+                context.getLogger().log("URL 디코딩 스킵: " + e.getMessage());
+            }
+
+            context.getLogger().log("S3 다운로드: " + s3Key);
 
             GetObjectRequest getObjectRequest = GetObjectRequest.builder()
                     .bucket(message.getS3Bucket())
-                    .key(message.getS3Key())
+                    .key(s3Key)
                     .build();
 
             // S3 → 파일 다운로드
@@ -183,6 +196,17 @@ public class ExcelWorkerHandler implements RequestHandler<SQSEvent, String> {
                 // 4. MongoDB 준비
                 MongoDatabase database = MongoDBConfig.getDatabase();
                 MongoCollection<Document> collection = database.getCollection("raw_data");
+
+                // ★ 중복 방지: 이 청크 범위의 데이터가 이미 존재하면 스킵
+                long existingCount = collection.countDocuments(
+                        new Document("upload_id", message.getUploadId())
+                                .append("row_number", new Document("$gte", message.getStartRow() - 1)
+                                        .append("$lt", message.getEndRow())));
+                if (existingCount > 0) {
+                    context.getLogger().log("★ 중복 감지! 이미 " + existingCount +
+                            "건 존재 (chunk=" + message.getChunkNumber() + "), 스킵");
+                    return;
+                }
 
                 List<Document> batch = new ArrayList<>();
                 int processedCount = 0;
@@ -221,11 +245,12 @@ public class ExcelWorkerHandler implements RequestHandler<SQSEvent, String> {
                     // 배치 삽입
                     if (batch.size() >= BATCH_SIZE) {
                         collection.insertMany(batch);
-                        processedCount += batch.size();
+                        int batchCount = batch.size();
+                        processedCount += batchCount;
                         batch.clear();
 
-                        // Redis 진행률 업데이트
-                        updateProgress(message.getUploadId(), processedCount, message.getTotalRows(), context);
+                        // ★ Redis 진행률: delta(배치 건수)만 전송 (누적X)
+                        updateProgress(message.getUploadId(), batchCount, message.getTotalRows(), context);
 
                         context.getLogger().log("중간 저장: " + processedCount + "건 (행: " + currentRowIndex + ")");
                     }
@@ -236,8 +261,9 @@ public class ExcelWorkerHandler implements RequestHandler<SQSEvent, String> {
                 // 남은 데이터 삽입
                 if (!batch.isEmpty()) {
                     collection.insertMany(batch);
-                    processedCount += batch.size();
-                    updateProgress(message.getUploadId(), processedCount, message.getTotalRows(), context);
+                    int batchCount = batch.size();
+                    processedCount += batchCount;
+                    updateProgress(message.getUploadId(), batchCount, message.getTotalRows(), context);
                 }
 
                 context.getLogger().log("MongoDB 삽입 완료: " + processedCount + "건");
