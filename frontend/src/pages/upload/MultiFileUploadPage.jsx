@@ -15,6 +15,8 @@ import {
     FileText,
     DollarSign,
     User,
+    AlertCircle,
+    CheckCircle2,
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 
@@ -98,6 +100,14 @@ function MultiFileUploadPage() {
     // 프로젝트 완료
     const [completeDialogOpen, setCompleteDialogOpen] = useState(false);
 
+    // 메시지 다이얼로그 상태
+    const [msgDialog, setMsgDialog] = useState({ open: false, type: 'error', title: '', message: '' });
+    const showMessage = (type, title, message) => setMsgDialog({ open: true, type, title, message });
+    const showError = (title, message) => showMessage('error', title, message);
+    const showSuccess = (title, message) => showMessage('success', title, message);
+    // 백엔드 에러 응답에서 메시지 추출
+    const getErrorMsg = (error, fallback) => error?.response?.data?.message || error?.message || fallback;
+
     // 뷰어 권한 제한
     const myRole = project?.myRole || 'VIEWER';
     const isViewer = myRole === 'VIEWER';
@@ -141,7 +151,7 @@ function MultiFileUploadPage() {
 
    const handleFileUpload = async (event) => {
        if (!event.target.files || event.target.files.length === 0) {
-           alert('파일을 선택해주세요.');
+           showError('파일 선택 필요', '파일을 선택해주세요.');
            return;
        }
 
@@ -151,7 +161,7 @@ function MultiFileUploadPage() {
        );
 
        if (excelFiles.length === 0) {
-           alert('Excel 파일(.xlsx, .xls)을 선택해주세요.');
+           showError('파일 형식 오류', 'Excel 파일(.xlsx, .xls)을 선택해주세요.');
            return;
        }
 
@@ -189,12 +199,12 @@ function MultiFileUploadPage() {
            setTimeout(() => setProgressDialogOpen(false), 500);
 
            // 업로드 완료 후 파일 목록 새로고침
-           alert(`${excelFiles.length}개의 파일이 성공적으로 업로드되었습니다.`);
+           showSuccess('업로드 완료', `${excelFiles.length}개의 파일이 성공적으로 업로드되었습니다.`);
            loadFiles();
 
        } catch (error) {
            console.error('파일 업로드 실패:', error);
-           alert(`파일 업로드 중 오류가 발생했습니다: ${error.message}`);
+           showError('업로드 실패', getErrorMsg(error, '파일 업로드 중 오류가 발생했습니다.'));
            setProgressDialogOpen(false);
        }
    };
@@ -267,7 +277,7 @@ function MultiFileUploadPage() {
             );
         } catch (err) {
             console.error('컬럼 선택 실패:', err);
-            alert('컬럼 선택에 실패했습니다.');
+            showError('컬럼 설정 실패', getErrorMsg(error, '컬럼 선택에 실패했습니다.'));
         } finally {
             setIsProcessing(false);
         }
@@ -295,7 +305,7 @@ function MultiFileUploadPage() {
     const handleCreateSessions = async () => {
         const selectedFiles = files.filter(f => f.checked);
         if (selectedFiles.length === 0) {
-            alert("세션을 생성할 파일을 선택해주세요.");
+            showError('파일 선택 필요', '세션을 생성할 파일을 선택해주세요.');
             return;
         }
 
@@ -321,7 +331,7 @@ function MultiFileUploadPage() {
 
         } catch (error) {
             console.error("세션 분석 실패:", error);
-            alert("파일 분석 중 오류가 발생했습니다.");
+            showError('분석 실패', getErrorMsg(error, '파일 분석 중 오류가 발생했습니다.'));
         } finally {
             setIsProcessing(false);
         }
@@ -339,15 +349,15 @@ function MultiFileUploadPage() {
             );
 
             if (!createdSessions || createdSessions.length === 0) {
-                alert('생성된 세션이 없습니다.');
+                showError('세션 생성 실패', '생성된 세션이 없습니다.');
             } else {
                 setSessions((prev) => [...prev, ...createdSessions]);
                 setSelectedFiles([]);
-                alert(`${createdSessions.length}개의 세션이 생성되었습니다.`);
+                showSuccess('세션 생성 완료', `${createdSessions.length}개의 세션이 생성되었습니다.`);
             }
         } catch (error) {
             console.error('세션 생성 실패:', error);
-            alert('세션 생성 중 오류가 발생했습니다.');
+            showError('세션 생성 실패', getErrorMsg(error, '세션 생성 중 오류가 발생했습니다.'));
         } finally {
             setProgressDialogOpen(false);
         }
@@ -355,7 +365,7 @@ function MultiFileUploadPage() {
 
     const handleMergeSessions = async () => {
         if (selectedSessions.length < 2) {
-            alert('병합할 세션을 2개 이상 선택해주세요.');
+            showError('병합 불가', '병합할 세션을 2개 이상 선택해주세요.');
             return;
         }
 
@@ -381,17 +391,17 @@ function MultiFileUploadPage() {
             loadSessions();
             setSelectedSessions([]);
             setProgressDialogOpen(false);
-            alert('세션 병합이 완료되었습니다.');
+            showSuccess('병합 완료', '세션 병합이 완료되었습니다.');
         } catch (error) {
             console.error('세션 병합 실패:', error);
-            alert('세션 병합 중 오류가 발생했습니다.');
+            showError('병합 실패', getErrorMsg(error, '세션 병합 중 오류가 발생했습니다.'));
             setProgressDialogOpen(false);
         }
     };
 
     const handleDeleteSessions = async () => {
         if (selectedSessions.length === 0) {
-            alert('삭제할 세션을 선택해주세요.');
+            showError('선택 필요', '삭제할 세션을 선택해주세요.');
             return;
         }
 
@@ -405,10 +415,10 @@ function MultiFileUploadPage() {
             await uploadService.deleteSessions(projectId, selectedSessions);
             loadSessions();
             setSelectedSessions([]);
-            alert('세션이 삭제되었습니다.');
+            showSuccess('삭제 완료', '세션이 삭제되었습니다.');
         } catch (error) {
             console.error('세션 삭제 실패:', error);
-            alert('세션 삭제 중 오류가 발생했습니다.');
+            showError('삭제 실패', getErrorMsg(error, '세션 삭제 중 오류가 발생했습니다.'));
         }
     };
 
@@ -462,7 +472,7 @@ function MultiFileUploadPage() {
                // 세션 상세 조회하여 마지막 step 확인
                const sessionDetail = await uploadService.getSession(projectId, sessionId);
                const lastPath = getLastStepPath(sessionDetail);
-               alert(`기존 분석 데이터(${result.copiedCount}건)가 있습니다. 마지막 작업 단계로 이동합니다.`);
+               showSuccess('기존 분석 데이터', `기존 분석 데이터(${result.copiedCount}건)가 있습니다. 마지막 작업 단계로 이동합니다.`);
                navigate(`/projects/${projectId}/sessions/${sessionId}/${lastPath}`);
                return;
            }
@@ -492,7 +502,7 @@ function MultiFileUploadPage() {
 
                    if (status.status === 'FAILED') {
                        setProgressDialogOpen(false);
-                       alert(`분석 실패: ${status.error || '알 수 없는 오류'}`);
+                       showError('분석 실패', status.error || '알 수 없는 오류');
                        return;
                    }
 
@@ -509,12 +519,12 @@ function MultiFileUploadPage() {
 
            // 타임아웃
            setProgressDialogOpen(false);
-           alert('분석 처리 시간이 초과되었습니다. 잠시 후 다시 시도해주세요.');
+           showError('시간 초과', '분석 처리 시간이 초과되었습니다. 잠시 후 다시 시도해주세요.');
 
        } catch (error) {
            console.error('계정 분석 시작 실패:', error);
            setProgressDialogOpen(false);
-           alert('계정 분석 시작 중 오류가 발생했습니다.');
+           showError('분석 시작 실패', getErrorMsg(error, '계정 분석 시작 중 오류가 발생했습니다.'));
        }
    };
 
@@ -547,7 +557,7 @@ function MultiFileUploadPage() {
 
         } catch (error) {
             console.error('파일 삭제 실패:', error);
-            alert('파일 삭제 중 오류가 발생했습니다.');
+            showError('삭제 실패', getErrorMsg(error, '파일 삭제 중 오류가 발생했습니다.'));
         }
     };
 
@@ -557,7 +567,7 @@ function MultiFileUploadPage() {
             window.open(url, '_blank');
         } catch (error) {
             console.error('다운로드 실패:', error);
-            alert('다운로드 중 오류가 발생했습니다.');
+            showError('다운로드 실패', getErrorMsg(error, '다운로드 중 오류가 발생했습니다.'));
         }
     };
 
@@ -569,17 +579,17 @@ function MultiFileUploadPage() {
             await uploadService.deleteSessions(projectId, [sessionId]);
             loadSessions();
             setSelectedSessions(prev => prev.filter(id => id !== sessionId));
-            alert('세션이 삭제되었습니다.');
+            showSuccess('삭제 완료', '세션이 삭제되었습니다.');
         } catch (error) {
             console.error('세션 삭제 실패:', error);
-            alert('세션 삭제 중 오류가 발생했습니다.');
+            showError('삭제 실패', getErrorMsg(error, '세션 삭제 중 오류가 발생했습니다.'));
         }
     };
 
     const handleBulkDeleteFiles = async () => {
         const checkedFiles = files.filter(f => f.checked);
         if (checkedFiles.length === 0) {
-            alert('삭제할 파일을 선택해주세요.');
+            showError('선택 필요', '삭제할 파일을 선택해주세요.');
             return;
         }
 
@@ -591,10 +601,10 @@ function MultiFileUploadPage() {
                 await uploadService.deleteFile(projectId, file.fileId);
             }
             loadFiles();
-            alert(`${checkedFiles.length}개의 파일이 삭제되었습니다.`);
+            showSuccess('삭제 완료', `${checkedFiles.length}개의 파일이 삭제되었습니다.`);
         } catch (error) {
             console.error('파일 삭제 실패:', error);
-            alert('파일 삭제 중 오류가 발생했습니다.');
+            showError('삭제 실패', getErrorMsg(error, '파일 삭제 중 오류가 발생했습니다.'));
         }
     };
 
@@ -605,10 +615,10 @@ function MultiFileUploadPage() {
             loadProject();
             loadSessions();
             adminService.logUserActivity('BUTTON_CLICK', 'PROJECT', projectId, '프로젝트 완료 처리');
-            alert('프로젝트가 완료 처리되었습니다.');
+            showSuccess('프로젝트 완료', '프로젝트가 완료 처리되었습니다.');
         } catch (error) {
             console.error('프로젝트 완료 실패:', error);
-            alert('프로젝트 완료 처리에 실패했습니다.');
+            showError('완료 처리 실패', getErrorMsg(error, '프로젝트 완료 처리에 실패했습니다.'));
         }
     };
 
@@ -1104,6 +1114,29 @@ function MultiFileUploadPage() {
                         <DialogFooter>
                             <Button variant="outline" onClick={() => setCompleteDialogOpen(false)}>취소</Button>
                             <Button onClick={handleProjectComplete} className="bg-sky-500 hover:bg-sky-600">프로젝트 완료</Button>
+                        </DialogFooter>
+                    </DialogContent>
+                </Dialog>
+
+                {/* 메시지 다이얼로그 (성공/에러) */}
+                <Dialog open={msgDialog.open} onOpenChange={(open) => setMsgDialog(prev => ({ ...prev, open }))}>
+                    <DialogContent className="max-w-md">
+                        <DialogHeader>
+                            <DialogTitle className="flex items-center gap-2">
+                                {msgDialog.type === 'error'
+                                    ? <AlertCircle className="h-5 w-5 text-red-500" />
+                                    : <CheckCircle2 className="h-5 w-5 text-green-500" />
+                                }
+                                {msgDialog.title}
+                            </DialogTitle>
+                            <DialogDescription className="pt-2 whitespace-pre-wrap">
+                                {msgDialog.message}
+                            </DialogDescription>
+                        </DialogHeader>
+                        <DialogFooter>
+                            <Button onClick={() => setMsgDialog(prev => ({ ...prev, open: false }))}>
+                                확인
+                            </Button>
                         </DialogFooter>
                     </DialogContent>
                 </Dialog>
