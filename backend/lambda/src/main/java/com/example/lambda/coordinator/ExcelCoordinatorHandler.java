@@ -16,6 +16,7 @@ import software.amazon.awssdk.services.s3.model.HeadObjectResponse;
 import software.amazon.awssdk.services.sqs.SqsClient;
 import software.amazon.awssdk.services.sqs.model.SendMessageRequest;
 
+import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -59,7 +60,9 @@ public class ExcelCoordinatorHandler implements RequestHandler<S3Event, String> 
             // 1. S3 Event 파싱
             S3EventNotification.S3EventNotificationRecord record = s3Event.getRecords().get(0);
             String bucket = record.getS3().getBucket().getName();
-            String key = record.getS3().getObject().getKey();
+            // ★ S3 Event는 키를 URL 인코딩하여 전달 → 디코딩 필수
+            String key = URLDecoder.decode(
+                    record.getS3().getObject().getKey(), StandardCharsets.UTF_8);
 
             context.getLogger().log("S3 파일: bucket=" + bucket + ", key=" + key);
 

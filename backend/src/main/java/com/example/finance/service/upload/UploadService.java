@@ -335,8 +335,9 @@ public class UploadService {
     private void triggerWorkerLambda(String projectId, String sessionId, String uploadId,
                                      String s3Bucket, String s3Key, String fileName, Long fileSize) {
         try {
-            // 행 수 추정 (보수적: 100바이트당 1행)
-            int estimatedRows = (int) Math.max(fileSize / 100, 1000);
+            // 행 수 추정 (보수적: 50바이트당 1행, 압축률 높은 숫자 데이터 대응)
+            // 빈 청크는 Worker가 0건 처리 후 즉시 종료하므로 과대추정은 무해
+            int estimatedRows = (int) Math.max(fileSize / 50, 1000);
             int totalChunks = (int) Math.ceil((double) estimatedRows / CHUNK_SIZE);
 
             log.info("★ Worker Lambda 트리거: uploadId={}, fileSize={}, estimatedRows={}, chunks={}",
