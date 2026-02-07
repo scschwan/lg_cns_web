@@ -37,6 +37,7 @@ public class ProjectService {
     private final ProjectRepository projectRepository;
     private final UserRepository userRepository;
     private final FileSessionRepository fileSessionRepository;
+    private final com.example.finance.repository.data.SessionDataRepository sessionDataRepository;
 
     /**
      * 프로젝트 생성
@@ -265,6 +266,7 @@ public class ProjectService {
                             .memberCount(project.getMembers().size())
                             .totalSessions((int) totalSessions)
                             .completedSessions((int) completedSessions)
+                            .isCompleted(project.getIsCompleted())
                             .createdAt(project.getCreatedAt())
                             .lastAccessedAt(project.getUpdatedAt())
                             .build();
@@ -340,13 +342,22 @@ public class ProjectService {
                 })
                 .collect(Collectors.toList());
 
-        // ⭐ 5. 최종 응답 생성
+        // ⭐ 5. 현재 사용자 역할 조회
+        String myRole = project.getMembers().stream()
+                .filter(m -> m.getUserId().equals(userId))
+                .findFirst()
+                .map(m -> m.getRole() != null ? m.getRole().name() : "VIEWER")
+                .orElse("VIEWER");
+
+        // ⭐ 6. 최종 응답 생성
         return ProjectDetailResponse.builder()
                 .projectId(project.getProjectId())
                 .projectName(project.getProjectName())
                 .description(project.getDescription())
                 .members(memberResponses)
                 .createdBy(project.getCreatedBy())
+                .myRole(myRole)
+                .isCompleted(project.getIsCompleted())
                 .createdAt(project.getCreatedAt())
                 .updatedAt(project.getUpdatedAt())
                 .build();
@@ -412,5 +423,61 @@ public class ProjectService {
         projectRepository.save(project);
 
         log.info("프로젝트 삭제 완료");
+    }
+
+    /**
+     * 프로젝트 완료 처리
+     * - 미완료 세션의 session_data 삭제 + 세션 삭제
+     * - 프로젝트 is_completed = true
+     */
+    @Transactional
+    public Map<String, Object> completeProject(String projectId, String userId) {
+        Project project = projectRepository.findByProjectId(projectId)
+                .orElseThrow(() -> new ProjectNotFoundException("프로젝트를 찾을 수 없습니다"));
+
+        var allSessions = fileSessionRepository.findByProjectId(projectId);
+        int deletedCount = 0;
+
+        for (var session : allSessions) {
+            if (!Boolean.TRUE.equals(session.getIsCompleted())) {
+                // 미완료 세션: session_data 삭제 + 세션 삭제
+                sessionDataRepository.deleteBySessionId(session.getSessionId());
+                fileSessionRepository.delete(session);
+                deletedCount++;
+            }
+        }
+
+        project.setIsCompleted(true);
+        project.setUpdatedAt(LocalDateTime.now());
+        projectRepository.save(project);
+
+        log.info("프로젝트 완료 처리: projectId={}, 삭제된 미완료 세션 {}건", projectId, deletedCount);
+
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("projectId", projectId);
+        result.put("isCompleted", true);
+        result.put("deletedSessions", deletedCount);
+        return result;
+    }
+
+    /**
+     * 프로젝트 내 모든 세션 완료 여부 확인 후 자동 갱신
+     */
+    public void checkAndUpdateProjectCompletion(String projectId) {
+        Project project = projectRepository.findByProjectId(projectId).orElse(null);
+        if (project == null) return;
+
+        var allSessions = fileSessionRepository.findByProjectId(projectId);
+        if (allSessions.isEmpty()) return;
+
+        boolean allCompleted = allSessions.stream()
+                .allMatch(s -> Boolean.TRUE.equals(s.getIsCompleted()));
+
+        if (allCompleted != Boolean.TRUE.equals(project.getIsCompleted())) {
+            project.setIsCompleted(allCompleted);
+            project.setUpdatedAt(LocalDateTime.now());
+            projectRepository.save(project);
+            log.info("프로젝트 자동 완료상태 갱신: projectId={}, isCompleted={}", projectId, allCompleted);
+        }
     }
 }

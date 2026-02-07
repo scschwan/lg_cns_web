@@ -13,6 +13,8 @@ public class ProjectDetailResponse {
     private String description;
     private List<ProjectMemberResponse> members; // 상세 멤버 리스트
     private String createdBy;
+    private String myRole;
+    private Boolean isCompleted;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
 }

@@ -82,6 +82,12 @@ const projectService = {
     removeMember: async (projectId, userId) => {
         await api.delete(`/api/projects/${projectId}/members/${userId}`);
     },
+
+    // 프로젝트 완료 처리
+    completeProject: async (projectId) => {
+        const response = await api.post(`/api/projects/${projectId}/complete`);
+        return response.data;
+    },
 };
 
 export default projectService;

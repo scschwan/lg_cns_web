@@ -53,6 +53,11 @@ public class ProjectSummary {
     private int memberCount;
 
     /**
+     * 프로젝트 완료 여부
+     */
+    private Boolean isCompleted;
+
+    /**
      * 생성 시간 ⭐ 신규 추가
      */
     private LocalDateTime createdAt;

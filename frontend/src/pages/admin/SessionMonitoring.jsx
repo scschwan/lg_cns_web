@@ -53,6 +53,12 @@ export default function SessionMonitoring() {
         return map[step] || step;
     };
 
+    const getSessionStatus = (s) => {
+        if (s.isCompleted) return '완료';
+        if (s.progressPercentage > 0 || s.currentStep) return '진행중';
+        return '시작전';
+    };
+
     return (
         <div className="space-y-4">
             <div className="flex items-center justify-between">
@@ -79,8 +85,12 @@ export default function SessionMonitoring() {
                                 </TableRow>
                             </TableHeader>
                             <TableBody>
-                                {sessions.map(s => (
-                                    <TableRow key={s.sessionId}>
+                                {sessions.map(s => {
+                                    const status = getSessionStatus(s);
+                                    return (
+                                    <TableRow key={s.sessionId} className={
+                                        status === '완료' ? 'bg-sky-50' : status === '진행중' ? 'bg-yellow-50' : ''
+                                    }>
                                         <TableCell className="font-medium">{s.sessionName}</TableCell>
                                         <TableCell className="text-xs font-mono truncate max-w-[120px]">{s.projectId}</TableCell>
                                         <TableCell className="text-center">
@@ -88,10 +98,12 @@ export default function SessionMonitoring() {
                                         </TableCell>
                                         <TableCell className="text-center">{s.progressPercentage || 0}%</TableCell>
                                         <TableCell className="text-center">
-                                            {s.isCompleted ? (
-                                                <Badge className="bg-green-500">완료</Badge>
+                                            {status === '완료' ? (
+                                                <Badge className="bg-sky-500">완료</Badge>
+                                            ) : status === '진행중' ? (
+                                                <Badge variant="outline" className="border-yellow-500 text-yellow-700">진행중</Badge>
                                             ) : (
-                                                <Badge variant="outline">진행중</Badge>
+                                                <Badge variant="outline" className="text-muted-foreground">시작전</Badge>
                                             )}
                                         </TableCell>
                                         <TableCell className="text-center">
@@ -111,7 +123,8 @@ export default function SessionMonitoring() {
                                             </Button>
                                         </TableCell>
                                     </TableRow>
-                                ))}
+                                    );
+                                })}
                                 {sessions.length === 0 && (
                                     <TableRow>
                                         <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">

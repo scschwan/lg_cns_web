@@ -58,13 +58,21 @@ public class S3AdminService {
     public List<Map<String, Object>> findOrphanedFiles() {
         List<Map<String, Object>> allFiles = listAllFiles();
 
-        // 모든 세션에서 등록된 S3 키 수집
-        Set<String> registeredKeys = fileSessionRepository.findAll().stream()
+        // 모든 세션에서 등록된 S3 키 수집 (uploadedFiles + exportPath)
+        List<FileSession> allSessions = fileSessionRepository.findAll();
+        Set<String> registeredKeys = allSessions.stream()
                 .filter(s -> s.getUploadedFiles() != null)
                 .flatMap(s -> s.getUploadedFiles().stream())
                 .map(UploadedFileInfo::getS3Key)
                 .filter(Objects::nonNull)
                 .collect(Collectors.toSet());
+
+        // export_path에 등록된 파일도 등록됨으로 처리
+        allSessions.stream()
+                .map(FileSession::getExportPath)
+                .filter(Objects::nonNull)
+                .filter(p -> !p.isBlank())
+                .forEach(registeredKeys::add);
 
         return allFiles.stream()
                 .filter(f -> !registeredKeys.contains(f.get("key")))

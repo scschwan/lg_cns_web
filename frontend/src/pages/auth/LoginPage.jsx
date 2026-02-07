@@ -23,8 +23,8 @@ export default function LoginPage() {
         setLoading(true);
 
         try {
-            await login({ email, password });
-            navigate('/projects');
+            const data = await login({ email, password });
+            navigate(data.role === 'ADMIN' ? '/admin' : '/projects');
         } catch (err) {
             setError(err.response?.data?.message || '로그인에 실패했습니다.');
         } finally {

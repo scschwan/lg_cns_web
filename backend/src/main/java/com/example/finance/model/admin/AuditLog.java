@@ -25,6 +25,13 @@ public class AuditLog {
     @Field("admin_id")
     private String adminId;
 
+    @Indexed
+    @Field("user_id")
+    private String userId;
+
+    @Field("user_name")
+    private String userName;
+
     @Field("action")
     private String action;
 
