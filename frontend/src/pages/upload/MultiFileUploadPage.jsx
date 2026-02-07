@@ -48,8 +48,12 @@ import {
 } from '@/components/ui/select';
 import { Input } from '@/components/ui/input';
 
+import {
+    Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle
+} from '@/components/ui/dialog';
 import projectService from '../../services/projectService';
 import uploadService from '../../services/uploadService';
+import adminService from '../../services/adminService';
 import PartitionDialog from '../../components/upload/PartitionDialog';
 import ProgressDialog from '../../components/common/ProgressDialog';
 
@@ -90,6 +94,13 @@ function MultiFileUploadPage() {
     const [editingSession, setEditingSession] = useState(null);
 
     const [isProcessing, setIsProcessing] = useState(false);
+
+    // 프로젝트 완료
+    const [completeDialogOpen, setCompleteDialogOpen] = useState(false);
+
+    // 뷰어 권한 제한
+    const myRole = project?.myRole || 'VIEWER';
+    const isViewer = myRole === 'VIEWER';
 
     useEffect(() => {
         loadProject();
@@ -546,6 +557,20 @@ function MultiFileUploadPage() {
         }
     };
 
+    const handleProjectComplete = async () => {
+        try {
+            await projectService.completeProject(projectId);
+            setCompleteDialogOpen(false);
+            loadProject();
+            loadSessions();
+            adminService.logUserActivity('BUTTON_CLICK', 'PROJECT', projectId, '프로젝트 완료 처리');
+            alert('프로젝트가 완료 처리되었습니다.');
+        } catch (error) {
+            console.error('프로젝트 완료 실패:', error);
+            alert('프로젝트 완료 처리에 실패했습니다.');
+        }
+    };
+
     return (
         <div className="min-h-screen bg-gray-50">
             <div className="container mx-auto px-4 py-6 max-w-[98vw]">
@@ -587,8 +612,8 @@ function MultiFileUploadPage() {
                     <CardContent>
                         <div className="flex flex-wrap gap-3">
                             <div className="flex gap-2">
-                                <Button asChild>
-                                    <label className="cursor-pointer">
+                                <Button asChild disabled={isViewer}>
+                                    <label className={`cursor-pointer ${isViewer ? 'pointer-events-none opacity-50' : ''}`}>
                                         <Upload className="h-4 w-4 mr-2" />
                                         Excel 파일 업로드
                                         <input
@@ -597,48 +622,25 @@ function MultiFileUploadPage() {
                                             multiple
                                             accept=".xlsx,.xls"
                                             onChange={handleFileUpload}
+                                            disabled={isViewer}
                                         />
                                     </label>
                                 </Button>
-                                <Button onClick={handleCreateSessions} variant="default">
+                                <Button onClick={handleCreateSessions} variant="default" disabled={isViewer}>
                                     <FolderOpen className="h-4 w-4 mr-2" />
                                     세션 생성
                                 </Button>
                             </div>
-
-                            <div className="flex gap-2 ml-auto">
-                                <Button
-                                    onClick={handleMergeSessions}
-                                    variant="outline"
-                                    disabled={selectedSessions.length < 2}
-                                >
-                                    <GitMerge className="h-4 w-4 mr-2" />
-                                    세션 병합
-                                </Button>
-                                <Button
-                                    onClick={handleDeleteSessions}
-                                    variant="destructive"
-                                    disabled={selectedSessions.length === 0}
-                                >
-                                    <Trash2 className="h-4 w-4 mr-2" />
-                                    세션 삭제
-                                </Button>
-                                <Button
-                                    onClick={handleStartAnalysis}
-                                    disabled={selectedSessions.length !== 1}
-                                    className="bg-green-600 hover:bg-green-700"
-                                >
-                                    <Play className="h-4 w-4 mr-2" />
-                                    계정 분석 시작
-                                </Button>
-                            </div>
+                            {isViewer && (
+                                <span className="text-xs text-muted-foreground self-center ml-2">뷰어 권한: 조회만 가능</span>
+                            )}
                         </div>
                     </CardContent>
                 </Card>
 
-                <div className="grid grid-cols-1 xl:grid-cols-12 gap-4">
-                    {/* 좌측: 파일 목록 */}
-                    <div className="xl:col-span-7">
+                <div className="space-y-4">
+                    {/* 상단: 파일 목록 */}
+                    <div>
                         <Card>
                             <CardHeader>
                                 <CardTitle className="text-lg">업로드된 파일 목록</CardTitle>
@@ -759,6 +761,7 @@ function MultiFileUploadPage() {
                                                                 variant="ghost"
                                                                 size="icon"
                                                                 onClick={() => handleDeleteFile(file.fileId)}
+                                                                disabled={isViewer}
                                                             >
                                                                 <Trash2 className="h-4 w-4 text-red-500" />
                                                             </Button>
@@ -773,8 +776,46 @@ function MultiFileUploadPage() {
                         </Card>
                     </div>
 
-                    {/* 우측: 세션 목록 */}
-                    <div className="xl:col-span-5">
+                    {/* 중간: 세션 관리 버튼 */}
+                    <Card className="bg-muted/50">
+                        <CardContent className="py-3 px-6">
+                            <div className="flex items-center justify-between">
+                                <CardTitle className="text-base">세션 관리</CardTitle>
+                                <div className="flex gap-2">
+                                    <Button
+                                        onClick={handleMergeSessions}
+                                        variant="outline"
+                                        size="sm"
+                                        disabled={selectedSessions.length < 2 || isViewer}
+                                    >
+                                        <GitMerge className="h-4 w-4 mr-1" />
+                                        세션 병합
+                                    </Button>
+                                    <Button
+                                        onClick={handleDeleteSessions}
+                                        variant="destructive"
+                                        size="sm"
+                                        disabled={selectedSessions.length === 0 || isViewer}
+                                    >
+                                        <Trash2 className="h-4 w-4 mr-1" />
+                                        세션 삭제
+                                    </Button>
+                                    <Button
+                                        onClick={handleStartAnalysis}
+                                        size="sm"
+                                        disabled={selectedSessions.length !== 1 || isViewer}
+                                        className="bg-green-600 hover:bg-green-700"
+                                    >
+                                        <Play className="h-4 w-4 mr-1" />
+                                        계정 분석 시작
+                                    </Button>
+                                </div>
+                            </div>
+                        </CardContent>
+                    </Card>
+
+                    {/* 하단: 세션 목록 */}
+                    <div>
                         <Card>
                             <CardHeader>
                                 <CardTitle className="text-lg">생성된 세션 목록</CardTitle>
@@ -959,6 +1000,17 @@ function MultiFileUploadPage() {
                             </CardContent>
                         </Card>
                     </div>
+
+                    {/* 프로젝트 완료 버튼 */}
+                    <div className="flex justify-end">
+                        <Button
+                            onClick={() => setCompleteDialogOpen(true)}
+                            disabled={isViewer || Boolean(project?.isCompleted)}
+                            className="bg-sky-500 hover:bg-sky-600"
+                        >
+                            {project?.isCompleted ? '프로젝트 완료됨' : '프로젝트 완료'}
+                        </Button>
+                    </div>
                 </div>
 
                 <PartitionDialog
@@ -978,6 +1030,22 @@ function MultiFileUploadPage() {
                     open={isProcessing}
                     message="데이터를 분석하고 있습니다. 잠시만 기다려주세요..."
                 />
+
+                {/* 프로젝트 완료 확인 다이얼로그 */}
+                <Dialog open={completeDialogOpen} onOpenChange={setCompleteDialogOpen}>
+                    <DialogContent>
+                        <DialogHeader>
+                            <DialogTitle>프로젝트 완료</DialogTitle>
+                            <DialogDescription>
+                                '프로젝트 완료' 처리 할 경우 진행 상태가 '완료' 처리 되지 않은 세션들은 일괄 삭제됩니다. '프로젝트 완료'처리를 수행하시겠습니까?
+                            </DialogDescription>
+                        </DialogHeader>
+                        <DialogFooter>
+                            <Button variant="outline" onClick={() => setCompleteDialogOpen(false)}>취소</Button>
+                            <Button onClick={handleProjectComplete} className="bg-sky-500 hover:bg-sky-600">프로젝트 완료</Button>
+                        </DialogFooter>
+                    </DialogContent>
+                </Dialog>
             </div>
         </div>
     );

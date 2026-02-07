@@ -639,6 +639,33 @@ public class ExportService {
                 .set("updated_at", LocalDateTime.now());
         mongoTemplate.updateFirst(query, update, FileSession.class);
         log.info("세션 완료: sessionId={}, exportPath={}", sessionId, exportPath);
+
+        // 프로젝트 자동 완료 체크
+        FileSession session = mongoTemplate.findOne(query, FileSession.class);
+        if (session != null) {
+            checkAndUpdateProjectCompletion(session.getProjectId());
+        }
+    }
+
+    private void checkAndUpdateProjectCompletion(String projectId) {
+        try {
+            var sessions = mongoTemplate.find(
+                    new Query(Criteria.where("project_id").is(projectId).and("is_deleted").ne(true)),
+                    FileSession.class);
+            if (sessions.isEmpty()) return;
+
+            boolean allCompleted = sessions.stream()
+                    .allMatch(s -> Boolean.TRUE.equals(s.getIsCompleted()));
+
+            Query pq = new Query(Criteria.where("project_id").is(projectId));
+            Update pu = new Update()
+                    .set("is_completed", allCompleted)
+                    .set("updated_at", LocalDateTime.now());
+            mongoTemplate.updateFirst(pq, pu, "projects");
+            log.info("프로젝트 자동 완료상태 갱신: projectId={}, isCompleted={}", projectId, allCompleted);
+        } catch (Exception e) {
+            log.warn("프로젝트 완료 상태 갱신 실패: {}", e.getMessage());
+        }
     }
 
     private void updateSessionExportPath(String sessionId, String s3Key) {

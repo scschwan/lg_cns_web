@@ -83,7 +83,7 @@ export default function S3Management() {
                         전체 ({files.length})
                     </Button>
                     <Button variant={tab === 'orphaned' ? 'default' : 'outline'} size="sm" onClick={() => setTab('orphaned')}>
-                        고아 파일 ({orphanedFiles.length})
+                        미사용 파일 ({orphanedFiles.length})
                     </Button>
                 </div>
                 <div className="flex gap-2">
@@ -94,7 +94,7 @@ export default function S3Management() {
                     )}
                     {orphanedFiles.length > 0 && (
                         <Button size="sm" variant="outline" onClick={() => setCleanupConfirm(true)}>
-                            고아 파일 일괄 정리
+                            미사용 파일 일괄 정리
                         </Button>
                     )}
                     <Button size="sm" variant="ghost" onClick={loadFiles} disabled={loading}>
@@ -141,7 +141,7 @@ export default function S3Management() {
                                         </TableCell>
                                         <TableCell className="text-center">
                                             {orphanedKeys.has(f.key) ? (
-                                                <Badge variant="destructive">고아</Badge>
+                                                <Badge variant="destructive">미사용</Badge>
                                             ) : (
                                                 <Badge variant="outline">등록됨</Badge>
                                             )}
@@ -164,7 +164,7 @@ export default function S3Management() {
             <Dialog open={cleanupConfirm} onOpenChange={setCleanupConfirm}>
                 <DialogContent>
                     <DialogHeader>
-                        <DialogTitle>고아 파일 일괄 정리</DialogTitle>
+                        <DialogTitle>미사용 파일 일괄 정리</DialogTitle>
                         <DialogDescription>
                             세션에 연결되지 않은 {orphanedFiles.length}개의 파일을 삭제합니다. 이 작업은 되돌릴 수 없습니다.
                         </DialogDescription>

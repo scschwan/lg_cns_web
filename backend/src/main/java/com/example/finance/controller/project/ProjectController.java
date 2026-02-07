@@ -17,6 +17,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+import java.util.Map;
 import com.example.finance.dto.response.project.ProjectDetailResponse;
 
 /**
@@ -166,6 +167,20 @@ public class ProjectController {
         return ResponseEntity.ok(project);
     }
 
+
+    /**
+     * 프로젝트 완료 처리
+     */
+    @PostMapping("/{projectId}/complete")
+    public ResponseEntity<Map<String, Object>> completeProject(
+            @CurrentUser UserPrincipal userPrincipal,
+            @PathVariable String projectId) {
+
+        log.info("프로젝트 완료 처리: projectId={}", projectId);
+        projectService.getProject(projectId, userPrincipal.getId());
+        Map<String, Object> result = projectService.completeProject(projectId, userPrincipal.getId());
+        return ResponseEntity.ok(result);
+    }
 
     /**
      * 프로젝트에 업로드된 파일 목록 조회

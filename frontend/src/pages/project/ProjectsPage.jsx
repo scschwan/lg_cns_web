@@ -150,9 +150,11 @@ export default function ProjectsPage() {
                                         <Badge variant="outline">
                                             세션: {project.completedSessions || 0}/{project.totalSessions || 0}
                                         </Badge>
-                                        {project.completedSessions > 0 && (
+                                        {project.isCompleted ? (
+                                            <Badge className="bg-sky-500 text-white">프로젝트 완료</Badge>
+                                        ) : project.completedSessions > 0 ? (
                                             <Badge variant="secondary">활성</Badge>
-                                        )}
+                                        ) : null}
                                     </div>
                                 </CardContent>
 

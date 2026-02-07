@@ -169,6 +169,9 @@ public class FileSessionService {
             fileSession.setUpdatedAt(LocalDateTime.now());
             fileSessionRepository.save(fileSession);
 
+            // 10.5 프로젝트 완료 상태 자동 갱신
+            checkAndUpdateProjectCompletion(fileSession.getProjectId());
+
             // 11. Redis 진행률 완료
             updateProgress(progressKey, 100, "완료");
 
@@ -1008,6 +1011,20 @@ public class FileSessionService {
             log.warn("프로젝트 멤버가 아닙니다. (권한 체크 로직 확인 필요): userId={}", userId);
         }
 
+        // 중복 세션명 검증
+        Set<String> existingNames = fileSessionRepository.findByProjectId(projectId).stream()
+                .map(s -> s.getSessionName())
+                .filter(Objects::nonNull)
+                .collect(Collectors.toSet());
+
+        for (AccountPartition partition : partitions) {
+            String name = partition.getSessionName();
+            if (name != null && !name.isEmpty() && existingNames.contains(name)) {
+                throw new BusinessException("DUPLICATE_SESSION_NAME",
+                        "이미 존재하는 세션명입니다: " + name);
+            }
+        }
+
         List<FileSessionResponse> createdSessions = new ArrayList<>();
         int sessionCounter = 1;  // ⭐ 세션 번호 카운터 (복원됨)
 
@@ -1136,13 +1153,14 @@ public class FileSessionService {
             }
         }
 
-        // 3. 프로젝트 세션 수 업데이트 (복원됨)
+        // 3. 프로젝트 세션 수 업데이트 + 완료 상태 해제
         if (!createdSessions.isEmpty()) {
             project.setTotalSessions(project.getTotalSessions() + createdSessions.size());
             project.setTotalFiles(project.getTotalFiles() +
                     createdSessions.stream()
                             .mapToInt(s -> s.getTotalFiles() != null ? s.getTotalFiles() : 0)
                             .sum());
+            project.setIsCompleted(false); // 새 세션 생성 시 프로젝트 완료 해제
             project.setUpdatedAt(LocalDateTime.now());
             projectRepository.save(project);
         }
@@ -1181,12 +1199,13 @@ public class FileSessionService {
             fileSessionRepository.delete(session);
         }
 
-        // 프로젝트 업데이트
+        // 프로젝트 업데이트 + 완료 상태 확인
         Project project = projectRepository.findByProjectId(projectId).orElse(null);
         if (project != null) {
             project.setUpdatedAt(LocalDateTime.now());
             projectRepository.save(project);
         }
+        checkAndUpdateProjectCompletion(projectId);
 
         log.info("세션 일괄 완전 삭제 완료: {} 개", sessionIds.size());
     }
@@ -1321,5 +1340,30 @@ public class FileSessionService {
         // TODO: S3Service.generateDownloadPresignedUrl() 호출
         // 임시로 s3Key 반환
         return "https://s3.amazonaws.com/" + s3Key;
+    }
+
+    /**
+     * 프로젝트 내 모든 세션 완료 여부 확인 후 프로젝트 상태 자동 갱신
+     */
+    private void checkAndUpdateProjectCompletion(String projectId) {
+        try {
+            Project project = projectRepository.findByProjectId(projectId).orElse(null);
+            if (project == null) return;
+
+            var allSessions = fileSessionRepository.findByProjectId(projectId);
+            if (allSessions.isEmpty()) return;
+
+            boolean allCompleted = allSessions.stream()
+                    .allMatch(s -> Boolean.TRUE.equals(s.getIsCompleted()));
+
+            if (allCompleted != Boolean.TRUE.equals(project.getIsCompleted())) {
+                project.setIsCompleted(allCompleted);
+                project.setUpdatedAt(LocalDateTime.now());
+                projectRepository.save(project);
+                log.info("프로젝트 자동 완료상태 갱신: projectId={}, isCompleted={}", projectId, allCompleted);
+            }
+        } catch (Exception e) {
+            log.warn("프로젝트 완료 상태 갱신 실패: {}", e.getMessage());
+        }
     }
 }

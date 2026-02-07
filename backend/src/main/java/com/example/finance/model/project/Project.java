@@ -100,6 +100,13 @@ public class Project {
     private Integer totalFiles = 0;
 
     /**
+     * 프로젝트 완료 여부
+     */
+    @Field("is_completed")
+    @Builder.Default
+    private Boolean isCompleted = false;
+
+    /**
      * 삭제 여부
      */
     @Indexed

@@ -92,6 +92,26 @@ public class AdminController {
         return ResponseEntity.ok().build();
     }
 
+    @PutMapping("/users/{userId}/info")
+    public ResponseEntity<Void> updateUserInfo(
+            @AuthenticationPrincipal UserPrincipal principal,
+            @PathVariable String userId,
+            @RequestBody Map<String, String> body) {
+        checkAdmin(principal);
+        adminService.updateUserInfo(userId, body.get("name"), body.get("email"), principal.getId());
+        return ResponseEntity.ok().build();
+    }
+
+    @PutMapping("/users/{userId}/password")
+    public ResponseEntity<Void> resetUserPassword(
+            @AuthenticationPrincipal UserPrincipal principal,
+            @PathVariable String userId,
+            @RequestBody Map<String, String> body) {
+        checkAdmin(principal);
+        adminService.resetUserPassword(userId, body.get("newPassword"), principal.getId());
+        return ResponseEntity.ok().build();
+    }
+
     // ========== 프로젝트 관리 ==========
 
     @GetMapping("/projects")
@@ -209,5 +229,22 @@ public class AdminController {
             @RequestParam(required = false) String targetId) {
         checkAdmin(principal);
         return ResponseEntity.ok(adminService.getLogs(targetType, targetId));
+    }
+
+    // ========== 사용자 활동 로그 (비관리자도 호출 가능) ==========
+
+    @PostMapping("/user-activity")
+    public ResponseEntity<Void> logUserActivity(
+            @AuthenticationPrincipal UserPrincipal principal,
+            @RequestBody Map<String, String> body) {
+        if (principal == null) return ResponseEntity.ok().build();
+        adminService.logUserActivity(
+                principal.getId(),
+                body.get("action"),
+                body.get("targetType"),
+                body.get("targetId"),
+                body.get("detail")
+        );
+        return ResponseEntity.ok().build();
     }
 }

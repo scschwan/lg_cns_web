@@ -103,6 +103,23 @@ public class AdminService {
         writeLog(adminId, "CHANGE_PASSWORD", "USER", adminId, "비밀번호 변경");
     }
 
+    public void updateUserInfo(String userId, String name, String email, String adminId) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new RuntimeException("사용자를 찾을 수 없습니다"));
+        if (name != null && !name.isBlank()) user.setName(name);
+        if (email != null && !email.isBlank()) user.setEmail(email);
+        userRepository.save(user);
+        writeLog(adminId, "UPDATE_USER_INFO", "USER", userId, user.getEmail() + " 정보수정");
+    }
+
+    public void resetUserPassword(String userId, String newPassword, String adminId) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new RuntimeException("사용자를 찾을 수 없습니다"));
+        user.setPassword(passwordEncoder.encode(newPassword));
+        userRepository.save(user);
+        writeLog(adminId, "RESET_USER_PASSWORD", "USER", userId, user.getEmail() + " 비밀번호 초기화");
+    }
+
     // ========== 프로젝트 관리 ==========
 
     public List<Map<String, Object>> getAllProjects() {
@@ -282,6 +299,22 @@ public class AdminService {
             return auditLogRepository.findByTargetType(targetType, sort);
         }
         return auditLogRepository.findAll(sort);
+    }
+
+    public void logUserActivity(String userId, String action, String targetType, String targetId, String detail) {
+        String userName = userRepository.findById(userId)
+                .map(u -> u.getName() != null ? u.getName() : u.getEmail())
+                .orElse("-");
+        AuditLog auditLog = AuditLog.builder()
+                .userId(userId)
+                .userName(userName)
+                .action(action != null ? action : "UNKNOWN")
+                .targetType(targetType)
+                .targetId(targetId)
+                .detail(detail)
+                .createdAt(LocalDateTime.now())
+                .build();
+        auditLogRepository.save(auditLog);
     }
 
     // ========== 내부 헬퍼 ==========

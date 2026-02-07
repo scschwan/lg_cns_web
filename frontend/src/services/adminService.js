@@ -8,6 +8,10 @@ const adminService = {
     deleteUser: (userId) => api.delete(`/api/admin/users/${userId}`),
     bulkApprove: (userIds) => api.put('/api/admin/users/bulk-approve', { userIds }),
     bulkRevoke: (userIds) => api.put('/api/admin/users/bulk-revoke', { userIds }),
+    updateUserInfo: (userId, name, email) =>
+        api.put(`/api/admin/users/${userId}/info`, { name, email }),
+    resetUserPassword: (userId, newPassword) =>
+        api.put(`/api/admin/users/${userId}/password`, { newPassword }),
 
     // ========== 비밀번호 ==========
     changePassword: (currentPassword, newPassword) =>
@@ -38,6 +42,10 @@ const adminService = {
 
     // ========== 감사 로그 ==========
     getLogs: (params) => api.get('/api/admin/logs', { params }),
+
+    // ========== 사용자 활동 로그 ==========
+    logUserActivity: (action, targetType, targetId, detail) =>
+        api.post('/api/admin/user-activity', { action, targetType, targetId, detail }).catch(() => {}),
 };
 
 export default adminService;
