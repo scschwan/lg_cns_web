@@ -15,6 +15,8 @@ import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.GetObjectRequest;
 import software.amazon.awssdk.services.s3.model.GetObjectResponse;
 
+import java.io.File;
+import java.io.FileInputStream;
 import java.io.IOException;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -32,11 +34,13 @@ public class ExcelParserService {
     private final RawDataRepository rawDataRepository;
     private final UploadSessionRepository uploadSessionRepository;
     private final RedisService redisService;
+    private final S3Service s3Service;
 
     @Value("${aws.s3.excel-bucket}")
     private String excelBucket;
 
-    private static final int BATCH_SIZE = 1000; // MongoDB 배치 삽입 크기
+    private static final int BATCH_SIZE = 5000; // MongoDB 배치 삽입 크기 (1000→5000 증가)
+    private static final String UPLOAD_STATUS_KEY_PREFIX = "upload:status:"; // ★ Lambda Worker와 동일한 키
 
     /**
      * Excel 파일 비동기 파싱
@@ -47,25 +51,32 @@ public class ExcelParserService {
 
     /**
      * Excel 파일 파싱 및 MongoDB 저장
+     * ★ 개선: 임시 파일 다운로드 방식으로 메모리 효율적 처리
+     *    + Redis 키를 Lambda Worker와 동일한 "upload:status:{uploadId}" 로 통일
      */
     public void parseExcel(String uploadId) {
-        log.info("Excel 파싱 시작: uploadId={}", uploadId);
+        log.info("[백엔드 Fallback] Excel 파싱 시작: uploadId={}", uploadId);
 
         // 1. UploadSession 조회
         UploadSession session = uploadSessionRepository.findByUploadId(uploadId)
                 .orElseThrow(() -> new RuntimeException("Upload session not found: " + uploadId));
 
+        File tempFile = null;
+
         try {
             // 2. 상태 업데이트: PROCESSING
             updateSessionStatus(session, UploadSession.UploadStatus.PROCESSING, 0);
 
-            // 3. S3에서 파일 다운로드
-            log.info("S3에서 파일 다운로드: bucket={}, key={}", session.getS3Bucket(), session.getS3Key());
-            ResponseInputStream<GetObjectResponse> s3Object = downloadFromS3(session.getS3Bucket(), session.getS3Key());
+            // 3. S3에서 임시 파일로 다운로드 (메모리 절약)
+            log.info("S3에서 파일 다운로드: key={}", session.getS3Key());
+            tempFile = s3Service.downloadFileToTemp(session.getS3Key());
+            log.info("임시 파일 다운로드 완료: {} bytes", tempFile.length());
 
-            // 4. Excel 파싱
-            try (Workbook workbook = new XSSFWorkbook(s3Object)) {
-                Sheet sheet = workbook.getSheetAt(0); // 첫 번째 시트
+            // 4. Excel 파싱 (XSSFWorkbook - 임시 파일에서 로드)
+            try (FileInputStream fis = new FileInputStream(tempFile);
+                 Workbook workbook = new XSSFWorkbook(fis)) {
+
+                Sheet sheet = workbook.getSheetAt(0);
                 int totalRows = sheet.getPhysicalNumberOfRows();
                 log.info("총 행 개수: {}", totalRows);
 
@@ -81,16 +92,14 @@ public class ExcelParserService {
                 List<RawDataDocument> batch = new ArrayList<>();
                 int processedRows = 0;
 
-                for (int rowIndex = 1; rowIndex < totalRows; rowIndex++) { // 헤더 제외
+                for (int rowIndex = 1; rowIndex < totalRows; rowIndex++) {
                     Row row = sheet.getRow(rowIndex);
                     if (row == null) continue;
 
-                    // 행 데이터 추출
                     Map<String, Object> rowData = extractRowData(headers, row);
 
-                    // RawDataDocument 생성
                     RawDataDocument document = RawDataDocument.builder()
-                            .projectId(session.getProjectId())  // ⭐ 추가!
+                            .projectId(session.getProjectId())
                             .sessionId(session.getSessionId())
                             .uploadId(uploadId)
                             .rowNumber(rowIndex)
@@ -101,17 +110,17 @@ public class ExcelParserService {
 
                     batch.add(document);
 
-                    // 배치 삽입
                     if (batch.size() >= BATCH_SIZE) {
                         rawDataRepository.saveAll(batch);
                         processedRows += batch.size();
                         batch.clear();
 
-                        // 진행률 업데이트
                         int progress = (int) ((processedRows * 100.0) / (totalRows - 1));
                         updateSessionProgress(session, processedRows, totalRows - 1, progress);
 
-                        log.info("진행률: {}% ({}/{})", progress, processedRows, totalRows - 1);
+                        if (processedRows % 20000 == 0) {
+                            log.info("[백엔드 Fallback] 진행률: {}% ({}/{})", progress, processedRows, totalRows - 1);
+                        }
                     }
                 }
 
@@ -123,12 +132,12 @@ public class ExcelParserService {
 
                 // 7. 완료 처리
                 updateSessionStatus(session, UploadSession.UploadStatus.COMPLETED, 100);
-                session.setTotalRows(totalRows - 1); // 헤더 제외
+                session.setTotalRows(totalRows - 1);
                 session.setProcessedRows(processedRows);
                 session.setCompletedAt(LocalDateTime.now());
                 uploadSessionRepository.save(session);
 
-                log.info("Excel 파싱 완료: uploadId={}, totalRows={}, processedRows={}",
+                log.info("[백엔드 Fallback] Excel 파싱 완료: uploadId={}, totalRows={}, processedRows={}",
                         uploadId, totalRows - 1, processedRows);
 
             } catch (IOException e) {
@@ -136,19 +145,24 @@ public class ExcelParserService {
             }
 
         } catch (Exception e) {
-            log.error("Excel 파싱 실패: uploadId={}", uploadId, e);
+            log.error("[백엔드 Fallback] Excel 파싱 실패: uploadId={}", uploadId, e);
 
-            // 실패 상태 업데이트
             session.setStatus(UploadSession.UploadStatus.FAILED);
             session.setErrorMessage(e.getMessage());
             session.setUpdatedAt(LocalDateTime.now());
             uploadSessionRepository.save(session);
 
-            // Redis 진행률도 업데이트
-            redisService.hSet("upload:progress:" + uploadId, "status", "FAILED");
-            redisService.hSet("upload:progress:" + uploadId, "errorMessage", e.getMessage());
+            // Redis 상태 업데이트 (Lambda Worker와 동일한 키)
+            String statusKey = UPLOAD_STATUS_KEY_PREFIX + uploadId;
+            redisService.hSet(statusKey, "status", "FAILED");
+            redisService.hSet(statusKey, "error", e.getMessage());
 
             throw new RuntimeException("Excel 파싱 중 오류 발생", e);
+        } finally {
+            // 임시 파일 정리
+            if (tempFile != null && tempFile.exists()) {
+                tempFile.delete();
+            }
         }
     }
 
@@ -235,6 +249,7 @@ public class ExcelParserService {
 
     /**
      * 세션 상태 업데이트
+     * ★ Redis 키를 Lambda Worker와 동일한 "upload:status:{uploadId}" 로 통일
      */
     private void updateSessionStatus(UploadSession session, UploadSession.UploadStatus status, int progress) {
         session.setStatus(status);
@@ -242,9 +257,9 @@ public class ExcelParserService {
         session.setUpdatedAt(LocalDateTime.now());
         uploadSessionRepository.save(session);
 
-        // Redis에도 저장
-        redisService.hSet("upload:progress:" + session.getUploadId(), "status", status.name());
-        redisService.hSet("upload:progress:" + session.getUploadId(), "progress", progress);
+        String statusKey = UPLOAD_STATUS_KEY_PREFIX + session.getUploadId();
+        redisService.hSet(statusKey, "status", status.name());
+        redisService.hSet(statusKey, "progress", progress);
     }
 
     /**
@@ -257,9 +272,9 @@ public class ExcelParserService {
         session.setUpdatedAt(LocalDateTime.now());
         uploadSessionRepository.save(session);
 
-        // Redis 진행률 업데이트
-        redisService.hSet("upload:progress:" + session.getUploadId(), "progress", progress);
-        redisService.hSet("upload:progress:" + session.getUploadId(), "processedRows", processedRows);
-        redisService.hSet("upload:progress:" + session.getUploadId(), "totalRows", totalRows);
+        String statusKey = UPLOAD_STATUS_KEY_PREFIX + session.getUploadId();
+        redisService.hSet(statusKey, "progress", progress);
+        redisService.hSet(statusKey, "processedRows", processedRows);
+        redisService.hSet(statusKey, "totalRows", totalRows);
     }
 }

@@ -34,8 +34,7 @@ public class ExcelCoordinatorHandler implements RequestHandler<S3Event, String> 
         java.util.TimeZone.setDefault(java.util.TimeZone.getTimeZone("Asia/Seoul"));
     }
 
-    //private static final int CHUNK_SIZE = 100000; // 10만 행씩 분할
-    private static final int CHUNK_SIZE = 2000; // 10만 행씩 분할
+    private static final int CHUNK_SIZE = 50000; // 5만 행씩 분할 (1M rows = 20 chunks)
     private static final String SQS_QUEUE_URL = System.getenv("SQS_QUEUE_URL");
     private static final String AWS_REGION = System.getenv("AWS_REGION") != null
             ? System.getenv("AWS_REGION")
