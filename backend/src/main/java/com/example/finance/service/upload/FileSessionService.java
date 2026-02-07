@@ -832,13 +832,22 @@ public class FileSessionService {
             log.warn("upload_sessions 삭제 실패 (계속 진행): sessionId={}", sessionId, e);
         }
 
-        // 10. S3 세션 폴더 삭제
+        // 10. S3 세션 폴더 삭제 (업로드 파일)
         try {
             String s3Prefix = String.format("projects/%s/sessions/%s/", projectId, sessionId);
             s3Service.deleteFolder(s3Prefix);
             log.info("S3 세션 폴더 삭제 완료: prefix={}", s3Prefix);
         } catch (Exception e) {
             log.warn("S3 세션 폴더 삭제 실패 (계속 진행): sessionId={}", sessionId, e);
+        }
+
+        // 11. S3 export 파일 삭제 (exports/{sessionId}/)
+        try {
+            String exportPrefix = String.format("exports/%s/", sessionId);
+            s3Service.deleteFolder(exportPrefix);
+            log.info("S3 export 폴더 삭제 완료: prefix={}", exportPrefix);
+        } catch (Exception e) {
+            log.warn("S3 export 폴더 삭제 실패 (계속 진행): sessionId={}", sessionId, e);
         }
 
         log.info("세션 데이터 일괄 삭제 완료: sessionId={}", sessionId);
