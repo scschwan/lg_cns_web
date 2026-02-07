@@ -75,4 +75,9 @@ public interface FileSessionRepository extends MongoRepository<FileSession, Stri
      * 프로젝트 ID로 삭제되지 않은 세션 목록 조회
      */
     List<FileSession> findByProjectIdAndIsDeletedFalse(String projectId);
+
+    /**
+     * 프로젝트 ID로 전체 세션 목록 조회
+     */
+    List<FileSession> findByProjectId(String projectId);
 }
