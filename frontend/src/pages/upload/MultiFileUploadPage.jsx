@@ -425,13 +425,17 @@ function MultiFileUploadPage() {
        return map[step] || 'startanalysis';
    };
 
-   // 세션의 마지막 step 경로 결정
+   // 세션의 마지막 step 경로 결정 (Detail Clustering 제외)
    const getLastStepPath = (session) => {
        if (session?.stepHistory?.length > 0) {
-           const lastStep = session.stepHistory[session.stepHistory.length - 1];
-           return stepToPath(lastStep.step);
+           for (let i = session.stepHistory.length - 1; i >= 0; i--) {
+               const step = session.stepHistory[i];
+               if (step.step !== 'DETAIL_CLUSTERING') {
+                   return stepToPath(step.step);
+               }
+           }
        }
-       if (session?.currentStep) {
+       if (session?.currentStep && session.currentStep !== 'DETAIL_CLUSTERING') {
            return stepToPath(session.currentStep);
        }
        return 'startanalysis';
