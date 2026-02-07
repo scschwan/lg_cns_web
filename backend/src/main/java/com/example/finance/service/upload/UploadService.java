@@ -274,6 +274,7 @@ public class UploadService {
                 .uploadedAt(LocalDateTime.now())
                 .detectedColumns(metadataReady ? metadata.columns : new ArrayList<>())
                 .accountContents(new ArrayList<>())
+                .uploadStatus(metadataReady ? "UPLOADED" : "PROCESSING")
                 .build();
 
         fileSession.getUploadedFiles().add(fileInfo);
@@ -305,20 +306,61 @@ public class UploadService {
 
     /**
      * 비동기 메타데이터 업데이트 (전용 스레드풀에서 실행)
+     * ★ 개선: Redis 업로드 상태가 COMPLETED될 때까지 대기 후 메타데이터 업데이트
+     *    → 대용량 파일(10만건+)에서도 모든 raw_data 삽입 완료 후 정확한 rowCount 반영
      */
     private void updateFileMetadataAsync(String sessionId, String fileId, String s3Key) {
         String uploadId = extractUploadIdFromS3Key(s3Key);
         if (uploadId == null) return;
 
         try {
-            // raw_data 대기 - 최대 2분
+            String statusKey = UPLOAD_STATUS_KEY_PREFIX + uploadId;
+
+            // ★ Phase 1: Redis 업로드 상태가 COMPLETED될 때까지 대기 (최대 10분)
+            boolean uploadCompleted = false;
+            for (int retry = 0; retry < 120; retry++) { // 5초 * 120 = 10분
+                try {
+                    Object statusObj = redisTemplate.opsForHash().get(statusKey, "status");
+                    String status = statusObj != null ? statusObj.toString() : "PENDING";
+
+                    if ("COMPLETED".equals(status)) {
+                        uploadCompleted = true;
+                        log.info("Lambda 업로드 완료 확인: uploadId={}, retry={}", uploadId, retry);
+                        break;
+                    } else if ("FAILED".equals(status)) {
+                        log.error("Lambda 업로드 실패: uploadId={}", uploadId);
+                        return;
+                    }
+
+                    // 진행률 로그 (10회 간격)
+                    if (retry % 10 == 0) {
+                        Object progressObj = redisTemplate.opsForHash().get(statusKey, "progress");
+                        String progress = progressObj != null ? progressObj.toString() : "0";
+                        log.info("Lambda 업로드 진행 중: uploadId={}, progress={}%, retry={}",
+                                uploadId, progress, retry);
+                    }
+                } catch (Exception e) {
+                    log.warn("Redis 상태 조회 실패 (재시도): uploadId={}", uploadId);
+                }
+
+                Thread.sleep(5000);
+            }
+
+            // ★ Phase 2: Redis 완료 확인 실패 시 → raw_data 직접 확인으로 fallback
             long rowCount = 0;
-            for (int retry = 0; retry < 40; retry++) {
+            if (!uploadCompleted) {
+                log.warn("Redis 완료 대기 타임아웃, raw_data 직접 확인: uploadId={}", uploadId);
+                // raw_data가 존재하는지만 확인
+                for (int retry = 0; retry < 10; retry++) {
+                    rowCount = mongoTemplate.getCollection("raw_data")
+                            .countDocuments(new org.bson.Document("upload_id", uploadId));
+                    if (rowCount > 0) break;
+                    Thread.sleep(3000);
+                }
+            } else {
+                // ★ 완료 후 최종 row count 확인
                 rowCount = mongoTemplate.getCollection("raw_data")
                         .countDocuments(new org.bson.Document("upload_id", uploadId));
-                if (rowCount > 0) break;
-                Thread.sleep(3000);
-                log.debug("raw_data 대기: uploadId={}, retry={}", uploadId, retry + 1);
             }
 
             if (rowCount == 0) {
@@ -326,7 +368,7 @@ public class UploadService {
                 return;
             }
 
-            // 컬럼 추출
+            // ★ Phase 3: 컬럼 추출
             org.bson.Document rawDoc = mongoTemplate.getCollection("raw_data")
                     .find(new org.bson.Document("upload_id", uploadId))
                     .limit(1)
@@ -343,7 +385,7 @@ public class UploadService {
             final long finalRowCount = rowCount;
             final List<String> finalColumns = columns;
 
-            // DB 업데이트
+            // ★ Phase 4: DB 업데이트 (모든 raw_data 삽입 완료 후)
             FileSession session = fileSessionRepository.findBySessionId(sessionId).orElse(null);
             if (session == null) return;
 
@@ -353,13 +395,14 @@ public class UploadService {
                     .ifPresent(file -> {
                         file.setDetectedColumns(finalColumns);
                         file.setRowCount(finalRowCount);
+                        file.setUploadStatus("UPLOADED");
                     });
 
             session.setUpdatedAt(LocalDateTime.now());
             fileSessionRepository.save(session);
 
             log.info("메타데이터 비동기 업데이트 완료: fileId={}, rowCount={}, columns={}",
-                    fileId, rowCount, columns.size());
+                    fileId, finalRowCount, finalColumns.size());
 
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
@@ -680,6 +723,21 @@ public class UploadService {
                     .deleteMany(new org.bson.Document("upload_id", uploadId))
                     .getDeletedCount();
             log.info("raw_data 삭제: uploadId={}, count={}", uploadId, deleted);
+
+            // ★ upload_sessions 삭제
+            try {
+                uploadSessionRepository.deleteByUploadId(uploadId);
+                log.info("upload_sessions 삭제: uploadId={}", uploadId);
+            } catch (Exception e) {
+                log.warn("upload_sessions 삭제 실패 (계속 진행): uploadId={}", uploadId, e);
+            }
+
+            // ★ Redis 업로드 상태 삭제
+            try {
+                redisTemplate.delete(UPLOAD_STATUS_KEY_PREFIX + uploadId);
+            } catch (Exception e) {
+                log.warn("Redis 업로드 상태 삭제 실패 (계속 진행): uploadId={}", uploadId);
+            }
         }
 
         fileSession.getUploadedFiles().removeIf(f -> f.getFileId().equals(fileId));

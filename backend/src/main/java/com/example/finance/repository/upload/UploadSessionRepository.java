@@ -25,4 +25,19 @@ public interface UploadSessionRepository extends MongoRepository<UploadSession, 
     List<UploadSession> findByProjectIdOrderByCreatedAtDesc(String projectId);
 
     long countBySessionId(String sessionId);
+
+    /**
+     * 세션 ID 기준 업로드 세션 삭제
+     */
+    void deleteBySessionId(String sessionId);
+
+    /**
+     * 업로드 ID 기준 업로드 세션 삭제
+     */
+    void deleteByUploadId(String uploadId);
+
+    /**
+     * 프로젝트 ID 기준 업로드 세션 삭제
+     */
+    void deleteByProjectId(String projectId);
 }

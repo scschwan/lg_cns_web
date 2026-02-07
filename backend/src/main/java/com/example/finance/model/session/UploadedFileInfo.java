@@ -89,4 +89,13 @@ public class UploadedFileInfo {
      */
     @Field("total_amount")
     private Double totalAmount;
+
+    /**
+     * 업로드 처리 상태
+     * UPLOADED: 메타데이터 준비 완료
+     * PROCESSING: raw_data 삽입 중 (대용량 파일)
+     */
+    @Field("upload_status")
+    @Builder.Default
+    private String uploadStatus = "UPLOADED";
 }
