@@ -293,14 +293,15 @@ public class UploadService {
         fileSession.setUpdatedAt(LocalDateTime.now());
         fileSessionRepository.save(fileSession);
 
-        // 대용량만 비동기 처리: SQS로 Worker Lambda 직접 트리거
+        // 대용량: S3 Event → Coordinator가 먼저 처리, 백엔드는 백업 전용
         if (!metadataReady) {
             final String s3Key = request.getS3Key();
             final Long fileSize = request.getFileSize();
             final String fileName = request.getFileName();
             metadataExecutor.submit(() -> {
-                // 1. SQS로 Worker Lambda 트리거
-                triggerWorkerLambda(projectId, fileSession.getSessionId(), uploadId,
+                // 1. S3 Event → Coordinator가 먼저 처리하도록 20초 대기
+                //    Coordinator 실패 시에만 백엔드가 SQS 발행 (백업)
+                triggerWorkerLambdaIfNeeded(projectId, fileSession.getSessionId(), uploadId,
                         "finance-excel-uploads", s3Key, fileName, fileSize);
                 // 2. Lambda 완료 대기 후 메타데이터 업데이트
                 updateFileMetadataAsync(fileSession.getSessionId(), fileId, s3Key);
@@ -324,19 +325,34 @@ public class UploadService {
 
 
     /**
-     * ★ Backend SQS Coordinator: Worker Lambda 직접 트리거
+     * ★ Backend SQS Coordinator (백업 전용)
      *
-     * S3 Event Notification에 의존하지 않고 백엔드에서 직접 ProcessingMessage를
-     * SQS로 전송하여 ExcelWorker Lambda를 트리거함.
-     *
-     * - 행 수 추정: fileSize / 100 (보수적 추정, 빈 청크는 무해)
-     * - ProcessingMessage 포맷으로 전송 (ExcelWorkerHandler 호환)
+     * S3 Event → ExcelCoordinator가 먼저 처리하도록 20초 대기 후,
+     * Redis에서 상태를 확인하여 Coordinator가 미처리 시에만 SQS 발행.
+     * 이중 트리거 방지.
      */
-    private void triggerWorkerLambda(String projectId, String sessionId, String uploadId,
-                                     String s3Bucket, String s3Key, String fileName, Long fileSize) {
+    private void triggerWorkerLambdaIfNeeded(String projectId, String sessionId, String uploadId,
+                                              String s3Bucket, String s3Key, String fileName, Long fileSize) {
         try {
-            // 행 수 추정 (보수적: 50바이트당 1행, 압축률 높은 숫자 데이터 대응)
-            // 빈 청크는 Worker가 0건 처리 후 즉시 종료하므로 과대추정은 무해
+            String statusKey = UPLOAD_STATUS_KEY_PREFIX + uploadId;
+
+            // ★ S3 Event → Coordinator가 먼저 처리하도록 20초 대기
+            log.info("Coordinator 처리 대기 (20초): uploadId={}", uploadId);
+            Thread.sleep(20000);
+
+            // Redis 확인: Coordinator가 이미 처리 시작했으면 스킵
+            Object statusObj = redisTemplate.opsForHash().get(statusKey, "status");
+            String status = statusObj != null ? statusObj.toString() : null;
+
+            if ("PROCESSING".equals(status) || "COMPLETED".equals(status)) {
+                log.info("★ Coordinator 이미 처리 중 (status={}), 백엔드 SQS 발행 스킵: uploadId={}",
+                        status, uploadId);
+                return;
+            }
+
+            // Coordinator가 미처리 → 백엔드가 백업으로 SQS 발행
+            log.info("★ Coordinator 미처리 감지, 백엔드 백업 SQS 발행 시작: uploadId={}", uploadId);
+
             int estimatedRows = (int) Math.max(fileSize / 50, 1000);
             int totalChunks = (int) Math.ceil((double) estimatedRows / CHUNK_SIZE);
 
@@ -346,10 +362,9 @@ public class UploadService {
             ObjectMapper mapper = new ObjectMapper();
 
             for (int i = 0; i < totalChunks; i++) {
-                int startRow = i * CHUNK_SIZE + 2; // 1-based, 헤더(1행) 제외
+                int startRow = i * CHUNK_SIZE + 2;
                 int endRow = Math.min((i + 1) * CHUNK_SIZE + 1, estimatedRows + 1);
 
-                // ProcessingMessage 포맷 (ExcelWorkerHandler 호환)
                 Map<String, Object> message = new LinkedHashMap<>();
                 message.put("projectId", projectId);
                 message.put("sessionId", sessionId);
@@ -366,20 +381,16 @@ public class UploadService {
 
                 String messageBody = mapper.writeValueAsString(message);
 
-                SendMessageRequest sqsRequest = SendMessageRequest.builder()
+                sqsClient.sendMessage(SendMessageRequest.builder()
                         .queueUrl(sqsQueueUrl)
                         .messageBody(messageBody)
-                        .build();
-
-                sqsClient.sendMessage(sqsRequest);
-
-                log.info("SQS 메시지 발행: chunk={}/{}, rows={}~{}{}",
-                        i + 1, totalChunks, startRow, endRow,
-                        i == 0 ? " (첫 청크 - Redis 초기화)" : "");
+                        .build());
             }
 
-            log.info("★ Worker Lambda 트리거 완료: uploadId={}, {} chunks 발행", uploadId, totalChunks);
+            log.info("★ 백엔드 백업 SQS 발행 완료: uploadId={}, {} chunks", uploadId, totalChunks);
 
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
         } catch (Exception e) {
             log.error("★ Worker Lambda 트리거 실패: uploadId={}", uploadId, e);
         }

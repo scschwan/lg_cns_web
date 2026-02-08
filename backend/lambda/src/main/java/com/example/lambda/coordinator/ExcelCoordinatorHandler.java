@@ -36,6 +36,7 @@ public class ExcelCoordinatorHandler implements RequestHandler<S3Event, String> 
     }
 
     private static final int CHUNK_SIZE = 50000; // 5만 행씩 분할 (1M rows = 20 chunks)
+    private static final int EXCEL_MAX_ROWS = 1048576; // Excel 최대 행 수 (2^20)
     private static final String SQS_QUEUE_URL = System.getenv("SQS_QUEUE_URL");
     private static final String AWS_REGION = System.getenv("AWS_REGION") != null
             ? System.getenv("AWS_REGION")
@@ -167,6 +168,14 @@ public class ExcelCoordinatorHandler implements RequestHandler<S3Event, String> 
                             int rowCount = Integer.parseInt(rowsStr);
                             context.getLogger().log("Dimension 태그 발견! 행 개수: " + rowCount);
 
+                            // ★ Excel 최대값(1,048,576)이면 실제 데이터가 아닌 서식 범위
+                            // → 파일 크기 기반 추정으로 fallback
+                            if (rowCount >= EXCEL_MAX_ROWS) {
+                                context.getLogger().log("⚠️ Dimension이 Excel 최대값 (" + EXCEL_MAX_ROWS +
+                                        ") → 서식 범위. 파일 크기 기반 추정으로 전환");
+                                break; // fallbackEstimate로 이동
+                            }
+
                             return rowCount > 0 ? rowCount - 1 : 0;
                         }
                     }
@@ -200,8 +209,8 @@ public class ExcelCoordinatorHandler implements RequestHandler<S3Event, String> 
 
             context.getLogger().log("파일 크기: " + fileSize + " bytes");
 
-            // 200바이트당 1행으로 추정
-            int estimatedRows = (int) (fileSize / 200);
+            // 50바이트당 1행으로 추정 (보수적: 빈 청크는 Worker가 0건 처리 후 즉시 종료)
+            int estimatedRows = (int) Math.max(fileSize / 50, 1000);
             context.getLogger().log("추정 행 개수 (Fallback): " + estimatedRows);
 
             return estimatedRows;
