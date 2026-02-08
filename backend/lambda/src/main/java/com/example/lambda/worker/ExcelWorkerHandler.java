@@ -86,6 +86,9 @@ public class ExcelWorkerHandler implements RequestHandler<SQSEvent, String> {
 
                 processChunk(processingMessage, context);
 
+                // ★ 청크 완료 마킹 (chunk 기반 진행률 추적)
+                markChunkCompleted(processingMessage, context);
+
                 context.getLogger().log("처리 완료: chunk=" + processingMessage.getChunkNumber());
             }
 
@@ -116,6 +119,7 @@ public class ExcelWorkerHandler implements RequestHandler<SQSEvent, String> {
                     jedis.hset(key, "progress", "0");
                     jedis.hset(key, "totalRows", String.valueOf(totalRows));
                     jedis.hset(key, "processedRows", "0");
+                    jedis.hset(key, "completedChunks", "0");
                     jedis.expire(key, 86400); // 24시간 TTL
 
                     context.getLogger().log("Redis 초기화 성공! (시도 " + attempt + ")");
@@ -375,29 +379,47 @@ public class ExcelWorkerHandler implements RequestHandler<SQSEvent, String> {
     }
 
     /**
-     * Redis 진행률 업데이트
+     * Redis 진행률 업데이트 (행 수 추적만, 완료 판정은 markChunkCompleted에서)
      */
-    private void updateProgress(String uploadId, int processedRows, int totalRows, Context context) {
+    private void updateProgress(String uploadId, int deltaRows, int totalRows, Context context) {
         try (Jedis jedis = RedisConfig.getJedis()) {
             String key = "upload:status:" + uploadId;
+            long currentProcessed = jedis.hincrBy(key, "processedRows", deltaRows);
+            context.getLogger().log("행 처리 누적: " + currentProcessed + "건");
+        } catch (Exception e) {
+            context.getLogger().log("WARNING: Redis 진행률 업데이트 실패: " + e.getMessage());
+        }
+    }
 
-            // 원자적 증가
-            long currentProcessed = jedis.hincrBy(key, "processedRows", processedRows);
+    /**
+     * ★ 청크 완료 마킹 + chunk 기반 진행률/완료 판정
+     *
+     * processedRows >= totalRows 방식은 행 수 추정 오차로 COMPLETED가 안 될 수 있음.
+     * completedChunks >= totalChunks 방식으로 변경하여 빈 청크도 정상 완료 처리.
+     */
+    private void markChunkCompleted(ProcessingMessage message, Context context) {
+        try (Jedis jedis = RedisConfig.getJedis()) {
+            String key = "upload:status:" + message.getUploadId();
 
-            // 진행률 계산
-            int progress = (int) ((currentProcessed * 100.0) / totalRows);
-            jedis.hset(key, "progress", String.valueOf(progress));
+            // 완료 청크 수 원자적 증가
+            long completedChunks = jedis.hincrBy(key, "completedChunks", 1);
+            int totalChunks = message.getTotalChunks();
 
-            context.getLogger().log("진행률 업데이트: " + progress + "% (" + currentProcessed + "/" + totalRows + ")");
+            // 진행률: 청크 기반 (빈 청크도 진행률에 반영)
+            int progress = (int) ((completedChunks * 100.0) / totalChunks);
+            jedis.hset(key, "progress", String.valueOf(Math.min(progress, 100)));
 
-            // 완료 확인
-            if (currentProcessed >= totalRows) {
+            context.getLogger().log("청크 완료: " + completedChunks + "/" + totalChunks +
+                    " (" + progress + "%)");
+
+            // 모든 청크 완료 시 COMPLETED
+            if (completedChunks >= totalChunks) {
                 jedis.hset(key, "status", "COMPLETED");
-                context.getLogger().log("파싱 완료!");
+                jedis.hset(key, "progress", "100");
+                context.getLogger().log("★ 전체 업로드 완료! (COMPLETED)");
             }
         } catch (Exception e) {
-            // Redis 업데이트 실패 시 경고만 기록 (처리는 계속)
-            context.getLogger().log("WARNING: Redis 진행률 업데이트 실패: " + e.getMessage());
+            context.getLogger().log("WARNING: 청크 완료 마킹 실패: " + e.getMessage());
         }
     }
 }
