@@ -182,17 +182,17 @@ if (!(Test-Path $LAMBDA_ZIP)) {
                 --function-name ExcelCoordinator `
                 --region $AWS_REGION
 
-            # 구성 업데이트 (Memory: 512MB, Timeout: 120s)
+            # 구성 업데이트 (Memory: 1024MB, Timeout: 300s)
             Write-Host "`n[11/14] Lambda Coordinator Config Update..." -ForegroundColor Yellow
             aws lambda update-function-configuration `
                 --function-name ExcelCoordinator `
-                --memory-size 512 `
-                --timeout 120 `
+                --memory-size 1024 `
+                --timeout 300 `
                 --region $AWS_REGION `
                 --no-cli-pager
 
             if ($LASTEXITCODE -eq 0) {
-                Write-Host "✅ Coordinator Config Updated (512MB, 120s)" -ForegroundColor Green
+                Write-Host "✅ Coordinator Config Updated (1024MB, 300s)" -ForegroundColor Green
             }
         } else {
             Write-Host "⚠️ Coordinator Deploy Failed! (Check if Function exists)" -ForegroundColor Yellow
