@@ -148,11 +148,11 @@ public class ExcelWorkerHandler implements RequestHandler<SQSEvent, String> {
      * 청크 처리
      */
     private void processChunk(ProcessingMessage message, Context context) throws IOException {
-        // ⭐ 1. /tmp에 임시 파일 다운로드
+        // 1. /tmp에 임시 파일 다운로드
         Path tempFile = Files.createTempFile("excel-", ".xlsx");
 
         try {
-            // ★ S3 키 URL 디코딩 (S3 Event → Coordinator 경로에서 인코딩될 수 있음)
+            // S3 키 URL 디코딩
             String s3Key = message.getS3Key();
             try {
                 String decoded = URLDecoder.decode(s3Key, java.nio.charset.StandardCharsets.UTF_8);
@@ -171,22 +171,21 @@ public class ExcelWorkerHandler implements RequestHandler<SQSEvent, String> {
                     .key(s3Key)
                     .build();
 
-            // S3 → 파일 다운로드
             try (ResponseInputStream<GetObjectResponse> s3Object = s3Client.getObject(getObjectRequest)) {
                 Files.copy(s3Object, tempFile, StandardCopyOption.REPLACE_EXISTING);
                 context.getLogger().log("파일 다운로드 완료: " + Files.size(tempFile) + " bytes");
             }
 
-            // ⭐ 2. Streaming Reader로 Excel 열기 (메모리 20MB 고정!)
+            // 2. Streaming Reader로 Excel 열기 (메모리 효율화)
             try (InputStream inputStream = new FileInputStream(tempFile.toFile());
                  Workbook workbook = StreamingReader.builder()
-                         .rowCacheSize(100)    // 메모리에 100행만 유지
-                         .bufferSize(4096)     // 버퍼 4KB
+                         .rowCacheSize(100)
+                         .bufferSize(4096)
                          .open(inputStream)) {
 
                 Sheet sheet = workbook.getSheetAt(0);
 
-                // 3. 헤더 추출 (첫 번째 행)
+                // 3. 헤더 추출
                 Iterator<Row> rowIterator = sheet.iterator();
                 if (!rowIterator.hasNext()) {
                     context.getLogger().log("WARNING: 빈 시트");
@@ -195,51 +194,46 @@ public class ExcelWorkerHandler implements RequestHandler<SQSEvent, String> {
 
                 Row headerRow = rowIterator.next();
                 List<String> headers = extractHeaders(headerRow);
-                context.getLogger().log("헤더: " + headers);
 
                 // 4. MongoDB 준비
                 MongoDatabase database = MongoDBConfig.getDatabase();
                 MongoCollection<Document> collection = database.getCollection("raw_data");
 
-                // ★ 중복 방지: 이 청크 범위의 데이터가 이미 존재하면 스킵
-                long existingCount = collection.countDocuments(
-                        new Document("upload_id", message.getUploadId())
-                                .append("row_number", new Document("$gte", message.getStartRow() - 1)
-                                        .append("$lt", message.getEndRow())));
-                if (existingCount > 0) {
-                    context.getLogger().log("★ 중복 감지! 이미 " + existingCount +
-                            "건 존재 (chunk=" + message.getChunkNumber() + "), 스킵");
-                    return;
+                // [수정됨] ★ 멱등성 보장: Insert 전, 해당 청크 범위의 기존 데이터 삭제
+                // 기존의 countDocuments 체크는 동시성 이슈로 중복을 막지 못하므로 삭제 후 삽입 방식을 사용합니다.
+                // startRow는 1-based 엑셀 행 번호, DB의 row_number는 (실제 행 - 1) 로직을 따르고 있으므로 범위 조정
+                long deletedCount = collection.deleteMany(
+                        Filters.and(
+                                Filters.eq("upload_id", message.getUploadId()),
+                                Filters.gte("row_number", message.getStartRow() - 1),
+                                Filters.lt("row_number", message.getEndRow())
+                        )
+                ).getDeletedCount();
+
+                if (deletedCount > 0) {
+                    context.getLogger().log("⚠️ 재시도 감지: 기존 데이터 " + deletedCount + "건 삭제 후 재처리 (Chunk " + message.getChunkNumber() + ")");
                 }
 
                 List<Document> batch = new ArrayList<>();
                 int processedCount = 0;
-                int currentRowIndex = 1; // 헤더 다음부터 (0-based에서 1부터 시작)
+                int currentRowIndex = 1; // 헤더 다음부터 (0-based 데이터 인덱스)
 
-                // ⭐ 5. 스트리밍 방식으로 행 읽기 (메모리 효율적!)
+                // 5. 스트리밍 방식으로 행 읽기
                 while (rowIterator.hasNext()) {
                     Row row = rowIterator.next();
 
-                    // startRow ~ endRow 범위만 처리
+                    // startRow ~ endRow 범위만 처리 (Skip Logic)
                     if (currentRowIndex < message.getStartRow() - 1) {
                         currentRowIndex++;
-                        continue; // 범위 전: 건너뛰기
+                        continue; // 앞부분 건너뛰기
                     }
 
                     if (currentRowIndex >= message.getEndRow()) {
-                        break; // 범위 후: 종료
+                        break; // 범위 벗어나면 종료
                     }
 
                     // 행 데이터 추출
                     Map<String, Object> rowData = extractRowDataStreaming(headers, row);
-
-                    // ★ 빈 행 스킵: 모든 셀이 null이면 삽입하지 않음
-                    boolean hasData = rowData.values().stream()
-                            .anyMatch(v -> v != null && !v.toString().trim().isEmpty());
-                    if (!hasData) {
-                        currentRowIndex++;
-                        continue;
-                    }
 
                     // MongoDB Document 생성
                     Document doc = new Document()
@@ -261,10 +255,11 @@ public class ExcelWorkerHandler implements RequestHandler<SQSEvent, String> {
                         processedCount += batchCount;
                         batch.clear();
 
-                        // ★ Redis 진행률: delta(배치 건수)만 전송 (누적X)
+                        // Redis 진행률 업데이트
                         updateProgress(message.getUploadId(), batchCount, message.getTotalRows(), context);
 
-                        context.getLogger().log("중간 저장: " + processedCount + "건 (행: " + currentRowIndex + ")");
+                        // 로그를 너무 자주 남기면 CloudWatch 비용 증가하므로 주석 처리하거나 배치 단위로만 기록
+                        // context.getLogger().log("중간 저장: " + processedCount + "건");
                     }
 
                     currentRowIndex++;
@@ -278,14 +273,13 @@ public class ExcelWorkerHandler implements RequestHandler<SQSEvent, String> {
                     updateProgress(message.getUploadId(), batchCount, message.getTotalRows(), context);
                 }
 
-                context.getLogger().log("MongoDB 삽입 완료: " + processedCount + "건");
+                context.getLogger().log("MongoDB 삽입 완료: " + processedCount + "건 (Chunk " + message.getChunkNumber() + ")");
             }
 
         } finally {
             // 6. 임시 파일 삭제
             try {
                 Files.deleteIfExists(tempFile);
-                context.getLogger().log("임시 파일 삭제 완료");
             } catch (IOException e) {
                 context.getLogger().log("WARNING: 임시 파일 삭제 실패: " + e.getMessage());
             }
