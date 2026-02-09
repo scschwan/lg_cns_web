@@ -233,6 +233,14 @@ public class ExcelWorkerHandler implements RequestHandler<SQSEvent, String> {
                     // 행 데이터 추출
                     Map<String, Object> rowData = extractRowDataStreaming(headers, row);
 
+                    // ★ 빈 행 스킵: 모든 셀이 null이면 삽입하지 않음
+                    boolean hasData = rowData.values().stream()
+                            .anyMatch(v -> v != null && !v.toString().trim().isEmpty());
+                    if (!hasData) {
+                        currentRowIndex++;
+                        continue;
+                    }
+
                     // MongoDB Document 생성
                     Document doc = new Document()
                             .append("project_id", message.getProjectId())
