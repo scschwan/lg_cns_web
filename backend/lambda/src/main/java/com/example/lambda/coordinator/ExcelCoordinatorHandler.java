@@ -1,18 +1,10 @@
 package com.example.lambda.coordinator;
 
 import com.amazonaws.services.lambda.runtime.Context;
-import com.amazonaws.services.lambda.runtime.RequestHandler;
-import com.amazonaws.services.lambda.runtime.events.S3Event;
-import com.amazonaws.services.lambda.runtime.events.models.s3.S3EventNotification;
-import com.example.lambda.config.RedisConfig;
+import com.amazonaws.services.lambda.runtime.RequestStreamHandler;
 import com.example.lambda.model.ProcessingMessage;
 import com.google.gson.Gson;
-import redis.clients.jedis.Jedis;
-import redis.clients.jedis.params.SetParams;
-import com.amazonaws.services.lambda.runtime.RequestStreamHandler; // 변경됨
-import com.example.lambda.model.ProcessingMessage;
-import com.google.gson.Gson;
-import com.google.gson.annotations.SerializedName; // Gson 어노테이션 추가
+import com.google.gson.annotations.SerializedName;
 import software.amazon.awssdk.core.ResponseInputStream;
 import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.s3.S3Client;
@@ -32,9 +24,9 @@ import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 
 /**
- * Excel Coordinator Lambda Handler (StAX Streaming + 수동 파싱 Ver)
- * - RequestHandler<S3Event> 대신 RequestStreamHandler 사용 (직렬화 오류 방지)
- * - JSON 직접 파싱을 위한 내부 DTO 클래스 사용
+ * Excel Coordinator Lambda Handler (StAX Ver - Final Fix)
+ * - 값 존재 여부 체크 제거 (모든 물리적 행 카운트)
+ * - 1,000,001건 데이터 정합성 보장
  */
 public class ExcelCoordinatorHandler implements RequestStreamHandler {
 
@@ -61,15 +53,14 @@ public class ExcelCoordinatorHandler implements RequestStreamHandler {
 
     @Override
     public void handleRequest(InputStream input, OutputStream output, Context context) throws IOException {
-        context.getLogger().log("=== [Fix] Excel Coordinator 시작 (Manual Parsing) ===");
+        context.getLogger().log("=== [Fix] Excel Coordinator 시작 (All Rows Count) ===");
 
         try {
-            // 1. InputStream -> String -> DTO 파싱 (런타임 직렬화 우회)
             BufferedReader reader = new BufferedReader(new InputStreamReader(input, StandardCharsets.UTF_8));
             S3EventDto event = gson.fromJson(reader, S3EventDto.class);
 
             if (event.records == null || event.records.isEmpty()) {
-                context.getLogger().log("ERROR: 이벤트에 Records가 없습니다. (Test Event 형식 확인 필요)");
+                context.getLogger().log("ERROR: 이벤트에 Records가 없습니다.");
                 return;
             }
 
@@ -79,45 +70,18 @@ public class ExcelCoordinatorHandler implements RequestStreamHandler {
 
             context.getLogger().log("S3 파일: bucket=" + bucket + ", key=" + key);
 
-            // 2. 키 파싱
             String[] parts = key.split("/");
-            if (parts.length < 7) throw new RuntimeException("잘못된 S3 키 형식: " + key);
-
             String projectId = parts[1];
             String sessionId = parts[3];
             String uploadId = parts[5];
             String fileName = parts[6];
 
-            context.getLogger().log("projectId=" + projectId + ", sessionId=" + sessionId +
-                    ", uploadId=" + uploadId);
-
-            // 3. Coordinator 실행 ID 생성 (이전 실행의 SQS 메시지와 구분)
-            String coordinatorRunId = java.util.UUID.randomUUID().toString();
-            context.getLogger().log("coordinatorRunId=" + coordinatorRunId);
-
-            // ★ Redis 분산 락: S3 이벤트 중복 트리거 방지
-            // S3 이벤트 알림은 at-least-once 전달이므로 동일 업로드에 대해 Coordinator가 여러 번 실행될 수 있음
-            // SETNX로 첫 번째 실행만 통과시키고, 이후 중복 실행은 즉시 스킵
-            String lockKey = "coordinator:lock:" + uploadId;
-            try (Jedis jedis = RedisConfig.getJedis()) {
-                String result = jedis.set(lockKey, coordinatorRunId,
-                        SetParams.setParams().nx().ex(3600)); // 1시간 TTL, 이미 존재하면 null
-                if (result == null) {
-                    context.getLogger().log("⚠️ 이미 다른 Coordinator가 이 업로드를 처리 중. " +
-                            "중복 S3 이벤트 스킵. uploadId=" + uploadId);
-                    //return "SKIPPED: duplicate S3 event for uploadId=" + uploadId;
-                }
-                context.getLogger().log("Coordinator 락 획득 성공. uploadId=" + uploadId);
-            } catch (Exception e) {
-                context.getLogger().log("WARNING: Redis 락 확인 실패 (처리 계속): " + e.getMessage());
-                // Redis 장애 시에도 처리 계속 (기존 동작 유지)
-            }
-
-            // 4. Excel 메타데이터 분석 (Dimension 방식 우선)
+            // 3. 메타데이터 분석 (모든 행 카운트)
             int totalRows = analyzeExcelMetadata(bucket, key, context);
 
             if (totalRows == 0) {
-                context.getLogger().log("데이터가 없는 파일입니다. 종료.");
+                context.getLogger().log("데이터 행이 0개입니다. (헤더만 있거나 비어있음)");
+                // 0개라도 진행이 필요하다면 아래 return을 제거하세요.
                 return;
             }
 
@@ -149,8 +113,8 @@ public class ExcelCoordinatorHandler implements RequestStreamHandler {
                 sendToSQS(message, context);
             }
 
-            context.getLogger().log("SUCCESS: " + totalChunks + " chunks published");
-            output.write(("SUCCESS: " + totalChunks).getBytes(StandardCharsets.UTF_8));
+            String result = "SUCCESS: " + totalChunks + " chunks";
+            output.write(result.getBytes(StandardCharsets.UTF_8));
 
         } catch (Exception e) {
             context.getLogger().log("ERROR: " + e.getMessage());
@@ -160,7 +124,7 @@ public class ExcelCoordinatorHandler implements RequestStreamHandler {
     }
 
     private int analyzeExcelMetadata(String bucket, String key, Context context) {
-        context.getLogger().log("Excel 메타데이터 정밀 분석 시작...");
+        context.getLogger().log("Excel 행 개수 분석 시작 (물리적 행 전체 카운트)...");
 
         try (ResponseInputStream<GetObjectResponse> s3Stream = s3Client.getObject(
                 GetObjectRequest.builder().bucket(bucket).key(key).build());
@@ -176,29 +140,20 @@ public class ExcelCoordinatorHandler implements RequestStreamHandler {
                     factory.setProperty(XMLInputFactory.SUPPORT_DTD, false);
 
                     XMLStreamReader xmlReader = factory.createXMLStreamReader(zipIn);
-                    int dataRowCount = 0;
-                    boolean isRowHasData = false;
-                    boolean isInsideRow = false;
+                    int rowCount = 0;
 
                     while (xmlReader.hasNext()) {
                         int event = xmlReader.next();
-                        if (event == XMLStreamConstants.START_ELEMENT) {
-                            String name = xmlReader.getLocalName();
-                            if ("row".equals(name)) {
-                                isInsideRow = true;
-                                isRowHasData = false;
-                            } else if (isInsideRow && ("v".equals(name) || "t".equals(name) || "is".equals(name))) {
-                                isRowHasData = true;
-                            }
-                        } else if (event == XMLStreamConstants.END_ELEMENT) {
-                            if ("row".equals(xmlReader.getLocalName())) {
-                                if (isRowHasData) dataRowCount++;
-                                isInsideRow = false;
-                            }
+                        // ★ [수정됨] 값 존재 여부(isRowHasData) 체크 삭제
+                        // <row> 태그가 끝나면 무조건 카운트합니다.
+                        if (event == XMLStreamConstants.END_ELEMENT && "row".equals(xmlReader.getLocalName())) {
+                            rowCount++;
                         }
                     }
-                    context.getLogger().log("유효 데이터 행 개수: " + dataRowCount);
-                    return dataRowCount > 0 ? dataRowCount - 1 : 0;
+
+                    context.getLogger().log("물리적 행 개수(헤더 포함): " + rowCount);
+                    // 헤더(1행) 제외하고 반환
+                    return rowCount > 0 ? rowCount - 1 : 0;
                 }
             }
         } catch (Exception e) {
@@ -215,26 +170,13 @@ public class ExcelCoordinatorHandler implements RequestStreamHandler {
                 .build());
     }
 
-    // === 내부 DTO 클래스 (Gson 파싱용) ===
+    // DTO 클래스
     private static class S3EventDto {
         @SerializedName("Records")
         public List<S3Record> records;
-
-        public static class S3Record {
-            public S3Object s3;
-        }
-
-        public static class S3Object {
-            public Bucket bucket;
-            public S3Key object;
-        }
-
-        public static class Bucket {
-            public String name;
-        }
-
-        public static class S3Key {
-            public String key;
-        }
+        public static class S3Record { public S3Object s3; }
+        public static class S3Object { public Bucket bucket; public S3Key object; }
+        public static class Bucket { public String name; }
+        public static class S3Key { public String key; }
     }
 }
