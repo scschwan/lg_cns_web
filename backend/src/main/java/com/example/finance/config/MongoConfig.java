@@ -48,7 +48,7 @@ public class MongoConfig extends AbstractMongoClientConfiguration {
                 )
                 .applyToSocketSettings(builder ->
                         builder.connectTimeout(10, TimeUnit.SECONDS)
-                                .readTimeout(30, TimeUnit.SECONDS)
+                                .readTimeout(120, TimeUnit.SECONDS)
                 )
                 .retryWrites(false)  // DocumentDB 필수
                 .build();
