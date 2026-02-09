@@ -16,6 +16,9 @@ import software.amazon.awssdk.services.s3.model.HeadObjectResponse;
 import software.amazon.awssdk.services.sqs.SqsClient;
 import software.amazon.awssdk.services.sqs.model.SendMessageRequest;
 
+import javax.xml.stream.XMLInputFactory;
+import javax.xml.stream.XMLStreamConstants;
+import javax.xml.stream.XMLStreamReader;
 import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
 import java.util.regex.Matcher;
@@ -132,8 +135,13 @@ public class ExcelCoordinatorHandler implements RequestHandler<S3Event, String> 
      * 1순위: XML Dimension 태그 분석 (정확, 빠름)
      * 2순위: 파일 크기 기반 추정 (Fallback)
      */
+    /**
+     * [수정됨] Excel 메타데이터 분석
+     * 기존의 Dimension 태그나 파일 크기 추정 대신,
+     * XML 스트림을 파싱하여 실제 <row> 태그의 개수를 카운트합니다.
+     */
     private int analyzeExcelMetadata(String bucket, String key, Context context) {
-        context.getLogger().log("Excel 메타데이터 분석 시작 (Dimension 태그 방식)...");
+        context.getLogger().log("Excel 메타데이터 정밀 분석 시작 (XML StAX Streaming)...");
 
         try (ResponseInputStream<GetObjectResponse> s3Stream = s3Client.getObject(
                 GetObjectRequest.builder().bucket(bucket).key(key).build());
@@ -141,55 +149,46 @@ public class ExcelCoordinatorHandler implements RequestHandler<S3Event, String> 
 
             ZipEntry entry;
             while ((entry = zipIn.getNextEntry()) != null) {
+                // 시트 파일 찾기 (일반적으로 sheet1.xml이 첫 번째 시트)
                 if (entry.getName().endsWith("xl/worksheets/sheet1.xml")) {
+                    context.getLogger().log("데이터 시트 발견: " + entry.getName());
 
-                    context.getLogger().log("시트 발견: " + entry.getName());
+                    // XML 파서 생성 (보안 설정 포함)
+                    XMLInputFactory factory = XMLInputFactory.newInstance();
+                    factory.setProperty(XMLInputFactory.IS_SUPPORTING_EXTERNAL_ENTITIES, false);
+                    factory.setProperty(XMLInputFactory.SUPPORT_DTD, false);
 
-                    // ⭐ [수정] readLine() 제거!
-                    // 무조건 앞부분 2KB(2048 바이트)만 읽어서 String으로 변환
-                    byte[] buffer = new byte[2048];
-                    int bytesRead = 0;
+                    // ZipInputStream을 직접 XML 리더로 연결
+                    XMLStreamReader reader = factory.createXMLStreamReader(zipIn);
 
-                    // 루프를 돌며 버퍼가 찰 때까지 읽음 (네트워크 패킷 분할 고려)
-                    int len;
-                    while (bytesRead < buffer.length && (len = zipIn.read(buffer, bytesRead, buffer.length - bytesRead)) != -1) {
-                        bytesRead += len;
-                    }
+                    int rowCount = 0;
 
-                    if (bytesRead > 0) {
-                        String xmlHeader = new String(buffer, 0, bytesRead, StandardCharsets.UTF_8);
-
-                        // 정규식으로 태그 찾기
-                        Pattern pattern = Pattern.compile("<dimension\\s+ref=\"[A-Z]+[0-9]+:[A-Z]+([0-9]+)\"");
-                        Matcher matcher = pattern.matcher(xmlHeader);
-
-                        if (matcher.find()) {
-                            String rowsStr = matcher.group(1);
-                            int rowCount = Integer.parseInt(rowsStr);
-                            context.getLogger().log("Dimension 태그 발견! 행 개수: " + rowCount);
-
-                            // ★ Excel 최대값(1,048,576)이면 실제 데이터가 아닌 서식 범위
-                            // → 파일 크기 기반 추정으로 fallback
-                            if (rowCount >= EXCEL_MAX_ROWS) {
-                                context.getLogger().log("⚠️ Dimension이 Excel 최대값 (" + EXCEL_MAX_ROWS +
-                                        ") → 서식 범위. 파일 크기 기반 추정으로 전환");
-                                break; // fallbackEstimate로 이동
-                            }
-
-                            return rowCount > 0 ? rowCount - 1 : 0;
+                    // 스트리밍 방식으로 태그 탐색
+                    while (reader.hasNext()) {
+                        int event = reader.next();
+                        // <row> 시작 태그가 나올 때마다 카운트 증가
+                        if (event == XMLStreamConstants.START_ELEMENT && "row".equals(reader.getLocalName())) {
+                            rowCount++;
                         }
                     }
 
-                    context.getLogger().log("WARNING: 앞부분 2KB에서 Dimension 태그를 찾지 못함. Fallback 실행.");
-                    break; // 못 찾으면 Fallback
+                    context.getLogger().log("XML 파싱 완료. 실제 데이터 행 개수: " + rowCount);
+
+                    // 헤더(1행)를 제외하고 반환 (데이터가 없으면 0)
+                    return rowCount > 0 ? rowCount - 1 : 0;
                 }
             }
+
+            context.getLogger().log("WARNING: sheet1.xml을 찾을 수 없습니다.");
+
         } catch (Exception e) {
-            context.getLogger().log("ERROR: Dimension 분석 실패 (" + e.getClass().getSimpleName() + "): " + e.getMessage());
+            context.getLogger().log("ERROR: 메타데이터 분석 중 오류 발생: " + e.getMessage());
+            e.printStackTrace();
         }
 
-        // 실패 시 안전장치
-        return fallbackEstimate(bucket, key, context);
+        // 실패 시 안전장치 (기존 Fallback 대신 최소값 반환 또는 예외 처리)
+        // 여기서는 예외를 던져서 잘못된 청크 생성을 막는 것이 낫습니다.
+        throw new RuntimeException("Excel 행 개수를 정확히 분석할 수 없습니다.");
     }
 
     /**
