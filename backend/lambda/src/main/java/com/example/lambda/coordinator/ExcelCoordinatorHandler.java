@@ -1,11 +1,10 @@
 package com.example.lambda.coordinator;
 
 import com.amazonaws.services.lambda.runtime.Context;
-import com.amazonaws.services.lambda.runtime.RequestHandler;
-import com.amazonaws.services.lambda.runtime.events.S3Event;
-import com.amazonaws.services.lambda.runtime.events.models.s3.S3EventNotification;
+import com.amazonaws.services.lambda.runtime.RequestStreamHandler; // 변경됨
 import com.example.lambda.model.ProcessingMessage;
 import com.google.gson.Gson;
+import com.google.gson.annotations.SerializedName; // Gson 어노테이션 추가
 import software.amazon.awssdk.core.ResponseInputStream;
 import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.s3.S3Client;
@@ -17,16 +16,19 @@ import software.amazon.awssdk.services.sqs.model.SendMessageRequest;
 import javax.xml.stream.XMLInputFactory;
 import javax.xml.stream.XMLStreamConstants;
 import javax.xml.stream.XMLStreamReader;
+import java.io.*;
 import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
+import java.util.List;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 
 /**
- * Excel Coordinator Lambda Handler (StAX Streaming 버전)
- * 정확한 행 개수 카운트 (Fallback 제거)
+ * Excel Coordinator Lambda Handler (StAX Streaming + 수동 파싱 Ver)
+ * - RequestHandler<S3Event> 대신 RequestStreamHandler 사용 (직렬화 오류 방지)
+ * - JSON 직접 파싱을 위한 내부 DTO 클래스 사용
  */
-public class ExcelCoordinatorHandler implements RequestHandler<S3Event, String> {
+public class ExcelCoordinatorHandler implements RequestStreamHandler {
 
     static {
         java.util.TimeZone.setDefault(java.util.TimeZone.getTimeZone("Asia/Seoul"));
@@ -43,24 +45,36 @@ public class ExcelCoordinatorHandler implements RequestHandler<S3Event, String> 
     private final Gson gson;
 
     public ExcelCoordinatorHandler() {
-        Region region = Region.of(AWS_REGION != null ? AWS_REGION : "ap-northeast-2");
+        Region region = Region.of(AWS_REGION);
         this.s3Client = S3Client.builder().region(region).build();
         this.sqsClient = SqsClient.builder().region(region).build();
         this.gson = new Gson();
     }
 
     @Override
-    public String handleRequest(S3Event s3Event, Context context) {
-        context.getLogger().log("=== [20260209-ver]Excel Coordinator 시작 (StAX Ver) ===");
+    public void handleRequest(InputStream input, OutputStream output, Context context) throws IOException {
+        context.getLogger().log("=== [Fix] Excel Coordinator 시작 (Manual Parsing) ===");
 
         try {
-            S3EventNotification.S3EventNotificationRecord record = s3Event.getRecords().get(0);
-            String bucket = record.getS3().getBucket().getName();
-            String key = URLDecoder.decode(record.getS3().getObject().getKey(), StandardCharsets.UTF_8);
+            // 1. InputStream -> String -> DTO 파싱 (런타임 직렬화 우회)
+            BufferedReader reader = new BufferedReader(new InputStreamReader(input, StandardCharsets.UTF_8));
+            S3EventDto event = gson.fromJson(reader, S3EventDto.class);
+
+            if (event.records == null || event.records.isEmpty()) {
+                context.getLogger().log("ERROR: 이벤트에 Records가 없습니다. (Test Event 형식 확인 필요)");
+                return;
+            }
+
+            S3EventDto.S3Record record = event.records.get(0);
+            String bucket = record.s3.bucket.name;
+            String key = URLDecoder.decode(record.s3.object.key, StandardCharsets.UTF_8);
 
             context.getLogger().log("S3 파일: bucket=" + bucket + ", key=" + key);
 
+            // 2. 키 파싱
             String[] parts = key.split("/");
+            if (parts.length < 7) throw new RuntimeException("잘못된 S3 키 형식: " + key);
+
             String projectId = parts[1];
             String sessionId = parts[3];
             String uploadId = parts[5];
@@ -71,7 +85,7 @@ public class ExcelCoordinatorHandler implements RequestHandler<S3Event, String> 
 
             if (totalRows == 0) {
                 context.getLogger().log("데이터가 없는 파일입니다. 종료.");
-                return "SKIPPED";
+                return;
             }
 
             context.getLogger().log("최종 분석된 행 개수: " + totalRows);
@@ -102,7 +116,8 @@ public class ExcelCoordinatorHandler implements RequestHandler<S3Event, String> 
                 sendToSQS(message, context);
             }
 
-            return "SUCCESS: " + totalChunks + " chunks";
+            context.getLogger().log("SUCCESS: " + totalChunks + " chunks published");
+            output.write(("SUCCESS: " + totalChunks).getBytes(StandardCharsets.UTF_8));
 
         } catch (Exception e) {
             context.getLogger().log("ERROR: " + e.getMessage());
@@ -112,7 +127,7 @@ public class ExcelCoordinatorHandler implements RequestHandler<S3Event, String> 
     }
 
     private int analyzeExcelMetadata(String bucket, String key, Context context) {
-        context.getLogger().log("Excel 메타데이터 정밀 분석 시작 (값 존재 여부 체크)...");
+        context.getLogger().log("Excel 메타데이터 정밀 분석 시작...");
 
         try (ResponseInputStream<GetObjectResponse> s3Stream = s3Client.getObject(
                 GetObjectRequest.builder().bucket(bucket).key(key).build());
@@ -127,15 +142,15 @@ public class ExcelCoordinatorHandler implements RequestHandler<S3Event, String> 
                     factory.setProperty(XMLInputFactory.IS_SUPPORTING_EXTERNAL_ENTITIES, false);
                     factory.setProperty(XMLInputFactory.SUPPORT_DTD, false);
 
-                    XMLStreamReader reader = factory.createXMLStreamReader(zipIn);
+                    XMLStreamReader xmlReader = factory.createXMLStreamReader(zipIn);
                     int dataRowCount = 0;
                     boolean isRowHasData = false;
                     boolean isInsideRow = false;
 
-                    while (reader.hasNext()) {
-                        int event = reader.next();
+                    while (xmlReader.hasNext()) {
+                        int event = xmlReader.next();
                         if (event == XMLStreamConstants.START_ELEMENT) {
-                            String name = reader.getLocalName();
+                            String name = xmlReader.getLocalName();
                             if ("row".equals(name)) {
                                 isInsideRow = true;
                                 isRowHasData = false;
@@ -143,7 +158,7 @@ public class ExcelCoordinatorHandler implements RequestHandler<S3Event, String> 
                                 isRowHasData = true;
                             }
                         } else if (event == XMLStreamConstants.END_ELEMENT) {
-                            if ("row".equals(reader.getLocalName())) {
+                            if ("row".equals(xmlReader.getLocalName())) {
                                 if (isRowHasData) dataRowCount++;
                                 isInsideRow = false;
                             }
@@ -165,5 +180,28 @@ public class ExcelCoordinatorHandler implements RequestHandler<S3Event, String> 
                 .queueUrl(SQS_QUEUE_URL)
                 .messageBody(gson.toJson(message))
                 .build());
+    }
+
+    // === 내부 DTO 클래스 (Gson 파싱용) ===
+    private static class S3EventDto {
+        @SerializedName("Records")
+        public List<S3Record> records;
+
+        public static class S3Record {
+            public S3Object s3;
+        }
+
+        public static class S3Object {
+            public Bucket bucket;
+            public S3Key object;
+        }
+
+        public static class Bucket {
+            public String name;
+        }
+
+        public static class S3Key {
+            public String key;
+        }
     }
 }
