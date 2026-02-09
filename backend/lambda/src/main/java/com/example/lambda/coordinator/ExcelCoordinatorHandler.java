@@ -16,6 +16,7 @@ import software.amazon.awssdk.services.s3.model.HeadObjectResponse;
 import software.amazon.awssdk.services.sqs.SqsClient;
 import software.amazon.awssdk.services.sqs.model.SendMessageRequest;
 
+import java.io.IOException;
 import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
 import java.util.regex.Matcher;
@@ -130,7 +131,8 @@ public class ExcelCoordinatorHandler implements RequestHandler<S3Event, String> 
     /**
      * Excel 메타데이터 분석
      * 1순위: XML Dimension 태그 분석 (정확, 빠름)
-     * 2순위: 파일 크기 기반 추정 (Fallback)
+     * 2순위: XML <row r="N"> 스캔 (Dimension이 Excel 최대값일 때)
+     * 3순위: 파일 크기 기반 추정 (Fallback)
      */
     private int analyzeExcelMetadata(String bucket, String key, Context context) {
         context.getLogger().log("Excel 메타데이터 분석 시작 (Dimension 태그 방식)...");
@@ -145,12 +147,10 @@ public class ExcelCoordinatorHandler implements RequestHandler<S3Event, String> 
 
                     context.getLogger().log("시트 발견: " + entry.getName());
 
-                    // ⭐ [수정] readLine() 제거!
-                    // 무조건 앞부분 2KB(2048 바이트)만 읽어서 String으로 변환
+                    // 앞부분 2KB(2048 바이트)만 읽어서 Dimension 태그 확인
                     byte[] buffer = new byte[2048];
                     int bytesRead = 0;
 
-                    // 루프를 돌며 버퍼가 찰 때까지 읽음 (네트워크 패킷 분할 고려)
                     int len;
                     while (bytesRead < buffer.length && (len = zipIn.read(buffer, bytesRead, buffer.length - bytesRead)) != -1) {
                         bytesRead += len;
@@ -159,7 +159,6 @@ public class ExcelCoordinatorHandler implements RequestHandler<S3Event, String> 
                     if (bytesRead > 0) {
                         String xmlHeader = new String(buffer, 0, bytesRead, StandardCharsets.UTF_8);
 
-                        // 정규식으로 태그 찾기
                         Pattern pattern = Pattern.compile("<dimension\\s+ref=\"[A-Z]+[0-9]+:[A-Z]+([0-9]+)\"");
                         Matcher matcher = pattern.matcher(xmlHeader);
 
@@ -169,10 +168,19 @@ public class ExcelCoordinatorHandler implements RequestHandler<S3Event, String> 
                             context.getLogger().log("Dimension 태그 발견! 행 개수: " + rowCount);
 
                             // ★ Excel 최대값(1,048,576)이면 실제 데이터가 아닌 서식 범위
-                            // → 파일 크기 기반 추정으로 fallback
+                            // → XML row 스캔으로 실제 마지막 행 번호 찾기
                             if (rowCount >= EXCEL_MAX_ROWS) {
                                 context.getLogger().log("⚠️ Dimension이 Excel 최대값 (" + EXCEL_MAX_ROWS +
-                                        ") → 서식 범위. 파일 크기 기반 추정으로 전환");
+                                        ") → 서식 범위. XML row 스캔으로 실제 행 수 확인...");
+
+                                // ⭐ 이미 읽은 2KB + 나머지 XML 전체를 스캔하여 실제 마지막 row 번호 찾기
+                                int actualRows = scanActualLastRow(xmlHeader, zipIn, context);
+                                if (actualRows > 0) {
+                                    context.getLogger().log("★ XML row 스캔 성공! 실제 행 수: " + actualRows);
+                                    return actualRows - 1; // 헤더 제외
+                                }
+
+                                context.getLogger().log("XML row 스캔 실패, 파일 크기 추정으로 전환");
                                 break; // fallbackEstimate로 이동
                             }
 
@@ -181,15 +189,88 @@ public class ExcelCoordinatorHandler implements RequestHandler<S3Event, String> 
                     }
 
                     context.getLogger().log("WARNING: 앞부분 2KB에서 Dimension 태그를 찾지 못함. Fallback 실행.");
-                    break; // 못 찾으면 Fallback
+                    break;
                 }
             }
         } catch (Exception e) {
             context.getLogger().log("ERROR: Dimension 분석 실패 (" + e.getClass().getSimpleName() + "): " + e.getMessage());
         }
 
-        // 실패 시 안전장치
         return fallbackEstimate(bucket, key, context);
+    }
+
+    /**
+     * ⭐ XML <row r="N"> 스캔으로 실제 마지막 행 번호 찾기
+     *
+     * xlsx XML에서 데이터 행은 <row r="123" ...> 형태로 기록됨.
+     * 전체 XML을 64KB 청크로 스트리밍 읽기하면서 마지막 row 번호를 추적.
+     * 메모리 사용: 약 64KB (Lambda 512MB 대비 무시 가능)
+     *
+     * @param alreadyRead 이미 읽은 XML 헤더 (2KB)
+     * @param zipIn       sheet1.xml의 나머지 데이터 스트림
+     * @return 마지막 행 번호 (1-based), 실패 시 -1
+     */
+    private int scanActualLastRow(String alreadyRead, ZipInputStream zipIn, Context context) {
+        try {
+            Pattern rowPattern = Pattern.compile("<row\\s+r=\"(\\d+)\"");
+            int maxRow = 0;
+            long startTime = System.currentTimeMillis();
+
+            // 1. 이미 읽은 2KB에서 먼저 검색
+            Matcher m = rowPattern.matcher(alreadyRead);
+            while (m.find()) {
+                int rowNum = Integer.parseInt(m.group(1));
+                if (rowNum > maxRow) maxRow = rowNum;
+            }
+
+            // 2. 나머지 XML을 64KB 청크로 스트리밍 읽기
+            byte[] buf = new byte[65536]; // 64KB
+            String leftover = ""; // 청크 경계에서 잘린 태그를 위한 버퍼
+            long totalBytesRead = 0;
+
+            int bytesRead;
+            while ((bytesRead = zipIn.read(buf)) != -1) {
+                totalBytesRead += bytesRead;
+                String chunk = leftover + new String(buf, 0, bytesRead, StandardCharsets.UTF_8);
+
+                // <row r="N"> 패턴 검색
+                Matcher matcher = rowPattern.matcher(chunk);
+                while (matcher.find()) {
+                    int rowNum = Integer.parseInt(matcher.group(1));
+                    if (rowNum > maxRow) maxRow = rowNum;
+                }
+
+                // 청크 경계에서 태그가 잘릴 수 있으므로 마지막 50자를 leftover로 보관
+                if (chunk.length() > 50) {
+                    leftover = chunk.substring(chunk.length() - 50);
+                } else {
+                    leftover = chunk;
+                }
+
+                // 100MB마다 진행 상황 로그 + 90초 타임아웃 안전장치
+                if (totalBytesRead % (100 * 1024 * 1024) < 65536) {
+                    long elapsed = System.currentTimeMillis() - startTime;
+                    context.getLogger().log("XML 스캔 진행: " + (totalBytesRead / 1024 / 1024) +
+                            "MB 읽음, 현재 maxRow=" + maxRow + ", 경과=" + (elapsed / 1000) + "초");
+
+                    // 90초 초과 시 현재까지 찾은 결과 반환 (Lambda 120초 타임아웃 대비)
+                    if (elapsed > 90000 && maxRow > 0) {
+                        context.getLogger().log("⚠️ 스캔 타임아웃 (90초), 현재까지 maxRow=" + maxRow + " 사용");
+                        return maxRow;
+                    }
+                }
+            }
+
+            long elapsed = System.currentTimeMillis() - startTime;
+            context.getLogger().log("XML row 스캔 완료: totalBytesRead=" + (totalBytesRead / 1024) +
+                    "KB, maxRow=" + maxRow + ", 소요시간=" + (elapsed / 1000) + "초");
+
+            return maxRow > 0 ? maxRow : -1;
+
+        } catch (Exception e) {
+            context.getLogger().log("ERROR: XML row 스캔 실패: " + e.getMessage());
+            return -1;
+        }
     }
 
     /**
