@@ -242,29 +242,48 @@ public class UploadService {
         ExcelMetadata metadata = null;
 
         if (uploadId != null) {
-            // ★ 즉시 조회 + 없으면 최대 10초 대기 (소량 데이터 대응)
+            // ★ Lambda 완료 여부 확인 후 row count 결정
+            // UI는 rowCount != 0을 "업로드 완료"로 표시하므로,
+            // Lambda가 모든 청크를 완료(COMPLETED)하기 전까지는 rowCount=0 유지
             for (int retry = 0; retry < 5; retry++) {
-                long rowCount = mongoTemplate.getCollection("raw_data")
-                        .countDocuments(new org.bson.Document("upload_id", uploadId));
+                String status = null;
+                try {
+                    Object statusObj = redisTemplate.opsForHash().get(UPLOAD_STATUS_KEY_PREFIX + uploadId, "status");
+                    status = statusObj != null ? statusObj.toString() : null;
+                } catch (Exception e) {
+                    log.warn("Redis 상태 조회 실패: uploadId={}", uploadId);
+                }
 
-                if (rowCount > 0) {
-                    org.bson.Document rawDoc = mongoTemplate.getCollection("raw_data")
-                            .find(new org.bson.Document("upload_id", uploadId))
-                            .limit(1)
-                            .first();
+                if ("COMPLETED".equals(status)) {
+                    // ★ 모든 청크 완료 → 정확한 row count 사용
+                    long rowCount = mongoTemplate.getCollection("raw_data")
+                            .countDocuments(new org.bson.Document("upload_id", uploadId));
 
-                    List<String> columns = new ArrayList<>();
-                    if (rawDoc != null) {
-                        Object dataObj = rawDoc.get("data");
-                        if (dataObj instanceof org.bson.Document dataDoc) {
-                            columns.addAll(dataDoc.keySet());
+                    if (rowCount > 0) {
+                        org.bson.Document rawDoc = mongoTemplate.getCollection("raw_data")
+                                .find(new org.bson.Document("upload_id", uploadId))
+                                .limit(1)
+                                .first();
+
+                        List<String> columns = new ArrayList<>();
+                        if (rawDoc != null) {
+                            Object dataObj = rawDoc.get("data");
+                            if (dataObj instanceof org.bson.Document dataDoc) {
+                                columns.addAll(dataDoc.keySet());
+                            }
                         }
+                        metadata = new ExcelMetadata(columns, rowCount);
+                        log.info("Lambda COMPLETED, 정확한 row count: uploadId={}, rows={}", uploadId, rowCount);
                     }
-                    metadata = new ExcelMetadata(columns, rowCount);
-                    log.info("raw_data 조회 성공: uploadId={}, rows={}, retry={}", uploadId, rowCount, retry);
+                    break;
+                } else if ("PROCESSING".equals(status)) {
+                    // ★ Lambda 처리 중 → partial count 사용 안함 (850,000/1,000,001 문제 방지)
+                    // updateFileMetadataAsync()에서 COMPLETED 대기 후 정확한 count 설정
+                    log.info("Lambda 처리 중 (PROCESSING), partial count 사용 안함 → 비동기 대기로 전환: uploadId={}", uploadId);
                     break;
                 }
 
+                // PENDING 또는 null → Lambda 아직 시작 전, 2초 후 재확인
                 if (retry < 4) {
                     try { Thread.sleep(2000); } catch (InterruptedException e) {
                         Thread.currentThread().interrupt();
@@ -300,11 +319,12 @@ public class UploadService {
             final Long fileSize = request.getFileSize();
             final String fileName = request.getFileName();
             metadataExecutor.submit(() -> {
-                // 1. S3 Event → Coordinator가 먼저 처리하도록 20초 대기
-                //    Coordinator 실패 시에만 백엔드가 SQS 발행 (백업)
-                triggerWorkerLambdaIfNeeded(projectId, fileSession.getSessionId(), uploadId,
-                        "finance-excel-uploads", s3Key, fileName, fileSize);
-                // 2. Lambda 완료 대기 후 메타데이터 업데이트
+                // ★ S3 Event → ExcelCoordinator 직접 호출 구조로 변경됨
+                // triggerWorkerLambdaIfNeeded는 비활성화 (Coordinator가 직접 처리)
+                // triggerWorkerLambdaIfNeeded(projectId, fileSession.getSessionId(), uploadId,
+                //         "finance-excel-uploads", s3Key, fileName, fileSize);
+
+                // Lambda 완료 대기 후 메타데이터 업데이트
                 updateFileMetadataAsync(fileSession.getSessionId(), fileId, s3Key);
             });
         }
@@ -456,6 +476,18 @@ public class UploadService {
             // ━━━ Phase 2: raw_data 확인 후 FileSession 메타데이터 업데이트 ━━━
             long rowCount = mongoTemplate.getCollection("raw_data")
                     .countDocuments(new org.bson.Document("upload_id", uploadId));
+
+            // Redis processedRows와 비교 (디버깅용)
+            try {
+                Object processedRowsObj = redisTemplate.opsForHash().get(statusKey, "processedRows");
+                if (processedRowsObj != null) {
+                    long redisRowCount = Long.parseLong(processedRowsObj.toString());
+                    log.info("행 수 비교: raw_data={}, Redis processedRows={}, uploadId={}",
+                            rowCount, redisRowCount, uploadId);
+                }
+            } catch (Exception e) {
+                log.warn("Redis processedRows 비교 실패 (무시): uploadId={}", uploadId);
+            }
 
             if (rowCount == 0) {
                 log.warn("raw_data 비어있음 (Lambda 처리 실패): uploadId={}", uploadId);
