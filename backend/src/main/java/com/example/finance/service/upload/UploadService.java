@@ -187,6 +187,7 @@ public class UploadService {
 
     /**
      * 업로드 상태 조회
+     * ★ COMPLETED 감지 시 file_sessions.row_count 자동 업데이트
      */
     public Map<String, Object> getUploadStatus(String uploadId) {
         String key = UPLOAD_STATUS_KEY_PREFIX + uploadId;
@@ -215,11 +216,96 @@ public class UploadService {
                 status.put("error", rawData.get("error"));
             }
 
+            // ★ COMPLETED 감지 시 file_sessions.row_count 업데이트
+            String currentStatus = rawData.getOrDefault("status", "UNKNOWN");
+            if ("COMPLETED".equals(currentStatus)) {
+                String sessionId = rawData.get("sessionId");
+                String s3Key = rawData.get("s3Key");
+                if (sessionId != null) {
+                    long finalRowCount = syncFileSessionRowCount(uploadId, sessionId, s3Key);
+                    if (finalRowCount > 0) {
+                        status.put("processedRows", finalRowCount);
+                    }
+                }
+            }
+
             return status;
 
         } catch (Exception e) {
             log.error("Redis 조회 중 오류 발생: uploadId={}, error={}", uploadId, e.getMessage());
             throw new RuntimeException("업로드 상태 조회 실패: " + e.getMessage());
+        }
+    }
+
+    /**
+     * ★ COMPLETED 시 file_sessions.row_count를 정확한 값으로 업데이트
+     *
+     * - raw_data.countDocuments()로 정확한 행 수 조회 (모든 Worker 완료 후이므로 정확)
+     * - file_sessions.row_count가 아직 0이면 업데이트 (멱등성 보장)
+     * - 컬럼 정보도 함께 업데이트
+     *
+     * @return 업데이트된 row count (이미 업데이트 완료면 기존 값, 실패면 0)
+     */
+    private long syncFileSessionRowCount(String uploadId, String sessionId, String s3Key) {
+        try {
+            FileSession session = fileSessionRepository.findBySessionId(sessionId).orElse(null);
+            if (session == null || session.getUploadedFiles() == null) return 0;
+
+            // uploadId가 포함된 s3Key를 가진 파일 찾기
+            Optional<UploadedFileInfo> fileOpt = session.getUploadedFiles().stream()
+                    .filter(f -> {
+                        if (f.getS3Key() == null) return false;
+                        String fUploadId = extractUploadIdFromS3Key(f.getS3Key());
+                        return uploadId.equals(fUploadId);
+                    })
+                    .findFirst();
+
+            if (fileOpt.isEmpty()) return 0;
+
+            UploadedFileInfo file = fileOpt.get();
+
+            // 이미 정확한 rowCount가 설정되어 있으면 스킵 (멱등성)
+            if (file.getRowCount() != null && file.getRowCount() > 0) {
+                return file.getRowCount();
+            }
+
+            // raw_data에서 정확한 count 조회 (COMPLETED 이후이므로 모든 데이터 존재)
+            long rowCount = mongoTemplate.getCollection("raw_data")
+                    .countDocuments(new org.bson.Document("upload_id", uploadId));
+
+            if (rowCount == 0) {
+                log.warn("COMPLETED인데 raw_data가 비어있음: uploadId={}", uploadId);
+                return 0;
+            }
+
+            // 컬럼 정보 추출
+            if (file.getDetectedColumns() == null || file.getDetectedColumns().isEmpty()) {
+                org.bson.Document rawDoc = mongoTemplate.getCollection("raw_data")
+                        .find(new org.bson.Document("upload_id", uploadId))
+                        .limit(1)
+                        .first();
+
+                if (rawDoc != null) {
+                    Object dataObj = rawDoc.get("data");
+                    if (dataObj instanceof org.bson.Document dataDoc) {
+                        file.setDetectedColumns(new ArrayList<>(dataDoc.keySet()));
+                    }
+                }
+            }
+
+            // ★ row_count 업데이트
+            file.setRowCount(rowCount);
+            file.setUploadStatus("UPLOADED");
+            session.setUpdatedAt(LocalDateTime.now());
+            fileSessionRepository.save(session);
+
+            log.info("★ file_sessions rowCount 업데이트 완료: uploadId={}, rowCount={}, sessionId={}",
+                    uploadId, rowCount, sessionId);
+            return rowCount;
+
+        } catch (Exception e) {
+            log.warn("file_sessions rowCount 업데이트 실패: uploadId={}, error={}", uploadId, e.getMessage());
+            return 0;
         }
     }
 
@@ -241,30 +327,22 @@ public class UploadService {
         String uploadId = extractUploadIdFromS3Key(request.getS3Key());
         ExcelMetadata metadata = null;
 
+        // ★ row_count는 getUploadStatus()에서 COMPLETED 감지 시 업데이트
+        // completeFileUpload()에서는 partial count를 사용하지 않음
+        // UI가 rowCount != 0을 "업로드 완료"로 표시하므로, Lambda 완료 전에는 0 유지
         if (uploadId != null) {
-            // ★ Lambda 완료 여부 확인 후 row count 결정
-            // UI는 rowCount != 0을 "업로드 완료"로 표시하므로,
-            // Lambda가 모든 청크를 완료(COMPLETED)하기 전까지는 rowCount=0 유지
-            for (int retry = 0; retry < 5; retry++) {
-                String status = null;
-                try {
-                    Object statusObj = redisTemplate.opsForHash().get(UPLOAD_STATUS_KEY_PREFIX + uploadId, "status");
-                    status = statusObj != null ? statusObj.toString() : null;
-                } catch (Exception e) {
-                    log.warn("Redis 상태 조회 실패: uploadId={}", uploadId);
-                }
+            try {
+                Object statusObj = redisTemplate.opsForHash().get(UPLOAD_STATUS_KEY_PREFIX + uploadId, "status");
+                String status = statusObj != null ? statusObj.toString() : null;
 
                 if ("COMPLETED".equals(status)) {
-                    // ★ 모든 청크 완료 → 정확한 row count 사용
+                    // 이미 완료된 경우에만 즉시 row count 설정
                     long rowCount = mongoTemplate.getCollection("raw_data")
                             .countDocuments(new org.bson.Document("upload_id", uploadId));
-
                     if (rowCount > 0) {
                         org.bson.Document rawDoc = mongoTemplate.getCollection("raw_data")
                                 .find(new org.bson.Document("upload_id", uploadId))
-                                .limit(1)
-                                .first();
-
+                                .limit(1).first();
                         List<String> columns = new ArrayList<>();
                         if (rawDoc != null) {
                             Object dataObj = rawDoc.get("data");
@@ -273,23 +351,14 @@ public class UploadService {
                             }
                         }
                         metadata = new ExcelMetadata(columns, rowCount);
-                        log.info("Lambda COMPLETED, 정확한 row count: uploadId={}, rows={}", uploadId, rowCount);
+                        log.info("Lambda 이미 COMPLETED: uploadId={}, rows={}", uploadId, rowCount);
                     }
-                    break;
-                } else if ("PROCESSING".equals(status)) {
-                    // ★ Lambda 처리 중 → partial count 사용 안함 (850,000/1,000,001 문제 방지)
-                    // updateFileMetadataAsync()에서 COMPLETED 대기 후 정확한 count 설정
-                    log.info("Lambda 처리 중 (PROCESSING), partial count 사용 안함 → 비동기 대기로 전환: uploadId={}", uploadId);
-                    break;
+                } else {
+                    log.info("Lambda 처리 중 (status={}), rowCount=0 유지 → getUploadStatus에서 업데이트 예정: uploadId={}",
+                            status, uploadId);
                 }
-
-                // PENDING 또는 null → Lambda 아직 시작 전, 2초 후 재확인
-                if (retry < 4) {
-                    try { Thread.sleep(2000); } catch (InterruptedException e) {
-                        Thread.currentThread().interrupt();
-                        break;
-                    }
-                }
+            } catch (Exception e) {
+                log.warn("Redis 상태 조회 실패: uploadId={}", uploadId);
             }
         }
 
