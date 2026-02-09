@@ -382,25 +382,41 @@ public class ExcelWorkerHandler implements RequestHandler<SQSEvent, String> {
      * processedRows >= totalRows 방식은 행 수 추정 오차로 COMPLETED가 안 될 수 있음.
      * completedChunks >= totalChunks 방식으로 변경하여 빈 청크도 정상 완료 처리.
      */
+    /**
+     * [수정됨] 청크 완료 마킹 (Set을 사용하여 멱등성 보장)
+     */
     private void markChunkCompleted(ProcessingMessage message, Context context) {
         try (Jedis jedis = RedisConfig.getJedis()) {
             String key = "upload:status:" + message.getUploadId();
+            String completedChunksKey = "upload:completed_chunks:" + message.getUploadId(); // 별도 Set 키 사용
 
-            // 완료 청크 수 원자적 증가
-            long completedChunks = jedis.hincrBy(key, "completedChunks", 1);
+            // 1. 해당 청크 번호를 Set에 추가 (이미 있으면 0 반환, 없으면 1 반환)
+            // 이를 통해 중복 완료 처리를 방지할 수 있음
+            jedis.sadd(completedChunksKey, String.valueOf(message.getChunkNumber()));
+
+            // 2. Set의 크기(SCARD)를 조회하여 실제 완료된 청크 개수 확인
+            long completedChunks = jedis.scard(completedChunksKey);
             int totalChunks = message.getTotalChunks();
 
-            // 진행률: 청크 기반 (빈 청크도 진행률에 반영)
+            // 3. 진행률 계산
             int progress = (int) ((completedChunks * 100.0) / totalChunks);
             jedis.hset(key, "progress", String.valueOf(Math.min(progress, 100)));
+            jedis.hset(key, "completedChunks", String.valueOf(completedChunks)); // UI 표시용 업데이트
+
+            // 4. TTL 설정 (Set 키도 24시간 뒤 만료)
+            jedis.expire(completedChunksKey, 86400);
 
             context.getLogger().log("청크 완료: " + completedChunks + "/" + totalChunks +
-                    " (" + progress + "%)");
+                    " (" + progress + "%) - Chunk " + message.getChunkNumber());
 
-            // 모든 청크 완료 시 COMPLETED
+            // 5. 모든 청크 완료 시 COMPLETED
             if (completedChunks >= totalChunks) {
                 jedis.hset(key, "status", "COMPLETED");
                 jedis.hset(key, "progress", "100");
+
+                // 완료 후 Set 키 정리 (선택 사항)
+                jedis.del(completedChunksKey);
+
                 context.getLogger().log("★ 전체 업로드 완료! (COMPLETED)");
             }
         } catch (Exception e) {
