@@ -105,7 +105,7 @@ public class ExcelCoordinatorHandler implements RequestStreamHandler {
                 if (result == null) {
                     context.getLogger().log("⚠️ 이미 다른 Coordinator가 이 업로드를 처리 중. " +
                             "중복 S3 이벤트 스킵. uploadId=" + uploadId);
-                    return "SKIPPED: duplicate S3 event for uploadId=" + uploadId;
+                    //return "SKIPPED: duplicate S3 event for uploadId=" + uploadId;
                 }
                 context.getLogger().log("Coordinator 락 획득 성공. uploadId=" + uploadId);
             } catch (Exception e) {
