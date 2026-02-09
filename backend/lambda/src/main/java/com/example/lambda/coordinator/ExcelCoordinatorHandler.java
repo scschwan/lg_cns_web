@@ -9,40 +9,40 @@ import com.example.lambda.model.ProcessingMessage;
 import com.google.gson.Gson;
 import redis.clients.jedis.Jedis;
 import redis.clients.jedis.params.SetParams;
+import com.amazonaws.services.lambda.runtime.RequestStreamHandler; // 변경됨
+import com.example.lambda.model.ProcessingMessage;
+import com.google.gson.Gson;
+import com.google.gson.annotations.SerializedName; // Gson 어노테이션 추가
 import software.amazon.awssdk.core.ResponseInputStream;
 import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.GetObjectRequest;
 import software.amazon.awssdk.services.s3.model.GetObjectResponse;
-import software.amazon.awssdk.services.s3.model.HeadObjectRequest;
-import software.amazon.awssdk.services.s3.model.HeadObjectResponse;
 import software.amazon.awssdk.services.sqs.SqsClient;
 import software.amazon.awssdk.services.sqs.model.SendMessageRequest;
 
 import javax.xml.stream.XMLInputFactory;
 import javax.xml.stream.XMLStreamConstants;
 import javax.xml.stream.XMLStreamReader;
+import java.io.*;
 import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
+import java.util.List;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 
 /**
- * Excel Coordinator Lambda Handler
- *
- * S3 Event → 메타데이터 분석 (Dimension 태그 우선, 실패 시 파일 크기 추정) → SQS 메시지 발행
+ * Excel Coordinator Lambda Handler (StAX Streaming + 수동 파싱 Ver)
+ * - RequestHandler<S3Event> 대신 RequestStreamHandler 사용 (직렬화 오류 방지)
+ * - JSON 직접 파싱을 위한 내부 DTO 클래스 사용
  */
-public class ExcelCoordinatorHandler implements RequestHandler<S3Event, String> {
+public class ExcelCoordinatorHandler implements RequestStreamHandler {
 
-    // ★ 한국 시간대(KST) 설정
     static {
         java.util.TimeZone.setDefault(java.util.TimeZone.getTimeZone("Asia/Seoul"));
     }
 
-    private static final int CHUNK_SIZE = 50000; // 5만 행씩 분할 (1M rows = 20 chunks)
-    private static final int EXCEL_MAX_ROWS = 1048576; // Excel 최대 행 수 (2^20)
+    private static final int CHUNK_SIZE = 50000;
     private static final String SQS_QUEUE_URL = System.getenv("SQS_QUEUE_URL");
     private static final String AWS_REGION = System.getenv("AWS_REGION") != null
             ? System.getenv("AWS_REGION")
@@ -53,32 +53,35 @@ public class ExcelCoordinatorHandler implements RequestHandler<S3Event, String> 
     private final Gson gson;
 
     public ExcelCoordinatorHandler() {
-        Region region = Region.of(AWS_REGION != null ? AWS_REGION : "ap-northeast-2");
+        Region region = Region.of(AWS_REGION);
         this.s3Client = S3Client.builder().region(region).build();
         this.sqsClient = SqsClient.builder().region(region).build();
         this.gson = new Gson();
     }
 
     @Override
-    public String handleRequest(S3Event s3Event, Context context) {
-        context.getLogger().log("=== Excel Coordinator 시작 ===");
+    public void handleRequest(InputStream input, OutputStream output, Context context) throws IOException {
+        context.getLogger().log("=== [Fix] Excel Coordinator 시작 (Manual Parsing) ===");
 
         try {
-            // 1. S3 Event 파싱
-            S3EventNotification.S3EventNotificationRecord record = s3Event.getRecords().get(0);
-            String bucket = record.getS3().getBucket().getName();
-            // ★ S3 Event는 키를 URL 인코딩하여 전달 → 디코딩 필수
-            String key = URLDecoder.decode(
-                    record.getS3().getObject().getKey(), StandardCharsets.UTF_8);
+            // 1. InputStream -> String -> DTO 파싱 (런타임 직렬화 우회)
+            BufferedReader reader = new BufferedReader(new InputStreamReader(input, StandardCharsets.UTF_8));
+            S3EventDto event = gson.fromJson(reader, S3EventDto.class);
+
+            if (event.records == null || event.records.isEmpty()) {
+                context.getLogger().log("ERROR: 이벤트에 Records가 없습니다. (Test Event 형식 확인 필요)");
+                return;
+            }
+
+            S3EventDto.S3Record record = event.records.get(0);
+            String bucket = record.s3.bucket.name;
+            String key = URLDecoder.decode(record.s3.object.key, StandardCharsets.UTF_8);
 
             context.getLogger().log("S3 파일: bucket=" + bucket + ", key=" + key);
 
-            // 2. S3 키에서 정보 추출
-            // 예: projects/{projectId}/sessions/{sessionId}/uploads/{uploadId}/{fileName}
+            // 2. 키 파싱
             String[] parts = key.split("/");
-            if (parts.length < 7) {
-                throw new RuntimeException("잘못된 S3 키 형식: " + key);
-            }
+            if (parts.length < 7) throw new RuntimeException("잘못된 S3 키 형식: " + key);
 
             String projectId = parts[1];
             String sessionId = parts[3];
@@ -113,14 +116,19 @@ public class ExcelCoordinatorHandler implements RequestHandler<S3Event, String> 
             // 4. Excel 메타데이터 분석 (Dimension 방식 우선)
             int totalRows = analyzeExcelMetadata(bucket, key, context);
 
-            context.getLogger().log("최종 분석된 행 개수: " + totalRows + " (헤더 제외)");
+            if (totalRows == 0) {
+                context.getLogger().log("데이터가 없는 파일입니다. 종료.");
+                return;
+            }
 
-            // 5. 청크 분할 및 SQS 메시지 발행
+            context.getLogger().log("최종 분석된 행 개수: " + totalRows);
+
+            // 4. 청크 발행
             int totalChunks = (int) Math.ceil((double) totalRows / CHUNK_SIZE);
             context.getLogger().log("총 청크 개수: " + totalChunks);
 
             for (int i = 0; i < totalChunks; i++) {
-                int startRow = i * CHUNK_SIZE + 2; // 1-based, 헤더(1행) 제외
+                int startRow = i * CHUNK_SIZE + 2;
                 int endRow = Math.min((i + 1) * CHUNK_SIZE + 1, totalRows + 1);
 
                 ProcessingMessage message = ProcessingMessage.builder()
@@ -135,19 +143,14 @@ public class ExcelCoordinatorHandler implements RequestHandler<S3Event, String> 
                         .totalRows(totalRows)
                         .chunkNumber(i + 1)
                         .totalChunks(totalChunks)
-                        .isFirstChunk(i == 0) // ⭐ 첫 번째 청크 표시
-                        .coordinatorRunId(coordinatorRunId) // ⭐ 실행 ID
+                        .isFirstChunk(i == 0)
                         .build();
 
                 sendToSQS(message, context);
-
-                context.getLogger().log("청크 " + (i + 1) + "/" + totalChunks +
-                        " 발행: " + startRow + "~" + endRow +
-                        (message.isFirstChunk() ? " (첫 청크 - Redis 초기화)" : ""));
             }
 
-            context.getLogger().log("=== Excel Coordinator 완료 (즉시!) ===");
-            return "SUCCESS: " + totalChunks + " chunks published";
+            context.getLogger().log("SUCCESS: " + totalChunks + " chunks published");
+            output.write(("SUCCESS: " + totalChunks).getBytes(StandardCharsets.UTF_8));
 
         } catch (Exception e) {
             context.getLogger().log("ERROR: " + e.getMessage());
@@ -156,18 +159,8 @@ public class ExcelCoordinatorHandler implements RequestHandler<S3Event, String> 
         }
     }
 
-    /**
-     * Excel 메타데이터 분석
-     * 1순위: XML Dimension 태그 분석 (정확, 빠름)
-     * 2순위: 파일 크기 기반 추정 (Fallback)
-     */
-    /**
-     * [수정됨] Excel 메타데이터 분석
-     * 기존의 Dimension 태그나 파일 크기 추정 대신,
-     * XML 스트림을 파싱하여 실제 <row> 태그의 개수를 카운트합니다.
-     */
     private int analyzeExcelMetadata(String bucket, String key, Context context) {
-        context.getLogger().log("Excel 메타데이터 정밀 분석 시작 (값 존재 여부 체크)...");
+        context.getLogger().log("Excel 메타데이터 정밀 분석 시작...");
 
         try (ResponseInputStream<GetObjectResponse> s3Stream = s3Client.getObject(
                 GetObjectRequest.builder().bucket(bucket).key(key).build());
@@ -179,102 +172,69 @@ public class ExcelCoordinatorHandler implements RequestHandler<S3Event, String> 
                     context.getLogger().log("데이터 시트 발견: " + entry.getName());
 
                     XMLInputFactory factory = XMLInputFactory.newInstance();
-                    // 보안 설정
                     factory.setProperty(XMLInputFactory.IS_SUPPORTING_EXTERNAL_ENTITIES, false);
                     factory.setProperty(XMLInputFactory.SUPPORT_DTD, false);
 
-                    XMLStreamReader reader = factory.createXMLStreamReader(zipIn);
-
+                    XMLStreamReader xmlReader = factory.createXMLStreamReader(zipIn);
                     int dataRowCount = 0;
                     boolean isRowHasData = false;
                     boolean isInsideRow = false;
 
-                    while (reader.hasNext()) {
-                        int event = reader.next();
-
+                    while (xmlReader.hasNext()) {
+                        int event = xmlReader.next();
                         if (event == XMLStreamConstants.START_ELEMENT) {
-                            String name = reader.getLocalName();
-
+                            String name = xmlReader.getLocalName();
                             if ("row".equals(name)) {
                                 isInsideRow = true;
-                                isRowHasData = false; // 새 행 시작 시 초기화
-                            }
-                            // <v>: 값(Value), <t>: 텍스트(Text), <is>: 인라인 문자열
-                            // 이 태그들이 발견되면 해당 행은 데이터가 있는 것으로 간주
-                            else if (isInsideRow && ("v".equals(name) || "t".equals(name) || "is".equals(name))) {
+                                isRowHasData = false;
+                            } else if (isInsideRow && ("v".equals(name) || "t".equals(name) || "is".equals(name))) {
                                 isRowHasData = true;
                             }
-
                         } else if (event == XMLStreamConstants.END_ELEMENT) {
-                            if ("row".equals(reader.getLocalName())) {
-                                // 행이 끝날 때, 데이터가 있었다면 카운트 증가
-                                if (isRowHasData) {
-                                    dataRowCount++;
-                                }
+                            if ("row".equals(xmlReader.getLocalName())) {
+                                if (isRowHasData) dataRowCount++;
                                 isInsideRow = false;
                             }
                         }
                     }
-
-                    context.getLogger().log("유효 데이터 행 개수(빈 행 제외): " + dataRowCount);
-
-                    // 헤더(1행) 제외하고 반환
+                    context.getLogger().log("유효 데이터 행 개수: " + dataRowCount);
                     return dataRowCount > 0 ? dataRowCount - 1 : 0;
                 }
             }
-            context.getLogger().log("WARNING: sheet1.xml을 찾을 수 없습니다.");
-
         } catch (Exception e) {
-            context.getLogger().log("ERROR: 메타데이터 분석 중 오류 발생: " + e.getMessage());
-            e.printStackTrace();
+            context.getLogger().log("ERROR: 메타데이터 분석 실패: " + e.getMessage());
+            throw new RuntimeException("Excel 분석 실패", e);
         }
-
-        throw new RuntimeException("Excel 행 개수 분석 실패");
+        throw new RuntimeException("sheet1.xml을 찾을 수 없습니다.");
     }
 
-    /**
-     * Fallback: 파일 크기 기반 추정 (기존 로직)
-     * Dimension 태그를 못 찾았을 때 실행됨
-     */
-    private int fallbackEstimate(String bucket, String key, Context context) {
-        context.getLogger().log("⚠️ Dimension 분석 실패. 파일 크기 기반 추정(Fallback) 시작...");
-        try {
-            HeadObjectRequest headRequest = HeadObjectRequest.builder()
-                    .bucket(bucket)
-                    .key(key)
-                    .build();
-
-            HeadObjectResponse headResponse = s3Client.headObject(headRequest);
-            long fileSize = headResponse.contentLength();
-
-            context.getLogger().log("파일 크기: " + fileSize + " bytes");
-
-            // 50바이트당 1행으로 추정 (보수적: 빈 청크는 Worker가 0건 처리 후 즉시 종료)
-            int estimatedRows = (int) Math.max(fileSize / 50, 1000);
-            context.getLogger().log("추정 행 개수 (Fallback): " + estimatedRows);
-
-            return estimatedRows;
-
-        } catch (Exception e) {
-            context.getLogger().log("ERROR: Fallback 추정 실패: " + e.getMessage());
-            throw new RuntimeException("메타데이터 분석 및 추정 모두 실패", e);
-        }
-    }
-
-    /**
-     * SQS 메시지 발행
-     */
     private void sendToSQS(ProcessingMessage message, Context context) {
-        String messageBody = gson.toJson(message);
-
-        SendMessageRequest sendMessageRequest = SendMessageRequest.builder()
+        sqsClient.sendMessage(SendMessageRequest.builder()
                 .queueUrl(SQS_QUEUE_URL)
-                .messageBody(messageBody)
-                .build();
+                .messageBody(gson.toJson(message))
+                .build());
+    }
 
-        sqsClient.sendMessage(sendMessageRequest);
+    // === 내부 DTO 클래스 (Gson 파싱용) ===
+    private static class S3EventDto {
+        @SerializedName("Records")
+        public List<S3Record> records;
 
-        context.getLogger().log("SQS 메시지 발행: uploadId=" + message.getUploadId() +
-                ", chunk=" + message.getChunkNumber());
+        public static class S3Record {
+            public S3Object s3;
+        }
+
+        public static class S3Object {
+            public Bucket bucket;
+            public S3Key object;
+        }
+
+        public static class Bucket {
+            public String name;
+        }
+
+        public static class S3Key {
+            public String key;
+        }
     }
 }
