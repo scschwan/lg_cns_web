@@ -1,6 +1,14 @@
 package com.example.lambda.coordinator;
 
 import com.amazonaws.services.lambda.runtime.Context;
+import com.amazonaws.services.lambda.runtime.RequestHandler;
+import com.amazonaws.services.lambda.runtime.events.S3Event;
+import com.amazonaws.services.lambda.runtime.events.models.s3.S3EventNotification;
+import com.example.lambda.config.RedisConfig;
+import com.example.lambda.model.ProcessingMessage;
+import com.google.gson.Gson;
+import redis.clients.jedis.Jedis;
+import redis.clients.jedis.params.SetParams;
 import com.amazonaws.services.lambda.runtime.RequestStreamHandler; // 변경됨
 import com.example.lambda.model.ProcessingMessage;
 import com.google.gson.Gson;
@@ -80,7 +88,32 @@ public class ExcelCoordinatorHandler implements RequestStreamHandler {
             String uploadId = parts[5];
             String fileName = parts[6];
 
-            // 3. 메타데이터 정밀 분석 (StAX)
+            context.getLogger().log("projectId=" + projectId + ", sessionId=" + sessionId +
+                    ", uploadId=" + uploadId);
+
+            // 3. Coordinator 실행 ID 생성 (이전 실행의 SQS 메시지와 구분)
+            String coordinatorRunId = java.util.UUID.randomUUID().toString();
+            context.getLogger().log("coordinatorRunId=" + coordinatorRunId);
+
+            // ★ Redis 분산 락: S3 이벤트 중복 트리거 방지
+            // S3 이벤트 알림은 at-least-once 전달이므로 동일 업로드에 대해 Coordinator가 여러 번 실행될 수 있음
+            // SETNX로 첫 번째 실행만 통과시키고, 이후 중복 실행은 즉시 스킵
+            String lockKey = "coordinator:lock:" + uploadId;
+            try (Jedis jedis = RedisConfig.getJedis()) {
+                String result = jedis.set(lockKey, coordinatorRunId,
+                        SetParams.setParams().nx().ex(3600)); // 1시간 TTL, 이미 존재하면 null
+                if (result == null) {
+                    context.getLogger().log("⚠️ 이미 다른 Coordinator가 이 업로드를 처리 중. " +
+                            "중복 S3 이벤트 스킵. uploadId=" + uploadId);
+                    return "SKIPPED: duplicate S3 event for uploadId=" + uploadId;
+                }
+                context.getLogger().log("Coordinator 락 획득 성공. uploadId=" + uploadId);
+            } catch (Exception e) {
+                context.getLogger().log("WARNING: Redis 락 확인 실패 (처리 계속): " + e.getMessage());
+                // Redis 장애 시에도 처리 계속 (기존 동작 유지)
+            }
+
+            // 4. Excel 메타데이터 분석 (Dimension 방식 우선)
             int totalRows = analyzeExcelMetadata(bucket, key, context);
 
             if (totalRows == 0) {
