@@ -141,7 +141,7 @@ public class ExcelCoordinatorHandler implements RequestHandler<S3Event, String> 
      * XML 스트림을 파싱하여 실제 <row> 태그의 개수를 카운트합니다.
      */
     private int analyzeExcelMetadata(String bucket, String key, Context context) {
-        context.getLogger().log("Excel 메타데이터 정밀 분석 시작 (XML StAX Streaming)...");
+        context.getLogger().log("Excel 메타데이터 정밀 분석 시작 (값 존재 여부 체크)...");
 
         try (ResponseInputStream<GetObjectResponse> s3Stream = s3Client.getObject(
                 GetObjectRequest.builder().bucket(bucket).key(key).build());
@@ -149,36 +149,53 @@ public class ExcelCoordinatorHandler implements RequestHandler<S3Event, String> 
 
             ZipEntry entry;
             while ((entry = zipIn.getNextEntry()) != null) {
-                // 시트 파일 찾기 (일반적으로 sheet1.xml이 첫 번째 시트)
                 if (entry.getName().endsWith("xl/worksheets/sheet1.xml")) {
                     context.getLogger().log("데이터 시트 발견: " + entry.getName());
 
-                    // XML 파서 생성 (보안 설정 포함)
                     XMLInputFactory factory = XMLInputFactory.newInstance();
+                    // 보안 설정
                     factory.setProperty(XMLInputFactory.IS_SUPPORTING_EXTERNAL_ENTITIES, false);
                     factory.setProperty(XMLInputFactory.SUPPORT_DTD, false);
 
-                    // ZipInputStream을 직접 XML 리더로 연결
                     XMLStreamReader reader = factory.createXMLStreamReader(zipIn);
 
-                    int rowCount = 0;
+                    int dataRowCount = 0;
+                    boolean isRowHasData = false;
+                    boolean isInsideRow = false;
 
-                    // 스트리밍 방식으로 태그 탐색
                     while (reader.hasNext()) {
                         int event = reader.next();
-                        // <row> 시작 태그가 나올 때마다 카운트 증가
-                        if (event == XMLStreamConstants.START_ELEMENT && "row".equals(reader.getLocalName())) {
-                            rowCount++;
+
+                        if (event == XMLStreamConstants.START_ELEMENT) {
+                            String name = reader.getLocalName();
+
+                            if ("row".equals(name)) {
+                                isInsideRow = true;
+                                isRowHasData = false; // 새 행 시작 시 초기화
+                            }
+                            // <v>: 값(Value), <t>: 텍스트(Text), <is>: 인라인 문자열
+                            // 이 태그들이 발견되면 해당 행은 데이터가 있는 것으로 간주
+                            else if (isInsideRow && ("v".equals(name) || "t".equals(name) || "is".equals(name))) {
+                                isRowHasData = true;
+                            }
+
+                        } else if (event == XMLStreamConstants.END_ELEMENT) {
+                            if ("row".equals(reader.getLocalName())) {
+                                // 행이 끝날 때, 데이터가 있었다면 카운트 증가
+                                if (isRowHasData) {
+                                    dataRowCount++;
+                                }
+                                isInsideRow = false;
+                            }
                         }
                     }
 
-                    context.getLogger().log("XML 파싱 완료. 실제 데이터 행 개수: " + rowCount);
+                    context.getLogger().log("유효 데이터 행 개수(빈 행 제외): " + dataRowCount);
 
-                    // 헤더(1행)를 제외하고 반환 (데이터가 없으면 0)
-                    return rowCount > 0 ? rowCount - 1 : 0;
+                    // 헤더(1행) 제외하고 반환
+                    return dataRowCount > 0 ? dataRowCount - 1 : 0;
                 }
             }
-
             context.getLogger().log("WARNING: sheet1.xml을 찾을 수 없습니다.");
 
         } catch (Exception e) {
@@ -186,9 +203,7 @@ public class ExcelCoordinatorHandler implements RequestHandler<S3Event, String> 
             e.printStackTrace();
         }
 
-        // 실패 시 안전장치 (기존 Fallback 대신 최소값 반환 또는 예외 처리)
-        // 여기서는 예외를 던져서 잘못된 청크 생성을 막는 것이 낫습니다.
-        throw new RuntimeException("Excel 행 개수를 정확히 분석할 수 없습니다.");
+        throw new RuntimeException("Excel 행 개수 분석 실패");
     }
 
     /**
