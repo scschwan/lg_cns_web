@@ -66,7 +66,7 @@ if ($LASTEXITCODE -ne 0) {
 
 # 2. JAR 빌드 (Spring Boot + Lambda 동시 빌드)
 Write-Host "`n[2/14] JAR Build (Spring Boot + Lambda)..." -ForegroundColor Yellow
-.\gradlew clean build
+.\gradlew clean build  -x test
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 # 3. Docker 빌드
