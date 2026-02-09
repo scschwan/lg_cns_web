@@ -336,12 +336,20 @@ public class UploadService {
                                               String s3Bucket, String s3Key, String fileName, Long fileSize) {
         try {
             String statusKey = UPLOAD_STATUS_KEY_PREFIX + uploadId;
+            String coordinatorLockKey = "coordinator:lock:" + uploadId;
 
-            // ★ S3 Event → Coordinator가 먼저 처리하도록 20초 대기
+            // ★ Coordinator가 처리할 시간을 충분히 대기 (대용량 파일 XML 분석에 2분+ 소요 가능)
             log.info("Coordinator 처리 대기 (20초): uploadId={}", uploadId);
             Thread.sleep(20000);
 
-            // Redis 확인: Coordinator가 이미 처리 시작했으면 스킵
+            // ★ 1차 확인: Coordinator 락 존재 여부 (Coordinator가 시작했으면 락이 있음)
+            Boolean lockExists = redisTemplate.hasKey(coordinatorLockKey);
+            if (Boolean.TRUE.equals(lockExists)) {
+                log.info("★ Coordinator 락 확인됨 (처리 중), 백엔드 SQS 발행 스킵: uploadId={}", uploadId);
+                return;
+            }
+
+            // ★ 2차 확인: Redis 상태 확인 (이미 처리 중이거나 완료된 경우)
             Object statusObj = redisTemplate.opsForHash().get(statusKey, "status");
             String status = statusObj != null ? statusObj.toString() : null;
 
@@ -362,6 +370,9 @@ public class UploadService {
 
             ObjectMapper mapper = new ObjectMapper();
 
+            // ★ 백업 메시지에도 coordinatorRunId 포함 (Worker에서 stale 메시지 구분 가능하도록)
+            String backupRunId = "backup-" + UUID.randomUUID().toString();
+
             for (int i = 0; i < totalChunks; i++) {
                 int startRow = i * CHUNK_SIZE + 2;
                 int endRow = Math.min((i + 1) * CHUNK_SIZE + 1, estimatedRows + 1);
@@ -379,6 +390,7 @@ public class UploadService {
                 message.put("chunkNumber", i + 1);
                 message.put("totalChunks", totalChunks);
                 message.put("isFirstChunk", i == 0);
+                message.put("coordinatorRunId", backupRunId);
 
                 String messageBody = mapper.writeValueAsString(message);
 
@@ -388,7 +400,8 @@ public class UploadService {
                         .build());
             }
 
-            log.info("★ 백엔드 백업 SQS 발행 완료: uploadId={}, {} chunks", uploadId, totalChunks);
+            log.info("★ 백엔드 백업 SQS 발행 완료: uploadId={}, {} chunks, backupRunId={}",
+                    uploadId, totalChunks, backupRunId);
 
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
