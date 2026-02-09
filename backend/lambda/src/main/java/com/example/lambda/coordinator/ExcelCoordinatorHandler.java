@@ -85,12 +85,16 @@ public class ExcelCoordinatorHandler implements RequestHandler<S3Event, String> 
             context.getLogger().log("projectId=" + projectId + ", sessionId=" + sessionId +
                     ", uploadId=" + uploadId);
 
-            // 3. Excel 메타데이터 분석 (Dimension 방식 우선)
+            // 3. Coordinator 실행 ID 생성 (이전 실행의 SQS 메시지와 구분)
+            String coordinatorRunId = java.util.UUID.randomUUID().toString();
+            context.getLogger().log("coordinatorRunId=" + coordinatorRunId);
+
+            // 4. Excel 메타데이터 분석 (Dimension 방식 우선)
             int totalRows = analyzeExcelMetadata(bucket, key, context);
 
             context.getLogger().log("최종 분석된 행 개수: " + totalRows + " (헤더 제외)");
 
-            // 4. 청크 분할 및 SQS 메시지 발행
+            // 5. 청크 분할 및 SQS 메시지 발행
             int totalChunks = (int) Math.ceil((double) totalRows / CHUNK_SIZE);
             context.getLogger().log("총 청크 개수: " + totalChunks);
 
@@ -111,6 +115,7 @@ public class ExcelCoordinatorHandler implements RequestHandler<S3Event, String> 
                         .chunkNumber(i + 1)
                         .totalChunks(totalChunks)
                         .isFirstChunk(i == 0) // ⭐ 첫 번째 청크 표시
+                        .coordinatorRunId(coordinatorRunId) // ⭐ 실행 ID
                         .build();
 
                 sendToSQS(message, context);
