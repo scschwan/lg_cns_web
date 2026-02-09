@@ -57,7 +57,7 @@ public class ExcelWorkerHandler implements RequestHandler<SQSEvent, String> {
 
     @Override
     public String handleRequest(SQSEvent sqsEvent, Context context) {
-        context.getLogger().log("=== Excel Worker 시작 (Idempotent Ver) ===");
+        context.getLogger().log("=== [20260209-ver]Excel Worker 시작 (Idempotent Ver) ===");
 
         try {
             for (SQSEvent.SQSMessage message : sqsEvent.getRecords()) {

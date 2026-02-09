@@ -51,7 +51,7 @@ public class ExcelCoordinatorHandler implements RequestHandler<S3Event, String> 
 
     @Override
     public String handleRequest(S3Event s3Event, Context context) {
-        context.getLogger().log("=== Excel Coordinator 시작 (StAX Ver) ===");
+        context.getLogger().log("=== [20260209-ver]Excel Coordinator 시작 (StAX Ver) ===");
 
         try {
             S3EventNotification.S3EventNotificationRecord record = s3Event.getRecords().get(0);
