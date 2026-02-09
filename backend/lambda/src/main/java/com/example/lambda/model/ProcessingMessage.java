@@ -75,4 +75,9 @@ public class ProcessingMessage {
      * ⭐ 첫 번째 청크 여부 (Redis 초기화용)
      */
     private boolean isFirstChunk;
+
+    /**
+     * ⭐ Coordinator 실행 ID (이전 실행의 SQS 메시지 구분용)
+     */
+    private String coordinatorRunId;
 }

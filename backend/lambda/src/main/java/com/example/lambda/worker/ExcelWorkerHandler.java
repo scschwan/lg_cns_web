@@ -76,11 +76,19 @@ public class ExcelWorkerHandler implements RequestHandler<SQSEvent, String> {
                         processingMessage.getEndRow() +
                         (processingMessage.isFirstChunk() ? " (첫 청크 - Redis 초기화)" : ""));
 
+                // ⭐ 이전 실행의 메시지인지 확인 (coordinatorRunId 검증)
+                if (isStaleMessage(processingMessage, context)) {
+                    context.getLogger().log("⚠️ 이전 실행의 메시지 건너뛰기: chunk=" +
+                            processingMessage.getChunkNumber());
+                    continue;
+                }
+
                 // ⭐ 첫 번째 청크인 경우 Redis 초기화
                 if (processingMessage.isFirstChunk()) {
                     initializeRedisStatus(
                             processingMessage.getUploadId(),
                             processingMessage.getTotalRows(),
+                            processingMessage.getCoordinatorRunId(),
                             context
                     );
                 }
@@ -106,7 +114,7 @@ public class ExcelWorkerHandler implements RequestHandler<SQSEvent, String> {
     /**
      * ⭐ Redis 상태 초기화 (첫 번째 Worker만 실행)
      */
-    private void initializeRedisStatus(String uploadId, int totalRows, Context context) {
+    private void initializeRedisStatus(String uploadId, int totalRows, String coordinatorRunId, Context context) {
         int maxRetries = 3;
         int retryDelayMs = 5000; // 5초
 
@@ -116,14 +124,26 @@ public class ExcelWorkerHandler implements RequestHandler<SQSEvent, String> {
 
                 try (Jedis jedis = RedisConfig.getJedis()) {
                     String key = "upload:status:" + uploadId;
+                    String completedChunksKey = "upload:completed_chunks:" + uploadId;
+
+                    // ★ 이전 실행의 완료된 청크 Set 정리
+                    jedis.del(completedChunksKey);
+
                     jedis.hset(key, "status", "PROCESSING");
                     jedis.hset(key, "progress", "0");
                     jedis.hset(key, "totalRows", String.valueOf(totalRows));
                     jedis.hset(key, "processedRows", "0");
                     jedis.hset(key, "completedChunks", "0");
+
+                    // ★ coordinatorRunId 저장 (이전 실행 메시지 구분용)
+                    if (coordinatorRunId != null && !coordinatorRunId.isEmpty()) {
+                        jedis.hset(key, "coordinatorRunId", coordinatorRunId);
+                    }
+
                     jedis.expire(key, 86400); // 24시간 TTL
 
-                    context.getLogger().log("Redis 초기화 성공! (시도 " + attempt + ")");
+                    context.getLogger().log("Redis 초기화 성공! (시도 " + attempt +
+                            ", coordinatorRunId=" + coordinatorRunId + ")");
                     return; // 성공 시 즉시 반환
                 }
 
@@ -143,6 +163,42 @@ public class ExcelWorkerHandler implements RequestHandler<SQSEvent, String> {
                 }
             }
         }
+    }
+
+    /**
+     * ⭐ 이전 실행(coordinator run)의 SQS 메시지인지 확인
+     *
+     * Redis에 저장된 coordinatorRunId와 메시지의 coordinatorRunId를 비교하여
+     * 이전 실행에서 남은 SQS 메시지를 건너뛸 수 있게 합니다.
+     */
+    private boolean isStaleMessage(ProcessingMessage message, Context context) {
+        String messageRunId = message.getCoordinatorRunId();
+
+        // coordinatorRunId가 없는 메시지 (이전 버전 호환) → 스킵하지 않음
+        if (messageRunId == null || messageRunId.isEmpty()) {
+            return false;
+        }
+
+        try (Jedis jedis = RedisConfig.getJedis()) {
+            String key = "upload:status:" + message.getUploadId();
+            String storedRunId = jedis.hget(key, "coordinatorRunId");
+
+            // Redis에 coordinatorRunId가 아직 없음 (첫 번째 청크가 아직 초기화 전) → 스킵하지 않음
+            if (storedRunId == null || storedRunId.isEmpty()) {
+                return false;
+            }
+
+            if (!storedRunId.equals(messageRunId)) {
+                context.getLogger().log("⚠️ 이전 실행의 메시지 감지! 현재 runId=" + storedRunId +
+                        ", 메시지 runId=" + messageRunId +
+                        ", chunk=" + message.getChunkNumber());
+                return true;
+            }
+        } catch (Exception e) {
+            context.getLogger().log("WARNING: coordinatorRunId 검증 실패 (처리 계속): " + e.getMessage());
+        }
+
+        return false;
     }
 
     /**
