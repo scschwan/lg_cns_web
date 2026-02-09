@@ -9,6 +9,7 @@ import com.example.lambda.model.ProcessingMessage;
 import com.google.gson.Gson;
 import com.mongodb.client.MongoCollection;
 import com.mongodb.client.MongoDatabase;
+import com.mongodb.client.model.Filters; // ★ [추가됨] 이 부분이 핵심입니다
 import com.monitorjbl.xlsx.StreamingReader;
 import org.apache.poi.ss.usermodel.*;
 import org.apache.poi.util.IOUtils;
@@ -30,7 +31,6 @@ import java.nio.file.StandardCopyOption;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
-import com.mongodb.client.model.Filters;
 
 /**
  * Excel Worker Lambda Handler
@@ -146,7 +146,7 @@ public class ExcelWorkerHandler implements RequestHandler<SQSEvent, String> {
     }
 
     /**
-     * 청크 처리
+     * 청크 처리 (수정됨: 멱등성 보장 로직 추가)
      */
     private void processChunk(ProcessingMessage message, Context context) throws IOException {
         // 1. /tmp에 임시 파일 다운로드
@@ -195,6 +195,7 @@ public class ExcelWorkerHandler implements RequestHandler<SQSEvent, String> {
 
                 Row headerRow = rowIterator.next();
                 List<String> headers = extractHeaders(headerRow);
+                context.getLogger().log("헤더: " + headers);
 
                 // 4. MongoDB 준비
                 MongoDatabase database = MongoDBConfig.getDatabase();
@@ -259,8 +260,7 @@ public class ExcelWorkerHandler implements RequestHandler<SQSEvent, String> {
                         // Redis 진행률 업데이트
                         updateProgress(message.getUploadId(), batchCount, message.getTotalRows(), context);
 
-                        // 로그를 너무 자주 남기면 CloudWatch 비용 증가하므로 주석 처리하거나 배치 단위로만 기록
-                        // context.getLogger().log("중간 저장: " + processedCount + "건");
+                        context.getLogger().log("중간 저장: " + processedCount + "건 (행: " + currentRowIndex + ")");
                     }
 
                     currentRowIndex++;
@@ -281,6 +281,7 @@ public class ExcelWorkerHandler implements RequestHandler<SQSEvent, String> {
             // 6. 임시 파일 삭제
             try {
                 Files.deleteIfExists(tempFile);
+                context.getLogger().log("임시 파일 삭제 완료");
             } catch (IOException e) {
                 context.getLogger().log("WARNING: 임시 파일 삭제 실패: " + e.getMessage());
             }
@@ -317,23 +318,6 @@ public class ExcelWorkerHandler implements RequestHandler<SQSEvent, String> {
         return headers;
     }
 
-
-    /**
-     * 행 데이터 추출
-     */
-    private Map<String, Object> extractRowData(List<String> headers, Row row) {
-        Map<String, Object> data = new LinkedHashMap<>();
-
-        for (int i = 0; i < headers.size(); i++) {
-            Cell cell = row.getCell(i);
-            String header = headers.get(i);
-            Object value = getCellValue(cell);
-            data.put(header, value);
-        }
-
-        return data;
-    }
-
     /**
      * 셀 값 추출 (타입별 처리)
      */
@@ -348,8 +332,6 @@ public class ExcelWorkerHandler implements RequestHandler<SQSEvent, String> {
 
             case NUMERIC:
                 if (DateUtil.isCellDateFormatted(cell)) {
-                    //return cell.getLocalDateTimeCellValue().format(dateTimeFormatter);
-
                     // [수정 후] 호환성 코드
                     return cell.getDateCellValue().toInstant()
                             .atZone(java.time.ZoneId.systemDefault())
