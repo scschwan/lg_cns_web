@@ -494,6 +494,12 @@ public class ProjectService {
             }
         }
 
+        // ★ 프로젝트 통계 재계산 + 완료 처리
+        fileSessionService.refreshProjectStats(projectId);
+
+        // 다시 조회 (refreshProjectStats에서 이미 save됨)
+        project = projectRepository.findByProjectId(projectId)
+                .orElseThrow(() -> new ProjectNotFoundException("프로젝트를 찾을 수 없습니다"));
         project.setIsCompleted(true);
         project.setUpdatedAt(LocalDateTime.now());
         projectRepository.save(project);

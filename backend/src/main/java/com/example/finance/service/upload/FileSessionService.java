@@ -883,9 +883,8 @@ public class FileSessionService {
         // 완전 삭제
         fileSessionRepository.delete(fileSession);
 
-        // 프로젝트 업데이트
-        project.setUpdatedAt(LocalDateTime.now());
-        projectRepository.save(project);
+        // ★ 프로젝트 통계 재계산 (totalSessions, totalFiles 등)
+        refreshProjectStats(fileSession.getProjectId());
 
         log.info("세션 삭제 완료: sessionId={}", sessionId);
     }
@@ -1322,12 +1321,8 @@ public class FileSessionService {
             fileSessionRepository.delete(session);
         }
 
-        // 프로젝트 업데이트 + 완료 상태 확인
-        Project project = projectRepository.findByProjectId(projectId).orElse(null);
-        if (project != null) {
-            project.setUpdatedAt(LocalDateTime.now());
-            projectRepository.save(project);
-        }
+        // ★ 프로젝트 통계 재계산 (totalSessions, totalFiles 등) + 완료 상태 확인
+        refreshProjectStats(projectId);
         checkAndUpdateProjectCompletion(projectId);
 
         log.info("세션 일괄 완전 삭제 완료: {} 개", sessionIds.size());
@@ -1494,6 +1489,38 @@ public class FileSessionService {
             }
         } catch (Exception e) {
             log.warn("프로젝트 완료 상태 갱신 실패: {}", e.getMessage());
+        }
+    }
+
+    /**
+     * 프로젝트 통계(totalSessions, completedSessions, totalFiles) 재계산
+     * 실제 DB 데이터 기준으로 갱신하여 정합성 보장
+     */
+    public void refreshProjectStats(String projectId) {
+        try {
+            Project project = projectRepository.findByProjectId(projectId).orElse(null);
+            if (project == null) return;
+
+            List<FileSession> sessions = fileSessionRepository.findByProjectIdAndIsDeletedFalse(projectId);
+
+            int totalSessions = sessions.size();
+            int completedSessions = (int) sessions.stream()
+                    .filter(s -> Boolean.TRUE.equals(s.getIsCompleted()))
+                    .count();
+            int totalFiles = sessions.stream()
+                    .mapToInt(s -> s.getUploadedFiles() != null ? s.getUploadedFiles().size() : 0)
+                    .sum();
+
+            project.setTotalSessions(totalSessions);
+            project.setCompletedSessions(completedSessions);
+            project.setTotalFiles(totalFiles);
+            project.setUpdatedAt(LocalDateTime.now());
+            projectRepository.save(project);
+
+            log.info("프로젝트 통계 갱신: projectId={}, sessions={}, completed={}, files={}",
+                    projectId, totalSessions, completedSessions, totalFiles);
+        } catch (Exception e) {
+            log.warn("프로젝트 통계 갱신 실패: projectId={}, error={}", projectId, e.getMessage());
         }
     }
 }

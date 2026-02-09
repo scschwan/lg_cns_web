@@ -61,6 +61,7 @@ public class UploadService {
     private final UploadSessionRepository uploadSessionRepository;
     private final FileSessionRepository fileSessionRepository;
     private final FileAnalysisService fileAnalysisService; // 주입 필요
+    private final FileSessionService fileSessionService;
     private final S3Service s3Service;
     private final SqsClient sqsClient;
     private final MongoTemplate mongoTemplate;
@@ -829,6 +830,9 @@ public class UploadService {
             fileSession.setUpdatedAt(LocalDateTime.now());
             fileSessionRepository.save(fileSession);
         }
+
+        // ★ 프로젝트 통계 재계산 (totalSessions, totalFiles 등)
+        fileSessionService.refreshProjectStats(projectId);
 
         log.info("파일 삭제 완료: fileId={}", fileId);
     }
