@@ -302,7 +302,7 @@ public class UploadService {
             metadataExecutor.submit(() -> {
                 // 1. S3 Event → Coordinator가 먼저 처리하도록 20초 대기
                 //    Coordinator 실패 시에만 백엔드가 SQS 발행 (백업)
-                // triggerWorkerLambdaIfNeeded(projectId, fileSession.getSessionId(), uploadId,"finance-excel-uploads", s3Key, fileName, fileSize);
+                triggerWorkerLambdaIfNeeded(projectId, fileSession.getSessionId(), uploadId,"finance-excel-uploads", s3Key, fileName, fileSize);
                 // 2. Lambda 완료 대기 후 메타데이터 업데이트
                 updateFileMetadataAsync(fileSession.getSessionId(), fileId, s3Key);
             });
