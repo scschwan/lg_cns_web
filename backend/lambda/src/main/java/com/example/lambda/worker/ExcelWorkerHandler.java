@@ -57,17 +57,18 @@ public class ExcelWorkerHandler implements RequestHandler<SQSEvent, String> {
 
     @Override
     public String handleRequest(SQSEvent sqsEvent, Context context) {
-        context.getLogger().log("=== [20260209-ver]Excel Worker 시작 (Idempotent Ver) ===");
+        context.getLogger().log("=== [20260210-ver]Excel Worker 시작 ===");
 
         try {
             for (SQSEvent.SQSMessage message : sqsEvent.getRecords()) {
                 ProcessingMessage processingMessage = gson.fromJson(message.getBody(), ProcessingMessage.class);
 
-                context.getLogger().log("처리 시작: chunk=" + processingMessage.getChunkNumber());
+                context.getLogger().log("처리 시작: chunk=" + processingMessage.getChunkNumber() +
+                        "/" + processingMessage.getTotalChunks() +
+                        ", totalRows=" + processingMessage.getTotalRows());
 
-                if (processingMessage.isFirstChunk()) {
-                    initializeRedisStatus(processingMessage.getUploadId(), processingMessage.getTotalRows(), context);
-                }
+                // ★ 모든 청크가 Redis 상태 보장 (totalRows, status=PROCESSING)
+                ensureRedisStatus(processingMessage, context);
 
                 processChunk(processingMessage, context);
                 markChunkCompleted(processingMessage, context);
@@ -164,24 +165,41 @@ public class ExcelWorkerHandler implements RequestHandler<SQSEvent, String> {
         }
     }
 
-    // ... (initializeRedisStatus, markChunkCompleted, extractHeaders, extractRowDataStreaming 등 나머지 메서드는 기존 유지)
-    // 단, markChunkCompleted는 Set을 이용한 버전을 사용하면 더 좋습니다.
-
-    // Redis 초기화
-    private void initializeRedisStatus(String uploadId, int totalRows, Context context) {
+    /**
+     * ★ 모든 청크가 호출 - Redis 상태 보장
+     *
+     * 백엔드 saveUploadSession()이 먼저 키를 생성하므로 (totalRows=0, status=PENDING)
+     * 기존 initializeRedisStatus()의 "exists → return" 로직으로는 totalRows가 영원히 0이었음.
+     *
+     * 이제 모든 청크가:
+     * - totalRows: Coordinator가 알려준 정확한 값으로 덮어씀
+     * - status: PENDING이면 PROCESSING으로 전환
+     * - processedRows: 리셋하지 않음 (HINCRBY로만 증가)
+     */
+    private void ensureRedisStatus(ProcessingMessage message, Context context) {
         try (Jedis jedis = RedisConfig.getJedis()) {
-            String key = "upload:status:" + uploadId;
-            // 이미 있으면 초기화하지 않음 (Coordinator가 여러번 보낼 경우 대비)
-            if (jedis.exists(key)) return;
+            String key = "upload:status:" + message.getUploadId();
 
-            jedis.hset(key, "status", "PROCESSING");
-            jedis.hset(key, "progress", "0");
-            jedis.hset(key, "totalRows", String.valueOf(totalRows));
-            jedis.hset(key, "processedRows", "0");
-            jedis.hset(key, "completedChunks", "0");
+            // ★ totalRows는 항상 Coordinator 값으로 설정 (백엔드가 0으로 만들었을 수 있음)
+            jedis.hset(key, "totalRows", String.valueOf(message.getTotalRows()));
+
+            // status: PENDING이면 PROCESSING으로 전환
+            String currentStatus = jedis.hget(key, "status");
+            if (currentStatus == null || "PENDING".equals(currentStatus)) {
+                jedis.hset(key, "status", "PROCESSING");
+            }
+
+            // processedRows, completedChunks: 없을 때만 초기화 (리셋 안 함)
+            if (!jedis.hexists(key, "processedRows")) {
+                jedis.hset(key, "processedRows", "0");
+            }
+            if (!jedis.hexists(key, "completedChunks")) {
+                jedis.hset(key, "completedChunks", "0");
+            }
+
             jedis.expire(key, 86400);
         } catch (Exception e) {
-            context.getLogger().log("Redis Init Error: " + e.getMessage());
+            context.getLogger().log("Redis 상태 설정 실패: " + e.getMessage());
         }
     }
 
@@ -210,10 +228,19 @@ public class ExcelWorkerHandler implements RequestHandler<SQSEvent, String> {
             if (completed >= message.getTotalChunks()) {
                 jedis.hset(key, "status", "COMPLETED");
                 jedis.hset(key, "progress", "100");
+
+                // ★ COMPLETED 시점에 raw_data.countDocuments()로 정확한 totalRows 기록
+                // (processedRows는 청크 완료 순서에 따라 부정확할 수 있으므로 별도로 계산)
                 context.getLogger().log("★ 전체 업로드 완료! → file_sessions row_count 업데이트 시작");
 
                 // ★ 마지막 Worker가 직접 file_sessions.row_count 업데이트
-                updateFileSessionRowCount(message, context);
+                long actualRowCount = updateFileSessionRowCount(message, context);
+
+                // Redis에도 정확한 최종 행 수 기록
+                if (actualRowCount > 0) {
+                    jedis.hset(key, "totalRows", String.valueOf(actualRowCount));
+                    jedis.hset(key, "processedRows", String.valueOf(actualRowCount));
+                }
             }
         } catch (Exception e) {
             context.getLogger().log("markChunkCompleted ERROR: " + e.getMessage());
@@ -227,19 +254,19 @@ public class ExcelWorkerHandler implements RequestHandler<SQSEvent, String> {
      * - Lambda Worker가 직접 MongoDB file_sessions 컬렉션을 업데이트
      * - raw_data.countDocuments()로 정확한 행 수 조회 (모든 Worker 완료 후)
      */
-    private void updateFileSessionRowCount(ProcessingMessage message, Context context) {
+    private long updateFileSessionRowCount(ProcessingMessage message, Context context) {
         try {
             MongoDatabase database = MongoDBConfig.getDatabase();
             String uploadId = message.getUploadId();
             String sessionId = message.getSessionId();
 
-            // 1. raw_data에서 정확한 row count 조회
+            // 1. raw_data에서 정확한 row count 조회 (모든 Worker 완료 후이므로 정확)
             long rowCount = database.getCollection("raw_data")
                     .countDocuments(new Document("upload_id", uploadId));
 
             if (rowCount == 0) {
                 context.getLogger().log("WARNING: COMPLETED인데 raw_data가 비어있음: " + uploadId);
-                return;
+                return 0;
             }
 
             // 2. raw_data에서 컬럼 정보 추출
@@ -303,9 +330,12 @@ public class ExcelWorkerHandler implements RequestHandler<SQSEvent, String> {
                     ", rowCount=" + rowCount + ", columns=" + columns.size() +
                     ", sessionId=" + sessionId);
 
+            return rowCount;
+
         } catch (Exception e) {
             context.getLogger().log("ERROR: file_sessions 업데이트 실패: " + e.getMessage());
             e.printStackTrace();
+            return 0;
         }
     }
 
