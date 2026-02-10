@@ -289,14 +289,14 @@ public class ExcelWorkerHandler implements RequestHandler<SQSEvent, String> {
 
             if (session == null) {
                 context.getLogger().log("WARNING: file_sessions not found: sessionId=" + sessionId);
-                return;
+                return 0;
             }
 
             // 4. uploaded_files 배열에서 uploadId가 포함된 s3_key를 가진 파일의 인덱스 찾기
             List<Document> uploadedFiles = session.getList("uploaded_files", Document.class);
             if (uploadedFiles == null) {
                 context.getLogger().log("WARNING: uploaded_files is null: sessionId=" + sessionId);
-                return;
+                return 0;
             }
 
             int targetIndex = -1;
@@ -310,7 +310,7 @@ public class ExcelWorkerHandler implements RequestHandler<SQSEvent, String> {
 
             if (targetIndex == -1) {
                 context.getLogger().log("WARNING: uploadId와 매칭되는 파일 없음: uploadId=" + uploadId);
-                return;
+                return 0;
             }
 
             // 5. 해당 파일의 row_count, detected_columns, upload_status 업데이트
