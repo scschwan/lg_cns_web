@@ -319,7 +319,7 @@ public class ExcelWorkerHandler implements RequestHandler<SQSEvent, String> {
                     .append(prefix + "row_count", rowCount)
                     .append(prefix + "upload_status", "UPLOADED")
                     .append(prefix + "detected_columns", columns)
-                    .append("updated_at", LocalDateTime.now().format(dateTimeFormatter));
+                    .append("updated_at", new java.util.Date());
 
             fileSessionsCol.updateOne(
                     Filters.eq("session_id", sessionId),
