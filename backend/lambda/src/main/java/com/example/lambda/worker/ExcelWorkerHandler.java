@@ -204,12 +204,109 @@ public class ExcelWorkerHandler implements RequestHandler<SQSEvent, String> {
             jedis.hset(key, "completedChunks", String.valueOf(completed));
             jedis.expire(setKey, 86400);
 
+            context.getLogger().log("청크 완료: " + completed + "/" + message.getTotalChunks() +
+                    " (" + progress + "%)");
+
             if (completed >= message.getTotalChunks()) {
                 jedis.hset(key, "status", "COMPLETED");
                 jedis.hset(key, "progress", "100");
-                context.getLogger().log("★ 전체 업로드 완료!");
+                context.getLogger().log("★ 전체 업로드 완료! → file_sessions row_count 업데이트 시작");
+
+                // ★ 마지막 Worker가 직접 file_sessions.row_count 업데이트
+                updateFileSessionRowCount(message, context);
             }
-        } catch (Exception e) {}
+        } catch (Exception e) {
+            context.getLogger().log("markChunkCompleted ERROR: " + e.getMessage());
+        }
+    }
+
+    /**
+     * ★ 모든 청크 완료 시 file_sessions.row_count를 정확한 값으로 업데이트
+     *
+     * - 백엔드 서버/프론트엔드 폴링에 의존하지 않음
+     * - Lambda Worker가 직접 MongoDB file_sessions 컬렉션을 업데이트
+     * - raw_data.countDocuments()로 정확한 행 수 조회 (모든 Worker 완료 후)
+     */
+    private void updateFileSessionRowCount(ProcessingMessage message, Context context) {
+        try {
+            MongoDatabase database = MongoDBConfig.getDatabase();
+            String uploadId = message.getUploadId();
+            String sessionId = message.getSessionId();
+
+            // 1. raw_data에서 정확한 row count 조회
+            long rowCount = database.getCollection("raw_data")
+                    .countDocuments(new Document("upload_id", uploadId));
+
+            if (rowCount == 0) {
+                context.getLogger().log("WARNING: COMPLETED인데 raw_data가 비어있음: " + uploadId);
+                return;
+            }
+
+            // 2. raw_data에서 컬럼 정보 추출
+            Document rawDoc = database.getCollection("raw_data")
+                    .find(new Document("upload_id", uploadId))
+                    .limit(1)
+                    .first();
+
+            List<String> columns = new ArrayList<>();
+            if (rawDoc != null) {
+                Object dataObj = rawDoc.get("data");
+                if (dataObj instanceof Document) {
+                    columns.addAll(((Document) dataObj).keySet());
+                }
+            }
+
+            // 3. file_sessions에서 해당 session 찾기
+            MongoCollection<Document> fileSessionsCol = database.getCollection("file_sessions");
+            Document session = fileSessionsCol.find(Filters.eq("session_id", sessionId)).first();
+
+            if (session == null) {
+                context.getLogger().log("WARNING: file_sessions not found: sessionId=" + sessionId);
+                return;
+            }
+
+            // 4. uploaded_files 배열에서 uploadId가 포함된 s3_key를 가진 파일의 인덱스 찾기
+            List<Document> uploadedFiles = session.getList("uploaded_files", Document.class);
+            if (uploadedFiles == null) {
+                context.getLogger().log("WARNING: uploaded_files is null: sessionId=" + sessionId);
+                return;
+            }
+
+            int targetIndex = -1;
+            for (int i = 0; i < uploadedFiles.size(); i++) {
+                String s3Key = uploadedFiles.get(i).getString("s3_key");
+                if (s3Key != null && s3Key.contains(uploadId)) {
+                    targetIndex = i;
+                    break;
+                }
+            }
+
+            if (targetIndex == -1) {
+                context.getLogger().log("WARNING: uploadId와 매칭되는 파일 없음: uploadId=" + uploadId);
+                return;
+            }
+
+            // 5. 해당 파일의 row_count, detected_columns, upload_status 업데이트
+            String prefix = "uploaded_files." + targetIndex + ".";
+            Document updateFields = new Document()
+                    .append(prefix + "row_count", rowCount)
+                    .append(prefix + "upload_status", "UPLOADED")
+                    .append(prefix + "detected_columns", columns)
+                    .append("updated_at", LocalDateTime.now().format(dateTimeFormatter));
+
+            fileSessionsCol.updateOne(
+                    Filters.eq("session_id", sessionId),
+                    new Document("$set", updateFields)
+            );
+
+            context.getLogger().log("★ file_sessions 업데이트 완료: uploadId=" + uploadId +
+                    ", rowCount=" + rowCount + ", columns=" + columns.size() +
+                    ", sessionId=" + sessionId);
+
+        } catch (Exception e) {
+            context.getLogger().log("ERROR: file_sessions 업데이트 실패: " + e.getMessage());
+            e.printStackTrace();
+        }
     }
 
     // ... (Helper 메서드들: extractHeaders, extractRowDataStreaming, getCellValue 등은 그대로 사용)
