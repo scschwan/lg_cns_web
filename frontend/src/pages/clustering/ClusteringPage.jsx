@@ -308,7 +308,14 @@ function ClusteringPage() {
   }, [projectId, sessionId]);
 
   const loadMerged = useCallback(async () => {
-    try { setMergedClusters(await clusteringService.getMergedClusters(projectId, sessionId) || []); } catch (e) { console.error(e); }
+    try {
+      const data = await clusteringService.getMergedClusters(projectId, sessionId);
+      console.log('[loadMerged] 응답:', data, '개수:', Array.isArray(data) ? data.length : 'not array');
+      setMergedClusters(data || []);
+    } catch (e) {
+      console.error('[loadMerged] 에러:', e);
+      setMergedClusters([]);
+    }
   }, [projectId, sessionId]);
 
   const loadSearchableColumns = useCallback(async () => {

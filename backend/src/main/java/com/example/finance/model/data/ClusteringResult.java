@@ -3,7 +3,6 @@ package com.example.finance.model.data;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
-import lombok.NoArgsConstructor;
 import org.springframework.data.annotation.Id;
 import org.springframework.data.mongodb.core.index.CompoundIndex;
 import org.springframework.data.mongodb.core.index.Indexed;
@@ -26,11 +25,24 @@ import java.util.List;
 @Document(collection = "clustering_results")
 @Data
 @Builder
-@NoArgsConstructor
 @AllArgsConstructor
 @CompoundIndex(name = "session_cluster_num_idx", def = "{'session_id': 1, 'cluster_number': 1}", unique = true)
 @CompoundIndex(name = "session_cluster_id_idx", def = "{'session_id': 1, 'cluster_id': 1}")
 public class ClusteringResult {
+
+    /**
+     * ★ @Builder.Default는 builder에서만 기본값이 적용되고,
+     * @NoArgsConstructor로 생성된 인스턴스에는 적용되지 않아 null이 됨.
+     * Spring Data MongoDB는 no-arg constructor를 사용하므로 수동 초기화 필수.
+     */
+    public ClusteringResult() {
+        this.clusterId = -1;
+        this.clusterSubId = -1;
+        this.keywords = new ArrayList<>();
+        this.count = 0;
+        this.totalAmount = 0.0;
+        this.dataIndices = new ArrayList<>();
+    }
 
     @Id
     private String id;

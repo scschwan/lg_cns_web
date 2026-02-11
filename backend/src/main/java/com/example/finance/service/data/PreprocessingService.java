@@ -510,6 +510,11 @@ public class PreprocessingService {
 
                 if (removed == 0) continue;
 
+                // ★ 모든 키워드가 1글자라 전부 제거된 경우 → "키워드없음" 표시
+                if (filtered.isEmpty()) {
+                    filtered.add("키워드없음");
+                }
+
                 removedCount.addAndGet(removed);
 
                 updateBatch.add(new Document[]{
@@ -598,6 +603,12 @@ public class PreprocessingService {
 
                 for (String keyword : existingKeywords) {
                     if (keyword == null || keyword.isEmpty()) {
+                        newKeywords.add(keyword);
+                        continue;
+                    }
+
+                    // ★ "키워드없음"은 특수 플레이스홀더이므로 NLP 분석 대상에서 제외
+                    if ("키워드없음".equals(keyword)) {
                         newKeywords.add(keyword);
                         continue;
                     }
