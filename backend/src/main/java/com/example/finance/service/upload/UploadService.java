@@ -1018,8 +1018,12 @@ public class UploadService {
                     if (data == null) continue;
 
                     Object val = data.get(columnName);
-                    if (val != null && !val.toString().trim().isEmpty()) {
-                        valueSet.add(val.toString().trim());
+                    if (val != null) {
+                        String strVal = val.toString().trim();
+                        // StreamingCell@xxx 형태의 오염된 데이터 필터링
+                        if (!strVal.isEmpty() && !strVal.contains("StreamingCell@")) {
+                            valueSet.add(strVal);
+                        }
                     }
                 }
             }
