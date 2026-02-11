@@ -1481,7 +1481,7 @@ public class UploadService {
      *
      * - raw_data를 cursor로 순회하며 계정별 금액 합산
      * - Number 타입 + 문자열 타입 (쉼표, 통화기호 포함) 모두 처리
-     * - projection으로 필요한 필드만 조회 (네트워크 절약)
+     * - projection은 data 전체 (서브필드 dot notation 이슈 방지)
      */
     private Map<String, Double> sumAmountsByAccountCursor(
             String uploadId, String accountColName, String amountColName, String fileName) {
@@ -1490,15 +1490,27 @@ public class UploadService {
 
         try (var cursor = mongoTemplate.getCollection("raw_data")
                 .find(new org.bson.Document("upload_id", uploadId))
-                .projection(new org.bson.Document("data." + accountColName, 1)
-                        .append("data." + amountColName, 1))
+                .projection(new org.bson.Document("data", 1))
                 .batchSize(5000).cursor()) {
 
             long count = 0;
+            long nullCount = 0;
+            long numberCount = 0;
+            long stringCount = 0;
+
             while (cursor.hasNext()) {
                 org.bson.Document doc = cursor.next();
                 org.bson.Document data = doc.get("data", org.bson.Document.class);
                 if (data == null) continue;
+
+                // ★ 첫 행에서 진단 정보 출력 (컬럼명 불일치 확인용)
+                if (count == 0) {
+                    log.info("[{}] 금액 진단: amountCol='{}', accountCol='{}', data keys={}",
+                            fileName, amountColName, accountColName, data.keySet());
+                    Object sampleVal = data.get(amountColName);
+                    log.info("[{}] 금액 진단: 첫 행 val={}, type={}",
+                            fileName, sampleVal, sampleVal != null ? sampleVal.getClass().getName() : "null");
+                }
 
                 // 계정명 추출
                 Object accObj = data.get(accountColName);
@@ -1515,15 +1527,19 @@ public class UploadService {
                 // 금액 추출 (Number + String 모두 처리)
                 Object val = data.get(amountColName);
                 double amount = 0.0;
-                if (val instanceof Number) {
+                if (val == null) {
+                    nullCount++;
+                } else if (val instanceof Number) {
                     amount = ((Number) val).doubleValue();
-                } else if (val != null) {
+                    numberCount++;
+                } else {
                     String str = val.toString();
                     if (!str.contains("StreamingCell@")) {
                         str = str.replaceAll("[,\\s₩\\\\]", "").trim();
                         if (!str.isEmpty() && !str.equals("-") && !str.equals("N/A")) {
                             try {
                                 amount = Double.parseDouble(str);
+                                stringCount++;
                             } catch (NumberFormatException ignored) {}
                         }
                     }
@@ -1533,8 +1549,8 @@ public class UploadService {
                 count++;
             }
 
-            log.info("[{}] cursor 기반 금액 재계산 완료: {}건 처리, 계정 {}개",
-                    fileName, count, result.size());
+            log.info("[{}] cursor 기반 금액 재계산 완료: {}건 처리, 계정 {}개 (null: {}건, number: {}건, string: {}건)",
+                    fileName, count, result.size(), nullCount, numberCount, stringCount);
 
         } catch (Exception e) {
             log.error("[{}] cursor 기반 금액 계산 실패: {}", fileName, e.getMessage());
