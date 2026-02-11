@@ -497,8 +497,7 @@ public class ClusteringService {
 
         clusteringResultRepository.save(merged);
 
-        // 병렬 업데이트
-        targets.parallelStream().forEach(target -> target.setClusterId(newClusterNumber));
+        targets.forEach(target -> target.setClusterId(newClusterNumber));
         clusteringResultRepository.saveAll(targets);
 
         log.info("클러스터 병합 완료: #{}, {}개 합침", newClusterNumber, targets.size());
@@ -535,7 +534,7 @@ public class ClusteringService {
             throw new BusinessException("NO_CHILDREN", "하위 클러스터가 없습니다.");
         }
 
-        children.parallelStream().forEach(child -> child.setClusterId(-1));
+        children.forEach(child -> child.setClusterId(-1));
         clusteringResultRepository.saveAll(children);
         clusteringResultRepository.delete(merged);
 
@@ -578,7 +577,7 @@ public class ClusteringService {
         }
 
         // 선택한 자식들 해제
-        toRemove.parallelStream().forEach(child -> child.setClusterId(-1));
+        toRemove.forEach(child -> child.setClusterId(-1));
         clusteringResultRepository.saveAll(toRemove);
 
         // 남은 자식이 있으면 부모 갱신, 없으면 부모 삭제
@@ -677,7 +676,7 @@ public class ClusteringService {
         clusteringResultRepository.save(newParent);
 
         // 모든 자식을 새 부모로 이동
-        allChildrenToMove.parallelStream().forEach(child -> child.setClusterId(newClusterNumber));
+        allChildrenToMove.forEach(child -> child.setClusterId(newClusterNumber));
         clusteringResultRepository.saveAll(allChildrenToMove);
 
         // 기존 부모 삭제
@@ -840,10 +839,24 @@ public class ClusteringService {
             if (rawId != null && dataObj instanceof Document) {
                 @SuppressWarnings("unchecked")
                 Map<String, Object> data = new LinkedHashMap<>((Document) dataObj);
+                // StreamingCell@xxx 오염 데이터 치환
+                sanitizeStreamingCellValues(data);
                 result.put(rawId, data);
             }
         }
         return result;
+    }
+
+    /**
+     * StreamingCell@xxx 형태의 오염된 값을 null로 치환
+     */
+    private void sanitizeStreamingCellValues(Map<String, Object> data) {
+        data.replaceAll((key, value) -> {
+            if (value instanceof String && ((String) value).contains("StreamingCell@")) {
+                return null;
+            }
+            return value;
+        });
     }
 
     // ============================================================
@@ -1220,7 +1233,7 @@ public class ClusteringService {
 
         clusteringResultRepository.save(undefinedParent);
 
-        unmerged.parallelStream().forEach(target -> target.setClusterId(newClusterNumber));
+        unmerged.forEach(target -> target.setClusterId(newClusterNumber));
         clusteringResultRepository.saveAll(unmerged);
 
         log.info("Undefined Cluster 일괄 병합 완료: #{}, {}개 합침", newClusterNumber, unmerged.size());
