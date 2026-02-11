@@ -346,6 +346,10 @@ public class ExcelWorkerHandler implements RequestHandler<SQSEvent, String> {
             Cell cell = row.getCell(i);
             String header = headers.get(i);
             Object value = getCellValue(cell);
+            // StreamingCell@xxx 오염 방어: 값이 객체 참조 문자열이면 null 처리
+            if (value != null && value.toString().contains("StreamingCell@")) {
+                value = null;
+            }
             data.put(header, value);
         }
         return data;
@@ -373,7 +377,17 @@ public class ExcelWorkerHandler implements RequestHandler<SQSEvent, String> {
                 }
                 return cell.getNumericCellValue();
             case BOOLEAN: return cell.getBooleanCellValue();
-            case FORMULA: return cell.getCellFormula();
+            case FORMULA:
+                // StreamingReader는 수식 평가를 지원하지 않으므로 캐시된 값 추출 시도
+                try {
+                    return cell.getStringCellValue();
+                } catch (Exception e1) {
+                    try {
+                        return cell.getNumericCellValue();
+                    } catch (Exception e2) {
+                        return null;
+                    }
+                }
             case BLANK: return null;
             default:
                 // StreamingCell은 toString()이 오버라이드되지 않아 객체 참조가 반환됨
@@ -388,6 +402,14 @@ public class ExcelWorkerHandler implements RequestHandler<SQSEvent, String> {
 
     private String getCellValueAsString(Cell cell) {
         Object value = getCellValue(cell);
+        if (value != null && value.toString().contains("StreamingCell@")) {
+            // 오염된 값이면 getStringCellValue()로 재시도
+            try {
+                return cell.getStringCellValue();
+            } catch (Exception e) {
+                return null;
+            }
+        }
         return value != null ? value.toString() : null;
     }
 }
