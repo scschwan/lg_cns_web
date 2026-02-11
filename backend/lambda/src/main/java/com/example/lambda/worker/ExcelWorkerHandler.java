@@ -374,7 +374,15 @@ public class ExcelWorkerHandler implements RequestHandler<SQSEvent, String> {
                 return cell.getNumericCellValue();
             case BOOLEAN: return cell.getBooleanCellValue();
             case FORMULA: return cell.getCellFormula();
-            default: return cell.toString();
+            case BLANK: return null;
+            default:
+                // StreamingCell은 toString()이 오버라이드되지 않아 객체 참조가 반환됨
+                // getStringCellValue()로 실제 값 추출 시도
+                try {
+                    return cell.getStringCellValue();
+                } catch (Exception e) {
+                    return null;
+                }
         }
     }
 
