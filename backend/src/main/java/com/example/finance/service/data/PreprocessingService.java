@@ -47,12 +47,13 @@ public class PreprocessingService {
     private final RedisService redisService;
 
     private static final String EXTRACT_PROGRESS_KEY = "preprocessing:extract:";
+    private static final String SINGLE_CHAR_PROGRESS_KEY = "preprocessing:singlechar:";
     private static final String NLP_PROGRESS_KEY = "preprocessing:nlp:";
 
     private static final String PROCESS_DATA_COLLECTION = "process_data";
     private static final String PROCESS_VIEW_DATA_COLLECTION = "process_view_data";
-    private static final int THREAD_POOL_SIZE = 4;
-    private static final int BATCH_SIZE = 5_000;
+    private static final int THREAD_POOL_SIZE = Math.max(8, Runtime.getRuntime().availableProcessors());
+    private static final int BATCH_SIZE = 10_000;
 
     /**
      * Redis에 진행 상태 업데이트
@@ -135,14 +136,26 @@ public class PreprocessingService {
         // process_data 페이징
         Document matchFilter = new Document("session_id", sessionId)
                 .append("is_hidden", false);
-        long totalCount = mongoTemplate.getCollection(PROCESS_DATA_COLLECTION).countDocuments(matchFilter);
-        int totalPages = (int) Math.ceil((double) totalCount / size);
+
+        // ★ 병렬: countDocuments와 find를 동시에 실행
+        CompletableFuture<Long> countFuture = CompletableFuture.supplyAsync(
+                () -> mongoTemplate.getCollection(PROCESS_DATA_COLLECTION).countDocuments(matchFilter));
 
         List<Document> docs = mongoTemplate.getCollection(PROCESS_DATA_COLLECTION)
                 .find(matchFilter)
+                .sort(new Document("_id", 1))
                 .skip(page * size)
                 .limit(size)
                 .into(new ArrayList<>());
+
+        long totalCount;
+        try {
+            totalCount = countFuture.get(10, java.util.concurrent.TimeUnit.SECONDS);
+        } catch (Exception e) {
+            log.warn("countDocuments 병렬 조회 실패, 동기 fallback", e);
+            totalCount = mongoTemplate.getCollection(PROCESS_DATA_COLLECTION).countDocuments(matchFilter);
+        }
+        int totalPages = (int) Math.ceil((double) totalCount / size);
 
         // 현재 페이지의 process_data ID 목록
         List<String> processDataIds = docs.stream()
@@ -347,15 +360,22 @@ public class PreprocessingService {
             separatorPattern = java.util.regex.Pattern.compile(patternStr);
         }
 
-        // 기존 process_view_data 삭제
-        mongoTemplate.getCollection(PROCESS_VIEW_DATA_COLLECTION)
-                .deleteMany(new Document("session_id", sessionId));
+        // 기존 process_view_data 삭제 (deleteMany 대신 조건별 대량 삭제를 비동기로)
+        CompletableFuture<Void> deleteFuture = CompletableFuture.runAsync(() -> {
+            long deleteStart = System.currentTimeMillis();
+            mongoTemplate.getCollection(PROCESS_VIEW_DATA_COLLECTION)
+                    .deleteMany(new Document("session_id", sessionId));
+            log.info("기존 process_view_data 삭제 완료: {}ms", System.currentTimeMillis() - deleteStart);
+        });
 
         // 진행 상태 초기화
         String progressKey = EXTRACT_PROGRESS_KEY + sessionId;
         Document matchFilter = new Document("session_id", sessionId).append("is_hidden", false);
         long totalCount = mongoTemplate.getCollection(PROCESS_DATA_COLLECTION).countDocuments(matchFilter);
         updateProgress(progressKey, "PROCESSING", totalCount, 0);
+
+        // 삭제 완료 대기
+        deleteFuture.join();
 
         ExecutorService executor = Executors.newFixedThreadPool(THREAD_POOL_SIZE);
         List<CompletableFuture<Void>> futures = new ArrayList<>();
@@ -365,8 +385,18 @@ public class PreprocessingService {
         List<Document> insertBatch = new ArrayList<>(BATCH_SIZE);
         LocalDateTime now = LocalDateTime.now();
 
+        // ★ 불용어를 하나의 regex로 통합 (각 row마다 N번 replace 대신 1번 replaceAll)
+        java.util.regex.Pattern stopwordPattern = null;
+        if (!activeStopwords.isEmpty()) {
+            String swPatternStr = activeStopwords.stream()
+                    .map(java.util.regex.Pattern::quote)
+                    .collect(Collectors.joining("|"));
+            stopwordPattern = java.util.regex.Pattern.compile(swPatternStr);
+        }
+        final java.util.regex.Pattern finalStopwordPattern = stopwordPattern;
+
         try (var cursor = mongoTemplate.getCollection(PROCESS_DATA_COLLECTION)
-                .find(matchFilter).batchSize(5000).cursor()) {
+                .find(matchFilter).batchSize(10000).cursor()) {
 
             while (cursor.hasNext()) {
                 Document doc = cursor.next();
@@ -376,9 +406,9 @@ public class PreprocessingService {
                 Object targetValue = data.get(targetCol);
                 String text = targetValue != null ? targetValue.toString() : "";
 
-                // 1. 불용어 제거
-                for (String stopword : activeStopwords) {
-                    text = text.replace(stopword, "");
+                // 1. 불용어 제거 (★ 단일 regex로 한번에)
+                if (finalStopwordPattern != null) {
+                    text = finalStopwordPattern.matcher(text).replaceAll("");
                 }
 
                 // 2. 사전 컴파일된 패턴으로 split
@@ -430,7 +460,8 @@ public class PreprocessingService {
                     final long tc = totalCount;
                     final String pk = progressKey;
                     CompletableFuture<Void> future = CompletableFuture.runAsync(() -> {
-                        mongoTemplate.getCollection(PROCESS_VIEW_DATA_COLLECTION).insertMany(batch);
+                        mongoTemplate.getCollection(PROCESS_VIEW_DATA_COLLECTION)
+                                .insertMany(batch, new com.mongodb.client.model.InsertManyOptions().ordered(false));
                         long current = processedCount.addAndGet(batch.size());
                         updateProgress(pk, "PROCESSING", tc, current);
                     }, executor);
@@ -445,7 +476,8 @@ public class PreprocessingService {
             final long tc = totalCount;
             final String pk = progressKey;
             CompletableFuture<Void> future = CompletableFuture.runAsync(() -> {
-                mongoTemplate.getCollection(PROCESS_VIEW_DATA_COLLECTION).insertMany(batch);
+                mongoTemplate.getCollection(PROCESS_VIEW_DATA_COLLECTION)
+                        .insertMany(batch, new com.mongodb.client.model.InsertManyOptions().ordered(false));
                 long current = processedCount.addAndGet(batch.size());
                 updateProgress(pk, "PROCESSING", tc, current);
             }, executor);
@@ -479,14 +511,21 @@ public class PreprocessingService {
         long startTime = System.currentTimeMillis();
         log.info("1글자 제거 시작: sessionId={}", sessionId);
 
+        // ★ 진행 상태 추가
+        String progressKey = SINGLE_CHAR_PROGRESS_KEY + sessionId;
+        long totalCount = mongoTemplate.getCollection(PROCESS_VIEW_DATA_COLLECTION)
+                .countDocuments(new Document("session_id", sessionId));
+        updateProgress(progressKey, "PROCESSING", totalCount, 0);
+
         ExecutorService executor = Executors.newFixedThreadPool(THREAD_POOL_SIZE);
         List<CompletableFuture<Void>> futures = new ArrayList<>();
         AtomicInteger removedCount = new AtomicInteger(0);
+        AtomicInteger processedCount = new AtomicInteger(0);
         List<Document[]> updateBatch = new ArrayList<>(BATCH_SIZE);
         LocalDateTime now = LocalDateTime.now();
 
         try (var cursor = mongoTemplate.getCollection(PROCESS_VIEW_DATA_COLLECTION)
-                .find(new Document("session_id", sessionId)).batchSize(5000).cursor()) {
+                .find(new Document("session_id", sessionId)).batchSize(10000).cursor()) {
 
             while (cursor.hasNext()) {
                 Document viewDoc = cursor.next();
@@ -526,8 +565,12 @@ public class PreprocessingService {
                 if (updateBatch.size() >= BATCH_SIZE) {
                     List<Document[]> batch = new ArrayList<>(updateBatch);
                     updateBatch.clear();
+                    final long tc = totalCount;
+                    final String pk = progressKey;
                     CompletableFuture<Void> future = CompletableFuture.runAsync(() -> {
                         executeBatchUpdate(PROCESS_VIEW_DATA_COLLECTION, batch);
+                        long current = processedCount.addAndGet(batch.size());
+                        updateProgress(pk, "PROCESSING", tc, current);
                     }, executor);
                     futures.add(future);
                 }
@@ -536,8 +579,12 @@ public class PreprocessingService {
 
         if (!updateBatch.isEmpty()) {
             List<Document[]> batch = new ArrayList<>(updateBatch);
+            final long tc = totalCount;
+            final String pk = progressKey;
             CompletableFuture<Void> future = CompletableFuture.runAsync(() -> {
                 executeBatchUpdate(PROCESS_VIEW_DATA_COLLECTION, batch);
+                long current = processedCount.addAndGet(batch.size());
+                updateProgress(pk, "PROCESSING", tc, current);
             }, executor);
             futures.add(future);
         }
@@ -546,10 +593,14 @@ public class PreprocessingService {
         executor.shutdown();
 
         long elapsed = System.currentTimeMillis() - startTime;
-        log.info("1글자 제거 완료: sessionId={}, 제거={}건, {}ms", sessionId, removedCount.get(), elapsed);
+        log.info("1글자 제거 완료: sessionId={}, 제거={}건, 처리={}건, {}ms",
+                sessionId, removedCount.get(), processedCount.get(), elapsed);
+
+        updateProgress(progressKey, "COMPLETED", totalCount, totalCount);
 
         Map<String, Object> result = new HashMap<>();
         result.put("removedCount", removedCount.get());
+        result.put("processedCount", processedCount.get());
         result.put("elapsedMs", elapsed);
         return result;
     }
@@ -586,7 +637,7 @@ public class PreprocessingService {
         LocalDateTime now = LocalDateTime.now();
 
         try (var cursor = mongoTemplate.getCollection(PROCESS_VIEW_DATA_COLLECTION)
-                .find(new Document("session_id", sessionId)).batchSize(5000).cursor()) {
+                .find(new Document("session_id", sessionId)).batchSize(10000).cursor()) {
 
             while (cursor.hasNext()) {
                 Document viewDoc = cursor.next();
@@ -723,6 +774,7 @@ public class PreprocessingService {
         for (Document[] pair : batch) {
             bulkOps.add(new UpdateOneModel<>(pair[0], pair[1]));
         }
-        collection.bulkWrite(bulkOps);
+        // ★ ordered=false: 순서 무관하게 병렬 처리 → 성능 향상
+        collection.bulkWrite(bulkOps, new com.mongodb.client.model.BulkWriteOptions().ordered(false));
     }
 }

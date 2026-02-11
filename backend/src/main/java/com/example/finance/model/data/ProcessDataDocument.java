@@ -26,6 +26,7 @@ import java.util.Map;
 @CompoundIndex(name = "project_session_idx", def = "{'project_id': 1, 'session_id': 1}")
 @CompoundIndex(name = "session_cluster_idx", def = "{'session_id': 1, 'cluster_id': 1}")
 @CompoundIndex(name = "project_hidden_idx", def = "{'project_id': 1, 'is_hidden': 1}")
+@CompoundIndex(name = "session_hidden_idx", def = "{'session_id': 1, 'is_hidden': 1}")
 public class ProcessDataDocument {
 
     @Id
