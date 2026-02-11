@@ -406,9 +406,11 @@ public class FileSessionService {
                     sessionTotalAmount += fileInfo.getTotalAmount();
                 }
 
-                // 3) 계정명 수집 (Issue 1 해결: 계정명이 세션 정보로 올라오도록 함)
+                // 3) 계정명 수집 (StreamingCell 오염 데이터 필터링)
                 if (fileInfo.getAccountContents() != null) {
-                    sessionAccounts.addAll(fileInfo.getAccountContents());
+                    fileInfo.getAccountContents().stream()
+                            .filter(name -> !name.contains("StreamingCell@"))
+                            .forEach(sessionAccounts::add);
                 }
             }
         }
@@ -948,17 +950,21 @@ public class FileSessionService {
                 .sum();
 
 
-        // 7. accountNames 수집 - 세션 레벨 + 파일 레벨 모두에서 수집
+        // 7. accountNames 수집 - 세션 레벨 + 파일 레벨 모두에서 수집 (StreamingCell 오염 필터링)
         Set<String> accountNameSet = new LinkedHashSet<>();
         for (FileSession s : sessions) {
             if (s.getAccountNames() != null) {
-                accountNameSet.addAll(s.getAccountNames());
+                s.getAccountNames().stream()
+                        .filter(name -> !name.contains("StreamingCell@"))
+                        .forEach(accountNameSet::add);
             }
         }
         // 파일 내 accountContents에서도 수집 (세션 레벨에 없을 경우 대비)
         for (UploadedFileInfo file : mergedFiles) {
             if (file.getAccountContents() != null) {
-                accountNameSet.addAll(file.getAccountContents());
+                file.getAccountContents().stream()
+                        .filter(name -> !name.contains("StreamingCell@"))
+                        .forEach(accountNameSet::add);
             }
         }
 
