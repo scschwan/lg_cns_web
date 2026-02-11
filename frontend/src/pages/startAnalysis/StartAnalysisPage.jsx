@@ -35,6 +35,14 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 
 // ===== 멀티셀렉트 체크박스 리스트 컴포넌트 =====
 // 드래그 선택 + Ctrl+클릭 복수 커서 지원
@@ -546,14 +554,24 @@ export default function StartAnalysisPage() {
   const [completeLoading, setCompleteLoading] = useState(false);
   const [completeProgress, setCompleteProgress] = useState(0);
 
+  // 미선택 컬럼 안내 다이얼로그
+  const [missingColumnsDialog, setMissingColumnsDialog] = useState({ open: false, missing: [] });
+
   const handleComplete = async () => {
-    // 필수 항목 검증
-    if (!requiredColumns.category) {
-      alert('세목 열을 선택해주세요.');
-      return;
-    }
-    if (!requiredColumns.amount) {
-      alert('금액 열을 선택해주세요.');
+    // 필수 항목 검증 - 모든 컬럼 체크
+    const columnLabels = {
+      category: '세목 열',
+      costCenter: '코스트센터 열',
+      supplier: '공급업체 열',
+      amount: '금액 열',
+      target: '타겟 열',
+    };
+    const missingCols = Object.entries(columnLabels)
+      .filter(([key]) => !requiredColumns[key])
+      .map(([, label]) => label);
+
+    if (missingCols.length > 0) {
+      setMissingColumnsDialog({ open: true, missing: missingCols });
       return;
     }
 
@@ -1148,6 +1166,32 @@ export default function StartAnalysisPage() {
 
           </div>
         </div>
+
+        {/* 미선택 컬럼 안내 다이얼로그 */}
+        <Dialog open={missingColumnsDialog.open} onOpenChange={(open) => setMissingColumnsDialog(prev => ({ ...prev, open }))}>
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2 text-amber-600">
+                필수 항목 미선택 안내
+              </DialogTitle>
+              <DialogDescription className="pt-2">
+                다음 항목이 아직 선택되지 않았습니다. 모든 필수 항목을 선택해주세요.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="py-2">
+              <ul className="list-disc pl-5 space-y-1">
+                {missingColumnsDialog.missing.map((col) => (
+                  <li key={col} className="text-sm font-medium text-red-600">{col}</li>
+                ))}
+              </ul>
+            </div>
+            <DialogFooter>
+              <Button onClick={() => setMissingColumnsDialog({ open: false, missing: [] })}>
+                확인
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </div>
     </div>
   );
