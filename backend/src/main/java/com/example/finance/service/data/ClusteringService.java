@@ -323,44 +323,10 @@ public class ClusteringService {
         log.info("getMergedClusters 시작: sessionId={}", sessionId);
 
         try {
-        // ★ 진단: raw MongoDB 쿼리로 cluster_id 분포 확인
-        List<org.bson.Document> rawDocs = mongoTemplate.getCollection("clustering_results")
-                .find(new org.bson.Document("session_id", sessionId))
-                .projection(new org.bson.Document("cluster_number", 1)
-                        .append("cluster_id", 1)
-                        .append("cluster_name", 1))
-                .into(new ArrayList<>());
-
-        Map<String, Long> clusterIdDistribution = new LinkedHashMap<>();
-        for (org.bson.Document doc : rawDocs) {
-            Object cid = doc.get("cluster_id");
-            String key = cid == null ? "null" : cid.toString() + "(" + cid.getClass().getSimpleName() + ")";
-            clusterIdDistribution.merge(key, 1L, Long::sum);
-        }
-        log.info("getMergedClusters 진단: raw 도큐먼트 {}개, cluster_id 분포: {}",
-                rawDocs.size(), clusterIdDistribution);
-
-        // 샘플: cluster_id != -1인 raw 도큐먼트
-        for (org.bson.Document doc : rawDocs) {
-            Object cid = doc.get("cluster_id");
-            if (cid instanceof Number && ((Number) cid).intValue() != -1) {
-                log.info("getMergedClusters 진단 샘플: cluster_number={}, cluster_id={} (type={}), cluster_name={}",
-                        doc.get("cluster_number"), cid, cid.getClass().getSimpleName(), doc.get("cluster_name"));
-            }
-        }
-
         List<ClusteringResult> all = clusteringResultRepository
                 .findBySessionIdOrderByClusterNumberAsc(sessionId);
 
-        log.info("getMergedClusters: Spring Data 전체 클러스터 {}개 조회", all.size());
-
-        // ★ 진단: Spring Data 역직렬화 후 clusterId 분포
-        Map<String, Long> deserializedDist = new LinkedHashMap<>();
-        for (ClusteringResult c : all) {
-            String key = c.getClusterId() == null ? "null" : c.getClusterId().toString();
-            deserializedDist.merge(key, 1L, Long::sum);
-        }
-        log.info("getMergedClusters 진단: 역직렬화 후 clusterId 분포: {}", deserializedDist);
+        log.info("getMergedClusters: 전체 클러스터 {}개 조회", all.size());
 
         Set<Integer> mergedClusterNumbers = all.stream()
                 .filter(c -> c.getClusterId() != null && c.getClusterId() > 0)
@@ -369,23 +335,35 @@ public class ClusteringService {
 
         log.info("getMergedClusters: 병합 클러스터 번호 {}개 = {}", mergedClusterNumbers.size(), mergedClusterNumbers);
 
-        // 대표데이터 일괄 조회
-        Set<String> allFirstRawIds = new LinkedHashSet<>();
-        for (ClusteringResult c : all) {
+        if (mergedClusterNumbers.isEmpty()) {
+            return Collections.emptyList();
+        }
+
+        // ★ 병합 그룹에 속한 클러스터만 필터 (부모 + 자식)
+        List<ClusteringResult> mergedGroupMembers = all.stream()
+                .filter(c -> c.getClusterId() != null && c.getClusterId() > 0)
+                .collect(Collectors.toList());
+
+        // ★ 대표데이터: 병합 그룹 멤버의 첫 번째 raw_id만 조회 (전체 X)
+        Set<String> mergedFirstRawIds = new LinkedHashSet<>();
+        for (ClusteringResult c : mergedGroupMembers) {
             if (c.getDataIndices() != null && !c.getDataIndices().isEmpty()) {
-                allFirstRawIds.add(c.getDataIndices().get(0));
+                mergedFirstRawIds.add(c.getDataIndices().get(0));
             }
         }
-        Map<String, Map<String, Object>> rawIdToData = batchFetchSessionData(sessionId, allFirstRawIds);
+        log.info("getMergedClusters: 대표데이터 {}건만 조회 (전체 클러스터 {}개 중 병합그룹 {}개)",
+                mergedFirstRawIds.size(), all.size(), mergedGroupMembers.size());
+
+        Map<String, Map<String, Object>> rawIdToData = mergedFirstRawIds.isEmpty()
+                ? Collections.emptyMap()
+                : batchFetchSessionData(sessionId, mergedFirstRawIds);
         List<String> visibleColumns = getVisibleColumns(sessionId);
 
         List<Map<String, Object>> result = new ArrayList<>();
         for (ClusteringResult cluster : all) {
             if (mergedClusterNumbers.contains(cluster.getClusterNumber())) {
-                // 부모 자신 제외 (★ null-safety 추가)
-                List<ClusteringResult> children = all.stream()
-                        .filter(c -> c.getClusterId() != null
-                                && c.getClusterId().equals(cluster.getClusterNumber())
+                List<ClusteringResult> children = mergedGroupMembers.stream()
+                        .filter(c -> c.getClusterId().equals(cluster.getClusterNumber())
                                 && !c.getClusterNumber().equals(cluster.getClusterNumber()))
                         .collect(Collectors.toList());
 
@@ -408,7 +386,6 @@ public class ClusteringService {
                             child.put("totalAmount", c.getTotalAmount());
                             child.put("supplier", c.getSupplier());
                             child.put("department", c.getDepartment());
-                            // 대표데이터
                             if (c.getDataIndices() != null && !c.getDataIndices().isEmpty()) {
                                 Map<String, Object> repData = rawIdToData.get(c.getDataIndices().get(0));
                                 if (repData != null) child.put("representativeData", repData);
