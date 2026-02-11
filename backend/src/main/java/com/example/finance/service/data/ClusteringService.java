@@ -322,12 +322,46 @@ public class ClusteringService {
     public List<Map<String, Object>> getMergedClusters(String sessionId) {
         log.info("getMergedClusters 시작: sessionId={}", sessionId);
 
+        try {
+        // ★ 진단: raw MongoDB 쿼리로 cluster_id 분포 확인
+        List<org.bson.Document> rawDocs = mongoTemplate.getCollection("clustering_results")
+                .find(new org.bson.Document("session_id", sessionId))
+                .projection(new org.bson.Document("cluster_number", 1)
+                        .append("cluster_id", 1)
+                        .append("cluster_name", 1))
+                .into(new ArrayList<>());
+
+        Map<String, Long> clusterIdDistribution = new LinkedHashMap<>();
+        for (org.bson.Document doc : rawDocs) {
+            Object cid = doc.get("cluster_id");
+            String key = cid == null ? "null" : cid.toString() + "(" + cid.getClass().getSimpleName() + ")";
+            clusterIdDistribution.merge(key, 1L, Long::sum);
+        }
+        log.info("getMergedClusters 진단: raw 도큐먼트 {}개, cluster_id 분포: {}",
+                rawDocs.size(), clusterIdDistribution);
+
+        // 샘플: cluster_id != -1인 raw 도큐먼트
+        for (org.bson.Document doc : rawDocs) {
+            Object cid = doc.get("cluster_id");
+            if (cid instanceof Number && ((Number) cid).intValue() != -1) {
+                log.info("getMergedClusters 진단 샘플: cluster_number={}, cluster_id={} (type={}), cluster_name={}",
+                        doc.get("cluster_number"), cid, cid.getClass().getSimpleName(), doc.get("cluster_name"));
+            }
+        }
+
         List<ClusteringResult> all = clusteringResultRepository
                 .findBySessionIdOrderByClusterNumberAsc(sessionId);
 
-        log.info("getMergedClusters: 전체 클러스터 {}개 조회", all.size());
+        log.info("getMergedClusters: Spring Data 전체 클러스터 {}개 조회", all.size());
 
-        // ★ null-safety: @Builder.Default + @NoArgsConstructor 조합에서 clusterId가 null일 수 있음
+        // ★ 진단: Spring Data 역직렬화 후 clusterId 분포
+        Map<String, Long> deserializedDist = new LinkedHashMap<>();
+        for (ClusteringResult c : all) {
+            String key = c.getClusterId() == null ? "null" : c.getClusterId().toString();
+            deserializedDist.merge(key, 1L, Long::sum);
+        }
+        log.info("getMergedClusters 진단: 역직렬화 후 clusterId 분포: {}", deserializedDist);
+
         Set<Integer> mergedClusterNumbers = all.stream()
                 .filter(c -> c.getClusterId() != null && c.getClusterId() > 0)
                 .map(ClusteringResult::getClusterId)
@@ -389,6 +423,11 @@ public class ClusteringService {
 
         log.info("getMergedClusters 완료: sessionId={}, 병합그룹 {}개 반환", sessionId, result.size());
         return result;
+
+        } catch (Exception e) {
+            log.error("getMergedClusters 예외 발생: sessionId={}", sessionId, e);
+            throw e;
+        }
     }
 
     // ============================================================
