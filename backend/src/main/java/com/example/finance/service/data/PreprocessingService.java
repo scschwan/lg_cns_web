@@ -25,6 +25,7 @@ import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
+import java.util.regex.Pattern;
 
 /**
  * 전처리 서비스 (Step 3: Preprocessing)
@@ -52,8 +53,14 @@ public class PreprocessingService {
 
     private static final String PROCESS_DATA_COLLECTION = "process_data";
     private static final String PROCESS_VIEW_DATA_COLLECTION = "process_view_data";
-    private static final int THREAD_POOL_SIZE = Math.max(8, Runtime.getRuntime().availableProcessors());
-    private static final int BATCH_SIZE = 10_000;
+
+    // ★ Deploy 1-3: 배치 크기 축소 (DocumentDB는 대규모 배치에 약함)
+    private static final int BATCH_SIZE = 3_000;
+
+    // ★ Deploy 2-1: 공유 쓰레드풀 + Semaphore (메서드별 생성 → 정적 공유)
+    private static final int THREAD_POOL_SIZE = Math.min(4, Runtime.getRuntime().availableProcessors());
+    private static final ExecutorService SHARED_EXECUTOR = Executors.newFixedThreadPool(THREAD_POOL_SIZE);
+    private static final Semaphore DB_WRITE_SEMAPHORE = new Semaphore(2);
 
     /**
      * Redis에 진행 상태 업데이트
@@ -377,7 +384,6 @@ public class PreprocessingService {
         // 삭제 완료 대기
         deleteFuture.join();
 
-        ExecutorService executor = Executors.newFixedThreadPool(THREAD_POOL_SIZE);
         List<CompletableFuture<Void>> futures = new ArrayList<>();
         AtomicInteger maxCols = new AtomicInteger(0);
         AtomicInteger processedCount = new AtomicInteger(0);
@@ -460,11 +466,21 @@ public class PreprocessingService {
                     final long tc = totalCount;
                     final String pk = progressKey;
                     CompletableFuture<Void> future = CompletableFuture.runAsync(() -> {
-                        mongoTemplate.getCollection(PROCESS_VIEW_DATA_COLLECTION)
-                                .insertMany(batch, new com.mongodb.client.model.InsertManyOptions().ordered(false));
+                        try {
+                            DB_WRITE_SEMAPHORE.acquire();
+                            try {
+                                mongoTemplate.getCollection(PROCESS_VIEW_DATA_COLLECTION)
+                                        .insertMany(batch, new com.mongodb.client.model.InsertManyOptions().ordered(false));
+                            } finally {
+                                DB_WRITE_SEMAPHORE.release();
+                            }
+                        } catch (InterruptedException e) {
+                            Thread.currentThread().interrupt();
+                            throw new RuntimeException(e);
+                        }
                         long current = processedCount.addAndGet(batch.size());
                         updateProgress(pk, "PROCESSING", tc, current);
-                    }, executor);
+                    }, SHARED_EXECUTOR);
                     futures.add(future);
                 }
             }
@@ -476,16 +492,25 @@ public class PreprocessingService {
             final long tc = totalCount;
             final String pk = progressKey;
             CompletableFuture<Void> future = CompletableFuture.runAsync(() -> {
-                mongoTemplate.getCollection(PROCESS_VIEW_DATA_COLLECTION)
-                        .insertMany(batch, new com.mongodb.client.model.InsertManyOptions().ordered(false));
+                try {
+                    DB_WRITE_SEMAPHORE.acquire();
+                    try {
+                        mongoTemplate.getCollection(PROCESS_VIEW_DATA_COLLECTION)
+                                .insertMany(batch, new com.mongodb.client.model.InsertManyOptions().ordered(false));
+                    } finally {
+                        DB_WRITE_SEMAPHORE.release();
+                    }
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    throw new RuntimeException(e);
+                }
                 long current = processedCount.addAndGet(batch.size());
                 updateProgress(pk, "PROCESSING", tc, current);
-            }, executor);
+            }, SHARED_EXECUTOR);
             futures.add(future);
         }
 
         CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
-        executor.shutdown();
 
         long elapsed = System.currentTimeMillis() - startTime;
         log.info("키워드 추출 완료: sessionId={}, {}건, maxCols={}, {}ms",
@@ -517,7 +542,6 @@ public class PreprocessingService {
                 .countDocuments(new Document("session_id", sessionId));
         updateProgress(progressKey, "PROCESSING", totalCount, 0);
 
-        ExecutorService executor = Executors.newFixedThreadPool(THREAD_POOL_SIZE);
         List<CompletableFuture<Void>> futures = new ArrayList<>();
         AtomicInteger removedCount = new AtomicInteger(0);
         AtomicInteger processedCount = new AtomicInteger(0);
@@ -525,7 +549,7 @@ public class PreprocessingService {
         LocalDateTime now = LocalDateTime.now();
 
         try (var cursor = mongoTemplate.getCollection(PROCESS_VIEW_DATA_COLLECTION)
-                .find(new Document("session_id", sessionId)).batchSize(10000).cursor()) {
+                .find(new Document("session_id", sessionId)).batchSize(BATCH_SIZE).cursor()) {
 
             while (cursor.hasNext()) {
                 Document viewDoc = cursor.next();
@@ -568,10 +592,20 @@ public class PreprocessingService {
                     final long tc = totalCount;
                     final String pk = progressKey;
                     CompletableFuture<Void> future = CompletableFuture.runAsync(() -> {
-                        executeBatchUpdate(PROCESS_VIEW_DATA_COLLECTION, batch);
+                        try {
+                            DB_WRITE_SEMAPHORE.acquire();
+                            try {
+                                executeBatchUpdate(PROCESS_VIEW_DATA_COLLECTION, batch);
+                            } finally {
+                                DB_WRITE_SEMAPHORE.release();
+                            }
+                        } catch (InterruptedException e) {
+                            Thread.currentThread().interrupt();
+                            throw new RuntimeException(e);
+                        }
                         long current = processedCount.addAndGet(batch.size());
                         updateProgress(pk, "PROCESSING", tc, current);
-                    }, executor);
+                    }, SHARED_EXECUTOR);
                     futures.add(future);
                 }
             }
@@ -582,15 +616,24 @@ public class PreprocessingService {
             final long tc = totalCount;
             final String pk = progressKey;
             CompletableFuture<Void> future = CompletableFuture.runAsync(() -> {
-                executeBatchUpdate(PROCESS_VIEW_DATA_COLLECTION, batch);
+                try {
+                    DB_WRITE_SEMAPHORE.acquire();
+                    try {
+                        executeBatchUpdate(PROCESS_VIEW_DATA_COLLECTION, batch);
+                    } finally {
+                        DB_WRITE_SEMAPHORE.release();
+                    }
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    throw new RuntimeException(e);
+                }
                 long current = processedCount.addAndGet(batch.size());
                 updateProgress(pk, "PROCESSING", tc, current);
-            }, executor);
+            }, SHARED_EXECUTOR);
             futures.add(future);
         }
 
         CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
-        executor.shutdown();
 
         long elapsed = System.currentTimeMillis() - startTime;
         log.info("1글자 제거 완료: sessionId={}, 제거={}건, 처리={}건, {}ms",
@@ -627,7 +670,6 @@ public class PreprocessingService {
                 .countDocuments(new Document("session_id", sessionId));
         updateProgress(progressKey, "PROCESSING", totalCount, 0);
 
-        ExecutorService executor = Executors.newFixedThreadPool(THREAD_POOL_SIZE);
         List<CompletableFuture<Void>> futures = new ArrayList<>();
         AtomicInteger maxCols = new AtomicInteger(0);
         AtomicInteger processedCount = new AtomicInteger(0);
@@ -637,7 +679,7 @@ public class PreprocessingService {
         LocalDateTime now = LocalDateTime.now();
 
         try (var cursor = mongoTemplate.getCollection(PROCESS_VIEW_DATA_COLLECTION)
-                .find(new Document("session_id", sessionId)).batchSize(10000).cursor()) {
+                .find(new Document("session_id", sessionId)).batchSize(BATCH_SIZE).cursor()) {
 
             while (cursor.hasNext()) {
                 Document viewDoc = cursor.next();
@@ -696,10 +738,20 @@ public class PreprocessingService {
                     final long tc = totalCount;
                     final String pk = progressKey;
                     CompletableFuture<Void> future = CompletableFuture.runAsync(() -> {
-                        executeBatchUpdate(PROCESS_VIEW_DATA_COLLECTION, batch);
+                        try {
+                            DB_WRITE_SEMAPHORE.acquire();
+                            try {
+                                executeBatchUpdate(PROCESS_VIEW_DATA_COLLECTION, batch);
+                            } finally {
+                                DB_WRITE_SEMAPHORE.release();
+                            }
+                        } catch (InterruptedException e) {
+                            Thread.currentThread().interrupt();
+                            throw new RuntimeException(e);
+                        }
                         long current = processedCount.addAndGet(batch.size());
                         updateProgress(pk, "PROCESSING", tc, current);
-                    }, executor);
+                    }, SHARED_EXECUTOR);
                     futures.add(future);
                 }
             }
@@ -711,15 +763,24 @@ public class PreprocessingService {
             final long tc = totalCount;
             final String pk = progressKey;
             CompletableFuture<Void> future = CompletableFuture.runAsync(() -> {
-                executeBatchUpdate(PROCESS_VIEW_DATA_COLLECTION, batch);
+                try {
+                    DB_WRITE_SEMAPHORE.acquire();
+                    try {
+                        executeBatchUpdate(PROCESS_VIEW_DATA_COLLECTION, batch);
+                    } finally {
+                        DB_WRITE_SEMAPHORE.release();
+                    }
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    throw new RuntimeException(e);
+                }
                 long current = processedCount.addAndGet(batch.size());
                 updateProgress(pk, "PROCESSING", tc, current);
-            }, executor);
+            }, SHARED_EXECUTOR);
             futures.add(future);
         }
 
         CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
-        executor.shutdown();
 
         long elapsed = System.currentTimeMillis() - startTime;
         log.info("NLP 키워드 추출 완료: sessionId={}, 변경={}건, 분할={}건, maxCols={}, {}ms",

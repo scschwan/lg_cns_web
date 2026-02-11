@@ -770,12 +770,15 @@ public class ClusteringService {
     // 13. 전체 미병합 클러스터 번호 조회 (selectAll 병합용)
     // ============================================================
 
-    public List<Integer> getAllUnmergedClusterNumbers(String sessionId, String keyword) {
+    public List<Integer> getAllUnmergedClusterNumbers(String sessionId, String keyword, String supplier) {
         Criteria criteria = Criteria.where("session_id").is(sessionId)
                 .and("cluster_id").is(-1);
 
         if (keyword != null && !keyword.isBlank()) {
             criteria = criteria.and("keywords").is(keyword);
+        }
+        if (supplier != null && !supplier.isBlank()) {
+            criteria = criteria.and("supplier").is(supplier);
         }
 
         Query query = new Query(criteria);

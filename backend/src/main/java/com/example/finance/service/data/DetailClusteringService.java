@@ -627,7 +627,7 @@ public class DetailClusteringService {
     // 12. 전체 미세부병합 클러스터 번호 조회
     // ============================================================
 
-    public List<Integer> getAllUnmergedClusterNumbers(String sessionId, int clusterId, String keyword) {
+    public List<Integer> getAllUnmergedClusterNumbers(String sessionId, int clusterId, String keyword, String supplier) {
         Criteria criteria = Criteria.where("session_id").is(sessionId)
                 .and("cluster_id").is(clusterId)
                 .and("cluster_number").ne(clusterId)
@@ -635,6 +635,9 @@ public class DetailClusteringService {
 
         if (keyword != null && !keyword.isBlank()) {
             criteria = criteria.and("keywords").is(keyword);
+        }
+        if (supplier != null && !supplier.isBlank()) {
+            criteria = criteria.and("supplier").is(supplier);
         }
 
         Query query = new Query(criteria);
