@@ -136,11 +136,11 @@ public class ExportService {
         List<ClusteringResult> allClusters = mongoTemplate.find(
                 new Query(Criteria.where("session_id").is(sessionId)), ClusteringResult.class);
 
-        // 1) 독립(cluster_id=-1) + 병합부모(cluster_id==cluster_number) → 클러스터명 매핑
+        // 1) 독립(cluster_id=-1) + 병합부모(cluster_id==cluster_number) → 클러스터명 매핑 (★ null-safety)
         Map<Integer, ClusteringResult> topLevelByNumber = new HashMap<>();
         for (ClusteringResult c : allClusters) {
-            boolean isIndependent = c.getClusterId() == -1;
-            boolean isMergeParent = c.getClusterId() > 0 && c.getClusterId().equals(c.getClusterNumber());
+            boolean isIndependent = c.getClusterId() == null || c.getClusterId() == -1;
+            boolean isMergeParent = c.getClusterId() != null && c.getClusterId() > 0 && c.getClusterId().equals(c.getClusterNumber());
             if (isIndependent || isMergeParent) {
                 topLevelByNumber.put(c.getClusterNumber(), c);
                 for (String rawDataId : c.getDataIndices()) {
@@ -149,9 +149,9 @@ public class ExportService {
             }
         }
 
-        // 2) 세부병합 부모(cluster_sub_id==cluster_number) → 세부클러스터명 매핑
+        // 2) 세부병합 부모(cluster_sub_id==cluster_number) → 세부클러스터명 매핑 (★ null-safety)
         for (ClusteringResult c : allClusters) {
-            boolean isSubMergeParent = c.getClusterSubId() > 0 && c.getClusterSubId().equals(c.getClusterNumber());
+            boolean isSubMergeParent = c.getClusterSubId() != null && c.getClusterSubId() > 0 && c.getClusterSubId().equals(c.getClusterNumber());
             if (isSubMergeParent) {
                 ClusteringResult parent = topLevelByNumber.get(c.getClusterId());
                 String parentName = parent != null ? parent.getClusterName() : "Unknown";
@@ -182,15 +182,15 @@ public class ExportService {
                         .with(Sort.by("cluster_number")),
                 ClusteringResult.class);
 
-        // 최상위 클러스터: 독립(cluster_id=-1) + 병합부모(cluster_id==cluster_number)
+        // 최상위 클러스터: 독립(cluster_id=-1) + 병합부모(cluster_id==cluster_number) (★ null-safety)
         List<ClusteringResult> mergedClusters = allClusters.stream()
-                .filter(c -> c.getClusterId() == -1 ||
+                .filter(c -> c.getClusterId() == null || c.getClusterId() == -1 ||
                         (c.getClusterId() > 0 && c.getClusterId().equals(c.getClusterNumber())))
                 .collect(Collectors.toList());
 
-        // 세부병합 부모: cluster_sub_id == cluster_number (자기 자신)
+        // 세부병합 부모: cluster_sub_id == cluster_number (자기 자신) (★ null-safety)
         List<ClusteringResult> subMergeParents = allClusters.stream()
-                .filter(c -> c.getClusterSubId() > 0 && c.getClusterSubId().equals(c.getClusterNumber()))
+                .filter(c -> c.getClusterSubId() != null && c.getClusterSubId() > 0 && c.getClusterSubId().equals(c.getClusterNumber()))
                 .collect(Collectors.toList());
 
         // 병합부모 cluster_id 기준으로 세부병합 부모 그룹핑
@@ -445,7 +445,7 @@ public class ExportService {
                         .with(Sort.by("cluster_number")),
                 ClusteringResult.class);
         List<ClusteringResult> allClusters = all.stream()
-                .filter(c -> c.getClusterId() == -1 ||
+                .filter(c -> c.getClusterId() == null || c.getClusterId() == -1 ||
                         (c.getClusterId() > 0 && c.getClusterId().equals(c.getClusterNumber())))
                 .collect(Collectors.toList());
 

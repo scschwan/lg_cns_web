@@ -203,8 +203,9 @@ public class DetailClusteringService {
     public List<Map<String, Object>> getMergedClusters(String sessionId, int clusterId) {
         List<ClusteringResult> all = getAllClustersInScope(sessionId, clusterId);
 
+        // ★ null-safety: clusterSubId가 null일 수 있음
         Set<Integer> subMergedClusterNumbers = all.stream()
-                .filter(c -> c.getClusterSubId() > 0)
+                .filter(c -> c.getClusterSubId() != null && c.getClusterSubId() > 0)
                 .map(ClusteringResult::getClusterSubId)
                 .collect(Collectors.toSet());
 
@@ -221,7 +222,8 @@ public class DetailClusteringService {
         for (ClusteringResult cluster : all) {
             if (subMergedClusterNumbers.contains(cluster.getClusterNumber())) {
                 List<ClusteringResult> children = all.stream()
-                        .filter(c -> c.getClusterSubId().equals(cluster.getClusterNumber())
+                        .filter(c -> c.getClusterSubId() != null
+                                && c.getClusterSubId().equals(cluster.getClusterNumber())
                                 && !c.getClusterNumber().equals(cluster.getClusterNumber()))
                         .collect(Collectors.toList());
 
@@ -265,14 +267,14 @@ public class DetailClusteringService {
     public Map<String, Object> getStatistics(String sessionId, int clusterId) {
         List<ClusteringResult> all = getAllClustersInScope(sessionId, clusterId);
 
-        // 미세부병합: cluster_sub_id == -1
+        // 미세부병합: cluster_sub_id == -1 (★ null-safety)
         List<ClusteringResult> unmerged = all.stream()
-                .filter(c -> c.getClusterSubId() == -1)
+                .filter(c -> c.getClusterSubId() == null || c.getClusterSubId() == -1)
                 .collect(Collectors.toList());
 
-        // 세부병합 부모: cluster_sub_id == cluster_number (자기 자신)
+        // 세부병합 부모: cluster_sub_id == cluster_number (자기 자신) (★ null-safety)
         List<ClusteringResult> subMergeParents = all.stream()
-                .filter(c -> c.getClusterSubId() > 0 && c.getClusterSubId().equals(c.getClusterNumber()))
+                .filter(c -> c.getClusterSubId() != null && c.getClusterSubId() > 0 && c.getClusterSubId().equals(c.getClusterNumber()))
                 .collect(Collectors.toList());
 
         // totalRows = 미세부병합 + 세부병합 부모 (부모가 자식 합산을 포함)
@@ -305,9 +307,10 @@ public class DetailClusteringService {
         List<ClusteringResult> targets = clusteringResultRepository
                 .findBySessionIdAndClusterNumberIn(sessionId, clusterNumbers);
 
-        // clusterId 스코프 검증
+        // clusterId 스코프 검증 (★ null-safety)
+        final int cid = clusterId;
         targets = targets.stream()
-                .filter(c -> c.getClusterId().equals(clusterId))
+                .filter(c -> c.getClusterId() != null && c.getClusterId().equals(cid))
                 .collect(Collectors.toList());
 
         if (targets.size() != clusterNumbers.size()) {
@@ -315,7 +318,7 @@ public class DetailClusteringService {
         }
 
         for (ClusteringResult target : targets) {
-            if (target.getClusterSubId() > 0) {
+            if (target.getClusterSubId() != null && target.getClusterSubId() > 0) {
                 throw new BusinessException("ALREADY_MERGED",
                         "클러스터 #" + target.getClusterNumber() + "은(는) 이미 다른 세부 병합 클러스터에 속해 있습니다.");
             }
@@ -491,9 +494,10 @@ public class DetailClusteringService {
             throw new BusinessException("CLUSTER_NOT_FOUND", "일부 세부 병합 클러스터를 찾을 수 없습니다.");
         }
 
-        // cluster_sub_id로 자식 수집 (부모 자신 제외)
+        // cluster_sub_id로 자식 수집 (부모 자신 제외, ★ null-safety)
         List<ClusteringResult> allChildrenToMove = all.stream()
-                .filter(c -> mergedClusterNumbers.contains(c.getClusterSubId())
+                .filter(c -> c.getClusterSubId() != null
+                        && mergedClusterNumbers.contains(c.getClusterSubId())
                         && !mergedClusterNumbers.contains(c.getClusterNumber()))
                 .collect(Collectors.toList());
 
@@ -561,7 +565,7 @@ public class DetailClusteringService {
         List<ClusteringResult> targets = clusteringResultRepository
                 .findBySessionIdAndClusterNumberIn(sessionId, clusterNumbers);
         targets = targets.stream()
-                .filter(c -> c.getClusterId().equals(clusterId))
+                .filter(c -> c.getClusterId() != null && c.getClusterId().equals(clusterId))
                 .collect(Collectors.toList());
 
         if (targets.isEmpty()) {
@@ -955,11 +959,11 @@ public class DetailClusteringService {
         return mongoTemplate.find(query, ClusteringResult.class);
     }
 
-    /** 스코프 내 활성(미세부병합) 클러스터 - cluster_sub_id == -1인 것만 */
+    /** 스코프 내 활성(미세부병합) 클러스터 - cluster_sub_id == -1인 것만 (★ null-safety) */
     private List<ClusteringResult> getActiveUnmergedClusters(String sessionId, int clusterId) {
         List<ClusteringResult> all = getAllClustersInScope(sessionId, clusterId);
         return all.stream()
-                .filter(c -> c.getClusterSubId() == -1)
+                .filter(c -> c.getClusterSubId() == null || c.getClusterSubId() == -1)
                 .collect(Collectors.toList());
     }
 

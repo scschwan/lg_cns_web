@@ -320,13 +320,20 @@ public class ClusteringService {
     // ============================================================
 
     public List<Map<String, Object>> getMergedClusters(String sessionId) {
+        log.info("getMergedClusters 시작: sessionId={}", sessionId);
+
         List<ClusteringResult> all = clusteringResultRepository
                 .findBySessionIdOrderByClusterNumberAsc(sessionId);
 
+        log.info("getMergedClusters: 전체 클러스터 {}개 조회", all.size());
+
+        // ★ null-safety: @Builder.Default + @NoArgsConstructor 조합에서 clusterId가 null일 수 있음
         Set<Integer> mergedClusterNumbers = all.stream()
-                .filter(c -> c.getClusterId() > 0)
+                .filter(c -> c.getClusterId() != null && c.getClusterId() > 0)
                 .map(ClusteringResult::getClusterId)
                 .collect(Collectors.toSet());
+
+        log.info("getMergedClusters: 병합 클러스터 번호 {}개 = {}", mergedClusterNumbers.size(), mergedClusterNumbers);
 
         // 대표데이터 일괄 조회
         Set<String> allFirstRawIds = new LinkedHashSet<>();
@@ -341,9 +348,10 @@ public class ClusteringService {
         List<Map<String, Object>> result = new ArrayList<>();
         for (ClusteringResult cluster : all) {
             if (mergedClusterNumbers.contains(cluster.getClusterNumber())) {
-                // 부모 자신 제외
+                // 부모 자신 제외 (★ null-safety 추가)
                 List<ClusteringResult> children = all.stream()
-                        .filter(c -> c.getClusterId().equals(cluster.getClusterNumber())
+                        .filter(c -> c.getClusterId() != null
+                                && c.getClusterId().equals(cluster.getClusterNumber())
                                 && !c.getClusterNumber().equals(cluster.getClusterNumber()))
                         .collect(Collectors.toList());
 
@@ -378,6 +386,8 @@ public class ClusteringService {
                 result.add(merged);
             }
         }
+
+        log.info("getMergedClusters 완료: sessionId={}, 병합그룹 {}개 반환", sessionId, result.size());
         return result;
     }
 
@@ -389,14 +399,14 @@ public class ClusteringService {
         List<ClusteringResult> all = clusteringResultRepository
                 .findBySessionIdOrderByClusterNumberAsc(sessionId);
 
-        // 미병합: cluster_id == -1
+        // 미병합: cluster_id == -1 (★ null-safety)
         List<ClusteringResult> unmerged = all.stream()
-                .filter(c -> c.getClusterId() == -1)
+                .filter(c -> c.getClusterId() == null || c.getClusterId() == -1)
                 .collect(Collectors.toList());
 
-        // 병합 부모: cluster_id == cluster_number (자기 자신)
+        // 병합 부모: cluster_id == cluster_number (자기 자신) (★ null-safety)
         List<ClusteringResult> mergeParents = all.stream()
-                .filter(c -> c.getClusterId() > 0 && c.getClusterId().equals(c.getClusterNumber()))
+                .filter(c -> c.getClusterId() != null && c.getClusterId() > 0 && c.getClusterId().equals(c.getClusterNumber()))
                 .collect(Collectors.toList());
 
         // totalRows = 미병합 + 병합 부모 (부모가 자식 합산 포함)
@@ -434,7 +444,7 @@ public class ClusteringService {
         }
 
         for (ClusteringResult target : targets) {
-            if (target.getClusterId() > 0) {
+            if (target.getClusterId() != null && target.getClusterId() > 0) {
                 throw new BusinessException("ALREADY_MERGED",
                         "클러스터 #" + target.getClusterNumber() + "은(는) 이미 다른 병합 클러스터에 속해 있습니다.");
             }
@@ -612,9 +622,10 @@ public class ClusteringService {
             throw new BusinessException("CLUSTER_NOT_FOUND", "일부 병합 클러스터를 찾을 수 없습니다.");
         }
 
-        // 모든 자식 수집 (부모 자신 제외)
+        // 모든 자식 수집 (부모 자신 제외, ★ null-safety)
         List<ClusteringResult> allChildrenToMove = all.stream()
-                .filter(c -> mergedClusterNumbers.contains(c.getClusterId())
+                .filter(c -> c.getClusterId() != null
+                        && mergedClusterNumbers.contains(c.getClusterId())
                         && !mergedClusterNumbers.contains(c.getClusterNumber()))
                 .collect(Collectors.toList());
 
@@ -774,9 +785,9 @@ public class ClusteringService {
     private List<ClusteringResult> getActiveUnmergedClusters(String sessionId) {
         List<ClusteringResult> all = clusteringResultRepository
                 .findBySessionIdOrderByClusterNumberAsc(sessionId);
-        // 병합 부모는 cluster_id = 자기 자신(> 0)이므로 cluster_id == -1만 필터
+        // 병합 부모는 cluster_id = 자기 자신(> 0)이므로 cluster_id == -1만 필터 (★ null-safety)
         return all.stream()
-                .filter(c -> c.getClusterId() == -1)
+                .filter(c -> c.getClusterId() == null || c.getClusterId() == -1)
                 .collect(Collectors.toList());
     }
 
