@@ -263,12 +263,18 @@ function DetailClusteringPage() {
     try { setKeywordHierarchy(await detailClusteringService.getKeywordHierarchy(projectId, sessionId) || []); } catch (e) { console.error(e); } finally { setKwHierarchyLoading(false); }
   }, [projectId, sessionId]);
 
-  const loadAll = useCallback(() =>
-    Promise.all([loadStatistics(), loadUnmerged(0, clusterPageSize, null), loadKwStats(), loadSupStats(), loadMerged(), loadSearchableColumns(), loadKeywordHierarchy()]),
-    [loadStatistics, loadUnmerged, clusterPageSize, loadKwStats, loadSupStats, loadMerged, loadSearchableColumns, loadKeywordHierarchy]);
+  const loadAll = useCallback(async () => {
+    // Phase 1: 핵심 데이터 (통계 + 미병합 목록)
+    await Promise.all([loadStatistics(), loadUnmerged(0, clusterPageSize, null)]);
+    // Phase 2: 보조 데이터 (DB 동시 쿼리 수 제한)
+    await Promise.all([loadKwStats(), loadSupStats(), loadMerged(), loadSearchableColumns(), loadKeywordHierarchy()]);
+  }, [loadStatistics, loadUnmerged, clusterPageSize, loadKwStats, loadSupStats, loadMerged, loadSearchableColumns, loadKeywordHierarchy]);
 
   const refreshAll = useCallback(async () => {
-    await Promise.all([loadStatistics(), loadUnmerged(clusterPage, clusterPageSize, appliedSearchParams), loadKwStats(), loadSupStats(), loadMerged()]);
+    // Phase 1: 핵심 데이터
+    await Promise.all([loadStatistics(), loadUnmerged(clusterPage, clusterPageSize, appliedSearchParams)]);
+    // Phase 2: 보조 데이터
+    await Promise.all([loadKwStats(), loadSupStats(), loadMerged()]);
   }, [loadStatistics, loadUnmerged, clusterPage, clusterPageSize, appliedSearchParams, loadKwStats, loadSupStats, loadMerged]);
 
   useEffect(() => { if (!isNaN(clusterId)) loadAll(); }, [projectId, sessionId, clusterId]);
@@ -449,7 +455,16 @@ function DetailClusteringPage() {
 
   const handleAutoMergeBySuppliers = async () => {
     if (supCheckedSet.size === 0) { alert('공급업체를 선택해주세요.'); return; }
-    alert('공급업체 기준 자동 세부 클러스터링은 추후 확장됩니다.');
+    if (!window.confirm(`선택한 ${supCheckedSet.size}개 공급업체의 클러스터를 자동 세부 병합합니다.`)) return;
+    setMerging(true);
+    try {
+      for (const supplier of supCheckedSet) {
+        const ids = await detailClusteringService.getAllUnmergedClusterNumbers(projectId, sessionId, clusterId, null, supplier);
+        if (ids.length >= 2) await detailClusteringService.mergeClusters(projectId, sessionId, clusterId, ids);
+      }
+      setSupCheckedSet(new Set()); setSelectAllMode(false); setExceptions(new Set());
+      await refreshAll();
+    } catch (e) { alert('자동 세부 클러스터링 실패: ' + (e.response?.data?.message || e.message)); } finally { setMerging(false); }
   };
 
   /* === 통계 정렬 === */

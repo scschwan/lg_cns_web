@@ -41,8 +41,8 @@ public class MongoConfig extends AbstractMongoClientConfiguration {
         MongoClientSettings settings = MongoClientSettings.builder()
                 .applyConnectionString(connectionString)
                 .applyToConnectionPoolSettings(builder ->
-                        builder.maxSize(100)
-                                .minSize(10)
+                        builder.maxSize(50)
+                                .minSize(5)
                                 .maxWaitTime(30, TimeUnit.SECONDS)
                                 .maxConnectionIdleTime(60, TimeUnit.SECONDS)
                 )

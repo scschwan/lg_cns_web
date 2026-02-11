@@ -10,9 +10,10 @@ const detailClusteringService = {
         return response.data;
     },
 
-    getAllUnmergedClusterNumbers: async (projectId, sessionId, clusterId, keyword = null) => {
+    getAllUnmergedClusterNumbers: async (projectId, sessionId, clusterId, keyword = null, supplier = null) => {
         const params = { clusterId };
         if (keyword) params.keyword = keyword;
+        if (supplier) params.supplier = supplier;
         const response = await api.get(
             `/api/projects/${projectId}/sessions/${sessionId}/detail-clustering/unmerged-ids`, { params }
         );

@@ -59,10 +59,11 @@ public class ClusteringController {
             @PathVariable String projectId,
             @PathVariable String sessionId,
             @RequestParam(required = false) String keyword,
+            @RequestParam(required = false) String supplier,
             @CurrentUser UserPrincipal userPrincipal) {
 
         projectService.getProject(projectId, userPrincipal.getId());
-        return ResponseEntity.ok(clusteringService.getAllUnmergedClusterNumbers(sessionId, keyword));
+        return ResponseEntity.ok(clusteringService.getAllUnmergedClusterNumbers(sessionId, keyword, supplier));
     }
 
     @GetMapping("/keyword-stats")

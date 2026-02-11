@@ -46,10 +46,11 @@ public class DetailClusteringController {
             @PathVariable String sessionId,
             @RequestParam int clusterId,
             @RequestParam(required = false) String keyword,
+            @RequestParam(required = false) String supplier,
             @CurrentUser UserPrincipal userPrincipal) {
 
         projectService.getProject(projectId, userPrincipal.getId());
-        return ResponseEntity.ok(detailClusteringService.getAllUnmergedClusterNumbers(sessionId, clusterId, keyword));
+        return ResponseEntity.ok(detailClusteringService.getAllUnmergedClusterNumbers(sessionId, clusterId, keyword, supplier));
     }
 
     @GetMapping("/keyword-stats")
