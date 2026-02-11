@@ -1003,7 +1003,14 @@ public class UploadService {
 
         String cacheKey = "accounts:" + uploadId + ":" + columnName;
         String cached = redisTemplate.opsForValue().get(cacheKey);
-        if (cached != null) return Arrays.asList(cached.split("\\|\\|"));
+        if (cached != null) {
+            // StreamingCell 오염 캐시 감지 → 캐시 무효화
+            if (cached.contains("StreamingCell@")) {
+                redisTemplate.delete(cacheKey);
+            } else {
+                return Arrays.asList(cached.split("\\|\\|"));
+            }
+        }
 
         try {
             Set<String> valueSet = new TreeSet<>();
@@ -1281,35 +1288,11 @@ public class UploadService {
             return new ConcurrentHashMap<>();
         }
 
-        // ★ raw_data aggregation 시도
+        // ★ raw_data aggregation 시도 (금액이 문자열인 경우 cursor fallback도 내부에서 처리됨)
         String uploadId = extractUploadIdFromS3Key(fileInfo.getS3Key());
         if (uploadId != null) {
             Map<String, ExcelStreamingParser.PartitionStats> result = groupByAccountFromRawData(uploadId, accountColName, amountColName, fileInfo.getFileName());
             if (result != null) {
-                // 금액 컬럼이 설정되었는데 모든 계정의 금액이 0이면 → Excel fallback으로 금액 재계산
-                if (amountColName != null && !result.isEmpty()) {
-                    boolean allAmountsZero = result.values().stream()
-                            .allMatch(stats -> stats.getAmount() == 0.0);
-                    if (allAmountsZero) {
-                        log.warn("[{}] raw_data aggregation 금액 합산 결과가 모두 0 → Excel fallback으로 금액 재계산", fileInfo.getFileName());
-                        // 잘못된 캐시 데이터 삭제
-                        try {
-                            String cacheKey = "partition:" + uploadId + ":" + accountColName + ":" + amountColName;
-                            redisTemplate.delete(cacheKey);
-                        } catch (Exception ignored) {}
-                        Map<String, ExcelStreamingParser.PartitionStats> excelResult = groupByAccountFromExcel(fileInfo);
-                        if (!excelResult.isEmpty()) {
-                            // Excel 결과에서 금액이 실제로 있으면 Excel 결과 사용
-                            boolean excelHasAmounts = excelResult.values().stream()
-                                    .anyMatch(stats -> stats.getAmount() != 0.0);
-                            if (excelHasAmounts) {
-                                log.info("[{}] Excel fallback 금액 재계산 성공 → Excel 결과 사용", fileInfo.getFileName());
-                                return excelResult;
-                            }
-                        }
-                        // Excel에서도 0이면 원래 aggregation 결과 반환 (실제로 금액이 0인 경우)
-                    }
-                }
                 return result;
             }
         }
@@ -1334,16 +1317,24 @@ public class UploadService {
         try {
             Map<Object, Object> cached = redisTemplate.opsForHash().entries(cacheKey);
             if (!cached.isEmpty()) {
-                Map<String, ExcelStreamingParser.PartitionStats> result = new ConcurrentHashMap<>();
-                for (Map.Entry<Object, Object> entry : cached.entrySet()) {
-                    String accountName = entry.getKey().toString();
-                    String[] parts = entry.getValue().toString().split("\\|");
-                    long count = Long.parseLong(parts[0]);
-                    double amount = Double.parseDouble(parts[1]);
-                    result.put(accountName, createPartitionStats(count, amount));
+                // StreamingCell 오염 캐시 감지 → 캐시 무효화
+                boolean hasPollutedCache = cached.keySet().stream()
+                        .anyMatch(k -> k.toString().contains("StreamingCell@"));
+                if (hasPollutedCache) {
+                    log.warn("[{}] StreamingCell 오염 캐시 발견 → 캐시 삭제", fileName);
+                    redisTemplate.delete(cacheKey);
+                } else {
+                    Map<String, ExcelStreamingParser.PartitionStats> result = new ConcurrentHashMap<>();
+                    for (Map.Entry<Object, Object> entry : cached.entrySet()) {
+                        String accountName = entry.getKey().toString();
+                        String[] parts = entry.getValue().toString().split("\\|");
+                        long count = Long.parseLong(parts[0]);
+                        double amount = Double.parseDouble(parts[1]);
+                        result.put(accountName, createPartitionStats(count, amount));
+                    }
+                    log.info("[{}] 파티션 분석 Redis 캐시 히트: uploadId={}, 파티션 {}개", fileName, uploadId, result.size());
+                    return result;
                 }
-                log.info("[{}] 파티션 분석 Redis 캐시 히트: uploadId={}, 파티션 {}개", fileName, uploadId, result.size());
-                return result;
             }
         } catch (Exception e) {
             log.warn("Redis 캐시 조회 실패 (무시): {}", e.getMessage());
@@ -1406,24 +1397,23 @@ public class UploadService {
 
             long elapsed = System.currentTimeMillis() - startTime;
 
-            // 4. 결과 변환
-            Map<String, ExcelStreamingParser.PartitionStats> statsMap = new ConcurrentHashMap<>();
-            Map<String, String> cacheData = new HashMap<>();
+            // 4. 결과 변환 (null/empty/StreamingCell → "(빈 값)"으로 통합)
+            Map<String, Long> countMap = new LinkedHashMap<>();
+            Map<String, Double> amountMap = new LinkedHashMap<>();
 
             for (org.bson.Document doc : results) {
                 Object idObj = doc.get("_id");
-                if (idObj == null) continue;
 
-                String accountName = idObj.toString().trim();
-                if (accountName.isEmpty()) continue;
-
-                // StreamingCell@xxx 형태의 오염된 데이터 필터링
-                if (accountName.contains("StreamingCell@")) {
-                    log.warn("[{}] StreamingCell 오염 데이터 스킵: {}", fileName, accountName);
-                    continue;
+                String accountName;
+                if (idObj == null) {
+                    accountName = "(빈 값)";
+                } else {
+                    accountName = idObj.toString().trim();
+                    if (accountName.isEmpty() || accountName.contains("StreamingCell@")) {
+                        accountName = "(빈 값)";
+                    }
                 }
 
-                // count도 Number 타입으로 안전하게 추출 (DocumentDB가 Long 반환 가능)
                 Object countObj = doc.get("count");
                 long count = (countObj instanceof Number) ? ((Number) countObj).longValue() : 0L;
                 double amount = 0.0;
@@ -1434,9 +1424,32 @@ public class UploadService {
                     }
                 }
 
-                log.info("[{}] 계정={}, count={}, amount={}, amountType={}",
-                        fileName, accountName, count, amount,
-                        doc.get("totalAmount") != null ? doc.get("totalAmount").getClass().getSimpleName() : "null");
+                countMap.merge(accountName, count, Long::sum);
+                amountMap.merge(accountName, amount, Double::sum);
+            }
+
+            // ★ 금액이 모두 0이고 금액 컬럼이 있으면 → 문자열 금액일 가능성 → cursor 기반 재계산
+            if (amountColName != null && !countMap.isEmpty()) {
+                boolean allAmountsZero = amountMap.values().stream().allMatch(v -> v == 0.0);
+                if (allAmountsZero) {
+                    log.info("[{}] aggregation 금액이 모두 0 → cursor 기반 금액 재계산 시작", fileName);
+                    Map<String, Double> cursorAmounts = sumAmountsByAccountCursor(
+                            uploadId, accountColName, amountColName, fileName);
+                    if (!cursorAmounts.isEmpty()) {
+                        amountMap.putAll(cursorAmounts);
+                    }
+                }
+            }
+
+            // Build final statsMap
+            Map<String, ExcelStreamingParser.PartitionStats> statsMap = new ConcurrentHashMap<>();
+            Map<String, String> cacheData = new HashMap<>();
+
+            for (String accountName : countMap.keySet()) {
+                long count = countMap.get(accountName);
+                double amount = amountMap.getOrDefault(accountName, 0.0);
+
+                log.info("[{}] 계정={}, count={}, amount={}", fileName, accountName, count, amount);
 
                 statsMap.put(accountName, createPartitionStats(count, amount));
                 cacheData.put(accountName, count + "|" + amount);
@@ -1461,6 +1474,73 @@ public class UploadService {
             log.error("[{}] raw_data aggregation 실패: uploadId={}", fileName, uploadId, e);
             return null; // fallback 유도
         }
+    }
+
+    /**
+     * ★ cursor 기반 금액 합산 (aggregation에서 문자열 금액을 합산하지 못할 때 fallback)
+     *
+     * - raw_data를 cursor로 순회하며 계정별 금액 합산
+     * - Number 타입 + 문자열 타입 (쉼표, 통화기호 포함) 모두 처리
+     * - projection으로 필요한 필드만 조회 (네트워크 절약)
+     */
+    private Map<String, Double> sumAmountsByAccountCursor(
+            String uploadId, String accountColName, String amountColName, String fileName) {
+
+        Map<String, Double> result = new HashMap<>();
+
+        try (var cursor = mongoTemplate.getCollection("raw_data")
+                .find(new org.bson.Document("upload_id", uploadId))
+                .projection(new org.bson.Document("data." + accountColName, 1)
+                        .append("data." + amountColName, 1))
+                .batchSize(5000).cursor()) {
+
+            long count = 0;
+            while (cursor.hasNext()) {
+                org.bson.Document doc = cursor.next();
+                org.bson.Document data = doc.get("data", org.bson.Document.class);
+                if (data == null) continue;
+
+                // 계정명 추출
+                Object accObj = data.get(accountColName);
+                String accountName;
+                if (accObj == null) {
+                    accountName = "(빈 값)";
+                } else {
+                    accountName = accObj.toString().trim();
+                    if (accountName.isEmpty() || accountName.contains("StreamingCell@")) {
+                        accountName = "(빈 값)";
+                    }
+                }
+
+                // 금액 추출 (Number + String 모두 처리)
+                Object val = data.get(amountColName);
+                double amount = 0.0;
+                if (val instanceof Number) {
+                    amount = ((Number) val).doubleValue();
+                } else if (val != null) {
+                    String str = val.toString();
+                    if (!str.contains("StreamingCell@")) {
+                        str = str.replaceAll("[,\\s₩\\\\]", "").trim();
+                        if (!str.isEmpty() && !str.equals("-") && !str.equals("N/A")) {
+                            try {
+                                amount = Double.parseDouble(str);
+                            } catch (NumberFormatException ignored) {}
+                        }
+                    }
+                }
+
+                result.merge(accountName, amount, Double::sum);
+                count++;
+            }
+
+            log.info("[{}] cursor 기반 금액 재계산 완료: {}건 처리, 계정 {}개",
+                    fileName, count, result.size());
+
+        } catch (Exception e) {
+            log.error("[{}] cursor 기반 금액 계산 실패: {}", fileName, e.getMessage());
+        }
+
+        return result;
     }
 
     /**
