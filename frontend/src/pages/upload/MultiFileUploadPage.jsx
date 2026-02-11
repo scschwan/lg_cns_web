@@ -17,6 +17,7 @@ import {
     User,
     AlertCircle,
     CheckCircle2,
+    RotateCcw,
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 
@@ -680,6 +681,24 @@ function MultiFileUploadPage() {
         }
     };
 
+    // 세션 초기화
+    const [resetDialogOpen, setResetDialogOpen] = useState(false);
+    const [resetTargetSession, setResetTargetSession] = useState(null);
+
+    const handleResetSession = async () => {
+        if (!resetTargetSession) return;
+        try {
+            await adminService.resetSession(resetTargetSession.sessionId);
+            setResetDialogOpen(false);
+            setResetTargetSession(null);
+            loadSessions();
+            showSuccess('초기화 완료', '세션이 초기화되었습니다.');
+        } catch (error) {
+            console.error('세션 초기화 실패:', error);
+            showError('초기화 실패', getErrorMsg(error, '세션 초기화에 실패했습니다.'));
+        }
+    };
+
     const handleProjectComplete = async () => {
         try {
             await projectService.completeProject(projectId);
@@ -1016,6 +1035,7 @@ function MultiFileUploadPage() {
                                                     <TableHead className="w-[130px]">합산금액</TableHead>
                                                     <TableHead className="w-[80px] text-center">진행상태</TableHead>
                                                     <TableHead className="w-[80px]">다운로드</TableHead>
+                                                    <TableHead className="w-[60px]">초기화</TableHead>
                                                     <TableHead className="w-[60px]">삭제</TableHead>
                                                 </TableRow>
                                             </TableHeader>
@@ -1156,6 +1176,20 @@ function MultiFileUploadPage() {
                                                             <Button
                                                                 variant="ghost"
                                                                 size="icon"
+                                                                onClick={() => {
+                                                                    setResetTargetSession(session);
+                                                                    setResetDialogOpen(true);
+                                                                }}
+                                                                disabled={isViewer}
+                                                                title="세션 초기화"
+                                                            >
+                                                                <RotateCcw className="h-4 w-4 text-orange-500" />
+                                                            </Button>
+                                                        </TableCell>
+                                                        <TableCell>
+                                                            <Button
+                                                                variant="ghost"
+                                                                size="icon"
                                                                 onClick={() => handleDeleteSingleSession(session.sessionId)}
                                                                 disabled={isViewer}
                                                             >
@@ -1214,6 +1248,27 @@ function MultiFileUploadPage() {
                         <DialogFooter>
                             <Button variant="outline" onClick={() => setCompleteDialogOpen(false)}>취소</Button>
                             <Button onClick={handleProjectComplete} className="bg-sky-500 hover:bg-sky-600">프로젝트 완료</Button>
+                        </DialogFooter>
+                    </DialogContent>
+                </Dialog>
+
+                {/* 세션 초기화 확인 다이얼로그 */}
+                <Dialog open={resetDialogOpen} onOpenChange={setResetDialogOpen}>
+                    <DialogContent>
+                        <DialogHeader>
+                            <DialogTitle className="flex items-center gap-2">
+                                <RotateCcw className="h-5 w-5 text-orange-500" />
+                                세션 초기화
+                            </DialogTitle>
+                            <DialogDescription className="pt-2">
+                                <strong>{resetTargetSession?.sessionName}</strong> 세션의 분석 데이터(session_data)를 모두 삭제하고 상태를 초기화합니다.
+                                <br /><br />
+                                <span className="text-red-500 font-medium">이 작업은 되돌릴 수 없습니다.</span>
+                            </DialogDescription>
+                        </DialogHeader>
+                        <DialogFooter>
+                            <Button variant="outline" onClick={() => { setResetDialogOpen(false); setResetTargetSession(null); }}>취소</Button>
+                            <Button variant="destructive" onClick={handleResetSession}>초기화</Button>
                         </DialogFooter>
                     </DialogContent>
                 </Dialog>
