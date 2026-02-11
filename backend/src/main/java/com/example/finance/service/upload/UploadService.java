@@ -983,11 +983,12 @@ public class UploadService {
                 .collect(Collectors.toList());
         session.setAccountColumnNames(accountCols);
 
-        // 4. 계정명 값 목록 (중복 제거)
+        // 4. 계정명 값 목록 (중복 제거, StreamingCell 오염 데이터 필터링)
         List<String> accountNames = session.getUploadedFiles().stream()
                 .map(UploadedFileInfo::getAccountContents)
                 .filter(Objects::nonNull)
                 .flatMap(List::stream)
+                .filter(name -> !name.contains("StreamingCell@"))
                 .distinct()
                 .collect(Collectors.toList());
         session.setAccountNames(accountNames);
@@ -1098,10 +1099,11 @@ public class UploadService {
                             total += num.doubleValue();
                             count++;
                         } else {
+                            String str = val.toString();
+                            // StreamingCell@xxx 형태의 오염된 데이터 스킵
+                            if (str.contains("StreamingCell@")) continue;
                             // 쉼표, 공백, 통화기호 제거 후 파싱
-                            String str = val.toString()
-                                    .replaceAll("[,\\s₩\\\\]", "")
-                                    .trim();
+                            str = str.replaceAll("[,\\s₩\\\\]", "").trim();
                             if (!str.isEmpty() && !str.equals("-") && !str.equals("N/A")) {
                                 total += Double.parseDouble(str);
                                 count++;
@@ -1414,6 +1416,12 @@ public class UploadService {
 
                 String accountName = idObj.toString().trim();
                 if (accountName.isEmpty()) continue;
+
+                // StreamingCell@xxx 형태의 오염된 데이터 필터링
+                if (accountName.contains("StreamingCell@")) {
+                    log.warn("[{}] StreamingCell 오염 데이터 스킵: {}", fileName, accountName);
+                    continue;
+                }
 
                 // count도 Number 타입으로 안전하게 추출 (DocumentDB가 Long 반환 가능)
                 Object countObj = doc.get("count");
