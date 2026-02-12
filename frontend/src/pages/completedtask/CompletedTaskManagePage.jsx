@@ -1,13 +1,15 @@
 import React, { useState } from 'react';
 import {
   Search, Eye, Download, CheckCircle2, DollarSign, TrendingUp,
-  Award, Calendar, FileText, BarChart3,
+  Award, Calendar, FileText, BarChart3, Edit2, Link2, FileIcon,
+  ExternalLink, Save,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter,
 } from '@/components/ui/dialog';
@@ -36,12 +38,73 @@ const CHART_COLORS = [
    임시 데이터
    ============================================================ */
 const COMPLETED_TASKS = [
-  { id: 1, name: '과제 6', majorAccount: '대계정 1', cluster: '서브 클러스터 2', department: '구매팀', manager: '박영호', consultant: '김태호', baseAmount: 4100000000, savingRate: 5.0, savingAmount: 205000000, actualSaving: 198000000, completedAt: '2024-12-15', documents: 10, rating: 'A' },
-  { id: 2, name: '비용절감 프로젝트 A', majorAccount: '대계정 2', cluster: '서브 클러스터 6', department: '생산팀', manager: '김수현', consultant: '이민수', baseAmount: 3500000000, savingRate: 4.5, savingAmount: 157500000, actualSaving: 162000000, completedAt: '2024-11-30', documents: 8, rating: 'A+' },
-  { id: 3, name: '원가개선 과제 B', majorAccount: '대계정 3', cluster: '서브 클러스터 10', department: '관리팀', manager: '최유진', consultant: '정하나', baseAmount: 2200000000, savingRate: 3.2, savingAmount: 70400000, actualSaving: 65000000, completedAt: '2024-11-20', documents: 6, rating: 'B+' },
-  { id: 4, name: '물류비용 최적화', majorAccount: '대계정 4', cluster: '서브 클러스터 14', department: '물류팀', manager: '이정원', consultant: '김태호', baseAmount: 1800000000, savingRate: 2.8, savingAmount: 50400000, actualSaving: 55000000, completedAt: '2024-10-25', documents: 5, rating: 'A' },
-  { id: 5, name: 'IT 인프라 비용절감', majorAccount: '대계정 5', cluster: '서브 클러스터 18', department: 'IT팀', manager: '한소영', consultant: '정하나', baseAmount: 2800000000, savingRate: 3.8, savingAmount: 106400000, actualSaving: 110000000, completedAt: '2024-10-10', documents: 12, rating: 'A+' },
-  { id: 6, name: '에너지 효율 개선', majorAccount: '대계정 1', cluster: '서브 클러스터 4', department: '시설팀', manager: '송재원', consultant: '이민수', baseAmount: 1500000000, savingRate: 2.5, savingAmount: 37500000, actualSaving: 38000000, completedAt: '2024-09-15', documents: 4, rating: 'B' },
+  {
+    id: 1, name: '과제 6', majorAccount: '대계정 1', cluster: '서브 클러스터 2',
+    department: '구매팀', manager: '박영호', consultant: '김태호',
+    baseAmount: 4100000000, savingRate: 5.0, savingAmount: 205000000,
+    actualSaving: 198000000, completedAt: '2024-12-15', rating: 'A',
+    documents: [
+      { id: 'd1', label: '최종 보고서', type: 'file', url: '/files/report_final.pdf' },
+      { id: 'd2', label: '절감 분석 자료', type: 'file', url: '/files/saving_analysis.xlsx' },
+      { id: 'd3', label: '공유 드라이브 링크', type: 'link', url: 'https://drive.google.com/shared/task6' },
+      { id: 'd4', label: '계약서 스캔본', type: 'file', url: '/files/contract_scan.pdf' },
+    ],
+  },
+  {
+    id: 2, name: '비용절감 프로젝트 A', majorAccount: '대계정 2', cluster: '서브 클러스터 6',
+    department: '생산팀', manager: '김수현', consultant: '이민수',
+    baseAmount: 3500000000, savingRate: 4.5, savingAmount: 157500000,
+    actualSaving: 162000000, completedAt: '2024-11-30', rating: 'A+',
+    documents: [
+      { id: 'd5', label: '프로젝트 결과 보고서', type: 'file', url: '/files/project_a_result.pdf' },
+      { id: 'd6', label: '비용 비교 분석', type: 'file', url: '/files/cost_comparison.xlsx' },
+      { id: 'd7', label: '외부 벤치마크 참고', type: 'link', url: 'https://benchmark.example.com/report' },
+    ],
+  },
+  {
+    id: 3, name: '원가개선 과제 B', majorAccount: '대계정 3', cluster: '서브 클러스터 10',
+    department: '관리팀', manager: '최유진', consultant: '정하나',
+    baseAmount: 2200000000, savingRate: 3.2, savingAmount: 70400000,
+    actualSaving: 65000000, completedAt: '2024-11-20', rating: 'B+',
+    documents: [
+      { id: 'd8', label: '원가 개선 계획서', type: 'file', url: '/files/cost_improve_plan.docx' },
+      { id: 'd9', label: '실행 결과 리포트', type: 'file', url: '/files/execution_report.pdf' },
+    ],
+  },
+  {
+    id: 4, name: '물류비용 최적화', majorAccount: '대계정 4', cluster: '서브 클러스터 14',
+    department: '물류팀', manager: '이정원', consultant: '김태호',
+    baseAmount: 1800000000, savingRate: 2.8, savingAmount: 50400000,
+    actualSaving: 55000000, completedAt: '2024-10-25', rating: 'A',
+    documents: [
+      { id: 'd10', label: '물류비 분석 보고서', type: 'file', url: '/files/logistics_report.pdf' },
+      { id: 'd11', label: '운송 계약 비교표', type: 'file', url: '/files/transport_compare.xlsx' },
+      { id: 'd12', label: '물류 시스템 대시보드', type: 'link', url: 'https://logistics.internal.com/dashboard' },
+    ],
+  },
+  {
+    id: 5, name: 'IT 인프라 비용절감', majorAccount: '대계정 5', cluster: '서브 클러스터 18',
+    department: 'IT팀', manager: '한소영', consultant: '정하나',
+    baseAmount: 2800000000, savingRate: 3.8, savingAmount: 106400000,
+    actualSaving: 110000000, completedAt: '2024-10-10', rating: 'A+',
+    documents: [
+      { id: 'd13', label: '클라우드 마이그레이션 보고서', type: 'file', url: '/files/cloud_migration.pdf' },
+      { id: 'd14', label: '인프라 비용 추이', type: 'file', url: '/files/infra_cost_trend.xlsx' },
+      { id: 'd15', label: 'AWS 비용 최적화 가이드', type: 'link', url: 'https://aws.amazon.com/cost-optimization' },
+      { id: 'd16', label: '라이선스 재협상 결과', type: 'file', url: '/files/license_renegotiation.pdf' },
+      { id: 'd17', label: '내부 위키 페이지', type: 'link', url: 'https://wiki.internal.com/it-savings' },
+    ],
+  },
+  {
+    id: 6, name: '에너지 효율 개선', majorAccount: '대계정 1', cluster: '서브 클러스터 4',
+    department: '시설팀', manager: '송재원', consultant: '이민수',
+    baseAmount: 1500000000, savingRate: 2.5, savingAmount: 37500000,
+    actualSaving: 38000000, completedAt: '2024-09-15', rating: 'B',
+    documents: [
+      { id: 'd18', label: '에너지 사용량 분석', type: 'file', url: '/files/energy_usage.pdf' },
+      { id: 'd19', label: '설비 교체 견적서', type: 'file', url: '/files/equipment_quote.xlsx' },
+    ],
+  },
 ];
 
 const SUMMARY = {
@@ -87,7 +150,7 @@ const formatAmount = (v) => {
 };
 
 /* ============================================================
-   Task Detail Modal
+   Task Detail Modal (기존 상세 보기)
    ============================================================ */
 function CompletedTaskDetailModal({ open, onClose, task }) {
   if (!task) return null;
@@ -147,18 +210,257 @@ function CompletedTaskDetailModal({ open, onClose, task }) {
 }
 
 /* ============================================================
+   과제 정보 수정 (Edit) Modal
+   ============================================================ */
+function EditTaskModal({ open, onClose, task, onSave }) {
+  const [form, setForm] = useState({});
+
+  // task 가 바뀔 때 폼 데이터 초기화
+  React.useEffect(() => {
+    if (task) {
+      setForm({
+        name: task.name,
+        majorAccount: task.majorAccount,
+        department: task.department,
+        consultant: task.consultant,
+        baseAmount: task.baseAmount,
+        savingAmount: task.savingAmount,
+        actualSaving: task.actualSaving,
+        rating: task.rating,
+        completedAt: task.completedAt,
+      });
+    }
+  }, [task]);
+
+  if (!task) return null;
+
+  const handleChange = (field, value) => {
+    setForm(prev => ({ ...prev, [field]: value }));
+  };
+
+  const handleSave = () => {
+    onSave({ ...task, ...form });
+    onClose(false);
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onClose}>
+      <DialogContent className="max-w-lg max-h-[85vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <Edit2 className="w-5 h-5 text-blue-600" />
+            과제 정보 수정
+          </DialogTitle>
+          <DialogDescription>과제 정보를 수정한 후 저장 버튼을 클릭하세요.</DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-4">
+          {/* 과제명 */}
+          <div className="space-y-1.5">
+            <Label htmlFor="edit-name" className="text-sm font-medium">과제명</Label>
+            <Input
+              id="edit-name"
+              value={form.name || ''}
+              onChange={e => handleChange('name', e.target.value)}
+              className="text-sm"
+            />
+          </div>
+
+          {/* 대계정 / 담당부서 */}
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1.5">
+              <Label htmlFor="edit-majorAccount" className="text-sm font-medium">대계정</Label>
+              <Input
+                id="edit-majorAccount"
+                value={form.majorAccount || ''}
+                onChange={e => handleChange('majorAccount', e.target.value)}
+                className="text-sm"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="edit-department" className="text-sm font-medium">담당부서</Label>
+              <Input
+                id="edit-department"
+                value={form.department || ''}
+                onChange={e => handleChange('department', e.target.value)}
+                className="text-sm"
+              />
+            </div>
+          </div>
+
+          {/* 컨설턴트 */}
+          <div className="space-y-1.5">
+            <Label htmlFor="edit-consultant" className="text-sm font-medium">컨설턴트</Label>
+            <Input
+              id="edit-consultant"
+              value={form.consultant || ''}
+              onChange={e => handleChange('consultant', e.target.value)}
+              className="text-sm"
+            />
+          </div>
+
+          {/* 모수금액 / 예상절감액 */}
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1.5">
+              <Label htmlFor="edit-baseAmount" className="text-sm font-medium">모수금액 (원)</Label>
+              <Input
+                id="edit-baseAmount"
+                type="number"
+                value={form.baseAmount || ''}
+                onChange={e => handleChange('baseAmount', Number(e.target.value))}
+                className="text-sm tabular-nums"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="edit-savingAmount" className="text-sm font-medium">예상절감액 (원)</Label>
+              <Input
+                id="edit-savingAmount"
+                type="number"
+                value={form.savingAmount || ''}
+                onChange={e => handleChange('savingAmount', Number(e.target.value))}
+                className="text-sm tabular-nums"
+              />
+            </div>
+          </div>
+
+          {/* 실제절감액 */}
+          <div className="space-y-1.5">
+            <Label htmlFor="edit-actualSaving" className="text-sm font-medium">실제절감액 (원)</Label>
+            <Input
+              id="edit-actualSaving"
+              type="number"
+              value={form.actualSaving || ''}
+              onChange={e => handleChange('actualSaving', Number(e.target.value))}
+              className="text-sm tabular-nums"
+            />
+          </div>
+
+          {/* 등급 / 완료일 */}
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1.5">
+              <Label className="text-sm font-medium">등급</Label>
+              <Select value={form.rating || ''} onValueChange={v => handleChange('rating', v)}>
+                <SelectTrigger className="text-sm">
+                  <SelectValue placeholder="등급 선택" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="A+">A+</SelectItem>
+                  <SelectItem value="A">A</SelectItem>
+                  <SelectItem value="B+">B+</SelectItem>
+                  <SelectItem value="B">B</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="edit-completedAt" className="text-sm font-medium">완료일</Label>
+              <Input
+                id="edit-completedAt"
+                type="date"
+                value={form.completedAt || ''}
+                onChange={e => handleChange('completedAt', e.target.value)}
+                className="text-sm"
+              />
+            </div>
+          </div>
+        </div>
+
+        <DialogFooter className="gap-2">
+          <Button variant="outline" onClick={() => onClose(false)}>취소</Button>
+          <Button onClick={handleSave} className="gap-1.5">
+            <Save className="w-4 h-4" />
+            저장
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+/* ============================================================
+   자료 조회 (Documents) Modal
+   ============================================================ */
+function DocumentsModal({ open, onClose, task }) {
+  if (!task) return null;
+  const docs = task.documents || [];
+
+  return (
+    <Dialog open={open} onOpenChange={onClose}>
+      <DialogContent className="max-w-md max-h-[80vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <FileText className="w-5 h-5 text-violet-600" />
+            자료 조회
+          </DialogTitle>
+          <DialogDescription>
+            {task.name} - 총 {docs.length}건의 자료가 등록되어 있습니다.
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-2">
+          {docs.length === 0 && (
+            <p className="text-sm text-muted-foreground text-center py-6">등록된 자료가 없습니다.</p>
+          )}
+          {docs.map((doc) => (
+            <div
+              key={doc.id}
+              className="flex items-center justify-between gap-3 rounded-lg border px-3 py-2.5 hover:bg-muted/40 transition-colors"
+            >
+              <div className="flex items-center gap-2.5 min-w-0">
+                {doc.type === 'link' ? (
+                  <Link2 className="w-4 h-4 text-blue-500 flex-shrink-0" />
+                ) : (
+                  <FileIcon className="w-4 h-4 text-gray-500 flex-shrink-0" />
+                )}
+                <span className="text-sm font-medium truncate">{doc.label}</span>
+                <Badge
+                  variant="outline"
+                  className={cn(
+                    'text-[10px] px-1.5 flex-shrink-0',
+                    doc.type === 'link'
+                      ? 'border-blue-300 bg-blue-50 text-blue-600'
+                      : 'border-gray-300 bg-gray-50 text-gray-600',
+                  )}
+                >
+                  {doc.type === 'link' ? '링크' : '파일'}
+                </Badge>
+              </div>
+              <Button variant="ghost" size="sm" className="h-7 w-7 p-0 flex-shrink-0" asChild>
+                <a href={doc.url} target="_blank" rel="noopener noreferrer">
+                  <ExternalLink className="w-3.5 h-3.5" />
+                </a>
+              </Button>
+            </div>
+          ))}
+        </div>
+
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onClose(false)}>닫기</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+/* ============================================================
    메인 CompletedTaskManagePage
    ============================================================ */
 export default function CompletedTaskManagePage() {
   const [searchKeyword, setSearchKeyword] = useState('');
   const [ratingFilter, setRatingFilter] = useState('all');
+  const [tasks, setTasks] = useState(COMPLETED_TASKS);
   const [detailTask, setDetailTask] = useState(null);
+  const [editTask, setEditTask] = useState(null);
+  const [docsTask, setDocsTask] = useState(null);
 
-  const filteredTasks = COMPLETED_TASKS.filter(t => {
+  const filteredTasks = tasks.filter(t => {
     if (ratingFilter !== 'all' && t.rating !== ratingFilter) return false;
     if (searchKeyword && !t.name.includes(searchKeyword) && !t.department.includes(searchKeyword)) return false;
     return true;
   });
+
+  const handleSaveTask = (updatedTask) => {
+    setTasks(prev => prev.map(t => (t.id === updatedTask.id ? updatedTask : t)));
+  };
 
   return (
     <div className="h-full flex flex-col overflow-hidden bg-background">
@@ -318,7 +620,7 @@ export default function CompletedTaskManagePage() {
                       <TableHead className="text-center">달성율</TableHead>
                       <TableHead className="text-center">등급</TableHead>
                       <TableHead className="text-center">완료일</TableHead>
-                      <TableHead className="text-center w-[60px]">상세</TableHead>
+                      <TableHead className="text-center w-[100px]">관리</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -343,9 +645,17 @@ export default function CompletedTaskManagePage() {
                           </TableCell>
                           <TableCell className="text-center text-xs">{task.completedAt}</TableCell>
                           <TableCell className="text-center">
-                            <Button variant="ghost" size="sm" className="h-6 w-6 p-0" onClick={() => setDetailTask(task)}>
-                              <Eye className="w-3 h-3" />
-                            </Button>
+                            <div className="flex items-center justify-center gap-0.5">
+                              <Button variant="ghost" size="sm" className="h-6 w-6 p-0" onClick={() => setDetailTask(task)} title="상세 보기">
+                                <Eye className="w-3 h-3" />
+                              </Button>
+                              <Button variant="ghost" size="sm" className="h-6 w-6 p-0" onClick={() => setEditTask(task)} title="과제 정보 수정">
+                                <Edit2 className="w-3 h-3" />
+                              </Button>
+                              <Button variant="ghost" size="sm" className="h-6 w-6 p-0" onClick={() => setDocsTask(task)} title="자료 조회">
+                                <FileText className="w-3 h-3" />
+                              </Button>
+                            </div>
                           </TableCell>
                         </TableRow>
                       );
@@ -368,6 +678,12 @@ export default function CompletedTaskManagePage() {
 
       {/* Detail Modal */}
       <CompletedTaskDetailModal open={!!detailTask} onClose={() => setDetailTask(null)} task={detailTask} />
+
+      {/* Edit Modal */}
+      <EditTaskModal open={!!editTask} onClose={() => setEditTask(null)} task={editTask} onSave={handleSaveTask} />
+
+      {/* Documents Modal */}
+      <DocumentsModal open={!!docsTask} onClose={() => setDocsTask(null)} task={docsTask} />
     </div>
   );
 }
