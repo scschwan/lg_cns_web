@@ -606,8 +606,8 @@ export default function AbleTaskRegisterPage() {
                     <TableHeader>
                       <TableRow className="bg-muted/50">
                         <TableHead className="pl-4">데이터 (비용유형분류)</TableHead>
-                        <TableHead className="text-right w-[110px]">CO오브젝트 수</TableHead>
-                        <TableHead className="text-right w-[110px]">상계계정 수</TableHead>
+                        <TableHead className="text-right w-[110px]">코스트센터 수</TableHead>
+                        <TableHead className="text-right w-[110px]">공급업체 수</TableHead>
                         <TableHead className="text-right w-[130px]">합계 금액</TableHead>
                         <TableHead className="text-center w-[80px]">항목</TableHead>
                       </TableRow>

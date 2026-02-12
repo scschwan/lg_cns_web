@@ -279,8 +279,8 @@ function RawDataModal({ open, onClose, data }) {
                 <TableHead className="w-[60px] text-center">No</TableHead>
                 <TableHead>비용유형</TableHead>
                 <TableHead>비용유형(상세)</TableHead>
-                <TableHead>CO오브젝트</TableHead>
-                <TableHead>상계계정</TableHead>
+                <TableHead>코스트센터</TableHead>
+                <TableHead>공급업체</TableHead>
                 <TableHead>텍스트</TableHead>
                 <TableHead className="text-right">금액</TableHead>
                 <TableHead>업체명</TableHead>
@@ -420,8 +420,8 @@ export default function LongListPage() {
                     <TableRow className="bg-muted/50">
                       <TableHead className="w-[40px] text-center" />
                       <TableHead className="pl-2">데이터 (비용유형분류)</TableHead>
-                      <TableHead className="text-right w-[120px]">CO오브젝트 수</TableHead>
-                      <TableHead className="text-right w-[120px]">상계계정 수</TableHead>
+                      <TableHead className="text-right w-[120px]">코스트센터 수</TableHead>
+                      <TableHead className="text-right w-[120px]">공급업체 수</TableHead>
                       <TableHead className="text-right w-[140px]">합계 금액</TableHead>
                     </TableRow>
                   </TableHeader>
