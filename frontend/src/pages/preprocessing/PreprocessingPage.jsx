@@ -168,6 +168,7 @@ function PreprocessingPage() {
   const [extracting, setExtracting] = useState(false);
   const [extractProgress, setExtractProgress] = useState(0);
   const [removingSingle, setRemovingSingle] = useState(false);
+  const [singleCharProgress, setSingleCharProgress] = useState(0);
   const [savingConfig, setSavingConfig] = useState(false);
 
   // NLP 설정
@@ -355,11 +356,16 @@ function PreprocessingPage() {
     }
   };
 
-  // ===== 1글자 제거 =====
+  // ===== 1글자 제거 (병렬 처리 + 진행률 폴링) =====
   const handleRemoveSingleChar = async () => {
     setRemovingSingle(true);
+    setSingleCharProgress(0);
     try {
-      const result = await preprocessingService.removeSingleChar(projectId, sessionId);
+      const [result] = await Promise.all([
+        preprocessingService.removeSingleChar(projectId, sessionId),
+        pollProgress('singlechar', setSingleCharProgress),
+      ]);
+      setSingleCharProgress(100);
       console.log('1글자 제거 완료:', result);
       await loadData();
       // step_history: 데이터 변경 발생 → 현재 step(3) 저장
@@ -370,6 +376,7 @@ function PreprocessingPage() {
       alert('1글자 제거에 실패했습니다.');
     } finally {
       setRemovingSingle(false);
+      setSingleCharProgress(0);
     }
   };
 
@@ -755,7 +762,7 @@ function PreprocessingPage() {
                       {removingSingle ? (
                         <div className="flex items-center gap-1">
                           <div className="animate-spin h-3 w-3 border-2 border-gray-500 border-t-transparent rounded-full" />
-                          제거 중...
+                          {singleCharProgress > 0 ? `${singleCharProgress}%` : '제거 중...'}
                         </div>
                       ) : '1글자 제거'}
                     </Button>

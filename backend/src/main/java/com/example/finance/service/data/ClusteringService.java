@@ -323,26 +323,27 @@ public class ClusteringService {
         log.info("getMergedClusters 시작: sessionId={}", sessionId);
 
         try {
-        List<ClusteringResult> all = clusteringResultRepository
-                .findBySessionIdOrderByClusterNumberAsc(sessionId);
+        // ★ 최적화: 전체 클러스터 로드 대신 cluster_id > 0 (병합 그룹)만 DB에서 조회
+        // session_cluster_id_idx 인덱스 활용
+        Query mergedQuery = new Query(
+                Criteria.where("session_id").is(sessionId)
+                        .and("cluster_id").gt(0))
+                .with(Sort.by("cluster_number"));
+        List<ClusteringResult> mergedGroupMembers = mongoTemplate.find(mergedQuery, ClusteringResult.class);
 
-        log.info("getMergedClusters: 전체 클러스터 {}개 조회", all.size());
+        log.info("getMergedClusters: 병합 그룹 멤버 {}개 조회", mergedGroupMembers.size());
 
-        Set<Integer> mergedClusterNumbers = all.stream()
-                .filter(c -> c.getClusterId() != null && c.getClusterId() > 0)
-                .map(ClusteringResult::getClusterId)
-                .collect(Collectors.toSet());
-
-        log.info("getMergedClusters: 병합 클러스터 번호 {}개 = {}", mergedClusterNumbers.size(), mergedClusterNumbers);
-
-        if (mergedClusterNumbers.isEmpty()) {
+        if (mergedGroupMembers.isEmpty()) {
             return Collections.emptyList();
         }
 
-        // ★ 병합 그룹에 속한 클러스터만 필터 (부모 + 자식)
-        List<ClusteringResult> mergedGroupMembers = all.stream()
-                .filter(c -> c.getClusterId() != null && c.getClusterId() > 0)
-                .collect(Collectors.toList());
+        // 병합 부모 번호 (cluster_id == cluster_number)
+        Set<Integer> mergedClusterNumbers = mergedGroupMembers.stream()
+                .filter(c -> c.getClusterId().equals(c.getClusterNumber()))
+                .map(ClusteringResult::getClusterNumber)
+                .collect(Collectors.toSet());
+
+        log.info("getMergedClusters: 병합 클러스터 번호 {}개 = {}", mergedClusterNumbers.size(), mergedClusterNumbers);
 
         // ★ 대표데이터: 병합 그룹 멤버의 첫 번째 raw_id만 조회 (전체 X)
         Set<String> mergedFirstRawIds = new LinkedHashSet<>();
@@ -351,21 +352,31 @@ public class ClusteringService {
                 mergedFirstRawIds.add(c.getDataIndices().get(0));
             }
         }
-        log.info("getMergedClusters: 대표데이터 {}건만 조회 (전체 클러스터 {}개 중 병합그룹 {}개)",
-                mergedFirstRawIds.size(), all.size(), mergedGroupMembers.size());
+        log.info("getMergedClusters: 대표데이터 {}건만 조회 (병합그룹 멤버 {}개)",
+                mergedFirstRawIds.size(), mergedGroupMembers.size());
 
         Map<String, Map<String, Object>> rawIdToData = mergedFirstRawIds.isEmpty()
                 ? Collections.emptyMap()
                 : batchFetchSessionData(sessionId, mergedFirstRawIds);
         List<String> visibleColumns = getVisibleColumns(sessionId);
 
+        // 부모별 자식 그룹핑 (O(N) 단일 패스)
+        Map<Integer, List<ClusteringResult>> childrenByParent = new HashMap<>();
+        Map<Integer, ClusteringResult> parentMap = new HashMap<>();
+        for (ClusteringResult c : mergedGroupMembers) {
+            if (mergedClusterNumbers.contains(c.getClusterNumber())) {
+                parentMap.put(c.getClusterNumber(), c);
+            } else {
+                childrenByParent.computeIfAbsent(c.getClusterId(), k -> new ArrayList<>()).add(c);
+            }
+        }
+
         List<Map<String, Object>> result = new ArrayList<>();
-        for (ClusteringResult cluster : all) {
-            if (mergedClusterNumbers.contains(cluster.getClusterNumber())) {
-                List<ClusteringResult> children = mergedGroupMembers.stream()
-                        .filter(c -> c.getClusterId().equals(cluster.getClusterNumber())
-                                && !c.getClusterNumber().equals(cluster.getClusterNumber()))
-                        .collect(Collectors.toList());
+        for (Integer parentNumber : mergedClusterNumbers) {
+            ClusteringResult cluster = parentMap.get(parentNumber);
+            if (cluster == null) continue;
+            {
+                List<ClusteringResult> children = childrenByParent.getOrDefault(parentNumber, Collections.emptyList());
 
                 Map<String, Object> merged = new LinkedHashMap<>();
                 merged.put("clusterNumber", cluster.getClusterNumber());
@@ -412,28 +423,29 @@ public class ClusteringService {
     // ============================================================
 
     public Map<String, Object> getStatistics(String sessionId) {
-        List<ClusteringResult> all = clusteringResultRepository
-                .findBySessionIdOrderByClusterNumberAsc(sessionId);
+        // ★ 최적화: 전체 로드 대신 인덱스 기반 분할 조회
+        List<ClusteringResult> unmerged = clusteringResultRepository
+                .findBySessionIdAndClusterIdOrderByClusterNumberAsc(sessionId, -1);
 
-        // 미병합: cluster_id == -1 (★ null-safety)
-        List<ClusteringResult> unmerged = all.stream()
-                .filter(c -> c.getClusterId() == null || c.getClusterId() == -1)
-                .collect(Collectors.toList());
-
-        // 병합 부모: cluster_id == cluster_number (자기 자신) (★ null-safety)
-        List<ClusteringResult> mergeParents = all.stream()
-                .filter(c -> c.getClusterId() != null && c.getClusterId() > 0 && c.getClusterId().equals(c.getClusterNumber()))
+        // 병합 그룹: cluster_id > 0 (부모 + 자식) - 인덱스 활용
+        List<ClusteringResult> mergedAll = mongoTemplate.find(
+                new Query(Criteria.where("session_id").is(sessionId).and("cluster_id").gt(0)),
+                ClusteringResult.class);
+        List<ClusteringResult> mergeParents = mergedAll.stream()
+                .filter(c -> c.getClusterId().equals(c.getClusterNumber()))
                 .collect(Collectors.toList());
 
         // totalRows = 미병합 + 병합 부모 (부모가 자식 합산 포함)
         long totalRows = unmerged.stream().mapToLong(ClusteringResult::getCount).sum()
                 + mergeParents.stream().mapToLong(ClusteringResult::getCount).sum();
 
+        long totalClusters = unmerged.size() + mergedAll.size();
+
         boolean hasSupplier = hasSupplierClustering(sessionId);
 
         Map<String, Object> stats = new HashMap<>();
         stats.put("totalRows", totalRows);
-        stats.put("totalClusters", all.size());
+        stats.put("totalClusters", totalClusters);
         stats.put("unmergedCount", (long) unmerged.size());
         stats.put("unmergedTotalAmount", unmerged.stream().mapToDouble(ClusteringResult::getTotalAmount).sum());
         stats.put("mergedGroupCount", mergeParents.size());
@@ -801,12 +813,9 @@ public class ClusteringService {
     }
 
     private List<ClusteringResult> getActiveUnmergedClusters(String sessionId) {
-        List<ClusteringResult> all = clusteringResultRepository
-                .findBySessionIdOrderByClusterNumberAsc(sessionId);
-        // 병합 부모는 cluster_id = 자기 자신(> 0)이므로 cluster_id == -1만 필터 (★ null-safety)
-        return all.stream()
-                .filter(c -> c.getClusterId() == null || c.getClusterId() == -1)
-                .collect(Collectors.toList());
+        // ★ 최적화: 전체 로드 후 필터 → cluster_id == -1 직접 조회 (인덱스 활용)
+        return clusteringResultRepository
+                .findBySessionIdAndClusterIdOrderByClusterNumberAsc(sessionId, -1);
     }
 
     private List<String> getVisibleColumns(String sessionId) {
