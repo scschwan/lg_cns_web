@@ -16,6 +16,9 @@ import {
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
+import {
+  PieChart, Pie, Cell, Tooltip, ResponsiveContainer,
+} from 'recharts';
 
 /* ============================================================
    색상 팔레트
@@ -151,57 +154,29 @@ const formatAmountFull = (amount) => {
 };
 
 /* ============================================================
-   SVG Donut Chart
+   Recharts Donut Chart
    ============================================================ */
-function DonutChart({ data, size = 160, strokeWidth = 32, className }) {
-  const radius = (size - strokeWidth) / 2;
-  const circumference = 2 * Math.PI * radius;
-  const center = size / 2;
-
-  let cumulativePercent = 0;
-  const segments = data.map((item, idx) => {
-    const percent = item.ratio / 100;
-    const offset = cumulativePercent * circumference;
-    const length = percent * circumference;
-    cumulativePercent += percent;
-    return {
-      ...item,
-      color: CHART_COLORS[idx % CHART_COLORS.length],
-      strokeDasharray: `${length} ${circumference - length}`,
-      strokeDashoffset: -offset,
-    };
-  });
+function DonutChart({ data, size = 160, className }) {
+  const pieData = data.map((d, i) => ({ ...d, fill: CHART_COLORS[i % CHART_COLORS.length] }));
+  const outerR = size / 2 - 10;
+  const innerR = outerR * 0.6;
 
   return (
     <div className={cn('relative inline-flex items-center justify-center', className)}>
-      <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
-        {/* Background circle */}
-        <circle cx={center} cy={center} r={radius} fill="none" stroke="#e5e7eb" strokeWidth={strokeWidth} />
-        {/* Data segments */}
-        {segments.map((seg, idx) => (
-          <circle
-            key={idx}
-            cx={center}
-            cy={center}
-            r={radius}
-            fill="none"
-            stroke={seg.color}
-            strokeWidth={strokeWidth}
-            strokeDasharray={seg.strokeDasharray}
-            strokeDashoffset={seg.strokeDashoffset}
-            strokeLinecap="butt"
-            transform={`rotate(-90 ${center} ${center})`}
-            className="transition-all duration-300"
-          />
-        ))}
-        {/* Center text */}
-        <text x={center} y={center - 6} textAnchor="middle" className="fill-foreground text-xs font-medium">
-          총 금액
-        </text>
-        <text x={center} y={center + 12} textAnchor="middle" className="fill-foreground text-sm font-bold">
-          {STATS.totalAmount}억
-        </text>
-      </svg>
+      <ResponsiveContainer width={size} height={size}>
+        <PieChart>
+          <Pie data={pieData} dataKey="ratio" nameKey="name" cx="50%" cy="50%" innerRadius={innerR} outerRadius={outerR} paddingAngle={2}>
+            {pieData.map((entry, idx) => (
+              <Cell key={idx} fill={entry.fill} />
+            ))}
+          </Pie>
+          <Tooltip formatter={(v) => `${v}%`} />
+        </PieChart>
+      </ResponsiveContainer>
+      <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+        <span className="text-[10px] text-muted-foreground">총 금액</span>
+        <span className="text-sm font-bold">{STATS.totalAmount}억</span>
+      </div>
     </div>
   );
 }
@@ -350,7 +325,14 @@ function RatioDetailModal({ open, onClose, title, data }) {
         </DialogHeader>
         <div className="flex-1 overflow-y-auto">
           <div className="flex flex-col items-center gap-6 py-4">
-            <DonutChart data={data} size={220} strokeWidth={40} />
+            <ResponsiveContainer width="100%" height={260}>
+              <PieChart>
+                <Pie data={data.map((d, i) => ({ ...d, fill: CHART_COLORS[i % CHART_COLORS.length] }))} dataKey="ratio" nameKey="name" cx="50%" cy="50%" innerRadius={60} outerRadius={110} paddingAngle={2} label={({ ratio }) => `${ratio}%`}>
+                  {data.map((_, idx) => <Cell key={idx} fill={CHART_COLORS[idx % CHART_COLORS.length]} />)}
+                </Pie>
+                <Tooltip formatter={(v) => `${v}%`} />
+              </PieChart>
+            </ResponsiveContainer>
             <div className="w-full space-y-2 px-4">
               {data.map((item, idx) => (
                 <div
@@ -464,37 +446,6 @@ function RawDataModal({ open, onClose, data }) {
         </div>
       </DialogContent>
     </Dialog>
-  );
-}
-
-/* ============================================================
-   페이징 컴포넌트
-   ============================================================ */
-function Pagination({ currentPage, totalPages, totalCount, pageSize, onPageChange, onPageSizeChange }) {
-  if (totalCount === 0) return null;
-  const s = currentPage * pageSize + 1;
-  const e = Math.min((currentPage + 1) * pageSize, totalCount);
-  return (
-    <div className="p-3 border-t bg-white flex-shrink-0">
-      <div className="flex items-center justify-between text-xs">
-        <span className="text-muted-foreground">{s}-{e} / 총 {totalCount.toLocaleString()}건</span>
-        <div className="flex items-center gap-2">
-          <Select value={pageSize.toString()} onValueChange={v => onPageSizeChange(+v)}>
-            <SelectTrigger className="w-[100px] h-8 text-xs"><SelectValue /></SelectTrigger>
-            <SelectContent>
-              {[20, 50, 100].map(n => <SelectItem key={n} value={n.toString()}>{n}개씩</SelectItem>)}
-            </SelectContent>
-          </Select>
-          <div className="flex gap-1">
-            <Button variant="outline" size="sm" className="h-8 px-2" onClick={() => onPageChange(0)} disabled={currentPage === 0}>처음</Button>
-            <Button variant="outline" size="sm" className="h-8 px-2" onClick={() => onPageChange(currentPage - 1)} disabled={currentPage === 0}>이전</Button>
-            <span className="flex items-center px-2 text-xs font-medium">{currentPage + 1}/{totalPages || 1}</span>
-            <Button variant="outline" size="sm" className="h-8 px-2" onClick={() => onPageChange(currentPage + 1)} disabled={currentPage >= totalPages - 1}>다음</Button>
-            <Button variant="outline" size="sm" className="h-8 px-2" onClick={() => onPageChange(totalPages - 1)} disabled={currentPage >= totalPages - 1}>마지막</Button>
-          </div>
-        </div>
-      </div>
-    </div>
   );
 }
 

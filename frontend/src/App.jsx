@@ -28,8 +28,13 @@ import DetailClusteringPage from './pages/detailclustering/DetailClusteringPage'
 // Test Page
 import TestPage from './pages/TestPage';
 
-// Long List Page (신규 서비스 마크업)
+// 신규 서비스 마크업 Pages
+import NewServiceLayout from './components/layout/NewServiceLayout';
 import LongListPage from './pages/longlist/LongListPage';
+import ShortListPage from './pages/shortlist/ShortListPage';
+import AbleTaskRegisterPage from './pages/abletask/AbleTaskRegisterPage';
+import AbleTaskManagePage from './pages/abletaskmanage/AbleTaskManagePage';
+import CompletedTaskManagePage from './pages/completedtask/CompletedTaskManagePage';
 
 // Admin Pages
 import AdminLayout from './pages/admin/AdminLayout';
@@ -62,7 +67,13 @@ function App() {
           <Route path="/login" element={<LoginPage />} />
           <Route path="/register" element={<RegisterPage />} />
           <Route path="/test" element={<TestPage />} />
-          <Route path="/longlist" element={<LongListPage />} />
+
+          {/* 신규 서비스 마크업 (인증 불필요, NewServiceLayout 사용) */}
+          <Route path="/longlist" element={<NewServiceLayout><LongListPage /></NewServiceLayout>} />
+          <Route path="/shortlist" element={<NewServiceLayout><ShortListPage /></NewServiceLayout>} />
+          <Route path="/able-register" element={<NewServiceLayout><AbleTaskRegisterPage /></NewServiceLayout>} />
+          <Route path="/able-manage" element={<NewServiceLayout><AbleTaskManagePage /></NewServiceLayout>} />
+          <Route path="/completed-manage" element={<NewServiceLayout><CompletedTaskManagePage /></NewServiceLayout>} />
 
           {/* 🔒 Private Routes with Navbar */}
           <Route
