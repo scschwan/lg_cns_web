@@ -127,8 +127,7 @@ function TreeRow({ item, level = 0, expandedIds, toggleExpand, checkedIds, onChe
     : checkedIds.has(item.id);
   const isIndeterminate = hasChildren && !isChecked && item.children.some(c => checkedIds.has(c.id));
 
-  const handleCheck = (e) => {
-    e.stopPropagation();
+  const handleCheck = () => {
     if (hasChildren) {
       const childIds = item.children.map(c => c.id);
       if (isChecked) onCheck(prev => { const n = new Set(prev); childIds.forEach(id => n.delete(id)); return n; });
