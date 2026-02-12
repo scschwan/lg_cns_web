@@ -28,6 +28,9 @@ import DetailClusteringPage from './pages/detailclustering/DetailClusteringPage'
 // Test Page
 import TestPage from './pages/TestPage';
 
+// Long List Page (신규 서비스 마크업)
+import LongListPage from './pages/longlist/LongListPage';
+
 // Admin Pages
 import AdminLayout from './pages/admin/AdminLayout';
 import AdminDashboard from './pages/admin/AdminDashboard';
@@ -59,6 +62,7 @@ function App() {
           <Route path="/login" element={<LoginPage />} />
           <Route path="/register" element={<RegisterPage />} />
           <Route path="/test" element={<TestPage />} />
+          <Route path="/longlist" element={<LongListPage />} />
 
           {/* 🔒 Private Routes with Navbar */}
           <Route
