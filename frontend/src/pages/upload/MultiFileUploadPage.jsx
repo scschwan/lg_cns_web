@@ -83,6 +83,7 @@ function MultiFileUploadPage() {
     const [project, setProject] = useState(null);
     const [files, setFiles] = useState([]);
     const [sessions, setSessions] = useState([]);
+    const [sessionsLoading, setSessionsLoading] = useState(false);
     const [selectedFiles, setSelectedFiles] = useState([]);
     const [selectedSessions, setSelectedSessions] = useState([]);
 
@@ -146,11 +147,14 @@ function MultiFileUploadPage() {
     };
 
     const loadSessions = async () => {
+        setSessionsLoading(true);
         try {
             const data = await uploadService.getSessions(projectId);
             setSessions(data);
         } catch (error) {
             console.error('세션 로드 실패:', error);
+        } finally {
+            setSessionsLoading(false);
         }
     };
 
@@ -1000,7 +1004,14 @@ function MultiFileUploadPage() {
                                 </div>
                             </CardHeader>
                             <CardContent className="p-0">
-                                {sessions.length === 0 ? (
+                                {sessionsLoading ? (
+                                    <div className="text-center py-12 px-6">
+                                        <Loader2 className="h-8 w-8 text-muted-foreground mx-auto mb-4 animate-spin" />
+                                        <p className="text-muted-foreground">
+                                            세션 목록을 불러오는 중...
+                                        </p>
+                                    </div>
+                                ) : sessions.length === 0 ? (
                                     <div className="text-center py-12 px-6">
                                         <FolderOpen className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
                                         <p className="text-muted-foreground">

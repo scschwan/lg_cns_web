@@ -80,7 +80,14 @@ public class PreprocessingService {
      */
     @SuppressWarnings("unchecked")
     public Map<String, Object> getExtractProgress(String sessionId, String type) {
-        String key = ("nlp".equals(type) ? NLP_PROGRESS_KEY : EXTRACT_PROGRESS_KEY) + sessionId;
+        String key;
+        if ("nlp".equals(type)) {
+            key = NLP_PROGRESS_KEY + sessionId;
+        } else if ("singlechar".equals(type)) {
+            key = SINGLE_CHAR_PROGRESS_KEY + sessionId;
+        } else {
+            key = EXTRACT_PROGRESS_KEY + sessionId;
+        }
         Object val = redisService.get(key);
         if (val instanceof Map) {
             return (Map<String, Object>) val;
