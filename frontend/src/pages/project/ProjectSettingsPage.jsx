@@ -7,6 +7,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Progress } from '@/components/ui/progress';
 import {
   Dialog,
   DialogContent,
@@ -44,6 +45,7 @@ import {
   Save,
   Trash2,
   UserPlus,
+  Upload,
   Loader2,
   FileText,
   Users,
@@ -54,6 +56,7 @@ import {
 } from 'lucide-react';
 
 import projectService from '../../services/projectService';
+import uploadService from '../../services/uploadService';
 
 const ProjectSettingsPage = () => {
   const { projectId } = useParams();
@@ -76,6 +79,11 @@ const ProjectSettingsPage = () => {
   const [inviteDialogOpen, setInviteDialogOpen] = useState(false);
   const [inviteEmail, setInviteEmail] = useState('');
   const [inviteRole, setInviteRole] = useState('VIEWER');
+
+  // Upload State
+  const [uploadProgressOpen, setUploadProgressOpen] = useState(false);
+  const [uploadProgressValue, setUploadProgressValue] = useState(0);
+  const [uploadProgressMessage, setUploadProgressMessage] = useState('');
 
   useEffect(() => {
     loadProjectData();
@@ -215,6 +223,75 @@ const ProjectSettingsPage = () => {
     } catch (err) {
       console.error('역할 변경 실패:', err);
       setError('역할 변경에 실패했습니다.');
+    }
+  };
+
+  const handleFileUpload = async (event) => {
+    if (!event.target.files || event.target.files.length === 0) return;
+
+    const selectedFiles = Array.from(event.target.files);
+    const excelFiles = selectedFiles.filter(
+      (f) => f.name.endsWith('.xlsx') || f.name.endsWith('.xls')
+    );
+
+    if (excelFiles.length === 0) {
+      setError('Excel 파일(.xlsx, .xls)만 업로드할 수 있습니다.');
+      return;
+    }
+
+    setUploadProgressOpen(true);
+    setUploadProgressValue(0);
+    setUploadProgressMessage('파일 업로드 시작...');
+
+    try {
+      for (let i = 0; i < excelFiles.length; i++) {
+        const file = excelFiles[i];
+
+        setUploadProgressValue(((i + 1) / excelFiles.length) * 80);
+        setUploadProgressMessage(`파일 처리 중... (${i + 1}/${excelFiles.length})`);
+
+        const { presignedUrl, uploadId, sessionId, s3Key } =
+          await uploadService.getPresignedUrl(projectId, file.name, file.size);
+
+        await uploadService.uploadToS3(presignedUrl, file);
+
+        await uploadService.completeFileUpload(projectId, {
+          uploadId,
+          sessionId,
+          fileName: file.name,
+          fileSize: file.size,
+          s3Key,
+        });
+      }
+
+      setUploadProgressValue(100);
+      setUploadProgressMessage('완료');
+      setTimeout(() => setUploadProgressOpen(false), 500);
+
+      setSuccessMessage(`${excelFiles.length}개의 파일이 업로드되었습니다.`);
+      setTimeout(() => setSuccessMessage(''), 3000);
+      loadProjectFiles();
+    } catch (err) {
+      console.error('파일 업로드 실패:', err);
+      setError('파일 업로드 중 오류가 발생했습니다.');
+      setUploadProgressOpen(false);
+    }
+
+    // input 초기화
+    event.target.value = '';
+  };
+
+  const handleDeleteFile = async (fileId, fileName) => {
+    if (!window.confirm(`"${fileName}" 파일을 삭제하시겠습니까?`)) return;
+
+    try {
+      await uploadService.deleteFile(projectId, fileId);
+      setFiles((prev) => prev.filter((f) => f.fileId !== fileId));
+      setSuccessMessage('파일이 삭제되었습니다.');
+      setTimeout(() => setSuccessMessage(''), 3000);
+    } catch (err) {
+      console.error('파일 삭제 실패:', err);
+      setError('파일 삭제에 실패했습니다.');
     }
   };
 
@@ -407,14 +484,31 @@ const ProjectSettingsPage = () => {
         <TabsContent value="files">
           <Card>
             <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <FileText className="w-5 h-5" />
-                업로드된 파일
-                <Badge variant="secondary">{files.length}개</Badge>
-              </CardTitle>
-              <CardDescription>
-                프로젝트에 업로드된 Excel 파일 목록입니다.
-              </CardDescription>
+              <div className="flex items-center justify-between">
+                <div className="space-y-1">
+                  <CardTitle className="flex items-center gap-2">
+                    <FileText className="w-5 h-5" />
+                    업로드된 파일
+                    <Badge variant="secondary">{files.length}개</Badge>
+                  </CardTitle>
+                  <CardDescription>
+                    프로젝트에 업로드된 Excel 파일 목록입니다.
+                  </CardDescription>
+                </div>
+                <Button asChild>
+                  <label className="cursor-pointer">
+                    <Upload className="h-4 w-4 mr-2" />
+                    파일 업로드
+                    <input
+                      type="file"
+                      hidden
+                      multiple
+                      accept=".xlsx,.xls"
+                      onChange={handleFileUpload}
+                    />
+                  </label>
+                </Button>
+              </div>
             </CardHeader>
             <CardContent>
               {filesLoading ? (
@@ -437,6 +531,7 @@ const ProjectSettingsPage = () => {
                         <TableHead className="w-[150px]">계정명 컬럼</TableHead>
                         <TableHead className="w-[150px]">금액 컬럼</TableHead>
                         <TableHead className="w-[180px]">업로드 시간</TableHead>
+                        <TableHead className="w-[80px]">삭제</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -459,6 +554,15 @@ const ProjectSettingsPage = () => {
                           </TableCell>
                           <TableCell className="text-muted-foreground text-sm">
                             {formatDate(file.uploadedAt)}
+                          </TableCell>
+                          <TableCell>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => handleDeleteFile(file.fileId, file.fileName)}
+                            >
+                              <Trash2 className="w-4 h-4 text-destructive" />
+                            </Button>
                           </TableCell>
                         </TableRow>
                       ))}
@@ -554,6 +658,22 @@ const ProjectSettingsPage = () => {
           </Card>
         </TabsContent>
       </Tabs>
+
+      {/* 업로드 진행 Dialog */}
+      <Dialog open={uploadProgressOpen} onOpenChange={setUploadProgressOpen}>
+        <DialogContent className="sm:max-w-[400px]" onPointerDownOutside={(e) => e.preventDefault()}>
+          <DialogHeader>
+            <DialogTitle>파일 업로드</DialogTitle>
+            <DialogDescription>{uploadProgressMessage}</DialogDescription>
+          </DialogHeader>
+          <div className="py-4">
+            <Progress value={uploadProgressValue} className="w-full" />
+            <p className="text-sm text-muted-foreground text-center mt-2">
+              {Math.round(uploadProgressValue)}%
+            </p>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* 멤버 초대 Dialog */}
       <Dialog open={inviteDialogOpen} onOpenChange={setInviteDialogOpen}>
