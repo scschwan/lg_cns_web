@@ -32,6 +32,7 @@ public class ClusteringService {
     private final MongoTemplate mongoTemplate;
     private final ClusteringResultRepository clusteringResultRepository;
     private final SearchKeywordHierarchyRepository keywordHierarchyRepository;
+    private final ClusterStatisticsService clusterStatisticsService;
 
     private static final ExecutorService EXECUTOR = Executors.newFixedThreadPool(
             Math.max(2, Runtime.getRuntime().availableProcessors()));
@@ -45,6 +46,7 @@ public class ClusteringService {
 
         log.info("미병합 클러스터 생성: sessionId={}, supplier={}, costCenter={}",
                 sessionId, includeSupplier, includeCostCenter);
+        clusterStatisticsService.cancelSessionCompletionIfNeeded(sessionId);
         long start = System.currentTimeMillis();
 
         // ★ 최적화1: Spring Data deleteBySessionId → 직접 deleteMany (개별삭제 → 단일 벌크삭제)
@@ -561,6 +563,7 @@ public class ClusteringService {
 
     public Map<String, Object> mergeClusters(String sessionId, List<Integer> clusterNumbers) {
         log.info("클러스터 병합: sessionId={}, clusterNumbers={}", sessionId, clusterNumbers);
+        clusterStatisticsService.cancelSessionCompletionIfNeeded(sessionId);
 
         if (clusterNumbers == null || clusterNumbers.size() < 2) {
             throw new BusinessException("MERGE_MIN_COUNT", "병합하려면 2개 이상의 클러스터를 선택해야 합니다.");
@@ -639,6 +642,7 @@ public class ClusteringService {
 
     public Map<String, Object> unmergeClusters(String sessionId, Integer mergedClusterNumber) {
         log.info("클러스터 병합 해제: sessionId={}, mergedClusterNumber={}", sessionId, mergedClusterNumber);
+        clusterStatisticsService.cancelSessionCompletionIfNeeded(sessionId);
 
         ClusteringResult merged = clusteringResultRepository
                 .findBySessionIdAndClusterNumber(sessionId, mergedClusterNumber)
@@ -682,6 +686,7 @@ public class ClusteringService {
 
         log.info("부분 병합 해제: sessionId={}, merged={}, children={}",
                 sessionId, mergedClusterNumber, childClusterNumbers);
+        clusterStatisticsService.cancelSessionCompletionIfNeeded(sessionId);
 
         ClusteringResult merged = clusteringResultRepository
                 .findBySessionIdAndClusterNumber(sessionId, mergedClusterNumber)
@@ -754,6 +759,7 @@ public class ClusteringService {
 
     public Map<String, Object> mergeMergedClusters(String sessionId, List<Integer> mergedClusterNumbers) {
         log.info("병합 클러스터 merge: sessionId={}, targets={}", sessionId, mergedClusterNumbers);
+        clusterStatisticsService.cancelSessionCompletionIfNeeded(sessionId);
 
         if (mergedClusterNumbers == null || mergedClusterNumbers.size() < 2) {
             throw new BusinessException("MERGE_MIN_COUNT", "2개 이상의 병합 클러스터를 선택해야 합니다.");
@@ -843,6 +849,7 @@ public class ClusteringService {
 
         log.info("추가 병합: sessionId={}, target={}, additions={}",
                 sessionId, targetMergedClusterNumber, clusterNumbers);
+        clusterStatisticsService.cancelSessionCompletionIfNeeded(sessionId);
 
         ClusteringResult parent = clusteringResultRepository
                 .findBySessionIdAndClusterNumber(sessionId, targetMergedClusterNumber)
@@ -902,6 +909,7 @@ public class ClusteringService {
     // ============================================================
 
     public void updateClusterName(String sessionId, Integer clusterNumber, String newName) {
+        clusterStatisticsService.cancelSessionCompletionIfNeeded(sessionId);
         ClusteringResult cluster = clusteringResultRepository
                 .findBySessionIdAndClusterNumber(sessionId, clusterNumber)
                 .orElseThrow(() -> new BusinessException("CLUSTER_NOT_FOUND",
@@ -1354,6 +1362,7 @@ public class ClusteringService {
 
     public Map<String, Object> autoMergeUndefined(String sessionId) {
         log.info("미병합 항목 Undefined Cluster 일괄 병합: sessionId={}", sessionId);
+        clusterStatisticsService.cancelSessionCompletionIfNeeded(sessionId);
 
         List<ClusteringResult> unmerged = getActiveUnmergedClusters(sessionId);
 

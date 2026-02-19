@@ -46,6 +46,7 @@ public class ExportService {
     private final MongoTemplate mongoTemplate;
     private final S3Client s3Client;
     private final S3Presigner s3Presigner;
+    private final ClusterStatisticsService clusterStatisticsService;
 
     // 병렬 처리용 스레드 풀
     private static final ExecutorService EXECUTOR = Executors.newFixedThreadPool(
@@ -618,6 +619,9 @@ public class ExportService {
             result.put("exported", false);
             result.put("existingExportPath", exportPath);
         }
+
+        // 클러스터 통계 생성
+        clusterStatisticsService.generateStatistics(sessionId);
 
         // 세션 완료 처리
         completeSession(sessionId, exportPath);
