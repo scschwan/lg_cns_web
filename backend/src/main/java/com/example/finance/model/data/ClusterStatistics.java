@@ -31,10 +31,15 @@ import java.util.List;
 @AllArgsConstructor
 @CompoundIndex(name = "session_level_idx", def = "{'session_id': 1, 'level': 1}")
 @CompoundIndex(name = "session_cluster_idx", def = "{'session_id': 1, 'cluster_number': 1}")
+@CompoundIndex(name = "project_level_idx", def = "{'project_id': 1, 'level': 1}")
 public class ClusterStatistics {
 
     @Id
     private String id;
+
+    @Indexed
+    @Field("project_id")
+    private String projectId;
 
     @Indexed
     @Field("session_id")
