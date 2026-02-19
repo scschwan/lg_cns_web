@@ -186,68 +186,60 @@ public class ClusterStatisticsService {
 
     /**
      * process_view_data에서 코스트센터/공급업체별 집계 수행
+     * DocumentDB는 $facet을 지원하지 않으므로 별도 쿼리 2회로 분리
      */
     private AggregationResult aggregateFromProcessViewData(String sessionId, List<String> rawDataIds) {
-        // $facet로 한 번의 쿼리로 코스트센터/공급업체 동시 집계
-        List<Document> pipeline = Arrays.asList(
-                new Document("$match", new Document("session_id", sessionId)
-                        .append("raw_data_id", new Document("$in", rawDataIds))),
-                new Document("$addFields", new Document("money_num",
-                        new Document("$cond", Arrays.asList(
-                                new Document("$eq", Arrays.asList(
-                                        new Document("$type", "$money"), "string")),
-                                new Document("$toDouble", new Document("$ifNull",
-                                        Arrays.asList("$money", 0))),
-                                new Document("$ifNull", Arrays.asList("$money", 0))
-                        )))),
-                new Document("$facet", new Document()
-                        .append("costCenter", Arrays.asList(
-                                new Document("$group", new Document("_id", "$department")
-                                        .append("count", new Document("$sum", 1))
-                                        .append("totalAmount", new Document("$sum", "$money_num"))),
-                                new Document("$sort", new Document("totalAmount", -1))
-                        ))
-                        .append("supplier", Arrays.asList(
-                                new Document("$group", new Document("_id", "$supplier")
-                                        .append("count", new Document("$sum", 1))
-                                        .append("totalAmount", new Document("$sum", "$money_num"))),
-                                new Document("$sort", new Document("totalAmount", -1))
-                        ))
-                )
-        );
-
-        List<Document> results = mongoTemplate.getCollection("process_view_data")
-                .aggregate(pipeline)
-                .into(new ArrayList<>());
-
         AggregationResult aggResult = new AggregationResult();
 
-        if (!results.isEmpty()) {
-            Document facet = results.get(0);
+        Document matchStage = new Document("$match", new Document("session_id", sessionId)
+                .append("raw_data_id", new Document("$in", rawDataIds)));
 
-            // 코스트센터 집계
-            List<Document> ccDocs = facet.getList("costCenter", Document.class, Collections.emptyList());
-            for (Document doc : ccDocs) {
-                String name = doc.getString("_id");
-                if (name == null || name.isBlank()) name = "(미지정)";
-                aggResult.costCenters.add(BreakdownItem.builder()
-                        .name(name)
-                        .count(doc.getInteger("count", 0))
-                        .totalAmount(toDouble(doc.get("totalAmount")))
-                        .build());
-            }
+        // 코스트센터별 집계
+        List<Document> ccPipeline = Arrays.asList(
+                matchStage,
+                new Document("$group", new Document("_id", "$department")
+                        .append("count", new Document("$sum", 1))
+                        .append("totalAmount", new Document("$sum",
+                                new Document("$ifNull", Arrays.asList("$money", 0))))),
+                new Document("$sort", new Document("totalAmount", -1))
+        );
 
-            // 공급업체 집계
-            List<Document> supDocs = facet.getList("supplier", Document.class, Collections.emptyList());
-            for (Document doc : supDocs) {
-                String name = doc.getString("_id");
-                if (name == null || name.isBlank()) name = "(미지정)";
-                aggResult.suppliers.add(BreakdownItem.builder()
-                        .name(name)
-                        .count(doc.getInteger("count", 0))
-                        .totalAmount(toDouble(doc.get("totalAmount")))
-                        .build());
-            }
+        List<Document> ccResults = mongoTemplate.getCollection("process_view_data")
+                .aggregate(ccPipeline)
+                .into(new ArrayList<>());
+
+        for (Document doc : ccResults) {
+            String name = doc.getString("_id");
+            if (name == null || name.isBlank()) name = "(미지정)";
+            aggResult.costCenters.add(BreakdownItem.builder()
+                    .name(name)
+                    .count(doc.getInteger("count", 0))
+                    .totalAmount(toDouble(doc.get("totalAmount")))
+                    .build());
+        }
+
+        // 공급업체별 집계
+        List<Document> supPipeline = Arrays.asList(
+                matchStage,
+                new Document("$group", new Document("_id", "$supplier")
+                        .append("count", new Document("$sum", 1))
+                        .append("totalAmount", new Document("$sum",
+                                new Document("$ifNull", Arrays.asList("$money", 0))))),
+                new Document("$sort", new Document("totalAmount", -1))
+        );
+
+        List<Document> supResults = mongoTemplate.getCollection("process_view_data")
+                .aggregate(supPipeline)
+                .into(new ArrayList<>());
+
+        for (Document doc : supResults) {
+            String name = doc.getString("_id");
+            if (name == null || name.isBlank()) name = "(미지정)";
+            aggResult.suppliers.add(BreakdownItem.builder()
+                    .name(name)
+                    .count(doc.getInteger("count", 0))
+                    .totalAmount(toDouble(doc.get("totalAmount")))
+                    .build());
         }
 
         return aggResult;
