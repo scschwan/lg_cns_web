@@ -36,6 +36,7 @@ public class DetailClusteringService {
     private final MongoTemplate mongoTemplate;
     private final ClusteringResultRepository clusteringResultRepository;
     private final SearchKeywordHierarchyRepository keywordHierarchyRepository;
+    private final ClusterStatisticsService clusterStatisticsService;
 
     private static final ExecutorService EXECUTOR = Executors.newFixedThreadPool(
             Math.max(2, Runtime.getRuntime().availableProcessors()));
@@ -367,6 +368,7 @@ public class DetailClusteringService {
                 "clustering_results");
 
         log.info("세부 클러스터 병합 완료: #{}, {}개 합침", newClusterNumber, targets.size());
+        clusterStatisticsService.cancelSessionCompletionIfNeeded(sessionId);
 
         Map<String, Object> result = new HashMap<>();
         result.put("mergedClusterNumber", newClusterNumber);
@@ -411,6 +413,7 @@ public class DetailClusteringService {
         clusteringResultRepository.delete(merged);
 
         log.info("세부 병합 해제 완료: {}개 복원", children.size());
+        clusterStatisticsService.cancelSessionCompletionIfNeeded(sessionId);
 
         Map<String, Object> result = new HashMap<>();
         result.put("restoredCount", children.size());
@@ -481,6 +484,8 @@ public class DetailClusteringService {
             merged.setDataIndices(allDataIndices);
             clusteringResultRepository.save(merged);
         }
+
+        clusterStatisticsService.cancelSessionCompletionIfNeeded(sessionId);
 
         Map<String, Object> result = new HashMap<>();
         result.put("removedCount", toRemove.size());
@@ -562,6 +567,7 @@ public class DetailClusteringService {
                 "clustering_results");
 
         log.info("세부 병합 클러스터 merge 완료: #{}, {}개 자식", newClusterNumber, allChildrenToMove.size());
+        clusterStatisticsService.cancelSessionCompletionIfNeeded(sessionId);
 
         Map<String, Object> result = new HashMap<>();
         result.put("mergedClusterNumber", newClusterNumber);
@@ -628,6 +634,8 @@ public class DetailClusteringService {
         parent.setDataIndices(allDataIndices);
         clusteringResultRepository.save(parent);
 
+        clusterStatisticsService.cancelSessionCompletionIfNeeded(sessionId);
+
         Map<String, Object> result = new HashMap<>();
         result.put("addedCount", targets.size());
         result.put("totalChildCount", allChildren.size());
@@ -646,6 +654,7 @@ public class DetailClusteringService {
                         "클러스터를 찾을 수 없습니다: #" + clusterNumber));
         cluster.setClusterName(newName);
         clusteringResultRepository.save(cluster);
+        clusterStatisticsService.cancelSessionCompletionIfNeeded(sessionId);
     }
 
     // ============================================================

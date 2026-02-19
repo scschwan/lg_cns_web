@@ -36,6 +36,7 @@ public class DataTransformService {
     private final MongoTemplate mongoTemplate;
     private final FileSessionRepository fileSessionRepository;
     private final ColumnMappingRepository columnMappingRepository;
+    private final ClusterStatisticsService clusterStatisticsService;
 
     /**
      * 키워드 통계 조회 (group by count + money 합산)
@@ -202,6 +203,7 @@ public class DataTransformService {
 
         long elapsed = System.currentTimeMillis() - start;
         log.info("키워드 변환 완료: {}건 변경, {}ms", totalModified, elapsed);
+        clusterStatisticsService.cancelSessionCompletionIfNeeded(sessionId);
 
         Map<String, Object> resultMap = new HashMap<>();
         resultMap.put("modifiedCount", totalModified);
