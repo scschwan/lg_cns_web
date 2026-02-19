@@ -11,8 +11,10 @@ import lombok.extern.slf4j.Slf4j;
 import org.bson.Document;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.mongodb.core.MongoTemplate;
+import org.springframework.data.mongodb.core.BulkOperations;
 import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.data.mongodb.core.query.Query;
+import org.springframework.data.mongodb.core.query.Update;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
@@ -45,7 +47,10 @@ public class ClusteringService {
                 sessionId, includeSupplier, includeCostCenter);
         long start = System.currentTimeMillis();
 
-        clusteringResultRepository.deleteBySessionId(sessionId);
+        // ★ 최적화1: Spring Data deleteBySessionId → 직접 deleteMany (개별삭제 → 단일 벌크삭제)
+        mongoTemplate.remove(
+                new Query(Criteria.where("session_id").is(sessionId)),
+                "clustering_results");
 
         Query query = new Query(Criteria.where("session_id").is(sessionId));
         query.fields()
@@ -55,13 +60,15 @@ public class ClusteringService {
                 .include("department")
                 .include("supplier");
 
+        // ★ 최적화2: 커서 기반 스트리밍으로 메모리 사용 최소화
+        // find()는 MongoDB 드라이버가 내부적으로 배치 커서를 사용하므로 그대로 사용
         List<Document> pvDocs = mongoTemplate.find(query, Document.class, "process_view_data");
-        log.info("process_view_data 조회: {}건", pvDocs.size());
+        log.info("process_view_data 조회: {}건, {}ms", pvDocs.size(), System.currentTimeMillis() - start);
 
-        // 병렬 그룹핑: ConcurrentHashMap 사용
-        ConcurrentHashMap<String, List<Document>> groupMap = new ConcurrentHashMap<>();
+        // 그룹핑: 순차 처리 (parallelStream의 ConcurrentHashMap 동기화 오버헤드 제거)
+        Map<String, List<Document>> groupMap = new HashMap<>();
 
-        pvDocs.parallelStream().forEach(doc -> {
+        for (Document doc : pvDocs) {
             Document kwDoc = (Document) doc.get("keywords");
             List<String> finalKeywords = new ArrayList<>();
             if (kwDoc != null) {
@@ -83,74 +90,83 @@ public class ClusteringService {
                 keyBuilder.append("||D:").append(dept != null ? dept : "");
             }
 
-            groupMap.computeIfAbsent(keyBuilder.toString(), k ->
-                    Collections.synchronizedList(new ArrayList<>())).add(doc);
-        });
+            groupMap.computeIfAbsent(keyBuilder.toString(), k -> new ArrayList<>()).add(doc);
+        }
 
-        // 병렬로 클러스터 객체 생성
+        log.info("그룹핑 완료: {}그룹, {}ms", groupMap.size(), System.currentTimeMillis() - start);
+
+        // 클러스터 객체 생성 (순차 - 그룹 수는 수천이므로 parallelStream 불필요)
         AtomicInteger clusterCounter = new AtomicInteger(1);
-        List<ClusteringResult> clusters = groupMap.entrySet().parallelStream()
-                .map(entry -> {
-                    List<Document> docs = entry.getValue();
-                    Document first = docs.get(0);
+        List<ClusteringResult> clusters = new ArrayList<>(groupMap.size());
 
-                    List<String> keywords = new ArrayList<>();
-                    Document firstKwDoc = (Document) first.get("keywords");
-                    if (firstKwDoc != null) {
-                        @SuppressWarnings("unchecked")
-                        List<String> kws = (List<String>) firstKwDoc.get("final_keywords");
-                        if (kws != null) keywords = new ArrayList<>(kws);
-                    }
+        for (Map.Entry<String, List<Document>> entry : groupMap.entrySet()) {
+            List<Document> docs = entry.getValue();
+            Document first = docs.get(0);
 
-                    List<String> dataIndices = docs.stream()
-                            .map(d -> d.getString("raw_data_id"))
-                            .filter(Objects::nonNull)
-                            .collect(Collectors.toList());
+            List<String> keywords = new ArrayList<>();
+            Document firstKwDoc = (Document) first.get("keywords");
+            if (firstKwDoc != null) {
+                @SuppressWarnings("unchecked")
+                List<String> kws = (List<String>) firstKwDoc.get("final_keywords");
+                if (kws != null) keywords = new ArrayList<>(kws);
+            }
 
-                    double totalAmount = docs.stream()
-                            .mapToDouble(d -> {
-                                Object moneyObj = d.get("money");
-                                if (moneyObj == null) return 0;
-                                try { return Double.parseDouble(moneyObj.toString()); }
-                                catch (NumberFormatException e) { return 0; }
-                            }).sum();
+            List<String> dataIndices = docs.stream()
+                    .map(d -> d.getString("raw_data_id"))
+                    .filter(Objects::nonNull)
+                    .collect(Collectors.toList());
 
-                    String supplierVal = includeSupplier ? first.getString("supplier") : null;
-                    String deptVal = includeCostCenter ? first.getString("department") : null;
-                    String clusterName = keywords.isEmpty() ? "(키워드 없음)" : String.join("_", keywords);
+            double totalAmount = docs.stream()
+                    .mapToDouble(d -> {
+                        Object moneyObj = d.get("money");
+                        if (moneyObj == null) return 0;
+                        try { return Double.parseDouble(moneyObj.toString()); }
+                        catch (NumberFormatException e) { return 0; }
+                    }).sum();
 
-                    return ClusteringResult.builder()
-                            .sessionId(sessionId)
-                            .clusterNumber(clusterCounter.getAndIncrement())
-                            .clusterId(-1)
-                            .clusterSubId(-1)
-                            .clusterName(clusterName)
-                            .keywords(keywords)
-                            .count(docs.size())
-                            .totalAmount(totalAmount)
-                            .dataIndices(dataIndices)
-                            .supplier(supplierVal)
-                            .department(deptVal)
-                            .createdAt(LocalDateTime.now())
-                            .build();
-                })
-                .collect(Collectors.toList());
+            String supplierVal = includeSupplier ? first.getString("supplier") : null;
+            String deptVal = includeCostCenter ? first.getString("department") : null;
+            String clusterName = keywords.isEmpty() ? "(키워드 없음)" : String.join("_", keywords);
 
-        // 배치 저장 (대량 데이터 시 청크 분할)
+            clusters.add(ClusteringResult.builder()
+                    .sessionId(sessionId)
+                    .clusterNumber(clusterCounter.getAndIncrement())
+                    .clusterId(-1)
+                    .clusterSubId(-1)
+                    .clusterName(clusterName)
+                    .keywords(keywords)
+                    .count(docs.size())
+                    .totalAmount(totalAmount)
+                    .dataIndices(dataIndices)
+                    .supplier(supplierVal)
+                    .department(deptVal)
+                    .createdAt(LocalDateTime.now())
+                    .build());
+        }
+
+        log.info("클러스터 객체 생성 완료: {}개, {}ms", clusters.size(), System.currentTimeMillis() - start);
+
+        // ★ 최적화3: saveAll(개별 upsert) → BulkOperations.insert (단일 벌크 삽입)
         if (!clusters.isEmpty()) {
-            int batchSize = 500;
+            int batchSize = 2000;
             for (int i = 0; i < clusters.size(); i += batchSize) {
                 int end = Math.min(i + batchSize, clusters.size());
-                clusteringResultRepository.saveAll(clusters.subList(i, end));
+                BulkOperations bulkOps = mongoTemplate.bulkOps(BulkOperations.BulkMode.UNORDERED, ClusteringResult.class);
+                bulkOps.insert(clusters.subList(i, end));
+                bulkOps.execute();
             }
         }
 
         long elapsed = System.currentTimeMillis() - start;
         log.info("미병합 클러스터 생성 완료: {}개, {}ms", clusters.size(), elapsed);
 
+        // 메모리 즉시 해제
+        pvDocs.clear();
+        groupMap.clear();
+
         Map<String, Object> result = new HashMap<>();
         result.put("clusterCount", clusters.size());
-        result.put("totalRecords", pvDocs.size());
+        result.put("totalRecords", clusters.stream().mapToInt(ClusteringResult::getCount).sum());
         result.put("elapsedMs", elapsed);
         result.put("includeSupplier", includeSupplier);
         result.put("includeCostCenter", includeCostCenter);
@@ -240,7 +256,7 @@ public class ClusteringService {
     // ============================================================
 
     public List<Map<String, Object>> getKeywordStats(String sessionId) {
-        List<ClusteringResult> unmerged = getActiveUnmergedClusters(sessionId);
+        List<ClusteringResult> unmerged = getActiveUnmergedClustersLightweight(sessionId);
 
         ConcurrentHashMap<String, long[]> kwStats = new ConcurrentHashMap<>();
 
@@ -276,7 +292,7 @@ public class ClusteringService {
     // ============================================================
 
     public List<Map<String, Object>> getSupplierStats(String sessionId) {
-        List<ClusteringResult> unmerged = getActiveUnmergedClusters(sessionId);
+        List<ClusteringResult> unmerged = getActiveUnmergedClustersLightweight(sessionId);
 
         ConcurrentHashMap<String, long[]> supStats = new ConcurrentHashMap<>();
 
@@ -423,14 +439,15 @@ public class ClusteringService {
     // ============================================================
 
     public Map<String, Object> getStatistics(String sessionId) {
-        // ★ 최적화: 전체 로드 대신 인덱스 기반 분할 조회
-        List<ClusteringResult> unmerged = clusteringResultRepository
-                .findBySessionIdAndClusterIdOrderByClusterNumberAsc(sessionId, -1);
+        // ★ 최적화: data_indices 제외 경량 조회
+        List<ClusteringResult> unmerged = getActiveUnmergedClustersLightweight(sessionId);
 
-        // 병합 그룹: cluster_id > 0 (부모 + 자식) - 인덱스 활용
-        List<ClusteringResult> mergedAll = mongoTemplate.find(
-                new Query(Criteria.where("session_id").is(sessionId).and("cluster_id").gt(0)),
-                ClusteringResult.class);
+        // 병합 그룹: cluster_id > 0 (부모 + 자식) - data_indices 제외
+        Query mergedQuery = new Query(Criteria.where("session_id").is(sessionId).and("cluster_id").gt(0));
+        mergedQuery.fields()
+                .include("cluster_number").include("cluster_id")
+                .include("count").include("total_amount");
+        List<ClusteringResult> mergedAll = mongoTemplate.find(mergedQuery, ClusteringResult.class);
         List<ClusteringResult> mergeParents = mergedAll.stream()
                 .filter(c -> c.getClusterId().equals(c.getClusterNumber()))
                 .collect(Collectors.toList());
@@ -509,8 +526,15 @@ public class ClusteringService {
 
         clusteringResultRepository.save(merged);
 
-        targets.forEach(target -> target.setClusterId(newClusterNumber));
-        clusteringResultRepository.saveAll(targets);
+        // ★ 최적화: saveAll(개별 save) → updateMulti 단일 쿼리로 자식 cluster_id 일괄 업데이트
+        List<Integer> targetNumbers = targets.stream()
+                .map(ClusteringResult::getClusterNumber)
+                .collect(Collectors.toList());
+        mongoTemplate.updateMulti(
+                new Query(Criteria.where("session_id").is(sessionId)
+                        .and("cluster_number").in(targetNumbers)),
+                new Update().set("cluster_id", newClusterNumber),
+                "clustering_results");
 
         log.info("클러스터 병합 완료: #{}, {}개 합침", newClusterNumber, targets.size());
 
@@ -546,8 +570,13 @@ public class ClusteringService {
             throw new BusinessException("NO_CHILDREN", "하위 클러스터가 없습니다.");
         }
 
-        children.forEach(child -> child.setClusterId(-1));
-        clusteringResultRepository.saveAll(children);
+        // ★ 최적화: saveAll → updateMulti 단일 쿼리로 자식 cluster_id 일괄 리셋
+        mongoTemplate.updateMulti(
+                new Query(Criteria.where("session_id").is(sessionId)
+                        .and("cluster_id").is(mergedClusterNumber)
+                        .and("cluster_number").ne(mergedClusterNumber)),
+                new Update().set("cluster_id", -1),
+                "clustering_results");
         clusteringResultRepository.delete(merged);
 
         log.info("병합 해제 완료: {}개 복원", children.size());
@@ -588,9 +617,14 @@ public class ClusteringService {
             throw new BusinessException("NO_CHILDREN", "해제할 하위 클러스터가 없습니다.");
         }
 
-        // 선택한 자식들 해제
-        toRemove.forEach(child -> child.setClusterId(-1));
-        clusteringResultRepository.saveAll(toRemove);
+        // ★ 최적화: saveAll → updateMulti 단일 쿼리
+        List<Integer> removeNumbers = toRemove.stream()
+                .map(ClusteringResult::getClusterNumber).collect(Collectors.toList());
+        mongoTemplate.updateMulti(
+                new Query(Criteria.where("session_id").is(sessionId)
+                        .and("cluster_number").in(removeNumbers)),
+                new Update().set("cluster_id", -1),
+                "clustering_results");
 
         // 남은 자식이 있으면 부모 갱신, 없으면 부모 삭제
         List<ClusteringResult> remaining = allChildren.stream()
@@ -687,12 +721,19 @@ public class ClusteringService {
 
         clusteringResultRepository.save(newParent);
 
-        // 모든 자식을 새 부모로 이동
-        allChildrenToMove.forEach(child -> child.setClusterId(newClusterNumber));
-        clusteringResultRepository.saveAll(allChildrenToMove);
+        // ★ 최적화: saveAll → updateMulti 단일 쿼리로 자식 cluster_id 일괄 업데이트
+        mongoTemplate.updateMulti(
+                new Query(Criteria.where("session_id").is(sessionId)
+                        .and("cluster_id").in(mergedClusterNumbers)
+                        .and("cluster_number").nin(mergedClusterNumbers)),
+                new Update().set("cluster_id", newClusterNumber),
+                "clustering_results");
 
-        // 기존 부모 삭제
-        clusteringResultRepository.deleteAll(targetParents);
+        // ★ 최적화: deleteAll(개별삭제) → remove 단일 쿼리
+        mongoTemplate.remove(
+                new Query(Criteria.where("session_id").is(sessionId)
+                        .and("cluster_number").in(mergedClusterNumbers)),
+                "clustering_results");
 
         log.info("병합 클러스터 merge 완료: #{}, {}개 자식", newClusterNumber, allChildrenToMove.size());
 
@@ -726,11 +767,12 @@ public class ClusteringService {
             throw new BusinessException("CLUSTER_NOT_FOUND", "추가할 클러스터를 찾을 수 없습니다.");
         }
 
-        // 자식으로 편입
-        for (ClusteringResult target : targets) {
-            target.setClusterId(targetMergedClusterNumber);
-        }
-        clusteringResultRepository.saveAll(targets);
+        // ★ 최적화: saveAll → updateMulti 단일 쿼리로 자식 편입
+        mongoTemplate.updateMulti(
+                new Query(Criteria.where("session_id").is(sessionId)
+                        .and("cluster_number").in(clusterNumbers)),
+                new Update().set("cluster_id", targetMergedClusterNumber),
+                "clustering_results");
 
         // 부모 재계산 (기존 자식 + 새 자식, 부모 자신 제외)
         List<ClusteringResult> allChildren = clusteringResultRepository
@@ -816,6 +858,21 @@ public class ClusteringService {
         // ★ 최적화: 전체 로드 후 필터 → cluster_id == -1 직접 조회 (인덱스 활용)
         return clusteringResultRepository
                 .findBySessionIdAndClusterIdOrderByClusterNumberAsc(sessionId, -1);
+    }
+
+    /**
+     * ★ 최적화: stats/통계 전용 경량 조회 - data_indices 배열 제외 (수만건 문자열 로드 방지)
+     */
+    private List<ClusteringResult> getActiveUnmergedClustersLightweight(String sessionId) {
+        Query query = new Query(Criteria.where("session_id").is(sessionId)
+                .and("cluster_id").is(-1))
+                .with(Sort.by("cluster_number"));
+        query.fields()
+                .include("session_id").include("cluster_number").include("cluster_id")
+                .include("cluster_name").include("keywords").include("count")
+                .include("total_amount").include("supplier").include("department");
+        // data_indices 제외 → 네트워크 전송량 대폭 감소
+        return mongoTemplate.find(query, ClusteringResult.class);
     }
 
     private List<String> getVisibleColumns(String sessionId) {
@@ -1242,8 +1299,13 @@ public class ClusteringService {
 
         clusteringResultRepository.save(undefinedParent);
 
-        unmerged.forEach(target -> target.setClusterId(newClusterNumber));
-        clusteringResultRepository.saveAll(unmerged);
+        // ★ 최적화: saveAll(수천건 개별 save) → updateMulti 단일 쿼리
+        mongoTemplate.updateMulti(
+                new Query(Criteria.where("session_id").is(sessionId)
+                        .and("cluster_id").is(-1)
+                        .and("cluster_number").ne(newClusterNumber)),
+                new Update().set("cluster_id", newClusterNumber),
+                "clustering_results");
 
         log.info("Undefined Cluster 일괄 병합 완료: #{}, {}개 합침", newClusterNumber, unmerged.size());
 

@@ -13,6 +13,7 @@ import org.springframework.data.domain.Sort;
 import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.data.mongodb.core.query.Query;
+import org.springframework.data.mongodb.core.query.Update;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
@@ -356,9 +357,14 @@ public class DetailClusteringService {
 
         clusteringResultRepository.save(merged);
 
-        // 자식들의 cluster_sub_id만 변경 (cluster_id 절대 수정 안함!)
-        targets.forEach(target -> target.setClusterSubId(newClusterNumber));
-        clusteringResultRepository.saveAll(targets);
+        // ★ 최적화: saveAll → updateMulti 단일 쿼리 (cluster_id 절대 수정 안함!)
+        List<Integer> targetNumbers = targets.stream()
+                .map(ClusteringResult::getClusterNumber).collect(Collectors.toList());
+        mongoTemplate.updateMulti(
+                new Query(Criteria.where("session_id").is(sessionId)
+                        .and("cluster_number").in(targetNumbers)),
+                new Update().set("cluster_sub_id", newClusterNumber),
+                "clustering_results");
 
         log.info("세부 클러스터 병합 완료: #{}, {}개 합침", newClusterNumber, targets.size());
 
@@ -394,9 +400,14 @@ public class DetailClusteringService {
             throw new BusinessException("NO_CHILDREN", "하위 클러스터가 없습니다.");
         }
 
-        // cluster_sub_id만 -1로 복원 (cluster_id 절대 수정 안함!)
-        children.forEach(child -> child.setClusterSubId(-1));
-        clusteringResultRepository.saveAll(children);
+        // ★ 최적화: saveAll → updateMulti 단일 쿼리 (cluster_id 절대 수정 안함!)
+        mongoTemplate.updateMulti(
+                new Query(Criteria.where("session_id").is(sessionId)
+                        .and("cluster_id").is(clusterId)
+                        .and("cluster_sub_id").is(mergedClusterNumber)
+                        .and("cluster_number").ne(mergedClusterNumber)),
+                new Update().set("cluster_sub_id", -1),
+                "clustering_results");
         clusteringResultRepository.delete(merged);
 
         log.info("세부 병합 해제 완료: {}개 복원", children.size());
@@ -437,9 +448,14 @@ public class DetailClusteringService {
             throw new BusinessException("NO_CHILDREN", "해제할 하위 클러스터가 없습니다.");
         }
 
-        // cluster_sub_id만 -1로 복원
-        toRemove.forEach(child -> child.setClusterSubId(-1));
-        clusteringResultRepository.saveAll(toRemove);
+        // ★ 최적화: saveAll → updateMulti 단일 쿼리
+        List<Integer> removeNumbers = toRemove.stream()
+                .map(ClusteringResult::getClusterNumber).collect(Collectors.toList());
+        mongoTemplate.updateMulti(
+                new Query(Criteria.where("session_id").is(sessionId)
+                        .and("cluster_number").in(removeNumbers)),
+                new Update().set("cluster_sub_id", -1),
+                "clustering_results");
 
         List<ClusteringResult> remaining = allChildren.stream()
                 .filter(c -> !childClusterNumbers.contains(c.getClusterNumber()))
@@ -531,11 +547,19 @@ public class DetailClusteringService {
 
         clusteringResultRepository.save(newParent);
 
-        // cluster_sub_id만 변경
-        allChildrenToMove.forEach(child -> child.setClusterSubId(newClusterNumber));
-        clusteringResultRepository.saveAll(allChildrenToMove);
+        // ★ 최적화: saveAll → updateMulti, deleteAll → remove 단일 쿼리
+        mongoTemplate.updateMulti(
+                new Query(Criteria.where("session_id").is(sessionId)
+                        .and("cluster_id").is(clusterId)
+                        .and("cluster_sub_id").in(mergedClusterNumbers)
+                        .and("cluster_number").nin(mergedClusterNumbers)),
+                new Update().set("cluster_sub_id", newClusterNumber),
+                "clustering_results");
 
-        clusteringResultRepository.deleteAll(targetParents);
+        mongoTemplate.remove(
+                new Query(Criteria.where("session_id").is(sessionId)
+                        .and("cluster_number").in(mergedClusterNumbers)),
+                "clustering_results");
 
         log.info("세부 병합 클러스터 merge 완료: #{}, {}개 자식", newClusterNumber, allChildrenToMove.size());
 
@@ -572,11 +596,12 @@ public class DetailClusteringService {
             throw new BusinessException("CLUSTER_NOT_FOUND", "추가할 클러스터를 찾을 수 없습니다.");
         }
 
-        // cluster_sub_id만 변경
-        for (ClusteringResult target : targets) {
-            target.setClusterSubId(targetMergedClusterNumber);
-        }
-        clusteringResultRepository.saveAll(targets);
+        // ★ 최적화: saveAll → updateMulti 단일 쿼리
+        mongoTemplate.updateMulti(
+                new Query(Criteria.where("session_id").is(sessionId)
+                        .and("cluster_number").in(clusterNumbers)),
+                new Update().set("cluster_sub_id", targetMergedClusterNumber),
+                "clustering_results");
 
         // 부모 재계산 (부모 자신 제외)
         Query childQuery = new Query(Criteria.where("session_id").is(sessionId)
