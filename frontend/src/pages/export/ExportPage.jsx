@@ -137,6 +137,8 @@ function ExportPage() {
   const [clusterCheckedSet, setClusterCheckedSet] = useState(new Set());
   const [editingCluster, setEditingCluster] = useState(null);
   const [editingName, setEditingName] = useState('');
+  const [editingSubCluster, setEditingSubCluster] = useState(null);
+  const [editingSubName, setEditingSubName] = useState('');
 
   // 클러스터별 세부 항목 탭
   const [detailData, setDetailData] = useState([]);
@@ -253,6 +255,30 @@ function ExportPage() {
   const handleCancelEdit = () => {
     setEditingCluster(null);
     setEditingName('');
+  };
+
+  // ===== 세부클러스터명 수정 =====
+  const handleEditSubClusterName = (cluster) => {
+    setEditingSubCluster(cluster.clusterNumber);
+    setEditingSubName(cluster.subClusterName || '');
+  };
+
+  const handleSaveSubClusterName = async (clusterNumber) => {
+    try {
+      await exportService.updateClusterName(projectId, sessionId, clusterNumber, editingSubName);
+      setClusterData(prev => prev.map(c =>
+        c.clusterNumber === clusterNumber ? { ...c, subClusterName: editingSubName } : c
+      ));
+      setEditingSubCluster(null);
+      setEditingSubName('');
+    } catch (e) {
+      alert('세부클러스터명 수정 실패: ' + (e.response?.data?.message || e.message));
+    }
+  };
+
+  const handleCancelSubEdit = () => {
+    setEditingSubCluster(null);
+    setEditingSubName('');
   };
 
   // ===== 체크박스 토글 =====
@@ -619,7 +645,7 @@ function ExportPage() {
               </CardHeader>
               <CardContent className="p-0 flex-1 overflow-auto" style={{ height: 'calc(100% - 45px)' }}>
                 <div className="text-[10px] text-pink-600 px-3 py-1 bg-pink-50">
-                  * 클러스터명 클릭하여 수정 가능 | 드래그로 복수 선택
+                  * 클러스터명/세부클러스터명 클릭하여 수정 가능 | 드래그로 복수 선택
                 </div>
                 <table className="w-full text-xs">
                   <thead className="bg-gray-100 sticky top-0 z-10">
@@ -691,10 +717,34 @@ function ExportPage() {
                                   {isParent ? cluster.clusterName : ''}
                                 </span>
                               </td>
-                              <td className="px-2 py-1.5">
-                                <span className={isSub ? 'text-blue-600' : isUndef ? 'text-orange-600' : ''}>
-                                  {cluster.subClusterName}
-                                </span>
+                              <td className="px-2 py-1.5" onMouseDown={(e) => e.stopPropagation()}>
+                                {editingSubCluster === cluster.clusterNumber && isSub ? (
+                                  <div className="flex items-center gap-1">
+                                    <Input
+                                      className="h-6 text-xs flex-1 min-w-[60px]"
+                                      value={editingSubName}
+                                      onChange={(e) => setEditingSubName(e.target.value)}
+                                      onKeyDown={(e) => {
+                                        if (e.key === 'Enter') handleSaveSubClusterName(cluster.clusterNumber);
+                                        if (e.key === 'Escape') handleCancelSubEdit();
+                                      }}
+                                      autoFocus
+                                    />
+                                    <Button size="sm" variant="ghost" className="h-5 w-5 p-0 flex-shrink-0" onClick={() => handleSaveSubClusterName(cluster.clusterNumber)}>
+                                      <Save className="h-3 w-3 text-green-600" />
+                                    </Button>
+                                    <Button size="sm" variant="ghost" className="h-5 w-5 p-0 flex-shrink-0" onClick={handleCancelSubEdit}>
+                                      <X className="h-3 w-3 text-red-600" />
+                                    </Button>
+                                  </div>
+                                ) : (
+                                  <span
+                                    className={`${isSub ? 'text-blue-600 cursor-pointer hover:underline' : isUndef ? 'text-orange-600' : ''}`}
+                                    onClick={() => isSub && handleEditSubClusterName(cluster)}
+                                  >
+                                    {cluster.subClusterName}
+                                  </span>
+                                )}
                               </td>
                               <td className="px-2 py-1.5 max-w-[100px] truncate" title={(cluster.keywords || []).join(', ')}>
                                 {(cluster.keywords || []).slice(0, 3).join(', ')}
