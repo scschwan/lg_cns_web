@@ -342,13 +342,40 @@ function ClusteringPage() {
   }, [loadStatistics, loadUnmerged, clusterPageSize, loadKwStats, loadSupStats, loadMerged, loadSearchableColumns, loadKeywordHierarchy]);
 
   const refreshAll = useCallback(async () => {
-    // Phase 1: 핵심 데이터
-    await Promise.all([loadStatistics(), loadUnmerged(clusterPage, clusterPageSize, appliedSearchParams)]);
+    // Phase 1: 핵심 데이터 (검색 활성 시 advancedSearch 사용)
+    const reloadUnmerged = async () => {
+      if (appliedSearchParams) {
+        setLoading(true);
+        try {
+          const params = {
+            page: clusterPage,
+            size: clusterPageSize,
+            searchColumn: appliedSearchParams.searchColumn,
+            searchValue: appliedSearchParams.searchValue,
+            exactMatch: appliedSearchParams.exactMatch,
+            excludeValue: appliedSearchParams.excludeValue,
+            excludeExactMatch: appliedSearchParams.excludeExactMatch,
+            withinClusterNumbers: appliedSearchParams.isSearchWithin ? previousResultIds : null,
+          };
+          const r = await clusteringService.advancedSearch(projectId, sessionId, params);
+          setClusterData(r.data || []);
+          setVisibleColumns(r.columns || []);
+          setClusterTotalCount(r.totalCount || 0);
+          setClusterTotalPages(r.totalPages || 0);
+        } catch (e) { console.error(e); } finally { setLoading(false); }
+      } else {
+        await loadUnmerged(clusterPage, clusterPageSize, null);
+      }
+    };
+    await Promise.all([loadStatistics(), reloadUnmerged()]);
     // Phase 2: 보조 데이터
     await Promise.all([loadKwStats(), loadSupStats(), loadMerged()]);
-  }, [loadStatistics, loadUnmerged, clusterPage, clusterPageSize, appliedSearchParams, loadKwStats, loadSupStats, loadMerged]);
+  }, [loadStatistics, loadUnmerged, clusterPage, clusterPageSize, appliedSearchParams, previousResultIds, projectId, sessionId, loadKwStats, loadSupStats, loadMerged]);
 
-  useEffect(() => { loadAll(); }, [projectId, sessionId]);
+  /* ★ loadAll ref로 항상 최신 함수 호출 보장 */
+  const loadAllRef = useRef(loadAll);
+  useEffect(() => { loadAllRef.current = loadAll; }, [loadAll]);
+  useEffect(() => { loadAllRef.current(); }, [projectId, sessionId]);
 
   /* ============================================================
      고급 검색
@@ -969,8 +996,15 @@ function ClusteringPage() {
   const handleRename = async () => {
     if (!newClusterName.trim()) return;
     try {
-      await clusteringService.renameCluster(projectId, sessionId, renameDialog.cluster.clusterNumber, newClusterName);
-      setRenameDialog({ open: false, cluster: null }); await refreshAll();
+      const cn = renameDialog.cluster.clusterNumber;
+      const trimmedName = newClusterName.trim();
+      await clusteringService.renameCluster(projectId, sessionId, cn, trimmedName);
+      // 즉시 UI 반영 (optimistic update)
+      setMergedClusters(prev => prev.map(c =>
+        c.clusterNumber === cn ? { ...c, clusterName: trimmedName } : c
+      ));
+      setRenameDialog({ open: false, cluster: null });
+      await refreshAll();
     } catch (e) { alert('이름 변경 실패: ' + (e.response?.data?.message || e.message)); }
   };
 
