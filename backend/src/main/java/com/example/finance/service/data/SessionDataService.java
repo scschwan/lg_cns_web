@@ -418,17 +418,11 @@ public class SessionDataService {
 
         // is_hidden이 true가 아닌 행만 카운트 (is_hidden 없는 기존 데이터도 포함)
         Query countQuery = new Query(Criteria.where("session_id").is(sessionId)
-                .orOperator(
-                        Criteria.where("is_hidden").is(false),
-                        Criteria.where("is_hidden").exists(false)
-                ));
+                .and("is_hidden").ne(true));
         long totalCount = mongoTemplate.count(countQuery, "session_data");
 
         Query query = new Query(Criteria.where("session_id").is(sessionId)
-                .orOperator(
-                        Criteria.where("is_hidden").is(false),
-                        Criteria.where("is_hidden").exists(false)
-                ))
+                .and("is_hidden").ne(true))
                 .with(org.springframework.data.domain.Sort.by("_id"))
                 .skip((long) page * size)
                 .limit(size);
@@ -611,10 +605,7 @@ public class SessionDataService {
         Criteria criteria = new Criteria().andOperator(
                 Criteria.where("session_id").is(sessionId),
                 Criteria.where(fieldPath).regex(keyword, "i"),
-                new Criteria().orOperator(
-                        Criteria.where("is_hidden").is(false),
-                        Criteria.where("is_hidden").exists(false)
-                )
+                Criteria.where("is_hidden").ne(true)
         );
 
         Query query = new Query(criteria).limit(500);
@@ -647,10 +638,7 @@ public class SessionDataService {
 
         List<Document> pipeline = new ArrayList<>();
         pipeline.add(new Document("$match", new Document("session_id", sessionId)
-                .append("$or", List.of(
-                        new Document("is_hidden", false),
-                        new Document("is_hidden", new Document("$exists", false))
-                ))));
+                .append("is_hidden", new Document("$ne", true))));
         pipeline.add(new Document("$group", new Document("_id", "$" + fieldPath)
                 .append("count", new Document("$sum", 1))));
         pipeline.add(new Document("$sort", new Document("_id", 1)));
@@ -740,10 +728,7 @@ public class SessionDataService {
         // visible 값
         List<Document> visiblePipeline = new ArrayList<>();
         visiblePipeline.add(new Document("$match", new Document("session_id", sessionId)
-                .append("$or", List.of(
-                        new Document("is_hidden", false),
-                        new Document("is_hidden", new Document("$exists", false))
-                ))));
+                .append("is_hidden", new Document("$ne", true))));
         visiblePipeline.add(new Document("$group", new Document("_id", "$" + fieldPath)
                 .append("count", new Document("$sum", 1))));
         visiblePipeline.add(new Document("$sort", new Document("count", -1)));
@@ -807,10 +792,7 @@ public class SessionDataService {
         Query query = new Query(new Criteria().andOperator(
                 Criteria.where("session_id").is(sessionId),
                 Criteria.where(fieldPath).in(values),
-                new Criteria().orOperator(
-                        Criteria.where("is_hidden").is(false),
-                        Criteria.where("is_hidden").exists(false)
-                )
+                Criteria.where("is_hidden").ne(true)
         ));
 
         var result = mongoTemplate.updateMulti(query, update, "session_data");
@@ -857,10 +839,7 @@ public class SessionDataService {
 
         List<Document> pipeline = new ArrayList<>();
         pipeline.add(new Document("$match", new Document("session_id", sessionId)
-                .append("$or", List.of(
-                        new Document("is_hidden", false),
-                        new Document("is_hidden", new Document("$exists", false))
-                ))));
+                .append("is_hidden", new Document("$ne", true))));
         pipeline.add(new Document("$group", new Document("_id",
                 new Document("keyValue", "$" + keyPath)
                         .append("changeValue", "$" + changePath))
@@ -928,10 +907,7 @@ public class SessionDataService {
                     Criteria.where("session_id").is(sessionId),
                     Criteria.where(keyPath).is(keyValue),
                     Criteria.where(changePath).ne(targetValue),
-                    new Criteria().orOperator(
-                            Criteria.where("is_hidden").is(false),
-                            Criteria.where("is_hidden").exists(false)
-                    )
+                    Criteria.where("is_hidden").ne(true)
             ));
 
             org.springframework.data.mongodb.core.query.Update update =
@@ -1051,10 +1027,7 @@ public class SessionDataService {
 
         // 3. session_data 건수 조회
         Document matchFilter = new Document("session_id", sessionId)
-                .append("$or", List.of(
-                        new Document("is_hidden", false),
-                        new Document("is_hidden", new Document("$exists", false))
-                ));
+                .append("is_hidden", new Document("$ne", true));
         long totalCount = mongoTemplate.getCollection("session_data").countDocuments(matchFilter);
         log.info("처리 대상 session_data: {}건", totalCount);
 
