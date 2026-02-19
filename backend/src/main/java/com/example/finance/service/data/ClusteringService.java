@@ -595,6 +595,7 @@ public class ClusteringService {
         }
 
         String mergedName = String.join("_", allKeywords);
+        if (mergedName.length() > 30) mergedName = mergedName.substring(0, 30);
 
         ClusteringResult merged = ClusteringResult.builder()
                 .sessionId(sessionId)
@@ -731,7 +732,9 @@ public class ClusteringService {
                 totalAmount += child.getTotalAmount();
             }
             merged.setKeywords(new ArrayList<>(allKeywords));
-            merged.setClusterName(String.join("_", allKeywords));
+            String updatedName = String.join("_", allKeywords);
+            if (updatedName.length() > 30) updatedName = updatedName.substring(0, 30);
+            merged.setClusterName(updatedName);
             merged.setCount(totalCount);
             merged.setTotalAmount(totalAmount);
             merged.setDataIndices(allDataIndices);
@@ -790,6 +793,7 @@ public class ClusteringService {
         }
 
         String mergedName = String.join("_", allKeywords);
+        if (mergedName.length() > 30) mergedName = mergedName.substring(0, 30);
 
         ClusteringResult newParent = ClusteringResult.builder()
                 .sessionId(sessionId)
@@ -878,7 +882,9 @@ public class ClusteringService {
         }
 
         parent.setKeywords(new ArrayList<>(allKeywords));
-        parent.setClusterName(String.join("_", allKeywords));
+        String parentName = String.join("_", allKeywords);
+        if (parentName.length() > 30) parentName = parentName.substring(0, 30);
+        parent.setClusterName(parentName);
         parent.setCount(totalCount);
         parent.setTotalAmount(totalAmount);
         parent.setDataIndices(allDataIndices);
