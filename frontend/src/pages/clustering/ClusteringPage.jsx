@@ -255,6 +255,13 @@ function ClusteringPage() {
 
   /* 다이얼로그 */
   const [detailDialog, setDetailDialog] = useState({ open: false, cluster: null });
+  const [detailChildren, setDetailChildren] = useState([]);
+  const [detailVisibleCols, setDetailVisibleCols] = useState([]);
+  const [detailPage, setDetailPage] = useState(0);
+  const [detailPageSize] = useState(50);
+  const [detailTotalCount, setDetailTotalCount] = useState(0);
+  const [detailTotalPages, setDetailTotalPages] = useState(0);
+  const [detailLoading, setDetailLoading] = useState(false);
   const [detailChecked, setDetailChecked] = useState(new Set());
   const [detailDragging, setDetailDragging] = useState(false);
   const detailDragStart = useRef(null);
@@ -936,12 +943,30 @@ function ClusteringPage() {
   /* ============================================================
      병합 상세 다이얼로그 - 부분 해제 + 드래그 선택
      ============================================================ */
+  const loadDetailChildren = useCallback(async (clusterNumber, page) => {
+    setDetailLoading(true);
+    try {
+      const data = await clusteringService.getMergedClusterChildren(projectId, sessionId, clusterNumber, page, detailPageSize);
+      setDetailChildren(data.children || []);
+      setDetailVisibleCols(data.columns || []);
+      setDetailTotalCount(data.totalCount || 0);
+      setDetailTotalPages(data.totalPages || 0);
+      setDetailPage(page);
+    } catch (e) {
+      console.error('[loadDetailChildren] 에러:', e);
+      setDetailChildren([]);
+    } finally {
+      setDetailLoading(false);
+    }
+  }, [projectId, sessionId, detailPageSize]);
+
   const handleOpenDetail = (cluster) => {
     setDetailDialog({ open: true, cluster });
     setDetailChecked(new Set());
     setDetailDragging(false);
     detailDragStart.current = null;
     detailDragAction.current = null;
+    loadDetailChildren(cluster.clusterNumber, 0);
   };
 
   const handleDetailRowMouseDown = useCallback((row, idx, e) => {
@@ -970,20 +995,19 @@ function ClusteringPage() {
 
   const handleDetailRowMouseEnter = useCallback((row, idx, e) => {
     if (!detailDragging || detailDragStart.current === null) return;
-    const children = detailDialog.cluster?.children || [];
     const lo = Math.min(detailDragStart.current, idx);
     const hi = Math.max(detailDragStart.current, idx);
     const action = detailDragAction.current;
     setDetailChecked(prev => {
       const next = new Set(prev);
       for (let i = lo; i <= hi; i++) {
-        const cn = children[i]?.clusterNumber;
+        const cn = detailChildren[i]?.clusterNumber;
         if (cn == null) continue;
         action === 'check' ? next.add(cn) : next.delete(cn);
       }
       return next;
     });
-  }, [detailDragging, detailDialog.cluster]);
+  }, [detailDragging, detailChildren]);
 
   const handlePartialUnmerge = async () => {
     if (detailChecked.size === 0) { alert('해제할 항목을 선택하세요.'); return; }
@@ -1091,7 +1115,7 @@ function ClusteringPage() {
 
   /* 상세 다이얼로그 컬럼 (체크박스 + 동적) */
   const detailColumns = useMemo(() => {
-    const all = detailDialog.cluster?.children?.length || 0;
+    const all = detailChildren.length;
     const isAllChecked = detailChecked.size === all && all > 0;
     const isIndeterminate = detailChecked.size > 0 && detailChecked.size < all;
     const cols = [
@@ -1102,7 +1126,7 @@ function ClusteringPage() {
             checked={isAllChecked}
             ref={el => { if (el) el.indeterminate = isIndeterminate; }}
             onCheckedChange={c => {
-              if (c) setDetailChecked(new Set((detailDialog.cluster?.children || []).map(ch => ch.clusterNumber)));
+              if (c) setDetailChecked(new Set(detailChildren.map(ch => ch.clusterNumber)));
               else setDetailChecked(new Set());
             }}
           />
@@ -1119,15 +1143,14 @@ function ClusteringPage() {
       { key: 'count', label: 'Count', sortable: false, width: 70, cellClassName: 'text-right', render: r => <span className="block text-right text-xs">{(r.count||0).toLocaleString()}</span> },
       { key: 'totalAmount', label: `금액(${amountUnit})`, sortable: false, width: 100, cellClassName: 'text-right', render: r => <span className="block text-right text-xs">{formatAmount(r.totalAmount||0)}</span> },
     ];
-    const visCols = detailDialog.cluster?.columns || [];
-    for (const colName of visCols) {
+    for (const colName of detailVisibleCols) {
       cols.push({
         key: `rep_${colName}`, label: colName, sortable: false, minWidth: 80,
         render: r => { const v = r.representativeData?.[colName]; return <span className="text-xs whitespace-nowrap">{v != null ? String(v) : ''}</span>; },
       });
     }
     return cols;
-  }, [detailDialog.cluster, detailChecked, amountUnit, formatAmount]);
+  }, [detailChildren, detailVisibleCols, detailChecked, amountUnit, formatAmount]);
 
   /* ============================================================
      렌더
@@ -1774,19 +1797,47 @@ function ClusteringPage() {
               {detailChecked.size > 0 && `${detailChecked.size}개 선택됨`}
             </span>
           </div>
-          {/* 테이블 컨테이너 - 고정 높이로 스크롤 영역 확보 */}
-          <div className="border rounded-md" style={{ height: 'calc(80vh - 220px)', minHeight: '200px' }}>
-            <AdvancedTable
-              columns={detailColumns}
-              data={detailDialog.cluster?.children || []}
-              rowKey={r => r.clusterNumber}
-              emptyMessage="하위 클러스터가 없습니다."
-              rowClassName={r => detailChecked.has(r.clusterNumber) ? 'bg-blue-50' : ''}
-              onRowMouseDown={handleDetailRowMouseDown}
-              onRowMouseEnter={handleDetailRowMouseEnter}
-              maxHeight="100%"
-            />
+          {/* 테이블 컨테이너 */}
+          <div className="border rounded-md" style={{ height: 'calc(80vh - 280px)', minHeight: '200px' }}>
+            {detailLoading ? (
+              <div className="flex flex-col items-center justify-center h-full gap-2">
+                <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                <span className="text-xs text-muted-foreground">하위 클러스터 조회중...</span>
+              </div>
+            ) : (
+              <AdvancedTable
+                columns={detailColumns}
+                data={detailChildren}
+                rowKey={r => r.clusterNumber}
+                emptyMessage="하위 클러스터가 없습니다."
+                rowClassName={r => detailChecked.has(r.clusterNumber) ? 'bg-blue-50' : ''}
+                onRowMouseDown={handleDetailRowMouseDown}
+                onRowMouseEnter={handleDetailRowMouseEnter}
+                maxHeight="100%"
+              />
+            )}
           </div>
+          {/* 페이징 */}
+          {detailTotalPages > 1 && (
+            <div className="flex items-center justify-between pt-2 text-xs">
+              <span className="text-muted-foreground">
+                총 {detailTotalCount.toLocaleString()}개 중 {detailPage * detailPageSize + 1}-{Math.min((detailPage + 1) * detailPageSize, detailTotalCount)}
+              </span>
+              <div className="flex items-center gap-1">
+                <Button size="sm" variant="outline" className="h-7 px-2 text-xs"
+                  disabled={detailPage === 0 || detailLoading}
+                  onClick={() => loadDetailChildren(detailDialog.cluster.clusterNumber, detailPage - 1)}>
+                  이전
+                </Button>
+                <span className="px-2">{detailPage + 1} / {detailTotalPages}</span>
+                <Button size="sm" variant="outline" className="h-7 px-2 text-xs"
+                  disabled={detailPage >= detailTotalPages - 1 || detailLoading}
+                  onClick={() => loadDetailChildren(detailDialog.cluster.clusterNumber, detailPage + 1)}>
+                  다음
+                </Button>
+              </div>
+            </div>
+          )}
         </DialogContent>
       </Dialog>
 
