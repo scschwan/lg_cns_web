@@ -346,9 +346,15 @@ public class ExcelWorkerHandler implements RequestHandler<SQSEvent, String> {
             Cell cell = row.getCell(i);
             String header = headers.get(i);
             Object value = getCellValue(cell);
-            // StreamingCell@xxx 오염 방어: 값이 객체 참조 문자열이면 null 처리
-            if (value != null && value.toString().contains("StreamingCell@")) {
-                value = null;
+            // 오염 방어: 객체 참조 문자열이거나 셀 타입 문자열이면 null 처리
+            if (value instanceof String) {
+                String sv = (String) value;
+                if (sv.trim().isEmpty()
+                        || sv.contains("StreamingCell@")
+                        || sv.contains("Cell@")
+                        || sv.matches(".*\\w+Cell@[0-9a-fA-F]+.*")) {
+                    value = null;
+                }
             }
             data.put(header, value);
         }
@@ -367,7 +373,13 @@ public class ExcelWorkerHandler implements RequestHandler<SQSEvent, String> {
     private Object getCellValue(Cell cell) {
         if (cell == null) return null;
         switch (cell.getCellType()) {
-            case STRING: return cell.getStringCellValue();
+            case STRING:
+                String strVal = cell.getStringCellValue();
+                // 빈 문자열이거나 공백만 있으면 null 처리
+                if (strVal == null || strVal.trim().isEmpty()) {
+                    return null;
+                }
+                return strVal;
             case NUMERIC:
                 if (DateUtil.isCellDateFormatted(cell)) {
                     return cell.getDateCellValue().toInstant()
@@ -380,7 +392,9 @@ public class ExcelWorkerHandler implements RequestHandler<SQSEvent, String> {
             case FORMULA:
                 // StreamingReader는 수식 평가를 지원하지 않으므로 캐시된 값 추출 시도
                 try {
-                    return cell.getStringCellValue();
+                    String fVal = cell.getStringCellValue();
+                    if (fVal == null || fVal.trim().isEmpty()) return null;
+                    return fVal;
                 } catch (Exception e1) {
                     try {
                         return cell.getNumericCellValue();
@@ -390,26 +404,21 @@ public class ExcelWorkerHandler implements RequestHandler<SQSEvent, String> {
                 }
             case BLANK: return null;
             default:
-                // StreamingCell은 toString()이 오버라이드되지 않아 객체 참조가 반환됨
-                // getStringCellValue()로 실제 값 추출 시도
-                try {
-                    return cell.getStringCellValue();
-                } catch (Exception e) {
-                    return null;
-                }
+                // 알 수 없는 셀 타입은 null 처리 (cell.toString() 호출 시 객체 참조 문자열 오염 방지)
+                return null;
         }
     }
 
     private String getCellValueAsString(Cell cell) {
         Object value = getCellValue(cell);
-        if (value != null && value.toString().contains("StreamingCell@")) {
-            // 오염된 값이면 getStringCellValue()로 재시도
-            try {
-                return cell.getStringCellValue();
-            } catch (Exception e) {
-                return null;
-            }
+        if (value == null) return null;
+        String str = value.toString();
+        // 오염된 값(객체 참조 문자열) 또는 빈 문자열이면 null 처리
+        if (str.trim().isEmpty()
+                || str.contains("Cell@")
+                || str.matches(".*\\w+Cell@[0-9a-fA-F]+.*")) {
+            return null;
         }
-        return value != null ? value.toString() : null;
+        return str;
     }
 }

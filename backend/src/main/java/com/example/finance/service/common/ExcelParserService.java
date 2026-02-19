@@ -216,7 +216,12 @@ public class ExcelParserService {
 
         switch (cell.getCellType()) {
             case STRING:
-                return cell.getStringCellValue();
+                String strVal = cell.getStringCellValue();
+                // 빈 문자열이거나 공백만 있으면 null 처리
+                if (strVal == null || strVal.trim().isEmpty()) {
+                    return null;
+                }
+                return strVal;
 
             case NUMERIC:
                 if (DateUtil.isCellDateFormatted(cell)) {
@@ -235,7 +240,8 @@ public class ExcelParserService {
                 return null;
 
             default:
-                return cell.toString();
+                // cell.toString()은 객체 참조 문자열(StringCell 등)을 반환할 수 있으므로 null 처리
+                return null;
         }
     }
 
