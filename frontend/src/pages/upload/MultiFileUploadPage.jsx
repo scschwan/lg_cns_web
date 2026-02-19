@@ -65,7 +65,7 @@ import ProgressDialog from '../../components/common/ProgressDialog';
  * - 테이블 본체: 세로 스크롤 + 가로 스크롤(스크롤바 숨김)
  * - 바깥 스크롤바: 테이블 아래 고정, 양방향 동기화
  */
-function ScrollSyncTable({ children, minWidth = '1200px', maxHeight = '700px' }) {
+function ScrollSyncTable({ children, minWidth = '1200px', maxHeight = '500px' }) {
     return (
         <div className="border-t overflow-auto" style={{ maxHeight }}>
             <div style={{ minWidth }}>
@@ -791,7 +791,7 @@ function MultiFileUploadPage() {
                             <CardHeader>
                                 <CardTitle className="text-lg">업로드된 파일 목록</CardTitle>
                             </CardHeader>
-                            <CardContent className="p-0" style={{ maxHeight: '50vh', overflow: 'auto' }}>
+                            <CardContent className="p-0" style={{ maxHeight: '30vh', overflow: 'auto' }}>
                                 {files.length === 0 ? (
                                     <div className="text-center py-12 px-6">
                                         <FileText className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
@@ -1019,7 +1019,7 @@ function MultiFileUploadPage() {
                                         </p>
                                     </div>
                                 ) : (
-                                    <ScrollSyncTable minWidth="1200px" maxHeight="700px">
+                                    <ScrollSyncTable minWidth="1200px" maxHeight="500px">
                                         <Table>
                                             <TableHeader className="sticky top-0 bg-background z-10">
                                                 <TableRow>
