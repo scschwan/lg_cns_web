@@ -202,6 +202,7 @@ function DetailClusteringPage() {
   const supDragRef = useRef(null);
 
   const [mergedClusters, setMergedClusters] = useState([]);
+  const [mergedLoading, setMergedLoading] = useState(false);
   const [selectedMerged, setSelectedMerged] = useState(new Set());
 
   const [detailDialog, setDetailDialog] = useState({ open: false, cluster: null });
@@ -251,7 +252,9 @@ function DetailClusteringPage() {
   }, [projectId, sessionId, clusterId]);
 
   const loadMerged = useCallback(async () => {
+    setMergedLoading(true);
     try { setMergedClusters(await detailClusteringService.getMergedClusters(projectId, sessionId, clusterId) || []); } catch (e) { console.error(e); }
+    finally { setMergedLoading(false); }
   }, [projectId, sessionId, clusterId]);
 
   const loadSearchableColumns = useCallback(async () => {
@@ -791,7 +794,10 @@ function DetailClusteringPage() {
               <Card className="flex-1 flex flex-col min-h-0 overflow-hidden shadow-sm">
                 <CardHeader className="py-2 px-3 border-b flex-shrink-0">
                   <div className="flex items-center justify-between gap-1">
-                    <CardTitle className="text-sm font-bold">세부 병합 결과 ({mergedClusters.length})</CardTitle>
+                    <CardTitle className="text-sm font-bold flex items-center gap-1">
+                      세부 병합 결과 ({mergedClusters.length})
+                      {mergedLoading && <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />}
+                    </CardTitle>
                     <div className="flex items-center gap-1">
                       <div className="relative">
                         <Button size="sm" variant="outline" className="h-7 px-2 text-xs min-w-[120px] relative overflow-hidden" onClick={handleMergeMerged} disabled={selectedMerged.size < 2 || merging}>
@@ -809,7 +815,12 @@ function DetailClusteringPage() {
                   </div>
                 </CardHeader>
                 <CardContent className="p-0 flex-1 overflow-auto">
-                  {mergedClusters.length === 0 ? <div className="text-center py-8 text-xs text-muted-foreground">세부 병합된 클러스터가 없습니다</div> : (
+                  {mergedLoading ? (
+                    <div className="flex flex-col items-center justify-center py-10 gap-2">
+                      <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                      <span className="text-xs text-muted-foreground">세부 병합 결과 조회중...</span>
+                    </div>
+                  ) : mergedClusters.length === 0 ? <div className="text-center py-8 text-xs text-muted-foreground">세부 병합된 클러스터가 없습니다</div> : (
                     <div className="text-xs">
                       <div className="grid grid-cols-[28px_1fr_60px_90px_60px] gap-1 items-center px-2 py-2 border-b bg-gray-100 font-semibold text-muted-foreground sticky top-0 z-10">
                         <Checkbox checked={selectedMerged.size === mergedClusters.length && mergedClusters.length > 0} disabled={merging && mergingClusters.size > 0} onCheckedChange={c => { if (c) setSelectedMerged(new Set(mergedClusters.map(m => m.clusterNumber))); else setSelectedMerged(new Set()); }} />
