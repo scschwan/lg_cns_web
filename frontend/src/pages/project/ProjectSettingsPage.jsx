@@ -547,10 +547,24 @@ const ProjectSettingsPage = () => {
                             {file.detectedColumns?.length || 0}
                           </TableCell>
                           <TableCell>
-                            {file.accountColumnName || '-'}
+                            {(file.uploadStatus === 'PROCESSING' || (!file.detectedColumns?.length && !file.rowCount)) ? (
+                              <div className="flex items-center gap-2 text-sm text-amber-600">
+                                <Loader2 className="h-4 w-4 animate-spin" />
+                                <span>데이터 업로드 중</span>
+                              </div>
+                            ) : (
+                              file.accountColumnName || '-'
+                            )}
                           </TableCell>
                           <TableCell>
-                            {file.amountColumnName || '-'}
+                            {(file.uploadStatus === 'PROCESSING' || (!file.detectedColumns?.length && !file.rowCount)) ? (
+                              <div className="flex items-center gap-2 text-sm text-amber-600">
+                                <Loader2 className="h-4 w-4 animate-spin" />
+                                <span>데이터 업로드 중</span>
+                              </div>
+                            ) : (
+                              file.amountColumnName || '-'
+                            )}
                           </TableCell>
                           <TableCell className="text-muted-foreground text-sm">
                             {formatDate(file.uploadedAt)}
