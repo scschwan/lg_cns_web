@@ -341,10 +341,23 @@ public class ClusteringService {
         try {
         // ★ 최적화: 전체 클러스터 로드 대신 cluster_id > 0 (병합 그룹)만 DB에서 조회
         // session_cluster_id_idx 인덱스 활용
+        // ★ data_indices는 첫 번째 요소만 사용하므로 $slice(1)로 제한하여 메모리/전송량 절감
         Query mergedQuery = new Query(
                 Criteria.where("session_id").is(sessionId)
                         .and("cluster_id").gt(0))
                 .with(Sort.by("cluster_number"));
+        mergedQuery.fields()
+                .include("session_id")
+                .include("cluster_number")
+                .include("cluster_id")
+                .include("cluster_sub_id")
+                .include("cluster_name")
+                .include("keywords")
+                .include("count")
+                .include("total_amount")
+                .include("supplier")
+                .include("department")
+                .slice("data_indices", 1);
         List<ClusteringResult> mergedGroupMembers = mongoTemplate.find(mergedQuery, ClusteringResult.class);
 
         log.info("getMergedClusters: 병합 그룹 멤버 {}개 조회", mergedGroupMembers.size());
