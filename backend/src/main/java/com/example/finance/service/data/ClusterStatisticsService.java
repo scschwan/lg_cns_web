@@ -186,61 +186,57 @@ public class ClusterStatisticsService {
 
     /**
      * process_view_data에서 코스트센터/공급업체별 집계 수행
-     * DocumentDB는 $facet을 지원하지 않으므로 별도 쿼리 2회로 분리
+     * money 필드가 String 타입이고 DocumentDB는 $toDouble 미지원이므로
+     * DB에서 원본 조회 후 Java에서 집계한다.
      */
     private AggregationResult aggregateFromProcessViewData(String sessionId, List<String> rawDataIds) {
         AggregationResult aggResult = new AggregationResult();
 
-        Document matchStage = new Document("$match", new Document("session_id", sessionId)
-                .append("raw_data_id", new Document("$in", rawDataIds)));
-
-        // 코스트센터별 집계
-        List<Document> ccPipeline = Arrays.asList(
-                matchStage,
-                new Document("$group", new Document("_id", "$department")
-                        .append("count", new Document("$sum", 1))
-                        .append("totalAmount", new Document("$sum",
-                                new Document("$ifNull", Arrays.asList("$money", 0))))),
-                new Document("$sort", new Document("totalAmount", -1))
-        );
-
-        List<Document> ccResults = mongoTemplate.getCollection("process_view_data")
-                .aggregate(ccPipeline)
+        // 필요한 필드만 projection하여 조회
+        List<Document> docs = mongoTemplate.getCollection("process_view_data")
+                .find(new Document("session_id", sessionId)
+                        .append("raw_data_id", new Document("$in", rawDataIds)))
+                .projection(new Document("department", 1).append("supplier", 1).append("money", 1))
                 .into(new ArrayList<>());
 
-        for (Document doc : ccResults) {
-            String name = doc.getString("_id");
-            if (name == null || name.isBlank()) name = "(미지정)";
-            aggResult.costCenters.add(BreakdownItem.builder()
-                    .name(name)
-                    .count(doc.getInteger("count", 0))
-                    .totalAmount(toDouble(doc.get("totalAmount")))
-                    .build());
+        // 코스트센터별 집계 (department 기준)
+        Map<String, long[]> ccMap = new LinkedHashMap<>();  // name -> [count, totalAmount(x100 정수)]
+        // 공급업체별 집계 (supplier 기준)
+        Map<String, long[]> supMap = new LinkedHashMap<>();
+
+        for (Document doc : docs) {
+            double money = toDouble(doc.get("money"));
+
+            String dept = doc.getString("department");
+            if (dept == null || dept.isBlank()) dept = "(미지정)";
+            ccMap.computeIfAbsent(dept, k -> new long[2]);
+            ccMap.get(dept)[0]++;
+            ccMap.get(dept)[1] += Math.round(money);
+
+            String sup = doc.getString("supplier");
+            if (sup == null || sup.isBlank()) sup = "(미지정)";
+            supMap.computeIfAbsent(sup, k -> new long[2]);
+            supMap.get(sup)[0]++;
+            supMap.get(sup)[1] += Math.round(money);
         }
 
-        // 공급업체별 집계
-        List<Document> supPipeline = Arrays.asList(
-                matchStage,
-                new Document("$group", new Document("_id", "$supplier")
-                        .append("count", new Document("$sum", 1))
-                        .append("totalAmount", new Document("$sum",
-                                new Document("$ifNull", Arrays.asList("$money", 0))))),
-                new Document("$sort", new Document("totalAmount", -1))
-        );
+        // 코스트센터 결과 변환 (금액 내림차순)
+        ccMap.entrySet().stream()
+                .sorted((a, b) -> Long.compare(b.getValue()[1], a.getValue()[1]))
+                .forEach(e -> aggResult.costCenters.add(BreakdownItem.builder()
+                        .name(e.getKey())
+                        .count((int) e.getValue()[0])
+                        .totalAmount((double) e.getValue()[1])
+                        .build()));
 
-        List<Document> supResults = mongoTemplate.getCollection("process_view_data")
-                .aggregate(supPipeline)
-                .into(new ArrayList<>());
-
-        for (Document doc : supResults) {
-            String name = doc.getString("_id");
-            if (name == null || name.isBlank()) name = "(미지정)";
-            aggResult.suppliers.add(BreakdownItem.builder()
-                    .name(name)
-                    .count(doc.getInteger("count", 0))
-                    .totalAmount(toDouble(doc.get("totalAmount")))
-                    .build());
-        }
+        // 공급업체 결과 변환 (금액 내림차순)
+        supMap.entrySet().stream()
+                .sorted((a, b) -> Long.compare(b.getValue()[1], a.getValue()[1]))
+                .forEach(e -> aggResult.suppliers.add(BreakdownItem.builder()
+                        .name(e.getKey())
+                        .count((int) e.getValue()[0])
+                        .totalAmount((double) e.getValue()[1])
+                        .build()));
 
         return aggResult;
     }
