@@ -56,6 +56,8 @@ public class ClusterStatisticsService {
             return;
         }
 
+        String projectId = session.getProjectId();
+
         String accountName = (session.getAccountNames() != null && !session.getAccountNames().isEmpty())
                 ? String.join(", ", session.getAccountNames())
                 : "-";
@@ -101,6 +103,7 @@ public class ClusterStatisticsService {
             AggregationResult aggResult = aggregateFromProcessViewData(sessionId, dataIndices);
 
             statisticsList.add(ClusterStatistics.builder()
+                    .projectId(projectId)
                     .sessionId(sessionId)
                     .clusterNumber(cluster.getClusterNumber())
                     .parentClusterNumber(null)
@@ -128,6 +131,7 @@ public class ClusterStatisticsService {
             AggregationResult aggResult = aggregateFromProcessViewData(sessionId, dataIndices);
 
             statisticsList.add(ClusterStatistics.builder()
+                    .projectId(projectId)
                     .sessionId(sessionId)
                     .clusterNumber(subParent.getClusterNumber())
                     .parentClusterNumber(parentNumber)
@@ -156,6 +160,7 @@ public class ClusterStatisticsService {
                     .sum();
 
             statisticsList.add(ClusterStatistics.builder()
+                    .projectId(projectId)
                     .sessionId(sessionId)
                     .clusterNumber(null)
                     .parentClusterNumber(null)
