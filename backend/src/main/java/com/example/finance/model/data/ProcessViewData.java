@@ -28,6 +28,7 @@ import java.util.List;
 @NoArgsConstructor
 @AllArgsConstructor
 @CompoundIndex(name = "session_raw_idx", def = "{'session_id': 1, 'raw_data_id': 1}")
+@CompoundIndex(name = "session_keyword_idx", def = "{'session_id': 1, 'keywords.final_keywords': 1}")
 public class ProcessViewData {
 
     @Id

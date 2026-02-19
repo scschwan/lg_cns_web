@@ -243,27 +243,33 @@ public class DataTransformService {
         }
 
         // 3. session_data 조회
+        // $ne:true는 is_hidden이 false/null/미존재 모두 매칭 + 인덱스 활용 가능
         Criteria criteria = Criteria.where("session_id").is(sessionId)
-                .orOperator(
-                        Criteria.where("is_hidden").is(false),
-                        Criteria.where("is_hidden").exists(false)
-                );
+                .and("is_hidden").ne(true);
 
         if (filteredRawDataIds != null) {
             criteria = criteria.and("raw_data_id").in(filteredRawDataIds);
         }
 
-        Query countQuery = new Query(criteria);
-        long totalCount = mongoTemplate.count(countQuery, "session_data");
-
+        // 4. 프로젝션 설정: 필요한 필드만 조회 (전체 data 맵 대신 visible 컬럼만)
         Query query = new Query(criteria)
                 .with(Sort.by("_id"))
                 .skip((long) page * size)
                 .limit(size);
 
+        // visible columns만 projection하여 네트워크 전송량 감소
+        query.fields().include("row_number").include("raw_data_id");
+        for (String col : visibleColumns) {
+            query.fields().include("data." + col);
+        }
+
+        // count와 data를 병렬로 실행할 수 없으므로, count는 인덱스로 빠르게 처리
+        Query countQuery = new Query(criteria);
+        long totalCount = mongoTemplate.count(countQuery, "session_data");
+
         List<Document> documents = mongoTemplate.find(query, Document.class, "session_data");
 
-        // 4. 각 row의 raw_data_id 수집 → process_view_data에서 키워드 조회
+        // 5. 각 row의 raw_data_id 수집 → process_view_data에서 키워드 조회
         List<Map<String, Object>> rows = new ArrayList<>();
         Map<String, String> rowToRawDataId = new LinkedHashMap<>();
 
@@ -287,7 +293,7 @@ public class DataTransformService {
             }
         }
 
-        // 5. process_view_data에서 keywords.final_keywords 조회 (배치)
+        // 6. process_view_data에서 keywords.final_keywords 조회 (배치)
         if (!rowToRawDataId.isEmpty()) {
             Set<String> rawIds = new HashSet<>(rowToRawDataId.values());
             Query kwQuery = new Query(
@@ -333,6 +339,7 @@ public class DataTransformService {
         result.put("totalPages", (int) Math.ceil((double) totalCount / size));
         result.put("elapsedMs", System.currentTimeMillis() - start);
 
+        log.info("원본 데이터 조회 완료: {}건/{}건, {}ms", rows.size(), totalCount, System.currentTimeMillis() - start);
         return result;
     }
 

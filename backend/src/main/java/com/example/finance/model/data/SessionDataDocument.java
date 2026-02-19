@@ -22,7 +22,8 @@ import java.util.Map;
         @CompoundIndex(name = "session_row_idx", def = "{'session_id': 1, 'row_number': 1}"),
         @CompoundIndex(name = "project_session_idx", def = "{'project_id': 1, 'session_id': 1}"),
         @CompoundIndex(name = "session_upload_idx", def = "{'session_id': 1, 'upload_id': 1}"),
-        @CompoundIndex(name = "raw_data_ref_idx", def = "{'raw_data_id': 1}")
+        @CompoundIndex(name = "raw_data_ref_idx", def = "{'raw_data_id': 1}"),
+        @CompoundIndex(name = "session_hidden_idx", def = "{'session_id': 1, 'is_hidden': 1}")
 })
 public class SessionDataDocument {
 
