@@ -250,6 +250,7 @@ function ClusteringPage() {
 
   /* 병합 결과 */
   const [mergedClusters, setMergedClusters] = useState([]);
+  const [mergedLoading, setMergedLoading] = useState(false);
   const [selectedMerged, setSelectedMerged] = useState(new Set());
 
   /* 다이얼로그 */
@@ -308,6 +309,7 @@ function ClusteringPage() {
   }, [projectId, sessionId]);
 
   const loadMerged = useCallback(async () => {
+    setMergedLoading(true);
     try {
       const data = await clusteringService.getMergedClusters(projectId, sessionId);
       console.log('[loadMerged] 응답:', data, '개수:', Array.isArray(data) ? data.length : 'not array');
@@ -315,6 +317,8 @@ function ClusteringPage() {
     } catch (e) {
       console.error('[loadMerged] 에러:', e);
       setMergedClusters([]);
+    } finally {
+      setMergedLoading(false);
     }
   }, [projectId, sessionId]);
 
@@ -1568,7 +1572,10 @@ function ClusteringPage() {
               <Card className="flex-1 flex flex-col min-h-0 overflow-hidden shadow-sm">
                 <CardHeader className="py-2 px-3 border-b flex-shrink-0">
                   <div className="flex items-center justify-between gap-1">
-                    <CardTitle className="text-sm font-bold">병합 결과 ({mergedClusters.length})</CardTitle>
+                    <CardTitle className="text-sm font-bold flex items-center gap-1">
+                      병합 결과 ({mergedClusters.length})
+                      {mergedLoading && <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />}
+                    </CardTitle>
                     <div className="flex items-center gap-1">
                       {/* 병합 merge 버튼 with 프로그레스바 */}
                       <div className="relative">
@@ -1607,7 +1614,12 @@ function ClusteringPage() {
                   </div>
                 </CardHeader>
                 <CardContent className="p-0 flex-1 overflow-auto">
-                  {mergedClusters.length === 0 ? (
+                  {mergedLoading ? (
+                    <div className="flex flex-col items-center justify-center py-10 gap-2">
+                      <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                      <span className="text-xs text-muted-foreground">병합 결과 조회중...</span>
+                    </div>
+                  ) : mergedClusters.length === 0 ? (
                     <div className="text-center py-8 text-xs text-muted-foreground">병합된 클러스터가 없습니다</div>
                   ) : (
                     <div className="text-xs">
