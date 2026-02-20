@@ -204,6 +204,33 @@ public class CostReductionDashboardService {
     }
 
     /**
+     * 리스트 잠금 해제 (Long List + Short List 동시 잠금 해제)
+     * - 단계를 SHORT_LIST로 되돌림
+     */
+    public DashboardStatusResponse unlockList(String projectId, String userId) {
+        CostReductionDashboard dashboard = getOrCreateDashboard(projectId);
+        dashboard.setIsListLocked(false);
+        dashboard.setCurrentPhase(CostReductionPhase.SHORT_LIST.name());
+        dashboard.setUpdatedAt(LocalDateTime.now());
+        dashboardRepository.save(dashboard);
+
+        log.info("List unlocked: projectId={}, userId={}", projectId, userId);
+
+        String lockKey = LOCK_KEY_PREFIX + projectId;
+        Object currentEditor = redisService.get(lockKey);
+        boolean isEditor = userId.equals(currentEditor);
+
+        return DashboardStatusResponse.builder()
+                .projectId(projectId)
+                .currentPhase(dashboard.getCurrentPhase())
+                .isListLocked(false)
+                .isEditor(isEditor)
+                .editorUserId(dashboard.getEditorUserId())
+                .editorUserName(dashboard.getEditorUserName())
+                .build();
+    }
+
+    /**
      * 대시보드 잠금 상태 확인 (세션 완료 시 사전 체크용)
      * - 대시보드 존재 여부 + 현재 편집자 잠금 여부 반환
      */
