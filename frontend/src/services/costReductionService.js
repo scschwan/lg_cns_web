@@ -36,6 +36,40 @@ const costReductionService = {
     const response = await api.post(`/api/projects/${projectId}/dashboard/lock/release`);
     return response.data;
   },
+
+  // ===== Long List =====
+
+  getLongListTree: async (projectId) => {
+    const response = await api.get(`/api/projects/${projectId}/longlist/tree`);
+    return response.data;
+  },
+
+  getLongListStats: async (projectId) => {
+    const response = await api.get(`/api/projects/${projectId}/longlist/stats`);
+    return response.data;
+  },
+
+  getLongListChart: async (projectId, statisticsId, top = 5) => {
+    const response = await api.get(`/api/projects/${projectId}/longlist/chart/${statisticsId}`, {
+      params: { top },
+    });
+    return response.data;
+  },
+
+  getLongListItemStats: async (projectId, statisticsId) => {
+    const response = await api.get(`/api/projects/${projectId}/longlist/item-stats/${statisticsId}`);
+    return response.data;
+  },
+
+  saveLongListSelections: async (projectId, items) => {
+    const response = await api.post(`/api/projects/${projectId}/longlist/save`, { items });
+    return response.data;
+  },
+
+  getLongListSelections: async (projectId) => {
+    const response = await api.get(`/api/projects/${projectId}/longlist/selections`);
+    return response.data;
+  },
 };
 
 export default costReductionService;
