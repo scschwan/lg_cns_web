@@ -4,8 +4,10 @@ import com.example.finance.dto.request.costreduction.SaveListRequest;
 import com.example.finance.dto.response.costreduction.*;
 import com.example.finance.model.costreduction.LongShortList;
 import com.example.finance.model.data.ClusterStatistics;
+import com.example.finance.model.session.FileSession;
 import com.example.finance.repository.costreduction.LongShortListRepository;
 import com.example.finance.repository.data.ClusterStatisticsRepository;
+import com.example.finance.repository.session.FileSessionRepository;
 import com.example.finance.service.common.RedisService;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -25,6 +27,7 @@ public class LongListService {
 
     private final ClusterStatisticsRepository clusterStatisticsRepository;
     private final LongShortListRepository longShortListRepository;
+    private final FileSessionRepository fileSessionRepository;
     private final RedisService redisService;
     private final ObjectMapper objectMapper;
 
@@ -47,7 +50,7 @@ public class LongListService {
         }
 
         // cluster_statistics에서 Level 2, 3 데이터 조회
-        List<ClusterStatistics> allStats = clusterStatisticsRepository.findByProjectId(projectId);
+        List<ClusterStatistics> allStats = findStatsByProject(projectId);
         List<ClusterStatistics> level2Stats = allStats.stream()
                 .filter(s -> s.getLevel() == 2).toList();
         List<ClusterStatistics> level3Stats = allStats.stream()
@@ -121,7 +124,7 @@ public class LongListService {
      * 전체 요약 통계
      */
     public LongListStatsResponse getStats(String projectId) {
-        List<ClusterStatistics> allStats = clusterStatisticsRepository.findByProjectId(projectId);
+        List<ClusterStatistics> allStats = findStatsByProject(projectId);
 
         List<ClusterStatistics> level1Stats = allStats.stream()
                 .filter(s -> s.getLevel() == 1).toList();
@@ -192,7 +195,8 @@ public class LongListService {
                 .orElseThrow(() -> new RuntimeException("통계 데이터를 찾을 수 없습니다: " + statisticsId));
 
         // 전체 프로젝트 금액 (비율 계산용)
-        List<ClusterStatistics> level1Stats = clusterStatisticsRepository.findByProjectIdAndLevel(projectId, 1);
+        List<ClusterStatistics> level1Stats = findStatsByProject(projectId).stream()
+                .filter(s -> s.getLevel() == 1).toList();
         double projectTotal = level1Stats.stream()
                 .mapToDouble(s -> s.getTotalAmount() != null ? s.getTotalAmount() : 0.0)
                 .sum();
@@ -278,6 +282,45 @@ public class LongListService {
                 .costCenterCount(stats.getCostCenterCount())
                 .children(new ArrayList<>())
                 .build();
+    }
+
+    /**
+     * projectId로 cluster_statistics 조회.
+     * project_id가 없는 기존 데이터는 sessionId 기반으로 fallback 조회 후 project_id를 backfill.
+     */
+    private List<ClusterStatistics> findStatsByProject(String projectId) {
+        List<ClusterStatistics> stats = clusterStatisticsRepository.findByProjectId(projectId);
+        if (!stats.isEmpty()) {
+            return stats;
+        }
+
+        // fallback: 프로젝트의 완료된 세션들로 조회
+        List<FileSession> sessions = fileSessionRepository.findByProjectIdAndIsDeletedFalse(projectId);
+        List<String> completedSessionIds = sessions.stream()
+                .filter(s -> Boolean.TRUE.equals(s.getIsCompleted()))
+                .map(FileSession::getSessionId)
+                .toList();
+
+        if (completedSessionIds.isEmpty()) {
+            return Collections.emptyList();
+        }
+
+        List<ClusterStatistics> allStats = new ArrayList<>();
+        for (String sessionId : completedSessionIds) {
+            allStats.addAll(clusterStatisticsRepository.findBySessionId(sessionId));
+        }
+
+        // project_id backfill
+        if (!allStats.isEmpty()) {
+            log.info("Backfilling project_id for {} cluster_statistics records, projectId={}",
+                    allStats.size(), projectId);
+            for (ClusterStatistics s : allStats) {
+                s.setProjectId(projectId);
+            }
+            clusterStatisticsRepository.saveAll(allStats);
+        }
+
+        return allStats;
     }
 
     private List<ChartDataResponse.BreakdownItemDto> topNWithOthers(

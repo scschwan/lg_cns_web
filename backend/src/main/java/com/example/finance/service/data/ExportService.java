@@ -621,7 +621,7 @@ public class ExportService {
         }
 
         // 클러스터 통계 생성
-        clusterStatisticsService.generateStatistics(sessionId);
+        clusterStatisticsService.generateStatistics(sessionId, projectId);
 
         // 세션 완료 처리
         completeSession(sessionId, exportPath);
