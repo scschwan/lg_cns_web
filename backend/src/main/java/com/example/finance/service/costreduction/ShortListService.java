@@ -45,7 +45,7 @@ public class ShortListService {
             }
         }
 
-        LongShortList list = longShortListRepository.findByProjectId(projectId)
+        LongShortList list = longShortListRepository.findFirstByProjectId(projectId)
                 .orElseThrow(() -> new RuntimeException("Long List 데이터를 찾을 수 없습니다: " + projectId));
 
         List<LongShortList.ListItem> longListItems = list.getLongListItems();
@@ -143,7 +143,7 @@ public class ShortListService {
      * Short List 요약 통계
      */
     public ShortListStatsResponse getShortListStats(String projectId) {
-        LongShortList list = longShortListRepository.findByProjectId(projectId)
+        LongShortList list = longShortListRepository.findFirstByProjectId(projectId)
                 .orElse(null);
 
         if (list == null || list.getLongListItems() == null) {
@@ -219,7 +219,7 @@ public class ShortListService {
                 .orElseThrow(() -> new RuntimeException("통계 데이터를 찾을 수 없습니다: " + statisticsId));
 
         // Long List 전체 금액 기준 비율 계산
-        LongShortList list = longShortListRepository.findByProjectId(projectId).orElse(null);
+        LongShortList list = longShortListRepository.findFirstByProjectId(projectId).orElse(null);
         double longListTotal = 0.0;
         if (list != null && list.getLongListItems() != null) {
             longListTotal = list.getLongListItems().stream()
@@ -244,7 +244,7 @@ public class ShortListService {
      * Short List 선택 항목 저장
      */
     public int saveShortListSelections(String projectId, SaveListRequest request) {
-        LongShortList list = longShortListRepository.findByProjectId(projectId)
+        LongShortList list = longShortListRepository.findFirstByProjectId(projectId)
                 .orElseThrow(() -> new RuntimeException("Long List 데이터를 찾을 수 없습니다: " + projectId));
 
         List<LongShortList.ListItem> items = request.getItems().stream()
@@ -275,7 +275,7 @@ public class ShortListService {
      * 저장된 Short List 선택 항목 조회
      */
     public List<SaveListRequest.ListItemDto> getShortListSelections(String projectId) {
-        return longShortListRepository.findByProjectId(projectId)
+        return longShortListRepository.findFirstByProjectId(projectId)
                 .map(list -> {
                     List<LongShortList.ListItem> shortItems = list.getShortListItems();
                     if (shortItems == null) return Collections.<SaveListRequest.ListItemDto>emptyList();

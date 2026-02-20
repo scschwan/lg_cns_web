@@ -9,7 +9,9 @@ import java.util.Optional;
 @Repository
 public interface CostReductionDashboardRepository extends MongoRepository<CostReductionDashboard, String> {
 
-    Optional<CostReductionDashboard> findByProjectId(String projectId);
+    Optional<CostReductionDashboard> findFirstByProjectId(String projectId);
 
     boolean existsByProjectId(String projectId);
+
+    void deleteByProjectId(String projectId);
 }

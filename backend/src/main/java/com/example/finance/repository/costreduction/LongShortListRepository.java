@@ -9,7 +9,7 @@ import java.util.Optional;
 @Repository
 public interface LongShortListRepository extends MongoRepository<LongShortList, String> {
 
-    Optional<LongShortList> findByProjectId(String projectId);
+    Optional<LongShortList> findFirstByProjectId(String projectId);
 
     boolean existsByProjectId(String projectId);
 }
