@@ -42,6 +42,14 @@ public class AbleTaskController {
         return ResponseEntity.ok(tasks);
     }
 
+    @GetMapping("/locked-statistics")
+    public ResponseEntity<List<String>> getLockedStatistics(
+            @PathVariable String projectId,
+            @CurrentUser UserPrincipal userPrincipal) {
+        List<String> lockedIds = ableTaskService.getLockedStatisticsIds(projectId);
+        return ResponseEntity.ok(lockedIds);
+    }
+
     @GetMapping("/summary")
     public ResponseEntity<TaskSummaryResponse> getSummary(
             @PathVariable String projectId,

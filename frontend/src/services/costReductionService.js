@@ -141,6 +141,11 @@ const costReductionService = {
     return response.data;
   },
 
+  getShortListSelectionTree: async (projectId) => {
+    const response = await api.get(`/api/projects/${projectId}/shortlist/selection-tree`);
+    return response.data;
+  },
+
   // ===== Able Tasks =====
 
   createTask: async (projectId, data) => {
@@ -170,6 +175,11 @@ const costReductionService = {
 
   deleteTask: async (projectId, taskId) => {
     const response = await api.delete(`/api/projects/${projectId}/tasks/${taskId}`);
+    return response.data;
+  },
+
+  getLockedStatisticsIds: async (projectId) => {
+    const response = await api.get(`/api/projects/${projectId}/tasks/locked-statistics`);
     return response.data;
   },
 

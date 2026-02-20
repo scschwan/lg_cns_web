@@ -50,32 +50,56 @@ function getAllLeafIds(nodes) {
   return ids;
 }
 
-/* ====== 노드에서 statisticsId가 있는 항목 수집 ====== */
+/* ====== 노드에서 체크된 항목 수집 (level 2 + level 3 모두 포함) ====== */
 function collectNodeData(nodes, checkedIds) {
   const items = [];
-  const traverse = (node) => {
-    if (node.children?.length) {
-      node.children.forEach(traverse);
-    } else if (node.statisticsId && checkedIds.has(node.statisticsId)) {
+  nodes.forEach(accountNode => {
+    if (!accountNode.children) return;
+    accountNode.children.forEach(cluster => {
+      // level 2 클러스터의 하위 leaf 중 체크된 것이 있는지 확인
+      const clusterHasCheckedLeaf = cluster.children?.length
+        ? cluster.children.some(sub => checkedIds.has(sub.statisticsId || sub.id))
+        : checkedIds.has(cluster.statisticsId || cluster.id);
+      if (!clusterHasCheckedLeaf) return;
+
+      // level 2 항목 항상 포함
       items.push({
-        statisticsId: node.statisticsId,
-        sessionId: node.sessionId,
-        accountName: node.accountName,
-        clusterNumber: node.clusterNumber,
-        clusterName: node.clusterName,
-        level: node.level,
-        parentClusterNumber: node.parentClusterNumber,
-        totalAmount: node.totalAmount,
-        totalCount: node.totalCount,
+        statisticsId: cluster.statisticsId,
+        sessionId: cluster.sessionId,
+        accountName: cluster.accountName,
+        clusterNumber: cluster.clusterNumber,
+        clusterName: cluster.clusterName,
+        level: cluster.level,
+        parentClusterNumber: cluster.parentClusterNumber,
+        totalAmount: cluster.totalAmount,
+        totalCount: cluster.totalCount,
       });
-    }
-  };
-  nodes.forEach(traverse);
+
+      // level 3 하위 항목 중 체크된 것만 포함
+      if (cluster.children?.length) {
+        cluster.children.forEach(sub => {
+          if (checkedIds.has(sub.statisticsId || sub.id)) {
+            items.push({
+              statisticsId: sub.statisticsId,
+              sessionId: sub.sessionId,
+              accountName: sub.accountName,
+              clusterNumber: sub.clusterNumber,
+              clusterName: sub.clusterName,
+              level: sub.level,
+              parentClusterNumber: sub.parentClusterNumber,
+              totalAmount: sub.totalAmount,
+              totalCount: sub.totalCount,
+            });
+          }
+        });
+      }
+    });
+  });
   return items;
 }
 
 /* ====== Tree Row ====== */
-function TreeRow({ item, level = 0, expandedIds, toggleExpand, checkedIds, onCheck, disabled, onItemClick }) {
+function TreeRow({ item, level = 0, expandedIds, toggleExpand, checkedIds, onCheck, disabled, onItemClick, lockedIds }) {
   const hasChildren = item.children && item.children.length > 0;
   const isExpanded = expandedIds.has(item.id);
   const paddingLeft = 16 + level * 24;
@@ -94,10 +118,21 @@ function TreeRow({ item, level = 0, expandedIds, toggleExpand, checkedIds, onChe
   const isChecked = leafIds.every(id => checkedIds.has(id));
   const isIndeterminate = !isChecked && leafIds.some(id => checkedIds.has(id));
 
+  // 이 노드의 leaf 중 잠긴 항목이 있는지 확인
+  const allLocked = lockedIds && leafIds.every(id => lockedIds.has(id));
+  const hasLockedLeaf = lockedIds && leafIds.some(id => lockedIds.has(id));
+
   const handleCheck = () => {
-    if (disabled) return;
+    if (disabled || allLocked) return;
     if (isChecked) {
-      onCheck(prev => { const n = new Set(prev); leafIds.forEach(id => n.delete(id)); return n; });
+      // 체크 해제 시 잠긴 항목은 유지
+      onCheck(prev => {
+        const n = new Set(prev);
+        leafIds.forEach(id => {
+          if (!lockedIds || !lockedIds.has(id)) n.delete(id);
+        });
+        return n;
+      });
     } else {
       onCheck(prev => { const n = new Set(prev); leafIds.forEach(id => n.add(id)); return n; });
     }
@@ -122,6 +157,7 @@ function TreeRow({ item, level = 0, expandedIds, toggleExpand, checkedIds, onChe
           level === 0 && 'bg-muted/30 font-medium',
           level > 0 && 'text-sm',
           isChecked && 'bg-blue-50',
+          allLocked && 'bg-red-50/50',
         )}
         onClick={handleRowClick}
       >
@@ -129,7 +165,7 @@ function TreeRow({ item, level = 0, expandedIds, toggleExpand, checkedIds, onChe
           <Checkbox
             checked={isIndeterminate ? 'indeterminate' : isChecked}
             onCheckedChange={handleCheck}
-            disabled={disabled}
+            disabled={disabled || allLocked}
           />
         </TableCell>
         <TableCell style={{ paddingLeft: level > 0 ? paddingLeft : 8 }} className="py-2.5">
@@ -140,6 +176,7 @@ function TreeRow({ item, level = 0, expandedIds, toggleExpand, checkedIds, onChe
               </span>
             ) : <span className="w-4 h-4 flex-shrink-0" />}
             <span className={cn(level === 0 ? 'font-semibold' : 'text-foreground')}>{displayName}</span>
+            {allLocked && <Badge variant="destructive" className="text-[9px] ml-1 px-1 py-0">과제 등록됨</Badge>}
             {level === 0 && hasChildren && <Badge variant="secondary" className="text-[10px] ml-1 px-1.5 py-0">{item.children.length}</Badge>}
           </div>
         </TableCell>
@@ -148,7 +185,7 @@ function TreeRow({ item, level = 0, expandedIds, toggleExpand, checkedIds, onChe
         <TableCell className="text-right tabular-nums py-2.5 font-medium">{formatAmount(item.totalAmount)}</TableCell>
       </TableRow>
       {isExpanded && hasChildren && item.children.map(child => (
-        <TreeRow key={child.id} item={child} level={level + 1} expandedIds={expandedIds} toggleExpand={toggleExpand} checkedIds={checkedIds} onCheck={onCheck} disabled={disabled} onItemClick={onItemClick} />
+        <TreeRow key={child.id} item={child} level={level + 1} expandedIds={expandedIds} toggleExpand={toggleExpand} checkedIds={checkedIds} onCheck={onCheck} disabled={disabled} onItemClick={onItemClick} lockedIds={lockedIds} />
       ))}
     </>
   );
@@ -257,7 +294,7 @@ function SelectedItemCard({ stats }) {
 }
 
 /* ====== Phase Navigation Bar ====== */
-function PhaseNavigationBar({ stats, currentPhase, projectId, navigate }) {
+function PhaseNavigationBar({ stats, currentPhase, projectId, navigate, dynamicShortList }) {
   const phases = [
     {
       key: 'LONG_LIST',
@@ -269,8 +306,8 @@ function PhaseNavigationBar({ stats, currentPhase, projectId, navigate }) {
     {
       key: 'SHORT_LIST',
       label: 'Short List',
-      count: stats?.shortListItemCount ?? '-',
-      amount: stats?.shortListTotalAmount ?? 0,
+      count: dynamicShortList ? dynamicShortList.count : (stats?.shortListItemCount ?? '-'),
+      amount: dynamicShortList ? dynamicShortList.amount : (stats?.shortListTotalAmount ?? 0),
       path: `/projects/${projectId}/shortlist`,
     },
     {
@@ -327,6 +364,7 @@ export default function ShortListPage() {
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [lockedIds, setLockedIds] = useState(new Set());
 
   const [expandedIds, setExpandedIds] = useState(new Set());
   const [checkedIds, setCheckedIds] = useState(new Set());
@@ -338,6 +376,7 @@ export default function ShortListPage() {
 
   const isListLocked = dashboardStatus?.isListLocked ?? false;
   const isDisabled = !isEditor || isListLocked;
+  const hasLockedItems = lockedIds.size > 0;
 
   // 초기 데이터 로드
   useEffect(() => {
@@ -345,15 +384,17 @@ export default function ShortListPage() {
     const loadData = async () => {
       try {
         setLoading(true);
-        const [treeRes, statsRes, selectionsRes] = await Promise.all([
+        const [treeRes, statsRes, selectionsRes, lockedRes] = await Promise.all([
           costReductionService.getShortListTree(projectId),
           costReductionService.getShortListStats(projectId),
           costReductionService.getShortListSelections(projectId),
+          costReductionService.getLockedStatisticsIds(projectId).catch(() => []),
         ]);
 
         const tree = treeRes.tree || [];
         setTreeData(tree);
         setStats(statsRes);
+        setLockedIds(new Set(lockedRes || []));
 
         // 기본: 모든 항목 선택, 저장된 Short List 선택이 있으면 복원
         const savedItems = selectionsRes.items || [];
@@ -389,7 +430,14 @@ export default function ShortListPage() {
   };
   const collapseAll = () => setExpandedIds(new Set());
   const selectAll = () => setCheckedIds(new Set(getAllLeafIds(treeData)));
-  const deselectAll = () => setCheckedIds(new Set());
+  const deselectAll = () => {
+    // 잠긴 항목은 체크 유지
+    if (lockedIds.size > 0) {
+      setCheckedIds(new Set(lockedIds));
+    } else {
+      setCheckedIds(new Set());
+    }
+  };
 
   // 합계
   const totals = useMemo(() => {
@@ -405,10 +453,13 @@ export default function ShortListPage() {
   // 체크된 항목 기준 동적 통계
   const dynamicStats = useMemo(() => {
     const checkedItems = collectNodeData(treeData, checkedIds);
-    const selectedAmount = checkedItems.reduce((s, i) => s + (i.totalAmount || 0), 0);
+    // level 2 항목만 합산 (level 2가 level 3를 이미 포함하므로 중복 방지)
+    const level2Items = checkedItems.filter(i => i.level === 2);
+    const selectedAmount = level2Items.reduce((s, i) => s + (i.totalAmount || 0), 0);
     const totalRatio = totals.totalAmount > 0 ? (selectedAmount / totals.totalAmount * 100) : 0;
     return {
       longListItemCount: stats?.longListItemCount ?? 0,
+      level2Count: level2Items.length,
       checkedItems: checkedItems.length,
       selectedAmount,
       totalRatio: +totalRatio.toFixed(1),
@@ -517,7 +568,7 @@ export default function ShortListPage() {
             </Button>
           </div>
         </div>
-        <PhaseNavigationBar stats={stats} currentPhase="SHORT_LIST" projectId={projectId} navigate={navigate} />
+        <PhaseNavigationBar stats={stats} currentPhase="SHORT_LIST" projectId={projectId} navigate={navigate} dynamicShortList={{ count: dynamicStats.level2Count, amount: dynamicStats.selectedAmount }} />
       </div>
 
       {/* Scrollable Content */}
@@ -573,7 +624,7 @@ export default function ShortListPage() {
                   </div>
                   <div>
                     <p className="text-[10px] text-muted-foreground">선택 항목 수</p>
-                    <p className="text-lg font-bold tabular-nums">{dynamicStats.checkedItems}</p>
+                    <p className="text-lg font-bold tabular-nums">{dynamicStats.level2Count}</p>
                   </div>
                 </div>
               </CardContent>
@@ -583,6 +634,13 @@ export default function ShortListPage() {
           {/* Tree Table */}
           <Card>
             <CardHeader className="pb-3 px-5 pt-5">
+              {hasLockedItems && (
+                <div className="mb-3 px-3 py-2 rounded-md bg-red-50 border border-red-200">
+                  <p className="text-xs font-medium text-red-600">
+                    과제 등록된 항목은 체크해제 할 수 없습니다. 해제를 원할 경우 등록된 과제를 삭제해주세요.
+                  </p>
+                </div>
+              )}
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3">
                   <CardTitle className="text-sm font-semibold">비용 유형 분류 (Long List 기반)</CardTitle>
@@ -615,7 +673,7 @@ export default function ShortListPage() {
                   </TableHeader>
                   <TableBody>
                     {treeData.map(item => (
-                      <TreeRow key={item.id} item={item} expandedIds={expandedIds} toggleExpand={toggleExpand} checkedIds={checkedIds} onCheck={setCheckedIds} disabled={isDisabled} onItemClick={handleItemClick} />
+                      <TreeRow key={item.id} item={item} expandedIds={expandedIds} toggleExpand={toggleExpand} checkedIds={checkedIds} onCheck={setCheckedIds} disabled={isDisabled} onItemClick={handleItemClick} lockedIds={lockedIds} />
                     ))}
                     {treeData.length > 0 && (
                       <TableRow className="bg-primary/5 font-bold border-t-2">
