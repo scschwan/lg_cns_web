@@ -20,6 +20,11 @@ const costReductionService = {
     return response.data;
   },
 
+  unlockList: async (projectId) => {
+    const response = await api.post(`/api/projects/${projectId}/dashboard/unlock-list`);
+    return response.data;
+  },
+
   // ===== Dashboard Lock Check (세션 완료 시 사전 체크) =====
 
   checkDashboardLockStatus: async (projectId) => {

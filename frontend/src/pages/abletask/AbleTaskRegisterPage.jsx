@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import {
   ChevronRight, ChevronDown, FilePlus, FileSpreadsheet,
   Link2, FileIcon, Plus, Trash2, Upload, ExternalLink, X, Loader2,
-  ArrowRight, ArrowLeft, CheckCircle2,
+  ArrowRight, Unlock, CheckCircle2,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -148,24 +148,40 @@ function TreeRow({ item, level = 0, expandedIds, toggleExpand, checkedIds, onChe
   };
 
   const displayName = level === 0 ? item.accountName : (item.clusterName || item.accountName || '');
+  const supplierCount = item.supplierCount ?? 0;
+  const costCenterCount = item.costCenterCount ?? 0;
+
+  const handleRowClick = () => {
+    if (hasChildren) toggleExpand(item.id);
+  };
 
   return (
     <>
-      <TableRow className={cn('cursor-pointer transition-colors hover:bg-muted/40', level === 0 && 'bg-muted/30 font-medium', isChecked && 'bg-primary/5')}>
-        <TableCell style={{ paddingLeft }} className="py-2.5">
+      <TableRow
+        className={cn(
+          'cursor-pointer transition-colors hover:bg-muted/40',
+          level === 0 && 'bg-muted/30 font-medium',
+          level > 0 && 'text-sm',
+          isChecked && 'bg-blue-50',
+        )}
+        onClick={handleRowClick}
+      >
+        <TableCell className="w-[40px] text-center py-2.5" onClick={e => e.stopPropagation()}>
+          <Checkbox checked={isIndeterminate ? 'indeterminate' : isChecked} onCheckedChange={handleCheck} />
+        </TableCell>
+        <TableCell style={{ paddingLeft: level > 0 ? paddingLeft : 8 }} className="py-2.5">
           <div className="flex items-center gap-2">
             {hasChildren ? (
-              <span className="w-4 h-4 flex items-center justify-center flex-shrink-0" onClick={e => { e.stopPropagation(); toggleExpand(item.id); }}>
+              <span className="w-4 h-4 flex items-center justify-center flex-shrink-0">
                 {isExpanded ? <ChevronDown className="w-4 h-4 text-muted-foreground" /> : <ChevronRight className="w-4 h-4 text-muted-foreground" />}
               </span>
             ) : <span className="w-4 h-4 flex-shrink-0" />}
-            <Checkbox checked={isIndeterminate ? 'indeterminate' : isChecked} onCheckedChange={handleCheck} onClick={e => e.stopPropagation()} />
-            <span className={cn(level === 0 ? 'font-semibold' : '')} onClick={() => hasChildren && toggleExpand(item.id)}>{displayName}</span>
+            <span className={cn(level === 0 ? 'font-semibold' : 'text-foreground')}>{displayName}</span>
             {level === 0 && hasChildren && <Badge variant="secondary" className="text-[10px] ml-1 px-1.5 py-0">{item.children.length}</Badge>}
           </div>
         </TableCell>
-        <TableCell className="text-right tabular-nums py-2.5">{(item.costCenterCount ?? 0).toLocaleString()}</TableCell>
-        <TableCell className="text-right tabular-nums py-2.5">{(item.supplierCount ?? 0).toLocaleString()}</TableCell>
+        <TableCell className="text-right tabular-nums py-2.5">{costCenterCount.toLocaleString()}</TableCell>
+        <TableCell className="text-right tabular-nums py-2.5">{supplierCount.toLocaleString()}</TableCell>
         <TableCell className="text-right tabular-nums py-2.5 font-medium">{formatAmount(item.totalAmount)}</TableCell>
       </TableRow>
       {isExpanded && hasChildren && item.children.map(child => (
@@ -176,7 +192,7 @@ function TreeRow({ item, level = 0, expandedIds, toggleExpand, checkedIds, onChe
 }
 
 /* ====== Phase Navigation Bar ====== */
-function PhaseNavigationBar({ stats, currentPhase, projectId, navigate }) {
+function PhaseNavigationBar({ stats, currentPhase, projectId, navigate, dynamicShortList }) {
   const phases = [
     {
       key: 'LONG_LIST',
@@ -188,8 +204,8 @@ function PhaseNavigationBar({ stats, currentPhase, projectId, navigate }) {
     {
       key: 'SHORT_LIST',
       label: 'Short List',
-      count: stats?.shortListItemCount ?? '-',
-      amount: stats?.shortListTotalAmount ?? 0,
+      count: dynamicShortList ? dynamicShortList.count : (stats?.shortListItemCount ?? '-'),
+      amount: dynamicShortList ? dynamicShortList.amount : (stats?.shortListTotalAmount ?? 0),
       path: `/projects/${projectId}/shortlist`,
     },
     {
@@ -246,6 +262,7 @@ export default function AbleTaskRegisterPage() {
   const [phaseStats, setPhaseStats] = useState(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [unlocking, setUnlocking] = useState(false);
 
   const [expandedIds, setExpandedIds] = useState(new Set());
   const [checkedIds, setCheckedIds] = useState(new Set());
@@ -280,7 +297,11 @@ export default function AbleTaskRegisterPage() {
         const tree = treeRes.tree || [];
         setTreeData(tree);
         setPhaseStats(statsRes);
-        setExpandedIds(new Set(tree.map(n => n.id)));
+        // 모든 노드 확장 (대분류 + 클러스터)
+        const allIds = new Set();
+        const collectIds = (nodes) => { nodes.forEach(n => { allIds.add(n.id); if (n.children?.length) collectIds(n.children); }); };
+        collectIds(tree);
+        setExpandedIds(allIds);
       } catch (error) {
         console.error('Failed to load tree data:', error);
       } finally {
@@ -334,6 +355,37 @@ export default function AbleTaskRegisterPage() {
     treeData.forEach(n => { totalAmount += n.totalAmount || 0; supplierCount += n.supplierCount || 0; costCenterCount += n.costCenterCount || 0; });
     return { totalAmount, supplierCount, costCenterCount };
   }, [treeData]);
+
+  // Short List 동적 통계 (트리 데이터의 level 2 항목 기준)
+  const dynamicShortListStats = useMemo(() => {
+    let count = 0, amount = 0;
+    treeData.forEach(accountNode => {
+      if (accountNode.children?.length) {
+        accountNode.children.forEach(cluster => {
+          if (cluster.level === 2) {
+            count++;
+            amount += cluster.totalAmount || 0;
+          }
+        });
+      }
+    });
+    return { count, amount };
+  }, [treeData]);
+
+  // 리스트 잠금 해제 → Short List로 이동
+  const handleUnlockList = async () => {
+    if (!confirm('리스트 잠금을 해제하시겠습니까?\nShort List 페이지로 이동하여 항목을 수정할 수 있습니다.')) return;
+    try {
+      setUnlocking(true);
+      await costReductionService.unlockList(projectId);
+      navigate(`/projects/${projectId}/shortlist`);
+    } catch (error) {
+      console.error('Failed to unlock list:', error);
+      alert('잠금 해제에 실패했습니다.');
+    } finally {
+      setUnlocking(false);
+    }
+  };
 
   const handleAddLink = (linkData) => setPendingLinks(prev => [...prev, { id: Date.now(), ...linkData }]);
   const handleUploadFiles = (files) => setPendingFiles(prev => [...prev, ...files.map((f, i) => ({ id: Date.now() + i, file: f, name: f.name, label: f.name }))]);
@@ -403,14 +455,15 @@ export default function AbleTaskRegisterPage() {
           </div>
           <Button
             variant="outline"
-            onClick={() => navigate(`/projects/${projectId}/shortlist`)}
-            className="text-sm"
+            onClick={handleUnlockList}
+            disabled={unlocking}
+            className="text-sm border-orange-300 text-orange-700 hover:bg-orange-50"
           >
-            <ArrowLeft className="w-4 h-4 mr-1" />
-            Short List로 이동
+            {unlocking ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <Unlock className="w-4 h-4 mr-1" />}
+            리스트 잠금 해제
           </Button>
         </div>
-        <PhaseNavigationBar stats={phaseStats} currentPhase="ABLE_REGISTER" projectId={projectId} navigate={navigate} />
+        <PhaseNavigationBar stats={phaseStats} currentPhase="ABLE_REGISTER" projectId={projectId} navigate={navigate} dynamicShortList={dynamicShortListStats} />
       </div>
 
       <div className="flex-1 overflow-hidden flex">
@@ -430,7 +483,8 @@ export default function AbleTaskRegisterPage() {
                 <Table>
                   <TableHeader>
                     <TableRow className="bg-muted/50">
-                      <TableHead className="pl-4">데이터 (비용유형분류)</TableHead>
+                      <TableHead className="w-[40px] text-center" />
+                      <TableHead className="pl-2">데이터 (비용유형분류)</TableHead>
                       <TableHead className="text-right w-[110px]">코스트센터 수</TableHead>
                       <TableHead className="text-right w-[110px]">공급업체 수</TableHead>
                       <TableHead className="text-right w-[130px]">합계 금액</TableHead>
@@ -442,14 +496,15 @@ export default function AbleTaskRegisterPage() {
                     ))}
                     {treeData.length > 0 && (
                       <TableRow className="bg-primary/5 font-bold border-t-2">
-                        <TableCell className="pl-4 py-3"><span className="text-sm font-bold">합계</span></TableCell>
+                        <TableCell />
+                        <TableCell className="pl-2 py-3"><span className="text-sm font-bold">합계</span></TableCell>
                         <TableCell className="text-right tabular-nums py-3">{totals.costCenterCount.toLocaleString()}</TableCell>
                         <TableCell className="text-right tabular-nums py-3">{totals.supplierCount.toLocaleString()}</TableCell>
                         <TableCell className="text-right tabular-nums py-3 font-bold">{formatAmount(totals.totalAmount)}</TableCell>
                       </TableRow>
                     )}
                     {treeData.length === 0 && (
-                      <TableRow><TableCell colSpan={4} className="text-center py-12 text-muted-foreground">Short List에서 선택된 항목이 없습니다.</TableCell></TableRow>
+                      <TableRow><TableCell colSpan={5} className="text-center py-12 text-muted-foreground">Short List에서 선택된 항목이 없습니다.</TableCell></TableRow>
                     )}
                   </TableBody>
                 </Table>

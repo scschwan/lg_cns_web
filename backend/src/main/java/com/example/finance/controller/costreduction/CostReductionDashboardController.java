@@ -79,6 +79,18 @@ public class CostReductionDashboardController {
     }
 
     /**
+     * 리스트 잠금 해제 (Long List + Short List 동시 잠금 해제)
+     */
+    @PostMapping("/unlock-list")
+    public ResponseEntity<DashboardStatusResponse> unlockList(
+            @PathVariable String projectId,
+            @CurrentUser UserPrincipal userPrincipal) {
+        DashboardStatusResponse response = dashboardService.unlockList(
+                projectId, userPrincipal.getId());
+        return ResponseEntity.ok(response);
+    }
+
+    /**
      * 대시보드 잠금 상태 확인 (세션 완료 시 사전 체크용)
      */
     @GetMapping("/lock-status")
