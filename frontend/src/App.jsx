@@ -28,13 +28,16 @@ import DetailClusteringPage from './pages/detailclustering/DetailClusteringPage'
 // Test Page
 import TestPage from './pages/TestPage';
 
-// 신규 서비스 마크업 Pages
+// 신규 서비스 마크업 Pages (레거시 - Preview용)
 import NewServiceLayout from './components/layout/NewServiceLayout';
 import LongListPage from './pages/longlist/LongListPage';
 import ShortListPage from './pages/shortlist/ShortListPage';
 import AbleTaskRegisterPage from './pages/abletask/AbleTaskRegisterPage';
 import AbleTaskManagePage from './pages/abletaskmanage/AbleTaskManagePage';
 import CompletedTaskManagePage from './pages/completedtask/CompletedTaskManagePage';
+
+// 비용 절감 대시보드
+import CostReductionLayout from './components/layout/CostReductionLayout';
 
 // Admin Pages
 import AdminLayout from './pages/admin/AdminLayout';
@@ -68,12 +71,19 @@ function App() {
           <Route path="/register" element={<RegisterPage />} />
           <Route path="/test" element={<TestPage />} />
 
-          {/* 신규 서비스 마크업 (인증 불필요, NewServiceLayout 사용) */}
+          {/* 신규 서비스 마크업 (Preview - 레거시 경로 유지) */}
           <Route path="/longlist" element={<NewServiceLayout><LongListPage /></NewServiceLayout>} />
           <Route path="/shortlist" element={<NewServiceLayout><ShortListPage /></NewServiceLayout>} />
           <Route path="/able-register" element={<NewServiceLayout><AbleTaskRegisterPage /></NewServiceLayout>} />
           <Route path="/able-manage" element={<NewServiceLayout><AbleTaskManagePage /></NewServiceLayout>} />
           <Route path="/completed-manage" element={<NewServiceLayout><CompletedTaskManagePage /></NewServiceLayout>} />
+
+          {/* 비용 절감 대시보드 (인증 필요, 프로젝트 스코프) */}
+          <Route path="/projects/:projectId/longlist" element={<PrivateRoute><CostReductionLayout><LongListPage /></CostReductionLayout></PrivateRoute>} />
+          <Route path="/projects/:projectId/shortlist" element={<PrivateRoute><CostReductionLayout><ShortListPage /></CostReductionLayout></PrivateRoute>} />
+          <Route path="/projects/:projectId/able-register" element={<PrivateRoute><CostReductionLayout><AbleTaskRegisterPage /></CostReductionLayout></PrivateRoute>} />
+          <Route path="/projects/:projectId/able-manage" element={<PrivateRoute><CostReductionLayout><AbleTaskManagePage /></CostReductionLayout></PrivateRoute>} />
+          <Route path="/projects/:projectId/completed-manage" element={<PrivateRoute><CostReductionLayout><CompletedTaskManagePage /></CostReductionLayout></PrivateRoute>} />
 
           {/* 🔒 Private Routes with Navbar */}
           <Route

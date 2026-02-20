@@ -83,6 +83,15 @@ public class RedisService {
         return redisTemplate.opsForHash().increment(key, hashKey, delta);
     }
 
+    // ===== Atomic Operations =====
+
+    /**
+     * SET NX - 키가 없을 때만 설정 (편집자 잠금용)
+     */
+    public Boolean setIfAbsent(String key, Object value, Duration ttl) {
+        return redisTemplate.opsForValue().setIfAbsent(key, value, ttl);
+    }
+
     // ===== TTL Operations =====
 
     public Long getExpire(String key) {
