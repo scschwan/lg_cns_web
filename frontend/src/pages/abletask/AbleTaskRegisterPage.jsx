@@ -323,10 +323,11 @@ export default function AbleTaskRegisterPage() {
     });
   }, []);
 
-  // Derive major accounts and clusters from checked items
+  // Derive major accounts, clusters, and total amount from checked items
   const selectedInfo = useMemo(() => {
     const majorAccounts = new Set();
     const clusters = [];
+    let checkedTotalAmount = 0;
     const traverse = (nodes) => {
       nodes.forEach(node => {
         if (node.children?.length) {
@@ -343,11 +344,12 @@ export default function AbleTaskRegisterPage() {
             clusterName: node.clusterName || node.accountName,
             accountName: node.accountName,
           });
+          checkedTotalAmount += node.totalAmount || 0;
         }
       });
     };
     traverse(treeData);
-    return { majorAccounts: [...majorAccounts], clusters };
+    return { majorAccounts: [...majorAccounts], clusters, checkedTotalAmount };
   }, [treeData, checkedIds]);
 
   const totals = useMemo(() => {
@@ -371,6 +373,23 @@ export default function AbleTaskRegisterPage() {
     });
     return { count, amount };
   }, [treeData]);
+
+  // 체크된 클러스터 항목의 합산 금액을 모수 금액에 자동 입력
+  useEffect(() => {
+    const amount = selectedInfo.checkedTotalAmount;
+    setBaseAmount(amount > 0 ? String(amount) : '');
+  }, [selectedInfo.checkedTotalAmount]);
+
+  // 예상 절감액 = 모수 금액 × 예상 절감율 / 100 자동 계산
+  useEffect(() => {
+    const base = parseFloat(baseAmount) || 0;
+    const rate = parseFloat(expectedSavingRate) || 0;
+    if (base > 0 && rate > 0) {
+      setExpectedSavingAmount(String(Math.round(base * rate / 100)));
+    } else {
+      setExpectedSavingAmount('');
+    }
+  }, [baseAmount, expectedSavingRate]);
 
   // 리스트 잠금 해제 → Short List로 이동
   const handleUnlockList = async () => {
@@ -560,8 +579,8 @@ export default function AbleTaskRegisterPage() {
             </div>
 
             <div className="space-y-1.5">
-              <Label className="text-xs font-medium">모수 금액</Label>
-              <Input value={baseAmount} onChange={e => setBaseAmount(e.target.value)} placeholder="0" className="h-9 text-sm text-right tabular-nums" type="number" />
+              <Label className="text-xs font-medium">모수 금액 <span className="text-muted-foreground font-normal">(자동 합산)</span></Label>
+              <Input value={baseAmount ? Number(baseAmount).toLocaleString() : ''} readOnly placeholder="체크된 항목의 합산 금액" className="h-9 text-sm text-right tabular-nums bg-muted/30" />
             </div>
 
             <div className="grid grid-cols-2 gap-3">
@@ -570,8 +589,8 @@ export default function AbleTaskRegisterPage() {
                 <Input value={expectedSavingRate} onChange={e => setExpectedSavingRate(e.target.value)} placeholder="0.0" className="h-9 text-sm text-right tabular-nums" type="number" step="0.1" />
               </div>
               <div className="space-y-1.5">
-                <Label className="text-xs font-medium">예상 절감액</Label>
-                <Input value={expectedSavingAmount} onChange={e => setExpectedSavingAmount(e.target.value)} placeholder="0" className="h-9 text-sm text-right tabular-nums" type="number" />
+                <Label className="text-xs font-medium">예상 절감액 <span className="text-muted-foreground font-normal">(자동 계산)</span></Label>
+                <Input value={expectedSavingAmount ? Number(expectedSavingAmount).toLocaleString() : ''} readOnly placeholder="0" className="h-9 text-sm text-right tabular-nums bg-muted/30" />
               </div>
             </div>
 
