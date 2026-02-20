@@ -41,17 +41,7 @@ public class CostReductionDashboardService {
      * 대시보드 초기화 (최초 진입 시 문서 생성 + 편집자 잠금 시도)
      */
     public DashboardStatusResponse initDashboard(String projectId, String userId, String userName) {
-        CostReductionDashboard dashboard = dashboardRepository.findByProjectId(projectId)
-                .orElseGet(() -> {
-                    CostReductionDashboard newDashboard = CostReductionDashboard.builder()
-                            .projectId(projectId)
-                            .currentPhase(CostReductionPhase.LONG_LIST.name())
-                            .isListLocked(false)
-                            .createdAt(LocalDateTime.now())
-                            .updatedAt(LocalDateTime.now())
-                            .build();
-                    return dashboardRepository.save(newDashboard);
-                });
+        CostReductionDashboard dashboard = getOrCreateDashboard(projectId);
 
         // 편집자 잠금 시도
         LockResponse lockResponse = acquireEditorLock(projectId, userId, userName);
@@ -70,7 +60,7 @@ public class CostReductionDashboardService {
      * 대시보드 상태 조회
      */
     public DashboardStatusResponse getStatus(String projectId, String userId) {
-        CostReductionDashboard dashboard = getDashboard(projectId);
+        CostReductionDashboard dashboard = getOrCreateDashboard(projectId);
 
         String lockKey = LOCK_KEY_PREFIX + projectId;
         Object currentEditor = redisService.get(lockKey);
@@ -97,7 +87,7 @@ public class CostReductionDashboardService {
 
         if (Boolean.TRUE.equals(acquired)) {
             // 잠금 획득 성공 → MongoDB에도 편집자 정보 저장
-            CostReductionDashboard dashboard = getDashboard(projectId);
+            CostReductionDashboard dashboard = getOrCreateDashboard(projectId);
             dashboard.setEditorUserId(userId);
             dashboard.setEditorUserName(userName);
             dashboard.setEditorAcquiredAt(LocalDateTime.now());
@@ -126,7 +116,7 @@ public class CostReductionDashboardService {
         }
 
         // 다른 사람이 편집자
-        CostReductionDashboard dashboard = getDashboard(projectId);
+        CostReductionDashboard dashboard = getOrCreateDashboard(projectId);
         log.info("Editor lock denied: projectId={}, requestor={}, currentEditor={}",
                 projectId, userId, currentEditor);
         return LockResponse.builder()
@@ -146,11 +136,12 @@ public class CostReductionDashboardService {
         if (userId.equals(currentEditor)) {
             redisService.expire(lockKey, LOCK_TTL);
 
-            // MongoDB 하트비트 시간 갱신
-            CostReductionDashboard dashboard = getDashboard(projectId);
-            dashboard.setEditorHeartbeatAt(LocalDateTime.now());
-            dashboard.setUpdatedAt(LocalDateTime.now());
-            dashboardRepository.save(dashboard);
+            // MongoDB 하트비트 시간 갱신 (대시보드 존재 시에만)
+            dashboardRepository.findByProjectId(projectId).ifPresent(dashboard -> {
+                dashboard.setEditorHeartbeatAt(LocalDateTime.now());
+                dashboard.setUpdatedAt(LocalDateTime.now());
+                dashboardRepository.save(dashboard);
+            });
         } else {
             log.warn("Heartbeat from non-editor: projectId={}, userId={}", projectId, userId);
         }
@@ -166,13 +157,15 @@ public class CostReductionDashboardService {
         if (userId.equals(currentEditor)) {
             redisService.delete(lockKey);
 
-            CostReductionDashboard dashboard = getDashboard(projectId);
-            dashboard.setEditorUserId(null);
-            dashboard.setEditorUserName(null);
-            dashboard.setEditorAcquiredAt(null);
-            dashboard.setEditorHeartbeatAt(null);
-            dashboard.setUpdatedAt(LocalDateTime.now());
-            dashboardRepository.save(dashboard);
+            // MongoDB 편집자 정보 삭제 (대시보드 존재 시에만)
+            dashboardRepository.findByProjectId(projectId).ifPresent(dashboard -> {
+                dashboard.setEditorUserId(null);
+                dashboard.setEditorUserName(null);
+                dashboard.setEditorAcquiredAt(null);
+                dashboard.setEditorHeartbeatAt(null);
+                dashboard.setUpdatedAt(LocalDateTime.now());
+                dashboardRepository.save(dashboard);
+            });
 
             log.info("Editor lock released: projectId={}, userId={}", projectId, userId);
         }
@@ -183,7 +176,7 @@ public class CostReductionDashboardService {
      */
     public DashboardStatusResponse transitionPhase(String projectId, String userId,
                                                     CostReductionPhase targetPhase) {
-        CostReductionDashboard dashboard = getDashboard(projectId);
+        CostReductionDashboard dashboard = getOrCreateDashboard(projectId);
 
         // ABLE_REGISTER 전환 시 리스트 잠금
         if (targetPhase == CostReductionPhase.ABLE_REGISTER) {
@@ -223,7 +216,7 @@ public class CostReductionDashboardService {
                     .build();
         }
 
-        CostReductionDashboard dashboard = getDashboard(projectId);
+        CostReductionDashboard dashboard = getOrCreateDashboard(projectId);
         String lockKey = LOCK_KEY_PREFIX + projectId;
         Object currentEditor = redisService.get(lockKey);
         boolean isLocked = currentEditor != null;
@@ -302,8 +295,21 @@ public class CostReductionDashboardService {
         log.info("Dashboard 전체 초기화 완료: projectId={}", projectId);
     }
 
-    private CostReductionDashboard getDashboard(String projectId) {
+    /**
+     * 대시보드 조회 (없으면 자동 생성)
+     */
+    private CostReductionDashboard getOrCreateDashboard(String projectId) {
         return dashboardRepository.findByProjectId(projectId)
-                .orElseThrow(() -> new RuntimeException("대시보드를 찾을 수 없습니다: " + projectId));
+                .orElseGet(() -> {
+                    log.info("Dashboard auto-created for projectId={}", projectId);
+                    CostReductionDashboard newDashboard = CostReductionDashboard.builder()
+                            .projectId(projectId)
+                            .currentPhase(CostReductionPhase.LONG_LIST.name())
+                            .isListLocked(false)
+                            .createdAt(LocalDateTime.now())
+                            .updatedAt(LocalDateTime.now())
+                            .build();
+                    return dashboardRepository.save(newDashboard);
+                });
     }
 }
