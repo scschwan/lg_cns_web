@@ -70,6 +70,40 @@ const costReductionService = {
     const response = await api.get(`/api/projects/${projectId}/longlist/selections`);
     return response.data;
   },
+
+  // ===== Short List =====
+
+  getShortListTree: async (projectId) => {
+    const response = await api.get(`/api/projects/${projectId}/shortlist/tree`);
+    return response.data;
+  },
+
+  getShortListStats: async (projectId) => {
+    const response = await api.get(`/api/projects/${projectId}/shortlist/stats`);
+    return response.data;
+  },
+
+  getShortListChart: async (projectId, statisticsId, top = 5) => {
+    const response = await api.get(`/api/projects/${projectId}/shortlist/chart/${statisticsId}`, {
+      params: { top },
+    });
+    return response.data;
+  },
+
+  getShortListItemStats: async (projectId, statisticsId) => {
+    const response = await api.get(`/api/projects/${projectId}/shortlist/item-stats/${statisticsId}`);
+    return response.data;
+  },
+
+  saveShortListSelections: async (projectId, items) => {
+    const response = await api.post(`/api/projects/${projectId}/shortlist/save`, { items });
+    return response.data;
+  },
+
+  getShortListSelections: async (projectId) => {
+    const response = await api.get(`/api/projects/${projectId}/shortlist/selections`);
+    return response.data;
+  },
 };
 
 export default costReductionService;
