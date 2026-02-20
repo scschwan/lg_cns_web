@@ -137,7 +137,7 @@ public class CostReductionDashboardService {
             redisService.expire(lockKey, LOCK_TTL);
 
             // MongoDB 하트비트 시간 갱신 (대시보드 존재 시에만)
-            dashboardRepository.findByProjectId(projectId).ifPresent(dashboard -> {
+            dashboardRepository.findFirstByProjectId(projectId).ifPresent(dashboard -> {
                 dashboard.setEditorHeartbeatAt(LocalDateTime.now());
                 dashboard.setUpdatedAt(LocalDateTime.now());
                 dashboardRepository.save(dashboard);
@@ -158,7 +158,7 @@ public class CostReductionDashboardService {
             redisService.delete(lockKey);
 
             // MongoDB 편집자 정보 삭제 (대시보드 존재 시에만)
-            dashboardRepository.findByProjectId(projectId).ifPresent(dashboard -> {
+            dashboardRepository.findFirstByProjectId(projectId).ifPresent(dashboard -> {
                 dashboard.setEditorUserId(null);
                 dashboard.setEditorUserName(null);
                 dashboard.setEditorAcquiredAt(null);
@@ -270,13 +270,12 @@ public class CostReductionDashboardService {
         }
 
         // 4. Long/Short List 삭제
-        longShortListRepository.findByProjectId(projectId)
+        longShortListRepository.findFirstByProjectId(projectId)
                 .ifPresent(longShortListRepository::delete);
         log.info("Deleted long/short list for projectId={}", projectId);
 
-        // 5. Dashboard 삭제
-        dashboardRepository.findByProjectId(projectId)
-                .ifPresent(dashboardRepository::delete);
+        // 5. Dashboard 삭제 (중복 문서 포함 전체 삭제)
+        dashboardRepository.deleteByProjectId(projectId);
         log.info("Deleted dashboard for projectId={}", projectId);
 
         // 6. Redis 캐시 정리
@@ -299,7 +298,7 @@ public class CostReductionDashboardService {
      * 대시보드 조회 (없으면 자동 생성)
      */
     private CostReductionDashboard getOrCreateDashboard(String projectId) {
-        return dashboardRepository.findByProjectId(projectId)
+        return dashboardRepository.findFirstByProjectId(projectId)
                 .orElseGet(() -> {
                     log.info("Dashboard auto-created for projectId={}", projectId);
                     CostReductionDashboard newDashboard = CostReductionDashboard.builder()

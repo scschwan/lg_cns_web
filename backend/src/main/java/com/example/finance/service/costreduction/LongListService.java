@@ -218,7 +218,7 @@ public class LongListService {
      * 체크된 항목 저장
      */
     public int saveSelections(String projectId, SaveListRequest request) {
-        LongShortList list = longShortListRepository.findByProjectId(projectId)
+        LongShortList list = longShortListRepository.findFirstByProjectId(projectId)
                 .orElseGet(() -> LongShortList.builder()
                         .projectId(projectId)
                         .createdAt(LocalDateTime.now())
@@ -249,7 +249,7 @@ public class LongListService {
      * 저장된 선택 항목 조회
      */
     public List<SaveListRequest.ListItemDto> getSelections(String projectId) {
-        return longShortListRepository.findByProjectId(projectId)
+        return longShortListRepository.findFirstByProjectId(projectId)
                 .map(list -> list.getLongListItems().stream()
                         .map(item -> SaveListRequest.ListItemDto.builder()
                                 .statisticsId(item.getStatisticsId())
