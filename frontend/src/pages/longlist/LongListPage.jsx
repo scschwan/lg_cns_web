@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
   ChevronRight, ChevronDown, Database, Layers, GitBranch, Hash,
-  DollarSign, Eye, FileSpreadsheet, BarChart3, Loader2, ArrowRight,
+  DollarSign, Eye, FileSpreadsheet, BarChart3, Loader2, ArrowRight, Lock,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -479,7 +479,10 @@ export default function LongListPage() {
       <div className="flex-shrink-0 border-b bg-card px-6 py-4">
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-xl font-bold text-foreground">Long List 도출</h1>
+            <div className="flex items-center gap-2">
+              <h1 className="text-xl font-bold text-foreground">Long List 도출</h1>
+              {dashboardStatus?.isListLocked && <Badge variant="destructive" className="gap-1"><Lock className="w-3 h-3" />리스트 잠금</Badge>}
+            </div>
             <p className="text-sm text-muted-foreground mt-1">
               비용 유형별 분류 및 분석 결과를 확인합니다
               {!isEditor && <Badge variant="outline" className="ml-2 text-orange-600 border-orange-300">뷰어 모드</Badge>}
