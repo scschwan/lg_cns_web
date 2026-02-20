@@ -299,6 +299,7 @@ export default function LongListPage() {
 
   // 모달
   const [ratioDetailModal, setRatioDetailModal] = useState({ open: false, title: '', data: null });
+  const [shortListConfirmOpen, setShortListConfirmOpen] = useState(false);
   const [saving, setSaving] = useState(false);
 
   const isReadOnly = !isEditor || dashboardStatus?.isListLocked;
@@ -408,8 +409,23 @@ export default function LongListPage() {
     { costCenterCount: 0, supplierCount: 0, totalAmount: 0 }
   ), [treeData]);
 
-  /* -- Short List 도출 -- */
-  const handleDeriveShortList = async () => {
+  /* -- Short List 도출 (기존 Short List가 있으면 확인 다이얼로그 표시) -- */
+  const handleDeriveShortListClick = async () => {
+    if (!projectId || checkedIds.size === 0) return;
+    try {
+      const selectionsRes = await costReductionService.getShortListSelections(projectId);
+      if (selectionsRes.items?.length > 0) {
+        setShortListConfirmOpen(true);
+      } else {
+        handleDeriveShortListConfirmed();
+      }
+    } catch (err) {
+      handleDeriveShortListConfirmed();
+    }
+  };
+
+  const handleDeriveShortListConfirmed = async () => {
+    setShortListConfirmOpen(false);
     if (!projectId || checkedIds.size === 0) return;
     setSaving(true);
     try {
@@ -471,7 +487,7 @@ export default function LongListPage() {
           </div>
           <div className="flex items-center gap-2">
             {!isReadOnly && checkedIds.size > 0 && (
-              <Button onClick={handleDeriveShortList} disabled={saving} className="gap-1">
+              <Button onClick={handleDeriveShortListClick} disabled={saving} className="gap-1">
                 {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <ArrowRight className="w-4 h-4" />}
                 Short List 도출 ({checkedIds.size}개)
               </Button>
@@ -688,6 +704,24 @@ export default function LongListPage() {
 
       {/* Modals */}
       <RatioDetailModal open={ratioDetailModal.open} onClose={() => setRatioDetailModal({ open: false, title: '', data: null })} title={ratioDetailModal.title} data={ratioDetailModal.data} />
+
+      {/* Short List 초기화 확인 다이얼로그 */}
+      <Dialog open={shortListConfirmOpen} onOpenChange={setShortListConfirmOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Short List 초기화</DialogTitle>
+            <DialogDescription>
+              기존에 저장된 Short List 항목이 있습니다. 새로 Short List를 도출하면 기존 Short List 선택 항목이 초기화됩니다. 계속하시겠습니까?
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex justify-end gap-2 pt-4 border-t">
+            <Button variant="outline" size="sm" onClick={() => setShortListConfirmOpen(false)}>취소</Button>
+            <Button size="sm" onClick={handleDeriveShortListConfirmed} className="bg-blue-600 hover:bg-blue-700">
+              초기화 후 진행
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

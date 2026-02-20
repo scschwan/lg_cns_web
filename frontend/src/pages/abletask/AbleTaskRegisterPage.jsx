@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import {
   ChevronRight, ChevronDown, FilePlus, FileSpreadsheet,
   Link2, FileIcon, Plus, Trash2, Upload, ExternalLink, X, Loader2,
+  ArrowRight, CheckCircle2,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -174,6 +175,66 @@ function TreeRow({ item, level = 0, expandedIds, toggleExpand, checkedIds, onChe
   );
 }
 
+/* ====== Phase Navigation Bar ====== */
+function PhaseNavigationBar({ stats, currentPhase, projectId, navigate }) {
+  const phases = [
+    {
+      key: 'LONG_LIST',
+      label: 'Long List',
+      count: stats?.longListItemCount ?? '-',
+      amount: stats?.totalAmount ?? 0,
+      path: `/projects/${projectId}/longlist`,
+    },
+    {
+      key: 'SHORT_LIST',
+      label: 'Short List',
+      count: stats?.shortListItemCount ?? '-',
+      amount: stats?.shortListTotalAmount ?? 0,
+      path: `/projects/${projectId}/shortlist`,
+    },
+    {
+      key: 'ABLE_REGISTER',
+      label: 'Able 과제 등록',
+      count: null,
+      amount: null,
+      path: `/projects/${projectId}/able-register`,
+    },
+  ];
+
+  const currentIdx = phases.findIndex(p => p.key === currentPhase);
+
+  return (
+    <div className="flex items-center gap-1 py-2">
+      {phases.map((phase, idx) => {
+        const isActive = phase.key === currentPhase;
+        const isPast = idx < currentIdx;
+        return (
+          <React.Fragment key={phase.key}>
+            {idx > 0 && <ArrowRight className="w-4 h-4 text-muted-foreground/50 flex-shrink-0" />}
+            <button
+              onClick={() => navigate(phase.path)}
+              className={cn(
+                'flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs transition-colors',
+                isActive && 'bg-blue-600 text-white',
+                isPast && 'bg-blue-50 text-blue-700 hover:bg-blue-100',
+                !isActive && !isPast && 'bg-muted/50 text-muted-foreground hover:bg-muted',
+              )}
+            >
+              {isPast && <CheckCircle2 className="w-3.5 h-3.5" />}
+              <span className="font-medium">{phase.label}</span>
+              {phase.count != null && (
+                <Badge variant={isActive ? 'secondary' : 'outline'} className="text-[10px] px-1.5 py-0 ml-0.5">
+                  {phase.count}건 / {formatAmount(phase.amount)}
+                </Badge>
+              )}
+            </button>
+          </React.Fragment>
+        );
+      })}
+    </div>
+  );
+}
+
 /* ====== Main ====== */
 export default function AbleTaskRegisterPage() {
   const { projectId } = useParams();
@@ -182,6 +243,7 @@ export default function AbleTaskRegisterPage() {
   const { dashboardStatus } = useDashboardStatus(projectId);
 
   const [treeData, setTreeData] = useState([]);
+  const [phaseStats, setPhaseStats] = useState(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
@@ -205,15 +267,19 @@ export default function AbleTaskRegisterPage() {
   const [linkDialogOpen, setLinkDialogOpen] = useState(false);
   const [fileDialogOpen, setFileDialogOpen] = useState(false);
 
-  // Load Short List tree
+  // Load Short List tree + phase stats
   useEffect(() => {
     if (!projectId) return;
     const load = async () => {
       try {
         setLoading(true);
-        const treeRes = await costReductionService.getShortListTree(projectId);
+        const [treeRes, statsRes] = await Promise.all([
+          costReductionService.getShortListTree(projectId),
+          costReductionService.getShortListStats(projectId),
+        ]);
         const tree = treeRes.tree || [];
         setTreeData(tree);
+        setPhaseStats(statsRes);
         setExpandedIds(new Set(tree.map(n => n.id)));
       } catch (error) {
         console.error('Failed to load tree data:', error);
@@ -336,6 +402,7 @@ export default function AbleTaskRegisterPage() {
             <p className="text-sm text-muted-foreground mt-1">과제를 등록하고 관련 자료를 관리합니다</p>
           </div>
         </div>
+        <PhaseNavigationBar stats={phaseStats} currentPhase="ABLE_REGISTER" projectId={projectId} navigate={navigate} />
       </div>
 
       <div className="flex-1 overflow-hidden flex">

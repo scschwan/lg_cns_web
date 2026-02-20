@@ -159,18 +159,26 @@ public class ShortListService {
         List<LongShortList.ListItem> shortItems = list.getShortListItems() != null
                 ? list.getShortListItems() : Collections.emptyList();
 
-        double longListTotal = longItems.stream()
+        // Level 2 항목만 집계 (Level 2 + Level 3 모두 저장되므로, Level 2만 합산하여 중복 방지)
+        List<LongShortList.ListItem> longLevel2 = longItems.stream()
+                .filter(i -> i.getLevel() != null && i.getLevel() == 2)
+                .toList();
+        List<LongShortList.ListItem> shortLevel2 = shortItems.stream()
+                .filter(i -> i.getLevel() != null && i.getLevel() == 2)
+                .toList();
+
+        double longListTotal = longLevel2.stream()
                 .mapToDouble(i -> i.getTotalAmount() != null ? i.getTotalAmount() : 0.0)
                 .sum();
-        double shortListTotal = shortItems.stream()
+        double shortListTotal = shortLevel2.stream()
                 .mapToDouble(i -> i.getTotalAmount() != null ? i.getTotalAmount() : 0.0)
                 .sum();
 
         double selectionRatio = longListTotal > 0 ? (shortListTotal / longListTotal) * 100 : 0.0;
 
         return ShortListStatsResponse.builder()
-                .longListItemCount(longItems.size())
-                .shortListItemCount(shortItems.size())
+                .longListItemCount(longLevel2.size())
+                .shortListItemCount(shortLevel2.size())
                 .totalAmount(longListTotal)
                 .shortListTotalAmount(shortListTotal)
                 .selectionRatio(Math.round(selectionRatio * 100.0) / 100.0)
