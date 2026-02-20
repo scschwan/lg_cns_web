@@ -1,7 +1,8 @@
-import React, { useState, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import { useParams, useNavigate } from 'react-router-dom';
 import {
   ChevronRight, ChevronDown, Database, Layers, GitBranch, Hash,
-  DollarSign, Eye, FileSpreadsheet, BarChart3,
+  DollarSign, Eye, FileSpreadsheet, BarChart3, Loader2, ArrowRight,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -21,6 +22,9 @@ import {
   PieChart, Pie, Cell, Tooltip, ResponsiveContainer,
   BarChart, Bar, XAxis, YAxis, CartesianGrid,
 } from 'recharts';
+import costReductionService from '../../services/costReductionService';
+import { useEditorLock } from '../../hooks/useEditorLock';
+import { useDashboardStatus } from '../../hooks/useDashboardStatus';
 
 /* ============================================================
    색상 팔레트
@@ -32,98 +36,39 @@ const CHART_COLORS = [
 ];
 
 /* ============================================================
-   임시 데이터
+   헬퍼 함수
    ============================================================ */
-const STATS = {
-  rawDataRows: 191,
-  majorAccounts: 5,
-  mainClusters: 13,
-  subClusters: 38,
-  totalAmount: 95.0,
-};
-
-const TREE_DATA = [
-  {
-    id: '1', name: '간접비', coObjectCount: 45, offsetAccountCount: 12, totalAmount: 28500000000,
-    children: [
-      { id: '1-1', name: '복리후생비', coObjectCount: 12, offsetAccountCount: 4, totalAmount: 8500000000 },
-      { id: '1-2', name: '여비교통비', coObjectCount: 8, offsetAccountCount: 3, totalAmount: 5200000000 },
-      { id: '1-3', name: '통신비', coObjectCount: 6, offsetAccountCount: 2, totalAmount: 3800000000 },
-      { id: '1-4', name: '수도광열비', coObjectCount: 10, offsetAccountCount: 2, totalAmount: 6000000000 },
-      { id: '1-5', name: '세금과공과', coObjectCount: 9, offsetAccountCount: 1, totalAmount: 5000000000 },
-    ],
-  },
-  {
-    id: '2', name: '감가상각비', coObjectCount: 32, offsetAccountCount: 8, totalAmount: 22000000000,
-    children: [
-      { id: '2-1', name: '건물감가상각비', coObjectCount: 10, offsetAccountCount: 3, totalAmount: 8000000000 },
-      { id: '2-2', name: '기계장치감가상각비', coObjectCount: 12, offsetAccountCount: 3, totalAmount: 9000000000 },
-      { id: '2-3', name: '차량운반구감가상각비', coObjectCount: 10, offsetAccountCount: 2, totalAmount: 5000000000 },
-    ],
-  },
-  {
-    id: '3', name: '경상연구개발비', coObjectCount: 28, offsetAccountCount: 6, totalAmount: 18000000000,
-    children: [
-      { id: '3-1', name: '인건비', coObjectCount: 15, offsetAccountCount: 3, totalAmount: 10000000000 },
-      { id: '3-2', name: '재료비', coObjectCount: 8, offsetAccountCount: 2, totalAmount: 5000000000 },
-      { id: '3-3', name: '위탁연구비', coObjectCount: 5, offsetAccountCount: 1, totalAmount: 3000000000 },
-    ],
-  },
-  {
-    id: '4', name: '외주가공비', coObjectCount: 52, offsetAccountCount: 15, totalAmount: 15500000000,
-    children: [
-      { id: '4-1', name: '국내외주가공비', coObjectCount: 30, offsetAccountCount: 8, totalAmount: 9500000000 },
-      { id: '4-2', name: '해외외주가공비', coObjectCount: 22, offsetAccountCount: 7, totalAmount: 6000000000 },
-    ],
-  },
-  {
-    id: '5', name: '소모품비', coObjectCount: 34, offsetAccountCount: 9, totalAmount: 11000000000,
-    children: [
-      { id: '5-1', name: '사무용소모품비', coObjectCount: 14, offsetAccountCount: 4, totalAmount: 4000000000 },
-      { id: '5-2', name: '생산용소모품비', coObjectCount: 12, offsetAccountCount: 3, totalAmount: 4500000000 },
-      { id: '5-3', name: '기타소모품비', coObjectCount: 8, offsetAccountCount: 2, totalAmount: 2500000000 },
-    ],
-  },
-];
-
-const RAW_DATA = Array.from({ length: 50 }, (_, i) => ({
-  id: i + 1,
-  costType: ['간접비', '감가상각비', '경상연구개발비', '외주가공비', '소모품비'][i % 5],
-  costSubType: ['복리후생비', '건물감가상각비', '인건비', '국내외주가공비', '사무용소모품비'][i % 5],
-  coObject: `CO-${String(1000 + i).padStart(4, '0')}`,
-  offsetAccount: `SA-${String(2000 + i).padStart(4, '0')}`,
-  text: ['장비유지보수', '시설관리비용', '연구인력급여', '부품가공비', '사무용품구매'][i % 5],
-  amount: Math.round((Math.random() * 5 + 0.5) * 100000000),
-  company: ['(주)삼성전자', '(주)LG전자', '(주)현대모비스', '(주)SK하이닉스', '(주)포스코'][i % 5],
-  center: ['생산1센터', '생산2센터', '연구개발센터', '품질관리센터', '물류센터'][i % 5],
-}));
-
-/* ============================================================
-   헬퍼: 모든 leaf id 모으기
-   ============================================================ */
-function getAllLeafIds(items) {
+function getAllLeafIds(tree) {
   const ids = [];
-  items.forEach(item => {
-    if (item.children?.length) item.children.forEach(c => ids.push(c.id));
-    else ids.push(item.id);
+  tree.forEach(node => {
+    if (node.children?.length) {
+      node.children.forEach(child => {
+        if (child.children?.length) {
+          child.children.forEach(sub => { if (sub.statisticsId) ids.push(sub.statisticsId); });
+        } else if (child.statisticsId) {
+          ids.push(child.statisticsId);
+        }
+      });
+    }
   });
   return ids;
 }
 
-function getChildIds(item) {
-  return item.children ? item.children.map(c => c.id) : [item.id];
+function getNodeId(node) {
+  return node.statisticsId || node.id;
 }
 
-/* ============================================================
-   금액 포맷
-   ============================================================ */
+function getNodeName(node) {
+  if (node.level === 1) return node.accountName;
+  return node.clusterName || node.accountName || '(이름 없음)';
+}
+
 const formatAmount = (v) => {
-  if (v >= 100000000) return (v / 100000000).toFixed(1) + '억';
-  if (v >= 10000) return (v / 10000).toFixed(0) + '만';
+  if (v == null) return '0';
+  if (Math.abs(v) >= 100000000) return (v / 100000000).toFixed(1) + '억';
+  if (Math.abs(v) >= 10000) return (v / 10000).toFixed(0) + '만';
   return v.toLocaleString();
 };
-
-const formatAmountFull = (v) => v.toLocaleString() + '원';
 
 /* ============================================================
    Stat Card
@@ -152,24 +97,45 @@ function StatCard({ icon: Icon, label, value, unit, color }) {
 /* ============================================================
    Tree Table Row (체크박스 포함)
    ============================================================ */
-function TreeRow({ item, level = 0, expandedIds, toggleExpand, checkedIds, onCheck }) {
+function TreeRow({ item, level = 0, expandedIds, toggleExpand, checkedIds, onCheck, isReadOnly, onItemClick }) {
   const hasChildren = item.children && item.children.length > 0;
-  const isExpanded = expandedIds.has(item.id);
+  const nodeId = getNodeId(item);
+  const isExpanded = expandedIds.has(nodeId);
   const paddingLeft = 16 + level * 24;
 
-  // 부모: 자식 전부 체크 → checked, 일부만 → indeterminate
-  const isChecked = hasChildren
-    ? item.children.every(c => checkedIds.has(c.id))
-    : checkedIds.has(item.id);
-  const isIndeterminate = hasChildren && !isChecked && item.children.some(c => checkedIds.has(c.id));
+  const getChildLeafIds = (node) => {
+    const ids = [];
+    if (node.children?.length) {
+      node.children.forEach(c => {
+        if (c.children?.length) {
+          c.children.forEach(sub => ids.push(getNodeId(sub)));
+        } else {
+          ids.push(getNodeId(c));
+        }
+      });
+    }
+    return ids;
+  };
+
+  const leafIds = hasChildren ? getChildLeafIds(item) : [nodeId];
+  const isChecked = leafIds.every(id => checkedIds.has(id));
+  const isIndeterminate = !isChecked && leafIds.some(id => checkedIds.has(id));
 
   const handleCheck = () => {
-    if (hasChildren) {
-      const childIds = item.children.map(c => c.id);
-      if (isChecked) onCheck(prev => { const n = new Set(prev); childIds.forEach(id => n.delete(id)); return n; });
-      else onCheck(prev => { const n = new Set(prev); childIds.forEach(id => n.add(id)); return n; });
+    if (isReadOnly) return;
+    if (isChecked) {
+      onCheck(prev => { const n = new Set(prev); leafIds.forEach(id => n.delete(id)); return n; });
     } else {
-      onCheck(prev => { const n = new Set(prev); n.has(item.id) ? n.delete(item.id) : n.add(item.id); return n; });
+      onCheck(prev => { const n = new Set(prev); leafIds.forEach(id => n.add(id)); return n; });
+    }
+  };
+
+  const handleRowClick = () => {
+    if (hasChildren) {
+      toggleExpand(nodeId);
+    }
+    if (item.statisticsId && onItemClick) {
+      onItemClick(item);
     }
   };
 
@@ -180,14 +146,15 @@ function TreeRow({ item, level = 0, expandedIds, toggleExpand, checkedIds, onChe
           'cursor-pointer transition-colors',
           level === 0 && 'bg-muted/30 font-medium',
           level > 0 && 'text-sm',
-          (isChecked || (level > 0 && checkedIds.has(item.id))) && 'bg-blue-50',
+          leafIds.some(id => checkedIds.has(id)) && 'bg-blue-50',
         )}
-        onClick={() => hasChildren && toggleExpand(item.id)}
+        onClick={handleRowClick}
       >
         <TableCell className="w-[40px] text-center py-2.5" onClick={e => e.stopPropagation()}>
           <Checkbox
             checked={isIndeterminate ? 'indeterminate' : isChecked}
             onCheckedChange={handleCheck}
+            disabled={isReadOnly}
           />
         </TableCell>
         <TableCell style={{ paddingLeft: level > 0 ? paddingLeft : 8 }} className="py-2.5">
@@ -197,23 +164,23 @@ function TreeRow({ item, level = 0, expandedIds, toggleExpand, checkedIds, onChe
                 {isExpanded ? <ChevronDown className="w-4 h-4 text-muted-foreground" /> : <ChevronRight className="w-4 h-4 text-muted-foreground" />}
               </span>
             ) : <span className="w-4 h-4 flex-shrink-0" />}
-            <span className={cn(level === 0 ? 'font-semibold' : 'text-foreground')}>{item.name}</span>
+            <span className={cn(level === 0 ? 'font-semibold' : 'text-foreground')}>{getNodeName(item)}</span>
             {level === 0 && hasChildren && <Badge variant="secondary" className="text-[10px] ml-1 px-1.5 py-0">{item.children.length}</Badge>}
           </div>
         </TableCell>
-        <TableCell className="text-right tabular-nums py-2.5">{item.coObjectCount.toLocaleString()}</TableCell>
-        <TableCell className="text-right tabular-nums py-2.5">{item.offsetAccountCount.toLocaleString()}</TableCell>
+        <TableCell className="text-right tabular-nums py-2.5">{(item.costCenterCount || 0).toLocaleString()}</TableCell>
+        <TableCell className="text-right tabular-nums py-2.5">{(item.supplierCount || 0).toLocaleString()}</TableCell>
         <TableCell className="text-right tabular-nums py-2.5 font-medium">{formatAmount(item.totalAmount)}</TableCell>
       </TableRow>
       {isExpanded && hasChildren && item.children.map(child => (
-        <TreeRow key={child.id} item={child} level={level + 1} expandedIds={expandedIds} toggleExpand={toggleExpand} checkedIds={checkedIds} onCheck={onCheck} />
+        <TreeRow key={getNodeId(child)} item={child} level={level + 1} expandedIds={expandedIds} toggleExpand={toggleExpand} checkedIds={checkedIds} onCheck={onCheck} isReadOnly={isReadOnly} onItemClick={onItemClick} />
       ))}
     </>
   );
 }
 
 /* ============================================================
-   Detail Modal (비용유형 금액 비율 자세히 보기)
+   Detail Modal (금액 비율 자세히 보기)
    ============================================================ */
 function RatioDetailModal({ open, onClose, title, data }) {
   if (!data || data.length === 0) return null;
@@ -257,72 +224,18 @@ function RatioDetailModal({ open, onClose, title, data }) {
 }
 
 /* ============================================================
-   Raw Data Modal
+   Selected Item Stats Card
    ============================================================ */
-function RawDataModal({ open, onClose, data }) {
-  const [page, setPage] = useState(0);
-  const [pageSize, setPageSize] = useState(20);
-  const totalPages = Math.ceil(data.length / pageSize);
-  const pagedData = data.slice(page * pageSize, (page + 1) * pageSize);
-
+function SelectedItemCard({ itemStats, itemName }) {
+  if (!itemStats) return null;
   return (
-    <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent className="max-w-5xl max-h-[85vh] overflow-hidden flex flex-col">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2"><FileSpreadsheet className="w-5 h-5 text-green-600" />Raw Data</DialogTitle>
-          <DialogDescription>원본 데이터를 확인합니다. 총 {data.length.toLocaleString()}건</DialogDescription>
-        </DialogHeader>
-        <div className="flex-1 overflow-auto border rounded-lg">
-          <Table>
-            <TableHeader>
-              <TableRow className="bg-muted/50">
-                <TableHead className="w-[60px] text-center">No</TableHead>
-                <TableHead>비용유형</TableHead>
-                <TableHead>비용유형(상세)</TableHead>
-                <TableHead>코스트센터</TableHead>
-                <TableHead>공급업체</TableHead>
-                <TableHead>텍스트</TableHead>
-                <TableHead className="text-right">금액</TableHead>
-                <TableHead>업체명</TableHead>
-                <TableHead>센터</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {pagedData.map((row) => (
-                <TableRow key={row.id}>
-                  <TableCell className="text-center text-xs tabular-nums">{row.id}</TableCell>
-                  <TableCell className="text-xs">{row.costType}</TableCell>
-                  <TableCell className="text-xs">{row.costSubType}</TableCell>
-                  <TableCell className="text-xs font-mono">{row.coObject}</TableCell>
-                  <TableCell className="text-xs font-mono">{row.offsetAccount}</TableCell>
-                  <TableCell className="text-xs">{row.text}</TableCell>
-                  <TableCell className="text-right text-xs tabular-nums">{formatAmountFull(row.amount)}</TableCell>
-                  <TableCell className="text-xs">{row.company}</TableCell>
-                  <TableCell className="text-xs">{row.center}</TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </div>
-        <div className="flex items-center justify-between text-xs pt-3 border-t">
-          <span className="text-muted-foreground">{page * pageSize + 1}-{Math.min((page + 1) * pageSize, data.length)} / 총 {data.length.toLocaleString()}건</span>
-          <div className="flex items-center gap-2">
-            <Select value={pageSize.toString()} onValueChange={v => { setPageSize(+v); setPage(0); }}>
-              <SelectTrigger className="w-[100px] h-8 text-xs"><SelectValue /></SelectTrigger>
-              <SelectContent>{[20, 50, 100].map(n => <SelectItem key={n} value={n.toString()}>{n}개씩</SelectItem>)}</SelectContent>
-            </Select>
-            <div className="flex gap-1">
-              <Button variant="outline" size="sm" className="h-8 px-2" onClick={() => setPage(0)} disabled={page === 0}>처음</Button>
-              <Button variant="outline" size="sm" className="h-8 px-2" onClick={() => setPage(p => p - 1)} disabled={page === 0}>이전</Button>
-              <span className="flex items-center px-2 text-xs font-medium">{page + 1}/{totalPages || 1}</span>
-              <Button variant="outline" size="sm" className="h-8 px-2" onClick={() => setPage(p => p + 1)} disabled={page >= totalPages - 1}>다음</Button>
-              <Button variant="outline" size="sm" className="h-8 px-2" onClick={() => setPage(totalPages - 1)} disabled={page >= totalPages - 1}>마지막</Button>
-            </div>
-          </div>
-        </div>
-        <div className="flex justify-end pt-2"><Button variant="outline" onClick={() => onClose(false)}>닫기</Button></div>
-      </DialogContent>
-    </Dialog>
+    <div className="grid grid-cols-5 gap-3">
+      <StatCard icon={FileSpreadsheet} label="Raw Data 행 수" value={itemStats.rawDataRows || 0} color="bg-blue-500" />
+      <StatCard icon={Layers} label="공급업체 수" value={itemStats.supplierCount || 0} color="bg-purple-500" />
+      <StatCard icon={GitBranch} label="코스트센터 수" value={itemStats.costCenterCount || 0} color="bg-green-500" />
+      <StatCard icon={DollarSign} label="합계 금액" value={formatAmount(itemStats.totalAmount || 0)} color="bg-orange-500" />
+      <StatCard icon={BarChart3} label="전체 대비 비율" value={itemStats.ratioToTotal || 0} unit="%" color="bg-rose-500" />
+    </div>
   );
 }
 
@@ -330,45 +243,166 @@ function RawDataModal({ open, onClose, data }) {
    메인 LongListPage
    ============================================================ */
 export default function LongListPage() {
-  const [expandedIds, setExpandedIds] = useState(new Set(['1']));
-  const [checkedIds, setCheckedIds] = useState(() => new Set(getAllLeafIds(TREE_DATA)));
+  const { projectId } = useParams();
+  const navigate = useNavigate();
+  const { isEditor } = useEditorLock(projectId);
+  const { dashboardStatus } = useDashboardStatus(projectId);
+
+  const [treeData, setTreeData] = useState([]);
+  const [stats, setStats] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [expandedIds, setExpandedIds] = useState(new Set());
+  const [checkedIds, setCheckedIds] = useState(new Set());
+
+  // 선택 항목 차트
+  const [selectedItem, setSelectedItem] = useState(null);
+  const [chartData, setChartData] = useState(null);
+  const [itemStats, setItemStats] = useState(null);
+  const [chartTop, setChartTop] = useState(5);
+  const [chartLoading, setChartLoading] = useState(false);
+
+  // 모달
   const [ratioDetailModal, setRatioDetailModal] = useState({ open: false, title: '', data: null });
-  const [rawDataModal, setRawDataModal] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  const isReadOnly = !isEditor || dashboardStatus?.isListLocked;
+
+  // 데이터 로드
+  useEffect(() => {
+    if (!projectId) return;
+    const load = async () => {
+      setLoading(true);
+      try {
+        const [treeRes, statsRes, selectionsRes] = await Promise.all([
+          costReductionService.getLongListTree(projectId),
+          costReductionService.getLongListStats(projectId),
+          costReductionService.getLongListSelections(projectId),
+        ]);
+        setTreeData(treeRes.tree || []);
+        setStats(statsRes);
+
+        // 기존 선택 항목 복원
+        if (selectionsRes.items?.length > 0) {
+          setCheckedIds(new Set(selectionsRes.items.map(i => i.statisticsId)));
+        } else {
+          // 최초: 전체 선택
+          setCheckedIds(new Set(getAllLeafIds(treeRes.tree || [])));
+        }
+
+        // 첫 번째 계정명 펼치기
+        if (treeRes.tree?.length > 0) {
+          setExpandedIds(new Set([getNodeId(treeRes.tree[0])]));
+        }
+      } catch (err) {
+        console.error('Failed to load long list data:', err);
+      } finally {
+        setLoading(false);
+      }
+    };
+    load();
+  }, [projectId]);
+
+  // 항목 클릭 → 차트 데이터 로드
+  const handleItemClick = useCallback(async (item) => {
+    if (!item.statisticsId || !projectId) return;
+    setSelectedItem(item);
+    setChartLoading(true);
+    try {
+      const [chartRes, itemStatsRes] = await Promise.all([
+        costReductionService.getLongListChart(projectId, item.statisticsId, chartTop),
+        costReductionService.getLongListItemStats(projectId, item.statisticsId),
+      ]);
+      setChartData(chartRes);
+      setItemStats(itemStatsRes);
+    } catch (err) {
+      console.error('Failed to load chart data:', err);
+    } finally {
+      setChartLoading(false);
+    }
+  }, [projectId, chartTop]);
+
+  // Top N 변경 시 차트 재로드
+  useEffect(() => {
+    if (selectedItem?.statisticsId && projectId) {
+      const reload = async () => {
+        try {
+          const chartRes = await costReductionService.getLongListChart(projectId, selectedItem.statisticsId, chartTop);
+          setChartData(chartRes);
+        } catch (err) {
+          console.error('Failed to reload chart:', err);
+        }
+      };
+      reload();
+    }
+  }, [chartTop, selectedItem?.statisticsId, projectId]);
 
   const toggleExpand = useCallback((id) => {
     setExpandedIds(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
   }, []);
 
-  const expandAll = () => setExpandedIds(new Set(TREE_DATA.map(i => i.id)));
+  const expandAll = () => setExpandedIds(new Set(treeData.map(i => getNodeId(i))));
   const collapseAll = () => setExpandedIds(new Set());
-  const selectAll = () => setCheckedIds(new Set(getAllLeafIds(TREE_DATA)));
+  const selectAll = () => setCheckedIds(new Set(getAllLeafIds(treeData)));
   const deselectAll = () => setCheckedIds(new Set());
 
   /* -- 합계 -- */
-  const totals = useMemo(() => TREE_DATA.reduce(
-    (a, i) => ({ coObjectCount: a.coObjectCount + i.coObjectCount, offsetAccountCount: a.offsetAccountCount + i.offsetAccountCount, totalAmount: a.totalAmount + i.totalAmount }),
-    { coObjectCount: 0, offsetAccountCount: 0, totalAmount: 0 }
-  ), []);
+  const totals = useMemo(() => treeData.reduce(
+    (a, i) => ({
+      costCenterCount: a.costCenterCount + (i.costCenterCount || 0),
+      supplierCount: a.supplierCount + (i.supplierCount || 0),
+      totalAmount: a.totalAmount + (i.totalAmount || 0),
+    }),
+    { costCenterCount: 0, supplierCount: 0, totalAmount: 0 }
+  ), [treeData]);
 
-  /* -- 체크된 항목 기준 차트 데이터 -- */
-  const chartData = useMemo(() => {
-    const items = [];
-    TREE_DATA.forEach(parent => {
-      if (!parent.children) return;
-      parent.children.forEach(child => {
-        if (checkedIds.has(child.id)) items.push(child);
-      });
-    });
-    const total = items.reduce((s, i) => s + i.totalAmount, 0);
-    return items.map(i => ({
+  /* -- Short List 도출 -- */
+  const handleDeriveShortList = async () => {
+    if (!projectId || checkedIds.size === 0) return;
+    setSaving(true);
+    try {
+      const items = buildListItemsFromChecked(treeData, checkedIds);
+      await costReductionService.saveLongListSelections(projectId, items);
+      navigate(`/projects/${projectId}/shortlist`);
+    } catch (err) {
+      console.error('Failed to save selections:', err);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  /* -- 차트 데이터 변환 (공급업체/코스트센터) -- */
+  const supplierChartData = useMemo(() => {
+    if (!chartData?.supplierBreakdown) return [];
+    const total = chartData.supplierBreakdown.reduce((s, i) => s + (i.totalAmount || 0), 0);
+    return chartData.supplierBreakdown.map(i => ({
       name: i.name,
-      amount: i.totalAmount,
-      ratio: total > 0 ? +(i.totalAmount / total * 100).toFixed(1) : 0,
+      amount: i.totalAmount || 0,
+      count: i.count || 0,
+      ratio: total > 0 ? +((i.totalAmount || 0) / total * 100).toFixed(1) : 0,
+      금액: Math.round((i.totalAmount || 0) / 100000000 * 10) / 10,
     }));
-  }, [checkedIds]);
+  }, [chartData]);
 
-  const barData = useMemo(() => chartData.map(d => ({ name: d.name, 금액: Math.round(d.amount / 100000000 * 10) / 10 })), [chartData]);
-  const selectedTotal = useMemo(() => chartData.reduce((s, d) => s + d.amount, 0), [chartData]);
+  const costCenterChartData = useMemo(() => {
+    if (!chartData?.costCenterBreakdown) return [];
+    const total = chartData.costCenterBreakdown.reduce((s, i) => s + (i.totalAmount || 0), 0);
+    return chartData.costCenterBreakdown.map(i => ({
+      name: i.name,
+      amount: i.totalAmount || 0,
+      count: i.count || 0,
+      ratio: total > 0 ? +((i.totalAmount || 0) / total * 100).toFixed(1) : 0,
+      금액: Math.round((i.totalAmount || 0) / 100000000 * 10) / 10,
+    }));
+  }, [chartData]);
+
+  if (loading) {
+    return (
+      <div className="h-full flex items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+        <span className="ml-3 text-muted-foreground">데이터 로딩 중...</span>
+      </div>
+    );
+  }
 
   return (
     <div className="h-full flex flex-col overflow-hidden bg-background">
@@ -377,24 +411,34 @@ export default function LongListPage() {
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-xl font-bold text-foreground">Long List 도출</h1>
-            <p className="text-sm text-muted-foreground mt-1">비용 유형별 분류 및 분석 결과를 확인합니다</p>
+            <p className="text-sm text-muted-foreground mt-1">
+              비용 유형별 분류 및 분석 결과를 확인합니다
+              {!isEditor && <Badge variant="outline" className="ml-2 text-orange-600 border-orange-300">뷰어 모드</Badge>}
+            </p>
           </div>
-          <Button variant="outline" size="sm" onClick={() => setRawDataModal(true)}>
-            <FileSpreadsheet className="w-4 h-4 mr-1" />Raw Data 보기
-          </Button>
+          <div className="flex items-center gap-2">
+            {!isReadOnly && checkedIds.size > 0 && (
+              <Button onClick={handleDeriveShortList} disabled={saving} className="gap-1">
+                {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <ArrowRight className="w-4 h-4" />}
+                Short List 도출 ({checkedIds.size}개)
+              </Button>
+            )}
+          </div>
         </div>
       </div>
 
       <div className="flex-1 overflow-y-auto">
         <div className="p-6 space-y-6">
           {/* Stats */}
-          <div className="grid grid-cols-5 gap-4">
-            <StatCard icon={Database} label="Raw Data 행 수" value={STATS.rawDataRows} color="bg-blue-500" />
-            <StatCard icon={Layers} label="대계정 수" value={STATS.majorAccounts} color="bg-purple-500" />
-            <StatCard icon={GitBranch} label="메인 클러스터 수" value={STATS.mainClusters} color="bg-green-500" />
-            <StatCard icon={Hash} label="서브 클러스터 수" value={STATS.subClusters} color="bg-orange-500" />
-            <StatCard icon={DollarSign} label="총 금액" value={STATS.totalAmount} unit="억" color="bg-rose-500" />
-          </div>
+          {stats && (
+            <div className="grid grid-cols-5 gap-4">
+              <StatCard icon={Database} label="Raw Data 행 수" value={stats.rawDataRows || 0} color="bg-blue-500" />
+              <StatCard icon={Layers} label="대계정 수" value={stats.accountCount || 0} color="bg-purple-500" />
+              <StatCard icon={GitBranch} label="메인 클러스터 수" value={stats.mainClusterCount || 0} color="bg-green-500" />
+              <StatCard icon={Hash} label="서브 클러스터 수" value={stats.subClusterCount || 0} color="bg-orange-500" />
+              <StatCard icon={DollarSign} label="총 금액" value={formatAmount(stats.totalAmount || 0)} color="bg-rose-500" />
+            </div>
+          )}
 
           {/* Tree Table */}
           <Card>
@@ -405,9 +449,13 @@ export default function LongListPage() {
                   <Badge variant="outline" className="text-[10px]">{checkedIds.size}개 선택</Badge>
                 </div>
                 <div className="flex items-center gap-2">
-                  <Button variant="ghost" size="sm" className="text-xs h-7 px-2" onClick={selectAll}>전체 선택</Button>
-                  <Button variant="ghost" size="sm" className="text-xs h-7 px-2" onClick={deselectAll}>선택 해제</Button>
-                  <span className="w-px h-4 bg-border" />
+                  {!isReadOnly && (
+                    <>
+                      <Button variant="ghost" size="sm" className="text-xs h-7 px-2" onClick={selectAll}>전체 선택</Button>
+                      <Button variant="ghost" size="sm" className="text-xs h-7 px-2" onClick={deselectAll}>선택 해제</Button>
+                      <span className="w-px h-4 bg-border" />
+                    </>
+                  )}
                   <Button variant="ghost" size="sm" className="text-xs h-7 px-2" onClick={expandAll}>모두 펼치기</Button>
                   <Button variant="ghost" size="sm" className="text-xs h-7 px-2" onClick={collapseAll}>모두 접기</Button>
                 </div>
@@ -426,14 +474,23 @@ export default function LongListPage() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {TREE_DATA.map(item => (
-                      <TreeRow key={item.id} item={item} expandedIds={expandedIds} toggleExpand={toggleExpand} checkedIds={checkedIds} onCheck={setCheckedIds} />
+                    {treeData.map(item => (
+                      <TreeRow
+                        key={getNodeId(item)}
+                        item={item}
+                        expandedIds={expandedIds}
+                        toggleExpand={toggleExpand}
+                        checkedIds={checkedIds}
+                        onCheck={setCheckedIds}
+                        isReadOnly={isReadOnly}
+                        onItemClick={handleItemClick}
+                      />
                     ))}
                     <TableRow className="bg-primary/5 font-bold border-t-2">
                       <TableCell />
                       <TableCell className="pl-2 py-3"><span className="text-sm font-bold">합계</span></TableCell>
-                      <TableCell className="text-right tabular-nums py-3">{totals.coObjectCount.toLocaleString()}</TableCell>
-                      <TableCell className="text-right tabular-nums py-3">{totals.offsetAccountCount.toLocaleString()}</TableCell>
+                      <TableCell className="text-right tabular-nums py-3">{totals.costCenterCount.toLocaleString()}</TableCell>
+                      <TableCell className="text-right tabular-nums py-3">{totals.supplierCount.toLocaleString()}</TableCell>
                       <TableCell className="text-right tabular-nums py-3 font-bold">{formatAmount(totals.totalAmount)}</TableCell>
                     </TableRow>
                   </TableBody>
@@ -442,82 +499,134 @@ export default function LongListPage() {
             </CardContent>
           </Card>
 
-          {/* Charts: 체크된 비용유형 기준 */}
-          {chartData.length > 0 ? (
-            <div className="grid grid-cols-2 gap-4">
-              {/* Bar Chart */}
-              <Card>
-                <CardHeader className="pb-2 px-5 pt-5">
-                  <div className="flex items-center justify-between">
-                    <CardTitle className="text-sm font-semibold flex items-center gap-2">
-                      <BarChart3 className="w-4 h-4 text-muted-foreground" />
-                      선택 항목 금액 비교
-                    </CardTitle>
-                    <Badge variant="outline" className="text-[10px]">선택 합계: {formatAmount(selectedTotal)}</Badge>
-                  </div>
-                </CardHeader>
-                <CardContent className="px-2 pb-4">
-                  <ResponsiveContainer width="100%" height={Math.max(200, chartData.length * 32)}>
-                    <BarChart data={barData} layout="vertical" margin={{ left: 10, right: 20 }}>
-                      <CartesianGrid strokeDasharray="3 3" />
-                      <XAxis type="number" tick={{ fontSize: 10 }} unit="억" />
-                      <YAxis type="category" dataKey="name" tick={{ fontSize: 10 }} width={100} />
-                      <Tooltip formatter={(v) => [`${v}억`, '금액']} />
-                      <Bar dataKey="금액" radius={[0, 4, 4, 0]}>
-                        {barData.map((_, idx) => <Cell key={idx} fill={CHART_COLORS[idx % CHART_COLORS.length]} />)}
-                      </Bar>
-                    </BarChart>
-                  </ResponsiveContainer>
-                </CardContent>
-              </Card>
-
-              {/* Pie Chart */}
-              <Card>
-                <CardHeader className="pb-2 px-5 pt-5">
-                  <div className="flex items-center justify-between">
-                    <CardTitle className="text-sm font-semibold flex items-center gap-2">
-                      <Eye className="w-4 h-4 text-muted-foreground" />
-                      선택 항목 금액 비율
-                    </CardTitle>
-                    <Button variant="ghost" size="sm" className="text-xs text-blue-600 h-7 px-2"
-                      onClick={() => setRatioDetailModal({ open: true, title: '선택 항목 금액 비율 자세히 보기', data: chartData })}>
-                      <Eye className="w-3 h-3 mr-1" />자세히 보기
-                    </Button>
-                  </div>
-                </CardHeader>
-                <CardContent className="px-5 pb-5">
-                  <div className="flex items-start gap-6">
-                    <div className="relative">
-                      <ResponsiveContainer width={160} height={160}>
-                        <PieChart>
-                          <Pie data={chartData} dataKey="amount" nameKey="name" cx="50%" cy="50%" innerRadius={40} outerRadius={70} paddingAngle={2}>
-                            {chartData.map((_, idx) => <Cell key={idx} fill={CHART_COLORS[idx % CHART_COLORS.length]} />)}
-                          </Pie>
-                          <Tooltip formatter={(v) => formatAmount(v)} />
-                        </PieChart>
-                      </ResponsiveContainer>
-                      <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-                        <span className="text-[10px] text-muted-foreground">합계</span>
-                        <span className="text-xs font-bold">{formatAmount(selectedTotal)}</span>
-                      </div>
-                    </div>
-                    <div className="flex-1 space-y-1.5 min-w-0 max-h-[160px] overflow-y-auto">
-                      {chartData.map((item, idx) => (
-                        <div key={idx} className="flex items-center gap-2 text-xs">
-                          <div className="w-3 h-3 rounded-sm flex-shrink-0" style={{ backgroundColor: CHART_COLORS[idx % CHART_COLORS.length] }} />
-                          <span className="truncate flex-1">{item.name}</span>
-                          <span className="font-semibold tabular-nums flex-shrink-0">{item.ratio}%</span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
+          {/* Selected Item Stats Card */}
+          {selectedItem && itemStats && (
+            <div className="space-y-2">
+              <h3 className="text-sm font-semibold text-muted-foreground">
+                선택 항목: {getNodeName(selectedItem)}
+              </h3>
+              <SelectedItemCard itemStats={itemStats} itemName={getNodeName(selectedItem)} />
             </div>
-          ) : (
+          )}
+
+          {/* Charts: 공급업체 + 코스트센터 */}
+          {selectedItem && chartData && (
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <h3 className="text-sm font-semibold text-muted-foreground">
+                  {getNodeName(selectedItem)} 차트
+                </h3>
+                <Select value={chartTop.toString()} onValueChange={v => setChartTop(+v)}>
+                  <SelectTrigger className="w-[100px] h-8 text-xs"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="5">Top 5</SelectItem>
+                    <SelectItem value="10">Top 10</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {chartLoading ? (
+                <div className="flex items-center justify-center py-8">
+                  <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                </div>
+              ) : (
+                <>
+                  {/* 공급업체 차트 */}
+                  {supplierChartData.length > 0 && (
+                    <div className="grid grid-cols-2 gap-4">
+                      <Card>
+                        <CardHeader className="pb-2 px-5 pt-5">
+                          <CardTitle className="text-sm font-semibold flex items-center gap-2">
+                            <BarChart3 className="w-4 h-4 text-muted-foreground" />
+                            공급업체별 금액 비교
+                          </CardTitle>
+                        </CardHeader>
+                        <CardContent className="px-2 pb-4">
+                          <ResponsiveContainer width="100%" height={Math.max(200, supplierChartData.length * 32)}>
+                            <BarChart data={supplierChartData} layout="vertical" margin={{ left: 10, right: 20 }}>
+                              <CartesianGrid strokeDasharray="3 3" />
+                              <XAxis type="number" tick={{ fontSize: 10 }} unit="억" />
+                              <YAxis type="category" dataKey="name" tick={{ fontSize: 10 }} width={100} />
+                              <Tooltip formatter={(v) => [`${v}억`, '금액']} />
+                              <Bar dataKey="금액" radius={[0, 4, 4, 0]}>
+                                {supplierChartData.map((_, idx) => <Cell key={idx} fill={CHART_COLORS[idx % CHART_COLORS.length]} />)}
+                              </Bar>
+                            </BarChart>
+                          </ResponsiveContainer>
+                        </CardContent>
+                      </Card>
+                      <Card>
+                        <CardHeader className="pb-2 px-5 pt-5">
+                          <div className="flex items-center justify-between">
+                            <CardTitle className="text-sm font-semibold flex items-center gap-2">
+                              <Eye className="w-4 h-4 text-muted-foreground" />
+                              공급업체별 금액 비율
+                            </CardTitle>
+                            <Button variant="ghost" size="sm" className="text-xs text-blue-600 h-7 px-2"
+                              onClick={() => setRatioDetailModal({ open: true, title: '공급업체별 금액 비율', data: supplierChartData })}>
+                              <Eye className="w-3 h-3 mr-1" />자세히 보기
+                            </Button>
+                          </div>
+                        </CardHeader>
+                        <CardContent className="px-5 pb-5">
+                          <ChartPieWithLegend data={supplierChartData} />
+                        </CardContent>
+                      </Card>
+                    </div>
+                  )}
+
+                  {/* 코스트센터 차트 */}
+                  {costCenterChartData.length > 0 && (
+                    <div className="grid grid-cols-2 gap-4">
+                      <Card>
+                        <CardHeader className="pb-2 px-5 pt-5">
+                          <CardTitle className="text-sm font-semibold flex items-center gap-2">
+                            <BarChart3 className="w-4 h-4 text-muted-foreground" />
+                            코스트센터별 금액 비교
+                          </CardTitle>
+                        </CardHeader>
+                        <CardContent className="px-2 pb-4">
+                          <ResponsiveContainer width="100%" height={Math.max(200, costCenterChartData.length * 32)}>
+                            <BarChart data={costCenterChartData} layout="vertical" margin={{ left: 10, right: 20 }}>
+                              <CartesianGrid strokeDasharray="3 3" />
+                              <XAxis type="number" tick={{ fontSize: 10 }} unit="억" />
+                              <YAxis type="category" dataKey="name" tick={{ fontSize: 10 }} width={100} />
+                              <Tooltip formatter={(v) => [`${v}억`, '금액']} />
+                              <Bar dataKey="금액" radius={[0, 4, 4, 0]}>
+                                {costCenterChartData.map((_, idx) => <Cell key={idx} fill={CHART_COLORS[idx % CHART_COLORS.length]} />)}
+                              </Bar>
+                            </BarChart>
+                          </ResponsiveContainer>
+                        </CardContent>
+                      </Card>
+                      <Card>
+                        <CardHeader className="pb-2 px-5 pt-5">
+                          <div className="flex items-center justify-between">
+                            <CardTitle className="text-sm font-semibold flex items-center gap-2">
+                              <Eye className="w-4 h-4 text-muted-foreground" />
+                              코스트센터별 금액 비율
+                            </CardTitle>
+                            <Button variant="ghost" size="sm" className="text-xs text-blue-600 h-7 px-2"
+                              onClick={() => setRatioDetailModal({ open: true, title: '코스트센터별 금액 비율', data: costCenterChartData })}>
+                              <Eye className="w-3 h-3 mr-1" />자세히 보기
+                            </Button>
+                          </div>
+                        </CardHeader>
+                        <CardContent className="px-5 pb-5">
+                          <ChartPieWithLegend data={costCenterChartData} />
+                        </CardContent>
+                      </Card>
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+          )}
+
+          {!selectedItem && treeData.length > 0 && (
             <Card>
               <CardContent className="py-12 text-center text-sm text-muted-foreground">
-                차트를 표시하려면 위 목록에서 항목을 선택하세요.
+                차트를 보려면 트리에서 클러스터 항목을 클릭하세요.
               </CardContent>
             </Card>
           )}
@@ -526,7 +635,101 @@ export default function LongListPage() {
 
       {/* Modals */}
       <RatioDetailModal open={ratioDetailModal.open} onClose={() => setRatioDetailModal({ open: false, title: '', data: null })} title={ratioDetailModal.title} data={ratioDetailModal.data} />
-      <RawDataModal open={rawDataModal} onClose={() => setRawDataModal(false)} data={RAW_DATA} />
     </div>
   );
+}
+
+/* ============================================================
+   Pie Chart with Legend (토글 기능)
+   ============================================================ */
+function ChartPieWithLegend({ data }) {
+  const [hiddenItems, setHiddenItems] = useState(new Set());
+
+  const visibleData = data.filter((_, idx) => !hiddenItems.has(idx));
+  const visibleTotal = visibleData.reduce((s, d) => s + d.amount, 0);
+
+  const toggleItem = (idx) => {
+    setHiddenItems(prev => {
+      const n = new Set(prev);
+      n.has(idx) ? n.delete(idx) : n.add(idx);
+      return n;
+    });
+  };
+
+  return (
+    <div className="flex items-start gap-6">
+      <div className="relative">
+        <ResponsiveContainer width={160} height={160}>
+          <PieChart>
+            <Pie data={visibleData} dataKey="amount" nameKey="name" cx="50%" cy="50%" innerRadius={40} outerRadius={70} paddingAngle={2}>
+              {visibleData.map((item, idx) => {
+                const origIdx = data.indexOf(item);
+                return <Cell key={idx} fill={CHART_COLORS[origIdx % CHART_COLORS.length]} />;
+              })}
+            </Pie>
+            <Tooltip formatter={(v) => formatAmount(v)} />
+          </PieChart>
+        </ResponsiveContainer>
+        <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+          <span className="text-[10px] text-muted-foreground">합계</span>
+          <span className="text-xs font-bold">{formatAmount(visibleTotal)}</span>
+        </div>
+      </div>
+      <div className="flex-1 space-y-1.5 min-w-0 max-h-[160px] overflow-y-auto">
+        {data.map((item, idx) => (
+          <div
+            key={idx}
+            className={cn('flex items-center gap-2 text-xs cursor-pointer rounded px-1 py-0.5 transition-colors hover:bg-muted/50', hiddenItems.has(idx) && 'opacity-40 line-through')}
+            onClick={() => toggleItem(idx)}
+          >
+            <div className="w-3 h-3 rounded-sm flex-shrink-0" style={{ backgroundColor: CHART_COLORS[idx % CHART_COLORS.length] }} />
+            <span className="truncate flex-1">{item.name}</span>
+            <span className="font-semibold tabular-nums flex-shrink-0">{item.ratio}%</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/* ============================================================
+   헬퍼: 체크된 항목에서 저장용 리스트 구성
+   ============================================================ */
+function buildListItemsFromChecked(treeData, checkedIds) {
+  const items = [];
+  treeData.forEach(accountNode => {
+    if (!accountNode.children) return;
+    accountNode.children.forEach(cluster => {
+      if (cluster.children?.length) {
+        cluster.children.forEach(sub => {
+          if (checkedIds.has(getNodeId(sub))) {
+            items.push({
+              statisticsId: sub.statisticsId,
+              sessionId: sub.sessionId,
+              accountName: sub.accountName,
+              clusterNumber: sub.clusterNumber,
+              clusterName: sub.clusterName,
+              level: sub.level,
+              parentClusterNumber: sub.parentClusterNumber,
+              totalAmount: sub.totalAmount,
+              totalCount: sub.totalCount,
+            });
+          }
+        });
+      } else if (checkedIds.has(getNodeId(cluster))) {
+        items.push({
+          statisticsId: cluster.statisticsId,
+          sessionId: cluster.sessionId,
+          accountName: cluster.accountName,
+          clusterNumber: cluster.clusterNumber,
+          clusterName: cluster.clusterName,
+          level: cluster.level,
+          parentClusterNumber: cluster.parentClusterNumber,
+          totalAmount: cluster.totalAmount,
+          totalCount: cluster.totalCount,
+        });
+      }
+    });
+  });
+  return items;
 }
