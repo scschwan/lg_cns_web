@@ -68,8 +68,20 @@ const costReductionService = {
     return response.data;
   },
 
+  getLongListAccountChart: async (projectId, accountName, top = 5) => {
+    const response = await api.get(`/api/projects/${projectId}/longlist/chart/account/${encodeURIComponent(accountName)}`, {
+      params: { top },
+    });
+    return response.data;
+  },
+
   getLongListItemStats: async (projectId, statisticsId) => {
     const response = await api.get(`/api/projects/${projectId}/longlist/item-stats/${statisticsId}`);
+    return response.data;
+  },
+
+  getLongListAccountItemStats: async (projectId, accountName) => {
+    const response = await api.get(`/api/projects/${projectId}/longlist/item-stats/account/${encodeURIComponent(accountName)}`);
     return response.data;
   },
 
@@ -102,8 +114,20 @@ const costReductionService = {
     return response.data;
   },
 
+  getShortListAccountChart: async (projectId, accountName, top = 5) => {
+    const response = await api.get(`/api/projects/${projectId}/shortlist/chart/account/${encodeURIComponent(accountName)}`, {
+      params: { top },
+    });
+    return response.data;
+  },
+
   getShortListItemStats: async (projectId, statisticsId) => {
     const response = await api.get(`/api/projects/${projectId}/shortlist/item-stats/${statisticsId}`);
+    return response.data;
+  },
+
+  getShortListAccountItemStats: async (projectId, accountName) => {
+    const response = await api.get(`/api/projects/${projectId}/shortlist/item-stats/account/${encodeURIComponent(accountName)}`);
     return response.data;
   },
 

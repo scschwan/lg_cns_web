@@ -75,7 +75,7 @@ function collectNodeData(nodes, checkedIds) {
 }
 
 /* ====== Tree Row ====== */
-function TreeRow({ item, level = 0, expandedIds, toggleExpand, checkedIds, onCheck, disabled }) {
+function TreeRow({ item, level = 0, expandedIds, toggleExpand, checkedIds, onCheck, disabled, onItemClick }) {
   const hasChildren = item.children && item.children.length > 0;
   const isExpanded = expandedIds.has(item.id);
   const paddingLeft = 16 + level * 24;
@@ -107,6 +107,13 @@ function TreeRow({ item, level = 0, expandedIds, toggleExpand, checkedIds, onChe
   const supplierCount = item.supplierCount ?? 0;
   const costCenterCount = item.costCenterCount ?? 0;
 
+  const handleRowClick = () => {
+    if (hasChildren) toggleExpand(item.id);
+    if (onItemClick && (item.statisticsId || item.accountName)) {
+      onItemClick(item);
+    }
+  };
+
   return (
     <>
       <TableRow
@@ -116,7 +123,7 @@ function TreeRow({ item, level = 0, expandedIds, toggleExpand, checkedIds, onChe
           level > 0 && 'text-sm',
           isChecked && 'bg-blue-50',
         )}
-        onClick={() => hasChildren && toggleExpand(item.id)}
+        onClick={handleRowClick}
       >
         <TableCell className="w-[40px] text-center py-2.5" onClick={e => e.stopPropagation()}>
           <Checkbox
@@ -141,7 +148,7 @@ function TreeRow({ item, level = 0, expandedIds, toggleExpand, checkedIds, onChe
         <TableCell className="text-right tabular-nums py-2.5 font-medium">{formatAmount(item.totalAmount)}</TableCell>
       </TableRow>
       {isExpanded && hasChildren && item.children.map(child => (
-        <TreeRow key={child.id} item={child} level={level + 1} expandedIds={expandedIds} toggleExpand={toggleExpand} checkedIds={checkedIds} onCheck={onCheck} disabled={disabled} />
+        <TreeRow key={child.id} item={child} level={level + 1} expandedIds={expandedIds} toggleExpand={toggleExpand} checkedIds={checkedIds} onCheck={onCheck} disabled={disabled} onItemClick={onItemClick} />
       ))}
     </>
   );
@@ -348,15 +355,26 @@ export default function ShortListPage() {
     };
   }, [treeData, checkedIds, totals, stats]);
 
-  // 차트 데이터 로드 (항목 클릭 시)
+  // 차트 데이터 로드 (항목 클릭 시 - 계정명/클러스터/세부클러스터 모두 지원)
   const handleItemClick = useCallback(async (node) => {
-    if (!node.statisticsId) return;
     setSelectedNode(node);
     try {
-      const [chartRes, itemStatsRes] = await Promise.all([
-        costReductionService.getShortListChart(projectId, node.statisticsId, chartTop),
-        costReductionService.getShortListItemStats(projectId, node.statisticsId),
-      ]);
+      let chartRes, itemStatsRes;
+      if (node.statisticsId) {
+        // 클러스터/세부클러스터 항목
+        [chartRes, itemStatsRes] = await Promise.all([
+          costReductionService.getShortListChart(projectId, node.statisticsId, chartTop),
+          costReductionService.getShortListItemStats(projectId, node.statisticsId),
+        ]);
+      } else if (node.accountName) {
+        // 계정명 항목 (level 1)
+        [chartRes, itemStatsRes] = await Promise.all([
+          costReductionService.getShortListAccountChart(projectId, node.accountName, chartTop),
+          costReductionService.getShortListAccountItemStats(projectId, node.accountName),
+        ]);
+      } else {
+        return;
+      }
       setChartData(chartRes);
       setItemStats(itemStatsRes);
     } catch (error) {
@@ -366,11 +384,21 @@ export default function ShortListPage() {
 
   // Top N 변경 시 차트 재로드
   useEffect(() => {
-    if (selectedNode?.statisticsId) {
-      costReductionService.getShortListChart(projectId, selectedNode.statisticsId, chartTop)
-        .then(setChartData)
-        .catch(err => console.error('Failed to reload chart:', err));
-    }
+    if (!selectedNode) return;
+    const reload = async () => {
+      try {
+        let chartRes;
+        if (selectedNode.statisticsId) {
+          chartRes = await costReductionService.getShortListChart(projectId, selectedNode.statisticsId, chartTop);
+        } else if (selectedNode.accountName) {
+          chartRes = await costReductionService.getShortListAccountChart(projectId, selectedNode.accountName, chartTop);
+        }
+        if (chartRes) setChartData(chartRes);
+      } catch (err) {
+        console.error('Failed to reload chart:', err);
+      }
+    };
+    reload();
   }, [chartTop]);
 
   // Able 과제 등록 전환
@@ -526,7 +554,7 @@ export default function ShortListPage() {
                   </TableHeader>
                   <TableBody>
                     {treeData.map(item => (
-                      <TreeRow key={item.id} item={item} expandedIds={expandedIds} toggleExpand={toggleExpand} checkedIds={checkedIds} onCheck={setCheckedIds} disabled={isDisabled} />
+                      <TreeRow key={item.id} item={item} expandedIds={expandedIds} toggleExpand={toggleExpand} checkedIds={checkedIds} onCheck={setCheckedIds} disabled={isDisabled} onItemClick={handleItemClick} />
                     ))}
                     {treeData.length > 0 && (
                       <TableRow className="bg-primary/5 font-bold border-t-2">
@@ -613,7 +641,7 @@ export default function ShortListPage() {
               ) : (
                 <Card>
                   <CardContent className="py-12 text-center text-sm text-muted-foreground">
-                    트리에서 항목을 클릭하면 상세 차트가 표시됩니다.
+                    트리에서 항목(계정명/클러스터/세부클러스터)을 클릭하면 상세 차트가 표시됩니다.
                   </CardContent>
                 </Card>
               )}

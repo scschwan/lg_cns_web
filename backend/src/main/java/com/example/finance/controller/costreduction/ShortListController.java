@@ -56,6 +56,25 @@ public class ShortListController {
         return ResponseEntity.ok(response);
     }
 
+    @GetMapping("/chart/account/{accountName}")
+    public ResponseEntity<ChartDataResponse> getAccountChartData(
+            @PathVariable String projectId,
+            @PathVariable String accountName,
+            @RequestParam(defaultValue = "5") Integer top,
+            @CurrentUser UserPrincipal userPrincipal) {
+        ChartDataResponse response = shortListService.getAccountChartData(projectId, accountName, top);
+        return ResponseEntity.ok(response);
+    }
+
+    @GetMapping("/item-stats/account/{accountName}")
+    public ResponseEntity<ItemStatsResponse> getAccountItemStats(
+            @PathVariable String projectId,
+            @PathVariable String accountName,
+            @CurrentUser UserPrincipal userPrincipal) {
+        ItemStatsResponse response = shortListService.getAccountItemStats(projectId, accountName);
+        return ResponseEntity.ok(response);
+    }
+
     @PostMapping("/save")
     public ResponseEntity<Map<String, Integer>> saveSelections(
             @PathVariable String projectId,

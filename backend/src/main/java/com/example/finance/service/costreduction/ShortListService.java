@@ -100,17 +100,17 @@ public class ShortListService {
                 return node;
             }).toList();
 
-            // 대분류 노드 (합산)
-            int totalCount = items.stream().mapToInt(i -> i.getTotalCount() != null ? i.getTotalCount() : 0).sum();
-            double totalAmount = items.stream().mapToDouble(i -> i.getTotalAmount() != null ? i.getTotalAmount() : 0.0).sum();
+            // 대분류 노드 (합산) - Level 2 항목만 합산 (Level 3는 Level 2에 포함되어 있으므로 중복 방지)
+            int totalCount = level2Items.stream().mapToInt(i -> i.getTotalCount() != null ? i.getTotalCount() : 0).sum();
+            double totalAmount = level2Items.stream().mapToDouble(i -> i.getTotalAmount() != null ? i.getTotalAmount() : 0.0).sum();
 
-            // supplierCount / costCenterCount는 ClusterStatistics에서 가져옴
-            int supplierCount = items.stream()
+            // supplierCount / costCenterCount는 ClusterStatistics에서 가져옴 (Level 2만)
+            int supplierCount = level2Items.stream()
                     .map(i -> statsMap.get(i.getStatisticsId()))
                     .filter(Objects::nonNull)
                     .mapToInt(s -> s.getSupplierCount() != null ? s.getSupplierCount() : 0)
                     .sum();
-            int costCenterCount = items.stream()
+            int costCenterCount = level2Items.stream()
                     .map(i -> statsMap.get(i.getStatisticsId()))
                     .filter(Objects::nonNull)
                     .mapToInt(s -> s.getCostCenterCount() != null ? s.getCostCenterCount() : 0)
@@ -241,6 +241,123 @@ public class ShortListService {
     }
 
     /**
+     * 계정명(Account) 수준 차트 데이터 조회 (하위 Level 2 항목 집계)
+     */
+    public ChartDataResponse getAccountChartData(String projectId, String accountName, Integer top) {
+        LongShortList list = longShortListRepository.findFirstByProjectId(projectId)
+                .orElseThrow(() -> new RuntimeException("Long List 데이터를 찾을 수 없습니다: " + projectId));
+
+        List<LongShortList.ListItem> longListItems = list.getLongListItems();
+        if (longListItems == null) {
+            return ChartDataResponse.builder()
+                    .supplierBreakdown(Collections.emptyList())
+                    .costCenterBreakdown(Collections.emptyList())
+                    .build();
+        }
+
+        // 해당 계정명의 Level 2 항목들의 statisticsId 수집
+        Set<String> statsIds = longListItems.stream()
+                .filter(i -> accountName.equals(i.getAccountName()) && i.getLevel() != null && i.getLevel() == 2)
+                .map(LongShortList.ListItem::getStatisticsId)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toSet());
+
+        List<ClusterStatistics> statsList = clusterStatisticsRepository.findAllById(statsIds).stream().toList();
+
+        // 공급업체 breakdown 합산
+        Map<String, ChartDataResponse.BreakdownItemDto> supplierMap = new LinkedHashMap<>();
+        Map<String, ChartDataResponse.BreakdownItemDto> costCenterMap = new LinkedHashMap<>();
+
+        for (ClusterStatistics stats : statsList) {
+            if (stats.getSupplierBreakdown() != null) {
+                for (ClusterStatistics.BreakdownItem item : stats.getSupplierBreakdown()) {
+                    supplierMap.merge(item.getName(),
+                            ChartDataResponse.BreakdownItemDto.builder()
+                                    .name(item.getName())
+                                    .count(item.getCount() != null ? item.getCount() : 0)
+                                    .totalAmount(item.getTotalAmount() != null ? item.getTotalAmount() : 0.0)
+                                    .build(),
+                            (a, b) -> ChartDataResponse.BreakdownItemDto.builder()
+                                    .name(a.getName())
+                                    .count(a.getCount() + b.getCount())
+                                    .totalAmount(a.getTotalAmount() + b.getTotalAmount())
+                                    .build());
+                }
+            }
+            if (stats.getCostCenterBreakdown() != null) {
+                for (ClusterStatistics.BreakdownItem item : stats.getCostCenterBreakdown()) {
+                    costCenterMap.merge(item.getName(),
+                            ChartDataResponse.BreakdownItemDto.builder()
+                                    .name(item.getName())
+                                    .count(item.getCount() != null ? item.getCount() : 0)
+                                    .totalAmount(item.getTotalAmount() != null ? item.getTotalAmount() : 0.0)
+                                    .build(),
+                            (a, b) -> ChartDataResponse.BreakdownItemDto.builder()
+                                    .name(a.getName())
+                                    .count(a.getCount() + b.getCount())
+                                    .totalAmount(a.getTotalAmount() + b.getTotalAmount())
+                                    .build());
+                }
+            }
+        }
+
+        // 금액 기준 내림차순 정렬 후 Top N 처리
+        List<ChartDataResponse.BreakdownItemDto> suppliers = supplierMap.values().stream()
+                .sorted(Comparator.comparingDouble(ChartDataResponse.BreakdownItemDto::getTotalAmount).reversed())
+                .toList();
+        List<ChartDataResponse.BreakdownItemDto> costCenters = costCenterMap.values().stream()
+                .sorted(Comparator.comparingDouble(ChartDataResponse.BreakdownItemDto::getTotalAmount).reversed())
+                .toList();
+
+        return ChartDataResponse.builder()
+                .supplierBreakdown(applyTopN(suppliers, top))
+                .costCenterBreakdown(applyTopN(costCenters, top))
+                .build();
+    }
+
+    /**
+     * 계정명(Account) 수준 상세 통계
+     */
+    public ItemStatsResponse getAccountItemStats(String projectId, String accountName) {
+        LongShortList list = longShortListRepository.findFirstByProjectId(projectId)
+                .orElseThrow(() -> new RuntimeException("Long List 데이터를 찾을 수 없습니다: " + projectId));
+
+        List<LongShortList.ListItem> longListItems = list.getLongListItems();
+        if (longListItems == null) {
+            return ItemStatsResponse.builder().build();
+        }
+
+        // 해당 계정명의 Level 2 항목들
+        Set<String> statsIds = longListItems.stream()
+                .filter(i -> accountName.equals(i.getAccountName()) && i.getLevel() != null && i.getLevel() == 2)
+                .map(LongShortList.ListItem::getStatisticsId)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toSet());
+
+        List<ClusterStatistics> statsList = clusterStatisticsRepository.findAllById(statsIds).stream().toList();
+
+        int rawDataRows = statsList.stream().mapToInt(s -> s.getTotalCount() != null ? s.getTotalCount() : 0).sum();
+        int supplierCount = statsList.stream().mapToInt(s -> s.getSupplierCount() != null ? s.getSupplierCount() : 0).sum();
+        int costCenterCount = statsList.stream().mapToInt(s -> s.getCostCenterCount() != null ? s.getCostCenterCount() : 0).sum();
+        double totalAmount = statsList.stream().mapToDouble(s -> s.getTotalAmount() != null ? s.getTotalAmount() : 0.0).sum();
+
+        // 전체 Long List 금액 대비 비율
+        double longListTotal = longListItems.stream()
+                .filter(i -> i.getLevel() != null && i.getLevel() == 2)
+                .mapToDouble(i -> i.getTotalAmount() != null ? i.getTotalAmount() : 0.0)
+                .sum();
+        double ratio = longListTotal > 0 ? totalAmount / longListTotal * 100 : 0.0;
+
+        return ItemStatsResponse.builder()
+                .rawDataRows(rawDataRows)
+                .supplierCount(supplierCount)
+                .costCenterCount(costCenterCount)
+                .totalAmount(totalAmount)
+                .ratioToTotal(Math.round(ratio * 100.0) / 100.0)
+                .build();
+    }
+
+    /**
      * Short List 선택 항목 저장
      */
     public int saveShortListSelections(String projectId, SaveListRequest request) {
@@ -315,6 +432,23 @@ public class ShortListService {
                 .costCenterCount(costCenterCount)
                 .children(new ArrayList<>())
                 .build();
+    }
+
+    private List<ChartDataResponse.BreakdownItemDto> applyTopN(
+            List<ChartDataResponse.BreakdownItemDto> items, Integer top) {
+        if (items == null || items.isEmpty()) return Collections.emptyList();
+        if (top == null || items.size() <= top) return items;
+
+        List<ChartDataResponse.BreakdownItemDto> result = new ArrayList<>(items.subList(0, top));
+        int othersCount = 0;
+        double othersAmount = 0.0;
+        for (int i = top; i < items.size(); i++) {
+            othersCount += items.get(i).getCount() != null ? items.get(i).getCount() : 0;
+            othersAmount += items.get(i).getTotalAmount() != null ? items.get(i).getTotalAmount() : 0.0;
+        }
+        result.add(ChartDataResponse.BreakdownItemDto.builder()
+                .name("기타").count(othersCount).totalAmount(othersAmount).build());
+        return result;
     }
 
     private List<ChartDataResponse.BreakdownItemDto> topNWithOthers(

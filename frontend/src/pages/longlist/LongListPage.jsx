@@ -134,7 +134,7 @@ function TreeRow({ item, level = 0, expandedIds, toggleExpand, checkedIds, onChe
     if (hasChildren) {
       toggleExpand(nodeId);
     }
-    if (item.statisticsId && onItemClick) {
+    if (onItemClick && (item.statisticsId || item.accountName)) {
       onItemClick(item);
     }
   };
@@ -183,7 +183,31 @@ function TreeRow({ item, level = 0, expandedIds, toggleExpand, checkedIds, onChe
    Detail Modal (금액 비율 자세히 보기)
    ============================================================ */
 function RatioDetailModal({ open, onClose, title, data }) {
+  const [hiddenItems, setHiddenItems] = useState(new Set());
+
+  // 모달이 열릴 때 hidden 상태 초기화
+  useEffect(() => {
+    if (open) setHiddenItems(new Set());
+  }, [open]);
+
   if (!data || data.length === 0) return null;
+
+  const visibleData = data.filter((_, idx) => !hiddenItems.has(idx));
+  const visibleTotal = visibleData.reduce((s, d) => s + (d.amount || 0), 0);
+
+  const pieData = visibleData.map(d => ({
+    ...d,
+    ratio: visibleTotal > 0 ? +((d.amount || 0) / visibleTotal * 100).toFixed(1) : 0,
+  }));
+
+  const toggleItem = (idx) => {
+    setHiddenItems(prev => {
+      const n = new Set(prev);
+      n.has(idx) ? n.delete(idx) : n.add(idx);
+      return n;
+    });
+  };
+
   return (
     <Dialog open={open} onOpenChange={onClose}>
       <DialogContent className="max-w-2xl max-h-[85vh] overflow-hidden flex flex-col">
@@ -191,25 +215,37 @@ function RatioDetailModal({ open, onClose, title, data }) {
           <DialogTitle className="flex items-center gap-2">
             <Eye className="w-5 h-5 text-blue-600" />{title}
           </DialogTitle>
-          <DialogDescription>선택된 항목의 금액 비율을 확인합니다.</DialogDescription>
+          <DialogDescription>선택된 항목의 금액 비율을 확인합니다. 하단 항목을 클릭하면 차트에서 숨기거나 표시할 수 있습니다.</DialogDescription>
         </DialogHeader>
         <div className="flex-1 overflow-y-auto">
           <div className="flex flex-col items-center gap-6 py-4">
             <ResponsiveContainer width="100%" height={260}>
               <PieChart>
-                <Pie data={data} dataKey="amount" nameKey="name" cx="50%" cy="50%" innerRadius={60} outerRadius={110} paddingAngle={2} label={({ ratio }) => `${ratio}%`}>
-                  {data.map((_, idx) => <Cell key={idx} fill={CHART_COLORS[idx % CHART_COLORS.length]} />)}
+                <Pie data={pieData} dataKey="amount" nameKey="name" cx="50%" cy="50%" innerRadius={60} outerRadius={110} paddingAngle={2} label={({ ratio }) => `${ratio}%`}>
+                  {pieData.map((entry, idx) => {
+                    const origIdx = data.findIndex(d => d.name === entry.name);
+                    return <Cell key={idx} fill={CHART_COLORS[origIdx % CHART_COLORS.length]} />;
+                  })}
                 </Pie>
                 <Tooltip formatter={(v) => formatAmount(v)} />
               </PieChart>
             </ResponsiveContainer>
             <div className="w-full space-y-2 px-4">
               {data.map((item, idx) => (
-                <div key={idx} className="flex items-center gap-3 py-2 px-3 rounded-lg hover:bg-muted/50 transition-colors">
+                <div
+                  key={idx}
+                  className={cn(
+                    'flex items-center gap-3 py-2 px-3 rounded-lg cursor-pointer transition-colors hover:bg-muted/50',
+                    hiddenItems.has(idx) && 'opacity-40 line-through'
+                  )}
+                  onClick={() => toggleItem(idx)}
+                >
                   <div className="w-4 h-4 rounded-sm flex-shrink-0" style={{ backgroundColor: CHART_COLORS[idx % CHART_COLORS.length] }} />
                   <span className="flex-1 text-sm font-medium truncate">{item.name}</span>
                   <span className="text-sm tabular-nums text-muted-foreground">{formatAmount(item.amount)}</span>
-                  <Badge variant="secondary" className="text-xs tabular-nums min-w-[50px] justify-center">{item.ratio}%</Badge>
+                  <Badge variant="secondary" className="text-xs tabular-nums min-w-[50px] justify-center">
+                    {hiddenItems.has(idx) ? '-' : (visibleTotal > 0 ? ((item.amount || 0) / visibleTotal * 100).toFixed(1) : 0) + '%'}
+                  </Badge>
                 </div>
               ))}
             </div>
@@ -302,16 +338,29 @@ export default function LongListPage() {
     load();
   }, [projectId]);
 
-  // 항목 클릭 → 차트 데이터 로드
+  // 항목 클릭 → 차트 데이터 로드 (계정명/클러스터/세부클러스터 모두 지원)
   const handleItemClick = useCallback(async (item) => {
-    if (!item.statisticsId || !projectId) return;
+    if (!projectId) return;
     setSelectedItem(item);
     setChartLoading(true);
     try {
-      const [chartRes, itemStatsRes] = await Promise.all([
-        costReductionService.getLongListChart(projectId, item.statisticsId, chartTop),
-        costReductionService.getLongListItemStats(projectId, item.statisticsId),
-      ]);
+      let chartRes, itemStatsRes;
+      if (item.statisticsId) {
+        // 클러스터/세부클러스터 항목
+        [chartRes, itemStatsRes] = await Promise.all([
+          costReductionService.getLongListChart(projectId, item.statisticsId, chartTop),
+          costReductionService.getLongListItemStats(projectId, item.statisticsId),
+        ]);
+      } else if (item.accountName) {
+        // 계정명 항목 (level 1)
+        [chartRes, itemStatsRes] = await Promise.all([
+          costReductionService.getLongListAccountChart(projectId, item.accountName, chartTop),
+          costReductionService.getLongListAccountItemStats(projectId, item.accountName),
+        ]);
+      } else {
+        setChartLoading(false);
+        return;
+      }
       setChartData(chartRes);
       setItemStats(itemStatsRes);
     } catch (err) {
@@ -323,18 +372,22 @@ export default function LongListPage() {
 
   // Top N 변경 시 차트 재로드
   useEffect(() => {
-    if (selectedItem?.statisticsId && projectId) {
-      const reload = async () => {
-        try {
-          const chartRes = await costReductionService.getLongListChart(projectId, selectedItem.statisticsId, chartTop);
-          setChartData(chartRes);
-        } catch (err) {
-          console.error('Failed to reload chart:', err);
+    if (!selectedItem || !projectId) return;
+    const reload = async () => {
+      try {
+        let chartRes;
+        if (selectedItem.statisticsId) {
+          chartRes = await costReductionService.getLongListChart(projectId, selectedItem.statisticsId, chartTop);
+        } else if (selectedItem.accountName) {
+          chartRes = await costReductionService.getLongListAccountChart(projectId, selectedItem.accountName, chartTop);
         }
-      };
-      reload();
-    }
-  }, [chartTop, selectedItem?.statisticsId, projectId]);
+        if (chartRes) setChartData(chartRes);
+      } catch (err) {
+        console.error('Failed to reload chart:', err);
+      }
+    };
+    reload();
+  }, [chartTop, selectedItem?.statisticsId, selectedItem?.accountName, projectId]);
 
   const toggleExpand = useCallback((id) => {
     setExpandedIds(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
@@ -626,7 +679,7 @@ export default function LongListPage() {
           {!selectedItem && treeData.length > 0 && (
             <Card>
               <CardContent className="py-12 text-center text-sm text-muted-foreground">
-                차트를 보려면 트리에서 클러스터 항목을 클릭하세요.
+                차트를 보려면 트리에서 항목을 클릭하세요.
               </CardContent>
             </Card>
           )}
@@ -700,6 +753,26 @@ function buildListItemsFromChecked(treeData, checkedIds) {
   treeData.forEach(accountNode => {
     if (!accountNode.children) return;
     accountNode.children.forEach(cluster => {
+      const clusterHasCheckedLeaf = cluster.children?.length
+        ? cluster.children.some(sub => checkedIds.has(getNodeId(sub)))
+        : checkedIds.has(getNodeId(cluster));
+
+      if (!clusterHasCheckedLeaf) return;
+
+      // 항상 level 2 클러스터 항목을 포함 (ShortList 트리 구조 유지용)
+      items.push({
+        statisticsId: cluster.statisticsId,
+        sessionId: cluster.sessionId,
+        accountName: cluster.accountName,
+        clusterNumber: cluster.clusterNumber,
+        clusterName: cluster.clusterName,
+        level: cluster.level,
+        parentClusterNumber: cluster.parentClusterNumber,
+        totalAmount: cluster.totalAmount,
+        totalCount: cluster.totalCount,
+      });
+
+      // level 3 세부클러스터 항목도 포함
       if (cluster.children?.length) {
         cluster.children.forEach(sub => {
           if (checkedIds.has(getNodeId(sub))) {
@@ -715,18 +788,6 @@ function buildListItemsFromChecked(treeData, checkedIds) {
               totalCount: sub.totalCount,
             });
           }
-        });
-      } else if (checkedIds.has(getNodeId(cluster))) {
-        items.push({
-          statisticsId: cluster.statisticsId,
-          sessionId: cluster.sessionId,
-          accountName: cluster.accountName,
-          clusterNumber: cluster.clusterNumber,
-          clusterName: cluster.clusterName,
-          level: cluster.level,
-          parentClusterNumber: cluster.parentClusterNumber,
-          totalAmount: cluster.totalAmount,
-          totalCount: cluster.totalCount,
         });
       }
     });
