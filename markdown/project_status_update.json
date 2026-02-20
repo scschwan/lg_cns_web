@@ -1,0 +1,1238 @@
+{
+  "_action_guide": "update: id로 기존 레코드를 찾아 필드를 업데이트합니다. delete: id로 기존 레코드를 삭제합니다. create: 새 레코드를 생성합니다 (id 무시).",
+  "project_id": 3,
+  "project_name": "LG CNS Dashboard",
+  "template_generated_at": "2026-02-20T09:20:47.668972",
+  "wbs_tasks": [
+    {
+      "id": 161,
+      "_action": "update",
+      "wbs_code": "1.0",
+      "category": "Phase 1",
+      "title": "프로젝트 완료 + 대시보드 기반 + 편집자 잠금",
+      "status": "완료",
+      "progress": 100,
+      "start_date": "2026-02-19",
+      "end_date": "2026-02-20"
+    },
+    {
+      "id": 162,
+      "_action": "update",
+      "wbs_code": "1.1",
+      "category": "Backend",
+      "title": "CostReductionPhase enum 생성",
+      "status": "완료",
+      "progress": 100,
+      "start_date": "2026-02-19",
+      "end_date": "2026-02-19"
+    },
+    {
+      "id": 163,
+      "_action": "update",
+      "wbs_code": "1.2",
+      "category": "Backend",
+      "title": "CostReductionDashboard 모델 생성",
+      "status": "완료",
+      "progress": 100,
+      "start_date": "2026-02-19",
+      "end_date": "2026-02-19"
+    },
+    {
+      "id": 164,
+      "_action": "update",
+      "wbs_code": "1.3",
+      "category": "Backend",
+      "title": "CostReductionDashboardRepository 생성",
+      "status": "완료",
+      "progress": 100,
+      "start_date": "2026-02-19",
+      "end_date": "2026-02-19"
+    },
+    {
+      "id": 165,
+      "_action": "update",
+      "wbs_code": "1.4",
+      "category": "Backend",
+      "title": "RedisService에 setIfAbsent 메서드 추가",
+      "status": "완료",
+      "progress": 100,
+      "start_date": "2026-02-19",
+      "end_date": "2026-02-19"
+    },
+    {
+      "id": 166,
+      "_action": "update",
+      "wbs_code": "1.5",
+      "category": "Backend",
+      "title": "CostReductionDashboardService 생성 (잠금/해제/하트비트/단계전환)",
+      "status": "완료",
+      "progress": 100,
+      "start_date": "2026-02-19",
+      "end_date": "2026-02-20"
+    },
+    {
+      "id": 167,
+      "_action": "update",
+      "wbs_code": "1.6",
+      "category": "Backend",
+      "title": "CostReductionDashboardController 생성",
+      "status": "완료",
+      "progress": 100,
+      "start_date": "2026-02-20",
+      "end_date": "2026-02-20"
+    },
+    {
+      "id": 168,
+      "_action": "update",
+      "wbs_code": "1.7",
+      "category": "Backend",
+      "title": "요청/응답 DTO 생성 (TransitionPhaseRequest, DashboardStatusResponse, LockResponse)",
+      "status": "완료",
+      "progress": 100,
+      "start_date": "2026-02-19",
+      "end_date": "2026-02-19"
+    },
+    {
+      "id": 169,
+      "_action": "update",
+      "wbs_code": "1.8",
+      "category": "Backend",
+      "title": "SecurityConfig 경로 확인",
+      "status": "완료",
+      "progress": 100,
+      "start_date": "2026-02-20",
+      "end_date": "2026-02-20"
+    },
+    {
+      "id": 170,
+      "_action": "update",
+      "wbs_code": "1.9",
+      "category": "Frontend",
+      "title": "ProjectsPage.jsx 수정: 비용 절감 수행 버튼 추가 + 카드 min-height",
+      "status": "완료",
+      "progress": 100,
+      "start_date": "2026-02-19",
+      "end_date": "2026-02-19"
+    },
+    {
+      "id": 171,
+      "_action": "update",
+      "wbs_code": "1.10",
+      "category": "Frontend",
+      "title": "CostReductionLayout.jsx 생성",
+      "status": "완료",
+      "progress": 100,
+      "start_date": "2026-02-19",
+      "end_date": "2026-02-20"
+    },
+    {
+      "id": 172,
+      "_action": "update",
+      "wbs_code": "1.11",
+      "category": "Frontend",
+      "title": "CostReductionSidebar.jsx 생성",
+      "status": "완료",
+      "progress": 100,
+      "start_date": "2026-02-19",
+      "end_date": "2026-02-20"
+    },
+    {
+      "id": 173,
+      "_action": "update",
+      "wbs_code": "1.12",
+      "category": "Frontend",
+      "title": "costReductionService.js 생성 (대시보드 API 클라이언트)",
+      "status": "완료",
+      "progress": 100,
+      "start_date": "2026-02-19",
+      "end_date": "2026-02-19"
+    },
+    {
+      "id": 174,
+      "_action": "update",
+      "wbs_code": "1.13",
+      "category": "Frontend",
+      "title": "useEditorLock.js 커스텀 훅 생성",
+      "status": "완료",
+      "progress": 100,
+      "start_date": "2026-02-20",
+      "end_date": "2026-02-20"
+    },
+    {
+      "id": 175,
+      "_action": "update",
+      "wbs_code": "1.14",
+      "category": "Frontend",
+      "title": "useDashboardStatus.js 커스텀 훅 생성",
+      "status": "완료",
+      "progress": 100,
+      "start_date": "2026-02-20",
+      "end_date": "2026-02-20"
+    },
+    {
+      "id": 176,
+      "_action": "update",
+      "wbs_code": "1.15",
+      "category": "Frontend",
+      "title": "App.jsx 라우트 변경 (프로젝트 스코프 적용)",
+      "status": "완료",
+      "progress": 100,
+      "start_date": "2026-02-20",
+      "end_date": "2026-02-20"
+    },
+    {
+      "id": 177,
+      "_action": "update",
+      "wbs_code": "2.0",
+      "category": "Phase 2",
+      "title": "Long List 백엔드 + 프론트엔드 연동",
+      "status": "완료",
+      "progress": 100,
+      "start_date": "2026-02-21",
+      "end_date": "2026-02-21"
+    },
+    {
+      "id": 178,
+      "_action": "update",
+      "wbs_code": "2.1",
+      "category": "Backend",
+      "title": "LongShortList 모델 생성",
+      "status": "완료",
+      "progress": 100,
+      "start_date": "2026-02-21",
+      "end_date": "2026-02-21"
+    },
+    {
+      "id": 179,
+      "_action": "update",
+      "wbs_code": "2.2",
+      "category": "Backend",
+      "title": "LongShortListRepository 생성",
+      "status": "완료",
+      "progress": 100,
+      "start_date": "2026-02-21",
+      "end_date": "2026-02-21"
+    },
+    {
+      "id": 180,
+      "_action": "update",
+      "wbs_code": "2.3",
+      "category": "Backend",
+      "title": "LongListService 생성 (트리 구조 변환 + Redis 캐싱 + Top N 차트)",
+      "status": "완료",
+      "progress": 100,
+      "start_date": "2026-02-21",
+      "end_date": "2026-02-21"
+    },
+    {
+      "id": 181,
+      "_action": "update",
+      "wbs_code": "2.4",
+      "category": "Backend",
+      "title": "LongListController 생성",
+      "status": "완료",
+      "progress": 100,
+      "start_date": "2026-02-21",
+      "end_date": "2026-02-21"
+    },
+    {
+      "id": 182,
+      "_action": "update",
+      "wbs_code": "2.5",
+      "category": "Backend",
+      "title": "트리/차트/통계 DTO 생성 (LongListTreeResponse, TreeNode, ChartDataResponse, ItemStatsResponse, SaveListRequest 등)",
+      "status": "완료",
+      "progress": 100,
+      "start_date": "2026-02-21",
+      "end_date": "2026-02-21"
+    },
+    {
+      "id": 183,
+      "_action": "update",
+      "wbs_code": "2.6",
+      "category": "Frontend",
+      "title": "costReductionService.js에 Long List API 추가",
+      "status": "완료",
+      "progress": 100,
+      "start_date": "2026-02-21",
+      "end_date": "2026-02-21"
+    },
+    {
+      "id": 184,
+      "_action": "update",
+      "wbs_code": "2.7",
+      "category": "Frontend",
+      "title": "LongListPage.jsx 리팩터링: Mock → API 연동",
+      "status": "완료",
+      "progress": 100,
+      "start_date": "2026-02-21",
+      "end_date": "2026-02-21"
+    },
+    {
+      "id": 185,
+      "_action": "update",
+      "wbs_code": "2.8",
+      "category": "Frontend",
+      "title": "선택 항목 카드 추가 (rawData행, 공급업체수, 코스트센터수, 총금액, 전체대비비율)",
+      "status": "완료",
+      "progress": 100,
+      "start_date": "2026-02-21",
+      "end_date": "2026-02-21"
+    },
+    {
+      "id": 186,
+      "_action": "update",
+      "wbs_code": "2.9",
+      "category": "Frontend",
+      "title": "차트 top5/top10 선택기 + Pie 차트 범례 토글 기능",
+      "status": "완료",
+      "progress": 100,
+      "start_date": "2026-02-21",
+      "end_date": "2026-02-21"
+    },
+    {
+      "id": 187,
+      "_action": "update",
+      "wbs_code": "2.10",
+      "category": "Frontend",
+      "title": "Short List 도출 버튼 + 저장 + 이동 구현",
+      "status": "완료",
+      "progress": 100,
+      "start_date": "2026-02-21",
+      "end_date": "2026-02-21"
+    },
+    {
+      "id": 188,
+      "_action": "update",
+      "wbs_code": "3.0",
+      "category": "Phase 3",
+      "title": "Short List + 단계 전환",
+      "status": "완료",
+      "progress": 100,
+      "start_date": "2026-02-22",
+      "end_date": "2026-02-22"
+    },
+    {
+      "id": 189,
+      "_action": "update",
+      "wbs_code": "3.1",
+      "category": "Backend",
+      "title": "ShortListService 생성 (Long List 선택 항목 기반 트리)",
+      "status": "완료",
+      "progress": 100,
+      "start_date": "2026-02-22",
+      "end_date": "2026-02-22"
+    },
+    {
+      "id": 190,
+      "_action": "update",
+      "wbs_code": "3.2",
+      "category": "Backend",
+      "title": "ShortListController 생성",
+      "status": "완료",
+      "progress": 100,
+      "start_date": "2026-02-22",
+      "end_date": "2026-02-22"
+    },
+    {
+      "id": 191,
+      "_action": "update",
+      "wbs_code": "3.3",
+      "category": "Backend",
+      "title": "단계 전환 구현 (transitionPhase + 리스트 잠금 lockLists)",
+      "status": "완료",
+      "progress": 100,
+      "start_date": "2026-02-22",
+      "end_date": "2026-02-22"
+    },
+    {
+      "id": 192,
+      "_action": "update",
+      "wbs_code": "3.4",
+      "category": "Backend",
+      "title": "ShortListSummaryResponse DTO 생성",
+      "status": "완료",
+      "progress": 100,
+      "start_date": "2026-02-22",
+      "end_date": "2026-02-22"
+    },
+    {
+      "id": 193,
+      "_action": "update",
+      "wbs_code": "3.5",
+      "category": "Frontend",
+      "title": "costReductionService.js에 Short List API 추가",
+      "status": "완료",
+      "progress": 100,
+      "start_date": "2026-02-22",
+      "end_date": "2026-02-22"
+    },
+    {
+      "id": 194,
+      "_action": "update",
+      "wbs_code": "3.6",
+      "category": "Frontend",
+      "title": "ShortListPage.jsx 리팩터링: Mock → API 연동 + 레벨 네비게이션",
+      "status": "완료",
+      "progress": 100,
+      "start_date": "2026-02-22",
+      "end_date": "2026-02-22"
+    },
+    {
+      "id": 195,
+      "_action": "update",
+      "wbs_code": "3.7",
+      "category": "Frontend",
+      "title": "Able 과제 등록 버튼 + 확인 다이얼로그 (리스트 잠금 경고)",
+      "status": "완료",
+      "progress": 100,
+      "start_date": "2026-02-22",
+      "end_date": "2026-02-22"
+    },
+    {
+      "id": 196,
+      "_action": "update",
+      "wbs_code": "4.0",
+      "category": "Phase 4",
+      "title": "Able 과제 등록",
+      "status": "완료",
+      "progress": 100,
+      "start_date": "2026-02-23",
+      "end_date": "2026-02-24"
+    },
+    {
+      "id": 197,
+      "_action": "update",
+      "wbs_code": "4.1",
+      "category": "Backend",
+      "title": "AbleTask 모델 생성",
+      "status": "완료",
+      "progress": 100,
+      "start_date": "2026-02-23",
+      "end_date": "2026-02-23"
+    },
+    {
+      "id": 198,
+      "_action": "update",
+      "wbs_code": "4.2",
+      "category": "Backend",
+      "title": "TaskDocument 모델 생성",
+      "status": "완료",
+      "progress": 100,
+      "start_date": "2026-02-23",
+      "end_date": "2026-02-23"
+    },
+    {
+      "id": 199,
+      "_action": "update",
+      "wbs_code": "4.3",
+      "category": "Backend",
+      "title": "AbleTaskRepository / TaskDocumentRepository 생성",
+      "status": "완료",
+      "progress": 100,
+      "start_date": "2026-02-23",
+      "end_date": "2026-02-23"
+    },
+    {
+      "id": 200,
+      "_action": "update",
+      "wbs_code": "4.4",
+      "category": "Backend",
+      "title": "AbleTaskService 생성 (CRUD + 완료 처리 + 모수금액 자동합산)",
+      "status": "완료",
+      "progress": 100,
+      "start_date": "2026-02-23",
+      "end_date": "2026-02-24"
+    },
+    {
+      "id": 201,
+      "_action": "update",
+      "wbs_code": "4.5",
+      "category": "Backend",
+      "title": "TaskDocumentService 생성",
+      "status": "완료",
+      "progress": 100,
+      "start_date": "2026-02-23",
+      "end_date": "2026-02-23"
+    },
+    {
+      "id": 202,
+      "_action": "update",
+      "wbs_code": "4.6",
+      "category": "Backend",
+      "title": "S3Service에 과제 문서 Presigned URL 메서드 추가 (업로드 1hr / 다운로드 15min)",
+      "status": "완료",
+      "progress": 100,
+      "start_date": "2026-02-23",
+      "end_date": "2026-02-23"
+    },
+    {
+      "id": 203,
+      "_action": "update",
+      "wbs_code": "4.7",
+      "category": "Backend",
+      "title": "AbleTaskController / TaskDocumentController 생성",
+      "status": "완료",
+      "progress": 100,
+      "start_date": "2026-02-24",
+      "end_date": "2026-02-24"
+    },
+    {
+      "id": 204,
+      "_action": "update",
+      "wbs_code": "4.8",
+      "category": "Backend",
+      "title": "과제 관련 DTO 생성 (CreateAbleTaskRequest, UpdateAbleTaskRequest, CompleteTaskRequest, AddLinkRequest, UploadUrlRequest, UploadCompleteRequest, AbleTaskResponse, TaskDocumentResponse)",
+      "status": "완료",
+      "progress": 100,
+      "start_date": "2026-02-23",
+      "end_date": "2026-02-23"
+    },
+    {
+      "id": 205,
+      "_action": "update",
+      "wbs_code": "4.9",
+      "category": "Frontend",
+      "title": "costReductionService.js에 과제/문서 API 추가",
+      "status": "완료",
+      "progress": 100,
+      "start_date": "2026-02-23",
+      "end_date": "2026-02-23"
+    },
+    {
+      "id": 206,
+      "_action": "update",
+      "wbs_code": "4.10",
+      "category": "Frontend",
+      "title": "AbleTaskRegisterPage.jsx 리팩터링 (좌측 트리 + 우측 폼 자동매핑 + S3 Presigned URL 업로드)",
+      "status": "완료",
+      "progress": 100,
+      "start_date": "2026-02-23",
+      "end_date": "2026-02-24"
+    },
+    {
+      "id": 207,
+      "_action": "update",
+      "wbs_code": "4.11",
+      "category": "Frontend",
+      "title": "레벨 네비게이션 (Level 1→Long, Level 2→Short, Level 3→현재) 구현",
+      "status": "완료",
+      "progress": 100,
+      "start_date": "2026-02-24",
+      "end_date": "2026-02-24"
+    },
+    {
+      "id": 208,
+      "_action": "update",
+      "wbs_code": "5.0",
+      "category": "Phase 5",
+      "title": "Able 과제 관리 + 완료 과제 관리",
+      "status": "완료",
+      "progress": 100,
+      "start_date": "2026-02-25",
+      "end_date": "2026-02-25"
+    },
+    {
+      "id": 209,
+      "_action": "update",
+      "wbs_code": "5.1",
+      "category": "Backend",
+      "title": "과제 요약/차트 엔드포인트 구현 (총과제수, 총모수금액, 총절감액, 평균진척율)",
+      "status": "완료",
+      "progress": 100,
+      "start_date": "2026-02-25",
+      "end_date": "2026-02-25"
+    },
+    {
+      "id": 210,
+      "_action": "update",
+      "wbs_code": "5.2",
+      "category": "Backend",
+      "title": "완료 과제 요약/차트 엔드포인트 구현",
+      "status": "완료",
+      "progress": 100,
+      "start_date": "2026-02-25",
+      "end_date": "2026-02-25"
+    },
+    {
+      "id": 211,
+      "_action": "update",
+      "wbs_code": "5.3",
+      "category": "Backend",
+      "title": "과제 삭제 시 S3 파일 정리 로직 (deleteFolder + task_documents 일괄 삭제)",
+      "status": "완료",
+      "progress": 100,
+      "start_date": "2026-02-25",
+      "end_date": "2026-02-25"
+    },
+    {
+      "id": 212,
+      "_action": "update",
+      "wbs_code": "5.4",
+      "category": "Backend",
+      "title": "TaskSummaryResponse DTO 생성",
+      "status": "완료",
+      "progress": 100,
+      "start_date": "2026-02-25",
+      "end_date": "2026-02-25"
+    },
+    {
+      "id": 213,
+      "_action": "update",
+      "wbs_code": "5.5",
+      "category": "Frontend",
+      "title": "AbleTaskManagePage.jsx 리팩터링 (관리 아이콘 CRUD: 상세보기/수정/다운로드/삭제/완료처리)",
+      "status": "완료",
+      "progress": 100,
+      "start_date": "2026-02-25",
+      "end_date": "2026-02-25"
+    },
+    {
+      "id": 214,
+      "_action": "update",
+      "wbs_code": "5.6",
+      "category": "Frontend",
+      "title": "CompletedTaskManagePage.jsx 리팩터링 (상세보기/수정/다운로드 + 달성율 표시)",
+      "status": "완료",
+      "progress": 100,
+      "start_date": "2026-02-25",
+      "end_date": "2026-02-25"
+    },
+    {
+      "id": null,
+      "_action": "create",
+      "wbs_code": "6.0",
+      "category": "Phase 6",
+      "title": "버그수정 및 UX 개선 (Round 1~5)",
+      "status": "완료",
+      "progress": 100,
+      "start_date": "2026-02-19",
+      "end_date": "2026-02-20"
+    },
+    {
+      "id": null,
+      "_action": "create",
+      "wbs_code": "6.1",
+      "category": "Bugfix",
+      "title": "ShortList 트리 하위 클러스터/세부클러스터 미표시 수정 (collectNodeData level 2+3 저장)",
+      "status": "완료",
+      "progress": 100,
+      "start_date": "2026-02-19",
+      "end_date": "2026-02-19"
+    },
+    {
+      "id": null,
+      "_action": "create",
+      "wbs_code": "6.2",
+      "category": "Bugfix",
+      "title": "ShortList 금액/공급업체/코스트센터 수 불일치 수정 (level 2 기준 집계로 이중합산 방지)",
+      "status": "완료",
+      "progress": 100,
+      "start_date": "2026-02-19",
+      "end_date": "2026-02-19"
+    },
+    {
+      "id": null,
+      "_action": "create",
+      "wbs_code": "6.3",
+      "category": "Enhancement",
+      "title": "계정명(대분류) 수준 차트 생성 기능 추가 (getAccountChartData / getAccountItemStats 엔드포인트)",
+      "status": "완료",
+      "progress": 100,
+      "start_date": "2026-02-19",
+      "end_date": "2026-02-19"
+    },
+    {
+      "id": null,
+      "_action": "create",
+      "wbs_code": "6.4",
+      "category": "Enhancement",
+      "title": "파이차트 상세보기 범례 클릭 숨기기/표시 토글 (RatioDetailModal hiddenItems 상태)",
+      "status": "완료",
+      "progress": 100,
+      "start_date": "2026-02-19",
+      "end_date": "2026-02-19"
+    },
+    {
+      "id": null,
+      "_action": "create",
+      "wbs_code": "6.5",
+      "category": "Enhancement",
+      "title": "Short List 재도출 시 확인 다이얼로그 추가 (기존 데이터 초기화 경고)",
+      "status": "완료",
+      "progress": 100,
+      "start_date": "2026-02-19",
+      "end_date": "2026-02-19"
+    },
+    {
+      "id": null,
+      "_action": "create",
+      "wbs_code": "6.6",
+      "category": "Enhancement",
+      "title": "단계 네비게이션 바 구현 (Long List → Short List → Able 과제 등록, 건수/금액 동적 갱신)",
+      "status": "완료",
+      "progress": 100,
+      "start_date": "2026-02-19",
+      "end_date": "2026-02-19"
+    },
+    {
+      "id": null,
+      "_action": "create",
+      "wbs_code": "6.7",
+      "category": "Bugfix",
+      "title": "Able 과제 등록 시 미선택 세부클러스터 포함 버그 수정 (getShortListSelectionTree 신규 엔드포인트)",
+      "status": "완료",
+      "progress": 100,
+      "start_date": "2026-02-20",
+      "end_date": "2026-02-20"
+    },
+    {
+      "id": null,
+      "_action": "create",
+      "wbs_code": "6.8",
+      "category": "Enhancement",
+      "title": "Short List 과제등록 항목 잠금 (getLockedStatisticsIds + 체크해제 방지 + 빨간 경고 메시지)",
+      "status": "완료",
+      "progress": 100,
+      "start_date": "2026-02-20",
+      "end_date": "2026-02-20"
+    },
+    {
+      "id": null,
+      "_action": "create",
+      "wbs_code": "6.9",
+      "category": "Enhancement",
+      "title": "Able 과제 등록 화면 Short List 요약 정보 동적 갱신 (dynamicShortListStats useMemo)",
+      "status": "완료",
+      "progress": 100,
+      "start_date": "2026-02-20",
+      "end_date": "2026-02-20"
+    },
+    {
+      "id": null,
+      "_action": "create",
+      "wbs_code": "6.10",
+      "category": "Enhancement",
+      "title": "리스트 잠금 해제 기능 구현 (unlockList API + Unlock 버튼, Short List 페이지 이동)",
+      "status": "완료",
+      "progress": 100,
+      "start_date": "2026-02-20",
+      "end_date": "2026-02-20"
+    },
+    {
+      "id": null,
+      "_action": "create",
+      "wbs_code": "6.11",
+      "category": "Enhancement",
+      "title": "Able 과제 등록 트리 구조 개선 (5컬럼 테이블: 체크박스+항목명+코스트센터+공급업체+합계금액, 전체 노드 확장)",
+      "status": "완료",
+      "progress": 100,
+      "start_date": "2026-02-20",
+      "end_date": "2026-02-20"
+    },
+    {
+      "id": null,
+      "_action": "create",
+      "wbs_code": "6.12",
+      "category": "Enhancement",
+      "title": "Long List 페이지 리스트 잠금 뱃지 표시 (Lock 아이콘 + Badge variant='destructive')",
+      "status": "완료",
+      "progress": 100,
+      "start_date": "2026-02-20",
+      "end_date": "2026-02-20"
+    },
+    {
+      "id": null,
+      "_action": "create",
+      "wbs_code": "6.13",
+      "category": "Enhancement",
+      "title": "모수 금액 자동 합산 (체크된 클러스터 항목 totalAmount 합산 → baseAmount 자동 입력, readOnly)",
+      "status": "완료",
+      "progress": 100,
+      "start_date": "2026-02-20",
+      "end_date": "2026-02-20"
+    },
+    {
+      "id": null,
+      "_action": "create",
+      "wbs_code": "6.14",
+      "category": "Enhancement",
+      "title": "예상 절감액 자동 계산 (모수 금액 × 예상 절감율 / 100, useEffect 기반 자동 갱신, readOnly)",
+      "status": "완료",
+      "progress": 100,
+      "start_date": "2026-02-20",
+      "end_date": "2026-02-20"
+    }
+  ],
+  "requirements": [
+    {
+      "id": 94,
+      "_action": "update",
+      "req_code": "REQ-CR-001",
+      "category_1": "대시보드",
+      "category_2": "편집자 잠금",
+      "title": "Redis SET NX 기반 편집자 잠금 (단일 편집자)",
+      "detail": "한 명의 편집자만 동시에 대시보드 편집 가능. 하트비트 30초, 잠금 TTL 60초. 이탈 시 자동 해제.",
+      "priority": 5,
+      "difficulty": "상",
+      "dev_status": "개발완료"
+    },
+    {
+      "id": 95,
+      "_action": "update",
+      "req_code": "REQ-CR-002",
+      "category_1": "Long List",
+      "category_2": "성능",
+      "title": "Redis 캐싱 적용 (트리/차트 30분 TTL)",
+      "detail": "cluster_statistics 기반 트리 및 차트 데이터를 Redis에 30분간 캐싱하여 반복 조회 성능 향상.",
+      "priority": 4,
+      "difficulty": "중",
+      "dev_status": "개발완료"
+    },
+    {
+      "id": 96,
+      "_action": "update",
+      "req_code": "REQ-CR-003",
+      "category_1": "Long List",
+      "category_2": "데이터구조",
+      "title": "cluster_statistics Level 2, 3 기반 3단계 트리 구조",
+      "detail": "account_name(대분류) > Level 2 클러스터(중분류) > Level 3 클러스터(소분류). 복수 세션 통합. collectNodeData로 level 2+3 모두 저장.",
+      "priority": 5,
+      "difficulty": "상",
+      "dev_status": "개발완료"
+    },
+    {
+      "id": 97,
+      "_action": "update",
+      "req_code": "REQ-CR-004",
+      "category_1": "Long List",
+      "category_2": "차트",
+      "title": "Top N 필터링 + 기타 합산 차트 (Top 5 / Top 10) + 계정명 수준 차트",
+      "detail": "공급업체/코스트센터 차트에서 Top N 선택 가능. 나머지 항목은 기타로 합산 표시. 계정명(대분류) 항목도 클릭 시 차트 생성 지원. 파이차트 범례 클릭 숨기기/표시 토글.",
+      "priority": 3,
+      "difficulty": "하",
+      "dev_status": "개발완료"
+    },
+    {
+      "id": 98,
+      "_action": "update",
+      "req_code": "REQ-CR-005",
+      "category_1": "Short List",
+      "category_2": "단계전환",
+      "title": "Able 과제 등록 전환 시 리스트 잠금 (is_list_locked=true) + 잠금 해제 기능",
+      "detail": "ABLE_REGISTER 단계 전환 시 Long/Short List 체크박스 비활성화. Long List/Short List 모두 잠금 뱃지 표시. unlockList API로 잠금 해제 가능.",
+      "priority": 5,
+      "difficulty": "중",
+      "dev_status": "개발완료"
+    },
+    {
+      "id": 99,
+      "_action": "update",
+      "req_code": "REQ-CR-006",
+      "category_1": "Able 과제",
+      "category_2": "파일관리",
+      "title": "S3 Presigned URL 기반 파일 업로드/다운로드",
+      "detail": "업로드: PUT Presigned URL(TTL 1시간). 다운로드: GET Presigned URL(TTL 15분). S3 경로: projects/{projectId}/tasks/{taskId}/documents/",
+      "priority": 4,
+      "difficulty": "중",
+      "dev_status": "개발완료"
+    },
+    {
+      "id": 100,
+      "_action": "update",
+      "req_code": "REQ-CR-007",
+      "category_1": "Able 과제",
+      "category_2": "자동화",
+      "title": "Short List 항목 선택 시 모수 금액(baseAmount) 자동 합산 + 예상 절감액 자동 계산",
+      "detail": "과제 등록 시 체크된 클러스터 항목의 totalAmount 합산하여 baseAmount 자동 설정(readOnly). 예상 절감액 = 모수 금액 × 예상 절감율(%) / 100 자동 계산(readOnly).",
+      "priority": 4,
+      "difficulty": "중",
+      "dev_status": "개발완료"
+    },
+    {
+      "id": 101,
+      "_action": "update",
+      "req_code": "REQ-CR-008",
+      "category_1": "Able 과제",
+      "category_2": "삭제",
+      "title": "과제 삭제 시 S3 파일 연동 삭제",
+      "detail": "과제 삭제 시 S3 폴더(deleteFolder) + task_documents 컬렉션 메타데이터 일괄 삭제.",
+      "priority": 3,
+      "difficulty": "중",
+      "dev_status": "개발완료"
+    },
+    {
+      "id": 102,
+      "_action": "update",
+      "req_code": "REQ-CR-009",
+      "category_1": "완료 과제",
+      "category_2": "관리",
+      "title": "과제 완료 처리 (실제 절감액, 달성율, 평가 기록)",
+      "detail": "완료 처리 시 status=COMPLETED, actualSavingAmount, rating, progress=100, completedAt 기록.",
+      "priority": 4,
+      "difficulty": "하",
+      "dev_status": "개발완료"
+    },
+    {
+      "id": 103,
+      "_action": "update",
+      "req_code": "REQ-CR-010",
+      "category_1": "대시보드",
+      "category_2": "단계관리",
+      "title": "5단계 순차 전환 및 선행 조건 유효성 검증",
+      "detail": "LONG_LIST→SHORT_LIST→ABLE_REGISTER→ABLE_MANAGE→COMPLETED_MANAGE. 각 전환 시 선행 데이터 존재 검증 필수.",
+      "priority": 5,
+      "difficulty": "상",
+      "dev_status": "개발완료"
+    },
+    {
+      "id": null,
+      "_action": "create",
+      "req_code": "REQ-CR-011",
+      "category_1": "Short List",
+      "category_2": "UX",
+      "title": "Short List 재도출 시 확인 다이얼로그 + 데이터 초기화",
+      "detail": "기존 Short List 데이터가 있을 때 재도출 시 '기존 데이터가 초기화됩니다' 확인 다이얼로그 표시. 확인 시 shortListItems 및 Redis 캐시 클리어.",
+      "priority": 3,
+      "difficulty": "하",
+      "dev_status": "개발완료"
+    },
+    {
+      "id": null,
+      "_action": "create",
+      "req_code": "REQ-CR-012",
+      "category_1": "대시보드",
+      "category_2": "UX",
+      "title": "단계 네비게이션 바 (건수/금액 동적 갱신)",
+      "detail": "Long List → Short List → Able 과제 등록 단계별 네비게이션 바 상단 표시. 각 단계의 선택 건수와 합산 금액 실시간 갱신. Short List/Able 과제 등록 페이지에서 dynamicStats useMemo로 동적 계산.",
+      "priority": 3,
+      "difficulty": "중",
+      "dev_status": "개발완료"
+    },
+    {
+      "id": null,
+      "_action": "create",
+      "req_code": "REQ-CR-013",
+      "category_1": "Short List",
+      "category_2": "데이터보호",
+      "title": "과제 등록된 항목 Short List 체크해제 방지",
+      "detail": "getLockedStatisticsIds API로 과제 등록된 항목 ID 조회. 해당 항목은 체크박스 비활성화 + '과제 등록됨' 뱃지 표시. 상단에 빨간 경고 메시지 표시.",
+      "priority": 4,
+      "difficulty": "중",
+      "dev_status": "개발완료"
+    },
+    {
+      "id": null,
+      "_action": "create",
+      "req_code": "REQ-CR-014",
+      "category_1": "Able 과제",
+      "category_2": "UX",
+      "title": "Able 과제 등록 트리 구조 개선 (5컬럼 + 확장/축소)",
+      "detail": "트리 테이블 5컬럼 구성: 선택/항목명/코스트센터 수/공급업체 수/합계금액. 세부클러스터 드롭다운 확장/축소 지원. 전체 노드 기본 확장 상태.",
+      "priority": 3,
+      "difficulty": "중",
+      "dev_status": "개발완료"
+    }
+  ],
+  "milestones": [
+    {
+      "id": 16,
+      "_action": "update",
+      "title": "Phase 1 완료 - 대시보드 기반 + 편집자 잠금",
+      "category": "Phase 1",
+      "due_date": "2026-02-20",
+      "status": "완료",
+      "description": "CostReductionDashboard 컬렉션, Redis 편집자 잠금, ProjectsPage 버튼, CostReductionLayout/Sidebar, 라우팅 완성"
+    },
+    {
+      "id": 17,
+      "_action": "update",
+      "title": "Phase 2 완료 - Long List API 연동",
+      "category": "Phase 2",
+      "due_date": "2026-02-21",
+      "status": "완료",
+      "description": "cluster_statistics 기반 3레벨 트리 API, Top N 차트 API, Redis 캐싱, LongListPage Mock→API 전환 완료"
+    },
+    {
+      "id": 18,
+      "_action": "update",
+      "title": "Phase 3 완료 - Short List + 단계 전환",
+      "category": "Phase 3",
+      "due_date": "2026-02-22",
+      "status": "완료",
+      "description": "ShortListPage API 연동, 리스트 잠금 로직, 단계 전환 유효성 검증 완료"
+    },
+    {
+      "id": 19,
+      "_action": "update",
+      "title": "Phase 4 완료 - Able 과제 등록",
+      "category": "Phase 4",
+      "due_date": "2026-02-24",
+      "status": "완료",
+      "description": "과제 CRUD, S3 Presigned URL 파일 업로드, 자동 매핑, 레벨 네비게이션 완료"
+    },
+    {
+      "id": 20,
+      "_action": "update",
+      "title": "Phase 5 완료 - 과제 관리 + 완료 과제 관리",
+      "category": "Phase 5",
+      "due_date": "2026-02-25",
+      "status": "완료",
+      "description": "과제 관리 CRUD, 요약/차트(Pie+Bar), S3 삭제 연동, 완료 과제 관리 페이지 완성"
+    },
+    {
+      "id": 21,
+      "_action": "update",
+      "title": "비용 절감 대시보드 전체 완료",
+      "category": "Release",
+      "due_date": "2026-02-25",
+      "status": "완료",
+      "description": "5개 Phase 통합 완료 및 전체 검증 항목 통과"
+    },
+    {
+      "id": null,
+      "_action": "create",
+      "title": "Phase 6 완료 - 버그수정 및 UX 개선 (Round 1~5)",
+      "category": "Phase 6",
+      "due_date": "2026-02-20",
+      "status": "완료",
+      "description": "ShortList 트리 버그 수정, 금액 불일치 수정, 계정명 차트, 파이차트 토글, 단계 네비게이션 바, 과제등록 항목 잠금, 리스트 잠금 해제, 모수금액 자동합산, 예상절감액 자동계산 등 총 14건 개선 완료"
+    }
+  ],
+  "test_items": [
+    {
+      "id": 6,
+      "_action": "update",
+      "test_item": "프로젝트 완료 버튼 노출 확인",
+      "category": "UI Test",
+      "notes": "is_completed=true인 프로젝트 카드에만 비용 절감 수행 버튼 노출, 카드 높이 동일 — 검증 완료"
+    },
+    {
+      "id": 7,
+      "_action": "update",
+      "test_item": "편집자 잠금 - 유저 A 편집자 획득 → 유저 B 뷰어 확인",
+      "category": "통합 테스트",
+      "notes": "유저 B는 체크박스 비활성화 상태로 조회만 가능 — 검증 완료"
+    },
+    {
+      "id": 8,
+      "_action": "update",
+      "test_item": "편집자 잠금 - 유저 A 이탈 → 60초 후 자동 잠금 해제",
+      "category": "통합 테스트",
+      "notes": "Redis TTL 만료 후 다른 유저가 편집자 잠금 획득 가능 — 검증 완료"
+    },
+    {
+      "id": 9,
+      "_action": "update",
+      "test_item": "Long List 트리 API - 3레벨 구조 확인",
+      "category": "API Test",
+      "notes": "account_name > Level2 클러스터 > Level3 클러스터 트리 구조 정상 반환 — 검증 완료"
+    },
+    {
+      "id": 10,
+      "_action": "update",
+      "test_item": "Long List 차트 Top 5 → Top 10 전환",
+      "category": "UI Test",
+      "notes": "top 파라미터 변경 시 공급업체/코스트센터 차트 항목 정확히 변경 — 검증 완료"
+    },
+    {
+      "id": 11,
+      "_action": "update",
+      "test_item": "Redis 캐시 적중 확인 (두 번째 조회 성능)",
+      "category": "성능 테스트",
+      "notes": "동일 요청 두 번째 응답이 첫 번째 대비 80% 이상 빠름 — 검증 완료"
+    },
+    {
+      "id": 12,
+      "_action": "update",
+      "test_item": "Short List 트리 - Long List 선택 항목만 표시",
+      "category": "통합 테스트",
+      "notes": "Long List 미선택 항목은 Short List 트리 미노출. collectNodeData로 level 2+3 모두 저장 확인 — 검증 완료 (Round 1-2 버그 수정)"
+    },
+    {
+      "id": 13,
+      "_action": "update",
+      "test_item": "Able 과제 등록 전환 → 리스트 잠금 확인",
+      "category": "통합 테스트",
+      "notes": "전환 후 Long List, Short List 체크박스 비활성화 (is_list_locked=true). Long List에 잠금 뱃지 표시 — 검증 완료 (Round 5)"
+    },
+    {
+      "id": 14,
+      "_action": "update",
+      "test_item": "S3 Presigned URL 파일 업로드 3단계 플로우",
+      "category": "통합 테스트",
+      "notes": "업로드 URL 요청 → S3 PUT → 업로드 완료 확인 정상 처리 — 검증 완료"
+    },
+    {
+      "id": 15,
+      "_action": "update",
+      "test_item": "과제 등록 시 모수 금액 자동 합산",
+      "category": "API Test",
+      "notes": "체크된 클러스터 항목 totalAmount 합산이 baseAmount로 자동 설정. readOnly 필드로 변경 완료 — 검증 완료 (Round 5)"
+    },
+    {
+      "id": 16,
+      "_action": "update",
+      "test_item": "과제 삭제 → S3 파일 정리 + 목록 제거",
+      "category": "통합 테스트",
+      "notes": "S3 폴더 삭제 + task_documents 컬렉션 데이터 삭제 확인 — 검증 완료"
+    },
+    {
+      "id": 17,
+      "_action": "update",
+      "test_item": "Able 과제 관리 요약 카드 + 차트 표시",
+      "category": "UI Test",
+      "notes": "총과제수, 총모수금액, 총절감액, 평균진척율, 상태별 Pie, 컨설턴트별 Bar 정상 표시 — 검증 완료"
+    },
+    {
+      "id": 18,
+      "_action": "update",
+      "test_item": "완료 과제 처리 및 완료 과제 목록 이동",
+      "category": "통합 테스트",
+      "notes": "status=COMPLETED, progress=100, completedAt 기록 + 완료 과제 목록 이동 — 검증 완료"
+    },
+    {
+      "id": 19,
+      "_action": "update",
+      "test_item": "레벨 네비게이션 동작 (Able 과제 등록 페이지)",
+      "category": "UI Test",
+      "notes": "Level 1→LongList, Level 2→ShortList, Level 3→현재 페이지 이동 정상. 단계 네비게이션 바 건수/금액 동적 갱신 확인 — 검증 완료"
+    },
+    {
+      "id": 20,
+      "_action": "update",
+      "test_item": "파일 다운로드 → S3 Presigned GET URL",
+      "category": "통합 테스트",
+      "notes": "GET /tasks/{taskId}/documents/{docId}/download 호출 시 15분 유효 다운로드 URL 반환 — 검증 완료"
+    },
+    {
+      "id": null,
+      "_action": "create",
+      "test_item": "ShortList 트리 하위 클러스터 표시 확인",
+      "category": "통합 테스트",
+      "notes": "계정명 하위 클러스터/세부클러스터 항목이 트리에 정상 표시. level 2+3 데이터 모두 저장 확인 — 검증 완료 (Round 1-2 수정)"
+    },
+    {
+      "id": null,
+      "_action": "create",
+      "test_item": "ShortList 금액/공급업체/코스트센터 수 일치 확인",
+      "category": "통합 테스트",
+      "notes": "level 2 기준으로만 집계하여 이중합산 방지. LongList 대비 ShortList 수치 정확히 일치 — 검증 완료 (Round 1-2 수정)"
+    },
+    {
+      "id": null,
+      "_action": "create",
+      "test_item": "계정명 수준 차트 생성 확인",
+      "category": "UI Test",
+      "notes": "대분류(계정명) 항목 클릭 시 차트 생성. getAccountChartData/getAccountItemStats 엔드포인트 정상 동작 — 검증 완료 (Round 1)"
+    },
+    {
+      "id": null,
+      "_action": "create",
+      "test_item": "파이차트 범례 클릭 숨기기/표시 토글",
+      "category": "UI Test",
+      "notes": "RatioDetailModal에서 하단 범례 항목 클릭 시 해당 항목 파이차트에서 숨기기/표시 전환 — 검증 완료 (Round 1)"
+    },
+    {
+      "id": null,
+      "_action": "create",
+      "test_item": "Short List 재도출 확인 다이얼로그 동작",
+      "category": "UI Test",
+      "notes": "기존 Short List 데이터 존재 시 재도출 클릭하면 경고 다이얼로그 표시. 확인 시 기존 데이터 초기화 후 재도출 — 검증 완료 (Round 2)"
+    },
+    {
+      "id": null,
+      "_action": "create",
+      "test_item": "단계 네비게이션 바 동적 갱신 확인",
+      "category": "UI Test",
+      "notes": "Short List/Able 과제 등록 페이지에서 체크박스 변경 시 네비게이션 바의 건수/금액 실시간 갱신 — 검증 완료 (Round 2-3)"
+    },
+    {
+      "id": null,
+      "_action": "create",
+      "test_item": "과제 등록 항목 체크해제 방지 확인",
+      "category": "통합 테스트",
+      "notes": "과제 등록된 클러스터 항목은 Short List에서 체크해제 불가. '과제 등록됨' 뱃지 + 빨간 경고 메시지 표시 — 검증 완료 (Round 3)"
+    },
+    {
+      "id": null,
+      "_action": "create",
+      "test_item": "리스트 잠금 해제 후 Short List 이동 확인",
+      "category": "통합 테스트",
+      "notes": "Able 과제 등록 화면에서 '리스트 잠금 해제' 클릭 시 is_list_locked=false로 변경 + Short List 페이지 이동 — 검증 완료 (Round 4)"
+    },
+    {
+      "id": null,
+      "_action": "create",
+      "test_item": "Long List 잠금 뱃지 표시 확인",
+      "category": "UI Test",
+      "notes": "isListLocked=true일 때 Long List 페이지 헤더에 빨간 '리스트 잠금' 뱃지(Lock 아이콘) 표시 — 검증 완료 (Round 5)"
+    },
+    {
+      "id": null,
+      "_action": "create",
+      "test_item": "예상 절감액 자동 계산 확인",
+      "category": "UI Test",
+      "notes": "모수 금액(baseAmount) × 예상 절감율(%) / 100 = 예상 절감액. 절감율 입력 시 즉시 자동 반영. readOnly 필드 — 검증 완료 (Round 5)"
+    },
+    {
+      "id": null,
+      "_action": "create",
+      "test_item": "Able 과제 등록 트리 5컬럼 구조 확인",
+      "category": "UI Test",
+      "notes": "선택(체크박스)/항목명/코스트센터 수/공급업체 수/합계금액 5컬럼 테이블. 세부클러스터 확장/축소 동작. 전체 노드 기본 확장 상태 — 검증 완료 (Round 4)"
+    }
+  ],
+  "cloud_services": [
+    {
+      "id": 21,
+      "_action": "update",
+      "service_name": "ECS Fargate (Spring Boot API Server)",
+      "service_type": "compute",
+      "instance_type": "1 vCPU / 2GB",
+      "specs": "Tasks: 2, Auto-scaling enabled",
+      "monthly_estimated_cost": 80.0,
+      "status": "active"
+    },
+    {
+      "id": 22,
+      "_action": "update",
+      "service_name": "Amazon DocumentDB (MongoDB 호환)",
+      "service_type": "database",
+      "instance_type": "db.r5.large",
+      "specs": "vCPU: 2, Memory: 16GB, TLS 강제 적용",
+      "monthly_estimated_cost": 180.0,
+      "status": "active"
+    },
+    {
+      "id": 23,
+      "_action": "update",
+      "service_name": "Amazon ElastiCache Redis",
+      "service_type": "cache",
+      "instance_type": "cache.t3.medium",
+      "specs": "편집자 잠금(TTL 60s) + 트리/차트 캐싱(TTL 30min) + Short List 선택 트리 캐싱",
+      "monthly_estimated_cost": 30.0,
+      "status": "active"
+    },
+    {
+      "id": 24,
+      "_action": "update",
+      "service_name": "Amazon S3 (과제 문서 저장소)",
+      "service_type": "storage",
+      "instance_type": "Standard",
+      "specs": "Presigned URL 업로드(1hr TTL) / 다운로드(15min TTL). 과제 삭제 시 S3 폴더 연동 삭제.",
+      "monthly_estimated_cost": 10.0,
+      "status": "active"
+    },
+    {
+      "id": 25,
+      "_action": "update",
+      "service_name": "Amazon ECR",
+      "service_type": "registry",
+      "instance_type": "Standard",
+      "specs": "Spring Boot 이미지 저장, Task Definition SHA256 캐시",
+      "monthly_estimated_cost": 5.0,
+      "status": "active"
+    }
+  ]
+}
