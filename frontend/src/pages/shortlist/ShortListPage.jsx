@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import {
   ChevronRight, ChevronDown, Database, Building2, MapPin,
   DollarSign, TrendingUp, FileSpreadsheet, Eye,
-  Layers, BarChart3, ListChecks, ArrowRight, Loader2,
+  Layers, BarChart3, ListChecks, ArrowRight, Loader2, CheckCircle2,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -256,6 +256,66 @@ function SelectedItemCard({ stats }) {
   );
 }
 
+/* ====== Phase Navigation Bar ====== */
+function PhaseNavigationBar({ stats, currentPhase, projectId, navigate }) {
+  const phases = [
+    {
+      key: 'LONG_LIST',
+      label: 'Long List',
+      count: stats?.longListItemCount ?? '-',
+      amount: stats?.totalAmount ?? 0,
+      path: `/projects/${projectId}/longlist`,
+    },
+    {
+      key: 'SHORT_LIST',
+      label: 'Short List',
+      count: stats?.shortListItemCount ?? '-',
+      amount: stats?.shortListTotalAmount ?? 0,
+      path: `/projects/${projectId}/shortlist`,
+    },
+    {
+      key: 'ABLE_REGISTER',
+      label: 'Able 과제 등록',
+      count: null,
+      amount: null,
+      path: `/projects/${projectId}/able-register`,
+    },
+  ];
+
+  const currentIdx = phases.findIndex(p => p.key === currentPhase);
+
+  return (
+    <div className="flex items-center gap-1 py-2">
+      {phases.map((phase, idx) => {
+        const isActive = phase.key === currentPhase;
+        const isPast = idx < currentIdx;
+        return (
+          <React.Fragment key={phase.key}>
+            {idx > 0 && <ArrowRight className="w-4 h-4 text-muted-foreground/50 flex-shrink-0" />}
+            <button
+              onClick={() => navigate(phase.path)}
+              className={cn(
+                'flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs transition-colors',
+                isActive && 'bg-blue-600 text-white',
+                isPast && 'bg-blue-50 text-blue-700 hover:bg-blue-100',
+                !isActive && !isPast && 'bg-muted/50 text-muted-foreground hover:bg-muted',
+              )}
+            >
+              {isPast && <CheckCircle2 className="w-3.5 h-3.5" />}
+              <span className="font-medium">{phase.label}</span>
+              {phase.count != null && (
+                <Badge variant={isActive ? 'secondary' : 'outline'} className="text-[10px] px-1.5 py-0 ml-0.5">
+                  {phase.count}건 / {formatAmount(phase.amount)}
+                </Badge>
+              )}
+            </button>
+          </React.Fragment>
+        );
+      })}
+    </div>
+  );
+}
+
 /* ====== Main ShortListPage ====== */
 export default function ShortListPage() {
   const { projectId } = useParams();
@@ -457,6 +517,7 @@ export default function ShortListPage() {
             </Button>
           </div>
         </div>
+        <PhaseNavigationBar stats={stats} currentPhase="SHORT_LIST" projectId={projectId} navigate={navigate} />
       </div>
 
       {/* Scrollable Content */}

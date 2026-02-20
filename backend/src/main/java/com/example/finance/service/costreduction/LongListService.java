@@ -327,8 +327,13 @@ public class LongListService {
                 .toList();
 
         list.setLongListItems(items);
+        // Short List 항목 초기화 (Long List 재저장 시 기존 Short List는 무효)
+        list.setShortListItems(new ArrayList<>());
         list.setUpdatedAt(LocalDateTime.now());
         longShortListRepository.save(list);
+
+        // Short List 관련 캐시 무효화
+        redisService.delete("shortlist:tree:" + projectId);
 
         return items.size();
     }
