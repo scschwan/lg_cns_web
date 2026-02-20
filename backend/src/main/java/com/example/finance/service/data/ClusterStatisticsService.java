@@ -41,8 +41,8 @@ public class ClusterStatisticsService {
      *   Level 2: 병합 클러스터 (parent) / 독립 클러스터
      *   Level 3: 세부 클러스터 (sub-merge parent)
      */
-    public void generateStatistics(String sessionId) {
-        log.info("클러스터 통계 생성 시작: sessionId={}", sessionId);
+    public void generateStatistics(String sessionId, String projectId) {
+        log.info("클러스터 통계 생성 시작: sessionId={}, projectId={}", sessionId, projectId);
 
         // 기존 통계 삭제
         clusterStatisticsRepository.deleteBySessionId(sessionId);
@@ -56,7 +56,10 @@ public class ClusterStatisticsService {
             return;
         }
 
-        String projectId = session.getProjectId();
+        // projectId가 파라미터로 전달되지 않은 경우 세션에서 가져옴
+        String resolvedProjectId = (projectId != null && !projectId.isBlank())
+                ? projectId
+                : session.getProjectId();
 
         String accountName = (session.getAccountNames() != null && !session.getAccountNames().isEmpty())
                 ? String.join(", ", session.getAccountNames())
@@ -103,7 +106,7 @@ public class ClusterStatisticsService {
             AggregationResult aggResult = aggregateFromProcessViewData(sessionId, dataIndices);
 
             statisticsList.add(ClusterStatistics.builder()
-                    .projectId(projectId)
+                    .projectId(resolvedProjectId)
                     .sessionId(sessionId)
                     .clusterNumber(cluster.getClusterNumber())
                     .parentClusterNumber(null)
@@ -131,7 +134,7 @@ public class ClusterStatisticsService {
             AggregationResult aggResult = aggregateFromProcessViewData(sessionId, dataIndices);
 
             statisticsList.add(ClusterStatistics.builder()
-                    .projectId(projectId)
+                    .projectId(resolvedProjectId)
                     .sessionId(sessionId)
                     .clusterNumber(subParent.getClusterNumber())
                     .parentClusterNumber(parentNumber)
@@ -160,7 +163,7 @@ public class ClusterStatisticsService {
                     .sum();
 
             statisticsList.add(ClusterStatistics.builder()
-                    .projectId(projectId)
+                    .projectId(resolvedProjectId)
                     .sessionId(sessionId)
                     .clusterNumber(null)
                     .parentClusterNumber(null)
