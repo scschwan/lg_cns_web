@@ -20,6 +20,18 @@ const costReductionService = {
     return response.data;
   },
 
+  // ===== Dashboard Lock Check (세션 완료 시 사전 체크) =====
+
+  checkDashboardLockStatus: async (projectId) => {
+    const response = await api.get(`/api/projects/${projectId}/dashboard/lock-status`);
+    return response.data;
+  },
+
+  resetDashboard: async (projectId) => {
+    const response = await api.delete(`/api/projects/${projectId}/dashboard/reset`);
+    return response.data;
+  },
+
   // ===== Editor Lock =====
 
   acquireLock: async (projectId) => {
