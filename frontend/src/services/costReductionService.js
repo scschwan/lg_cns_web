@@ -104,6 +104,62 @@ const costReductionService = {
     const response = await api.get(`/api/projects/${projectId}/shortlist/selections`);
     return response.data;
   },
+
+  // ===== Able Tasks =====
+
+  createTask: async (projectId, data) => {
+    const response = await api.post(`/api/projects/${projectId}/tasks`, data);
+    return response.data;
+  },
+
+  getTasks: async (projectId) => {
+    const response = await api.get(`/api/projects/${projectId}/tasks`);
+    return response.data;
+  },
+
+  getTaskSummary: async (projectId) => {
+    const response = await api.get(`/api/projects/${projectId}/tasks/summary`);
+    return response.data;
+  },
+
+  getTask: async (projectId, taskId) => {
+    const response = await api.get(`/api/projects/${projectId}/tasks/${taskId}`);
+    return response.data;
+  },
+
+  updateTask: async (projectId, taskId, data) => {
+    const response = await api.put(`/api/projects/${projectId}/tasks/${taskId}`, data);
+    return response.data;
+  },
+
+  deleteTask: async (projectId, taskId) => {
+    const response = await api.delete(`/api/projects/${projectId}/tasks/${taskId}`);
+    return response.data;
+  },
+
+  // ===== Task Documents =====
+
+  getTaskDocuments: async (projectId, taskId) => {
+    const response = await api.get(`/api/projects/${projectId}/tasks/${taskId}/documents`);
+    return response.data;
+  },
+
+  addTaskLink: async (projectId, taskId, data) => {
+    const response = await api.post(`/api/projects/${projectId}/tasks/${taskId}/documents/link`, data);
+    return response.data;
+  },
+
+  getTaskUploadUrl: async (projectId, taskId, fileName) => {
+    const response = await api.post(`/api/projects/${projectId}/tasks/${taskId}/documents/upload-url`, null, {
+      params: { fileName },
+    });
+    return response.data;
+  },
+
+  deleteTaskDocument: async (projectId, taskId, documentId) => {
+    const response = await api.delete(`/api/projects/${projectId}/tasks/${taskId}/documents/${documentId}`);
+    return response.data;
+  },
 };
 
 export default costReductionService;
