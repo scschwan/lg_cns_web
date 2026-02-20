@@ -12,7 +12,8 @@ import {
     Calendar,
     Settings,
     FolderOpen,
-    Loader2
+    Loader2,
+    TrendingDown
 } from 'lucide-react';
 import CreateProjectDialog from './CreateProjectDialog';
 
@@ -135,7 +136,7 @@ export default function ProjectsPage() {
                                     </div>
                                 </CardHeader>
 
-                                <CardContent className="space-y-3">
+                                <CardContent className="space-y-3 min-h-[120px]">
                                     <div className="flex items-center gap-2 text-sm text-gray-600">
                                         <Calendar className="h-4 w-4" />
                                         <span>{formatDate(project.createdAt)}</span>
@@ -165,6 +166,19 @@ export default function ProjectsPage() {
                                     >
                                         열기
                                     </Button>
+                                    {project.isCompleted && (
+                                        <Button
+                                            variant="secondary"
+                                            className="flex-1 gap-1"
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                navigate(`/projects/${project.projectId}/longlist`);
+                                            }}
+                                        >
+                                            <TrendingDown className="h-4 w-4" />
+                                            비용 절감 수행
+                                        </Button>
+                                    )}
                                     <Button
                                         variant="outline"
                                         size="icon"
