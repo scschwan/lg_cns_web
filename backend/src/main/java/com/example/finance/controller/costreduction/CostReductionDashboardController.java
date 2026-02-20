@@ -1,6 +1,7 @@
 package com.example.finance.controller.costreduction;
 
 import com.example.finance.dto.request.costreduction.TransitionPhaseRequest;
+import com.example.finance.dto.response.costreduction.DashboardLockStatusResponse;
 import com.example.finance.dto.response.costreduction.DashboardStatusResponse;
 import com.example.finance.dto.response.costreduction.LockResponse;
 import com.example.finance.enums.CostReductionPhase;
@@ -75,5 +76,25 @@ public class CostReductionDashboardController {
         DashboardStatusResponse response = dashboardService.transitionPhase(
                 projectId, userPrincipal.getId(), targetPhase);
         return ResponseEntity.ok(response);
+    }
+
+    /**
+     * 대시보드 잠금 상태 확인 (세션 완료 시 사전 체크용)
+     */
+    @GetMapping("/lock-status")
+    public ResponseEntity<DashboardLockStatusResponse> checkLockStatus(
+            @PathVariable String projectId) {
+        DashboardLockStatusResponse response = dashboardService.checkDashboardLockStatus(projectId);
+        return ResponseEntity.ok(response);
+    }
+
+    /**
+     * 대시보드 전체 초기화 (세션 재완료 시 기존 데이터 삭제)
+     */
+    @DeleteMapping("/reset")
+    public ResponseEntity<Map<String, Boolean>> resetDashboard(
+            @PathVariable String projectId) {
+        dashboardService.resetAllDashboardData(projectId);
+        return ResponseEntity.ok(Map.of("success", true));
     }
 }

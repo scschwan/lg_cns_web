@@ -1,17 +1,26 @@
 package com.example.finance.service.costreduction;
 
+import com.example.finance.dto.response.costreduction.DashboardLockStatusResponse;
 import com.example.finance.dto.response.costreduction.DashboardStatusResponse;
 import com.example.finance.dto.response.costreduction.LockResponse;
 import com.example.finance.enums.CostReductionPhase;
+import com.example.finance.model.costreduction.AbleTask;
 import com.example.finance.model.costreduction.CostReductionDashboard;
+import com.example.finance.model.costreduction.TaskDocument;
+import com.example.finance.repository.costreduction.AbleTaskRepository;
 import com.example.finance.repository.costreduction.CostReductionDashboardRepository;
+import com.example.finance.repository.costreduction.LongShortListRepository;
+import com.example.finance.repository.costreduction.TaskDocumentRepository;
 import com.example.finance.service.common.RedisService;
+import com.example.finance.service.common.S3Service;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import java.time.Duration;
 import java.time.LocalDateTime;
+import java.util.List;
+import java.util.Set;
 
 @Slf4j
 @Service
@@ -19,7 +28,11 @@ import java.time.LocalDateTime;
 public class CostReductionDashboardService {
 
     private final CostReductionDashboardRepository dashboardRepository;
+    private final LongShortListRepository longShortListRepository;
+    private final AbleTaskRepository ableTaskRepository;
+    private final TaskDocumentRepository taskDocumentRepository;
     private final RedisService redisService;
+    private final S3Service s3Service;
 
     private static final String LOCK_KEY_PREFIX = "dashboard:lock:";
     private static final Duration LOCK_TTL = Duration.ofSeconds(60);
@@ -195,6 +208,98 @@ public class CostReductionDashboardService {
                 .editorUserId(dashboard.getEditorUserId())
                 .editorUserName(dashboard.getEditorUserName())
                 .build();
+    }
+
+    /**
+     * 대시보드 잠금 상태 확인 (세션 완료 시 사전 체크용)
+     * - 대시보드 존재 여부 + 현재 편집자 잠금 여부 반환
+     */
+    public DashboardLockStatusResponse checkDashboardLockStatus(String projectId) {
+        boolean exists = dashboardRepository.existsByProjectId(projectId);
+        if (!exists) {
+            return DashboardLockStatusResponse.builder()
+                    .dashboardExists(false)
+                    .isLocked(false)
+                    .build();
+        }
+
+        CostReductionDashboard dashboard = getDashboard(projectId);
+        String lockKey = LOCK_KEY_PREFIX + projectId;
+        Object currentEditor = redisService.get(lockKey);
+        boolean isLocked = currentEditor != null;
+
+        return DashboardLockStatusResponse.builder()
+                .dashboardExists(true)
+                .isLocked(isLocked)
+                .editorUserId(isLocked ? String.valueOf(currentEditor) : dashboard.getEditorUserId())
+                .editorUserName(isLocked ? dashboard.getEditorUserName() : null)
+                .currentPhase(dashboard.getCurrentPhase())
+                .build();
+    }
+
+    /**
+     * 대시보드 전체 초기화 (DB + S3 + Redis 캐시)
+     * - cost_reduction_dashboards 삭제
+     * - long_short_lists 삭제
+     * - able_tasks + task_documents 삭제
+     * - S3 task documents 삭제
+     * - Redis 캐시 삭제
+     */
+    public void resetAllDashboardData(String projectId) {
+        log.info("Dashboard 전체 초기화 시작: projectId={}", projectId);
+
+        // 1. Task Documents S3 파일 삭제
+        List<AbleTask> tasks = ableTaskRepository.findByProjectId(projectId);
+        for (AbleTask task : tasks) {
+            List<TaskDocument> docs = taskDocumentRepository.findByTaskId(task.getId());
+            for (TaskDocument doc : docs) {
+                if ("file".equals(doc.getType()) && doc.getS3Key() != null) {
+                    try {
+                        s3Service.deleteFile(doc.getS3Key());
+                    } catch (Exception e) {
+                        log.warn("Failed to delete S3 file: key={}", doc.getS3Key(), e);
+                    }
+                }
+            }
+            // Task Documents DB 삭제
+            taskDocumentRepository.deleteByTaskId(task.getId());
+        }
+
+        // 2. Able Tasks 삭제
+        ableTaskRepository.deleteAll(tasks);
+        log.info("Deleted {} tasks and their documents for projectId={}", tasks.size(), projectId);
+
+        // 3. S3 task 폴더 삭제 (일괄)
+        try {
+            s3Service.deleteFolder("projects/" + projectId + "/tasks/");
+        } catch (Exception e) {
+            log.warn("Failed to delete S3 task folder: projectId={}", projectId, e);
+        }
+
+        // 4. Long/Short List 삭제
+        longShortListRepository.findByProjectId(projectId)
+                .ifPresent(longShortListRepository::delete);
+        log.info("Deleted long/short list for projectId={}", projectId);
+
+        // 5. Dashboard 삭제
+        dashboardRepository.findByProjectId(projectId)
+                .ifPresent(dashboardRepository::delete);
+        log.info("Deleted dashboard for projectId={}", projectId);
+
+        // 6. Redis 캐시 정리
+        redisService.delete(LOCK_KEY_PREFIX + projectId);
+
+        // Long List / Short List 캐시 삭제
+        Set<String> cacheKeys = redisService.keys("longlist:*:" + projectId);
+        if (cacheKeys != null && !cacheKeys.isEmpty()) {
+            redisService.delete(cacheKeys);
+        }
+        Set<String> shortCacheKeys = redisService.keys("shortlist:*:" + projectId);
+        if (shortCacheKeys != null && !shortCacheKeys.isEmpty()) {
+            redisService.delete(shortCacheKeys);
+        }
+
+        log.info("Dashboard 전체 초기화 완료: projectId={}", projectId);
     }
 
     private CostReductionDashboard getDashboard(String projectId) {

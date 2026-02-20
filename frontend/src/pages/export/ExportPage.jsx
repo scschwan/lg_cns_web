@@ -4,7 +4,7 @@ import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom';
 import {
   ChevronRight, ChevronDown, Home, Download, Trash2, Eye, RefreshCw,
-  CheckSquare, Square, Edit3, Save, X, ExternalLink
+  CheckSquare, Square, Edit3, Save, X, ExternalLink, AlertTriangle
 } from 'lucide-react';
 
 // shadcn/ui components
@@ -16,9 +16,11 @@ import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 
 // Services
 import exportService from '@/services/exportService';
+import costReductionService from '@/services/costReductionService';
 
 // Shared component
 import AdvancedTable from '@/components/AdvancedTable';
@@ -426,19 +428,77 @@ function ExportPage() {
   };
 
   // ===== 세션 완료 =====
+  const [completeDialog, setCompleteDialog] = useState({
+    open: false,
+    type: null, // 'blocked' | 'confirm_reset' | 'confirm_normal'
+    editorUserName: null,
+    hasExport: false,
+  });
+
   const handleCompleteSession = async () => {
     try {
+      // 1. 대시보드 잠금 상태 확인
+      const lockStatus = await costReductionService.checkDashboardLockStatus(projectId);
+
+      // 2. Export 존재 여부 확인
       const urlResult = await exportService.getExportDownloadUrl(projectId, sessionId);
       const hasExport = urlResult.hasExport;
 
-      let message = hasExport
-        ? '세션을 종료하시겠습니까?'
-        : '클러스터링 결과를 Excel File로 저장하고 세션을 종료하시겠습니까?';
+      if (lockStatus.dashboardExists) {
+        if (lockStatus.isLocked) {
+          // Case 2-1: 대시보드 작업 중인 사용자가 있음 → 차단
+          setCompleteDialog({
+            open: true,
+            type: 'blocked',
+            editorUserName: lockStatus.editorUserName || '알 수 없는 사용자',
+            hasExport,
+          });
+          return;
+        } else {
+          // Case 2-2: 대시보드 존재하지만 작업 중인 사용자 없음 → 초기화 확인
+          setCompleteDialog({
+            open: true,
+            type: 'confirm_reset',
+            editorUserName: null,
+            hasExport,
+          });
+          return;
+        }
+      }
 
-      if (!window.confirm(message)) return;
+      // 대시보드가 없는 경우 → 일반 세션 완료 확인
+      setCompleteDialog({
+        open: true,
+        type: 'confirm_normal',
+        editorUserName: null,
+        hasExport,
+      });
+    } catch (e) {
+      // 대시보드 API 에러 시 일반 세션 완료 플로우로 fallback
+      const urlResult = await exportService.getExportDownloadUrl(projectId, sessionId).catch(() => ({ hasExport: false }));
+      setCompleteDialog({
+        open: true,
+        type: 'confirm_normal',
+        editorUserName: null,
+        hasExport: urlResult.hasExport || false,
+      });
+    }
+  };
 
-      setExporting(true);
-      const result = await exportService.completeSession(projectId, sessionId, !hasExport);
+  const handleConfirmComplete = async (resetDashboard = false) => {
+    setCompleteDialog(prev => ({ ...prev, open: false }));
+    setExporting(true);
+
+    try {
+      // 대시보드 초기화가 필요한 경우
+      if (resetDashboard) {
+        await costReductionService.resetDashboard(projectId);
+      }
+
+      // 세션 완료 처리
+      const result = await exportService.completeSession(
+        projectId, sessionId, !completeDialog.hasExport
+      );
 
       if (result.exported && result.exportResult?.downloadUrl) {
         exportService.downloadExcel(result.exportResult.downloadUrl, `final_${sessionId}.xlsx`);
@@ -879,6 +939,85 @@ function ExportPage() {
           </div>
         </div>
       </div>
+
+      {/* 세션 완료 다이얼로그 */}
+      <Dialog open={completeDialog.open} onOpenChange={(open) => !open && setCompleteDialog(prev => ({ ...prev, open: false }))}>
+        <DialogContent className="sm:max-w-md">
+          {completeDialog.type === 'blocked' && (
+            <>
+              <DialogHeader>
+                <DialogTitle className="flex items-center gap-2 text-red-600">
+                  <AlertTriangle className="h-5 w-5" />
+                  세션 변경 불가
+                </DialogTitle>
+                <DialogDescription className="text-sm pt-2">
+                  <strong>{completeDialog.editorUserName}</strong> 사용자가 비용 절감 대시보드에서 작업 중이므로 해당 세션을 변경할 수 없습니다.
+                </DialogDescription>
+              </DialogHeader>
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setCompleteDialog(prev => ({ ...prev, open: false }))}>
+                  확인
+                </Button>
+              </DialogFooter>
+            </>
+          )}
+
+          {completeDialog.type === 'confirm_reset' && (
+            <>
+              <DialogHeader>
+                <DialogTitle className="flex items-center gap-2 text-orange-600">
+                  <AlertTriangle className="h-5 w-5" />
+                  대시보드 초기화 경고
+                </DialogTitle>
+                <DialogDescription className="text-sm pt-2 leading-relaxed">
+                  해당 세션 내용을 수정 시 기존 작업 중이던 <strong>비용 절감 대시보드 이력이 모두 초기화</strong>됩니다.
+                  <br /><br />
+                  <span className="text-red-600 font-medium">
+                    Long List, Short List, Able 과제, 관련 첨부파일이 모두 삭제됩니다.
+                  </span>
+                  <br /><br />
+                  세션 완료 작업을 수행하시겠습니까?
+                </DialogDescription>
+              </DialogHeader>
+              <DialogFooter className="gap-2">
+                <Button variant="outline" onClick={() => setCompleteDialog(prev => ({ ...prev, open: false }))}>
+                  취소
+                </Button>
+                <Button
+                  className="bg-red-600 hover:bg-red-700 text-white"
+                  onClick={() => handleConfirmComplete(true)}
+                >
+                  확인 (초기화 후 세션 완료)
+                </Button>
+              </DialogFooter>
+            </>
+          )}
+
+          {completeDialog.type === 'confirm_normal' && (
+            <>
+              <DialogHeader>
+                <DialogTitle>세션 완료</DialogTitle>
+                <DialogDescription className="text-sm pt-2">
+                  {completeDialog.hasExport
+                    ? '세션을 종료하시겠습니까?'
+                    : '클러스터링 결과를 Excel File로 저장하고 세션을 종료하시겠습니까?'}
+                </DialogDescription>
+              </DialogHeader>
+              <DialogFooter className="gap-2">
+                <Button variant="outline" onClick={() => setCompleteDialog(prev => ({ ...prev, open: false }))}>
+                  취소
+                </Button>
+                <Button
+                  className="bg-green-600 hover:bg-green-700 text-white"
+                  onClick={() => handleConfirmComplete(false)}
+                >
+                  확인
+                </Button>
+              </DialogFooter>
+            </>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
