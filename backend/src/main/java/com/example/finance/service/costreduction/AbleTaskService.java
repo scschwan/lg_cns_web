@@ -176,6 +176,19 @@ public class AbleTaskService {
                 .build();
     }
 
+    /**
+     * 프로젝트의 모든 과제에서 사용 중인 statisticsId 목록 조회 (잠금 처리용)
+     */
+    public List<String> getLockedStatisticsIds(String projectId) {
+        List<AbleTask> tasks = ableTaskRepository.findByProjectId(projectId);
+        return tasks.stream()
+                .flatMap(t -> t.getClusters() != null ? t.getClusters().stream() : java.util.stream.Stream.empty())
+                .map(AbleTask.ClusterRef::getStatisticsId)
+                .filter(id -> id != null && !id.isEmpty())
+                .distinct()
+                .toList();
+    }
+
     // ===== Document Management =====
 
     /**

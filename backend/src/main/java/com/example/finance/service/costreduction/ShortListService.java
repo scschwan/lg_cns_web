@@ -366,6 +366,71 @@ public class ShortListService {
     }
 
     /**
+     * Short List 선택 항목 기반 트리 데이터 조회 (Able 과제 등록 페이지용)
+     * longListItems가 아닌 shortListItems를 기반으로 트리를 구성
+     */
+    public LongListTreeResponse getShortListSelectionTree(String projectId) {
+        LongShortList list = longShortListRepository.findFirstByProjectId(projectId)
+                .orElseThrow(() -> new RuntimeException("Long List 데이터를 찾을 수 없습니다: " + projectId));
+
+        List<LongShortList.ListItem> shortListItems = list.getShortListItems();
+        if (shortListItems == null || shortListItems.isEmpty()) {
+            return new LongListTreeResponse(Collections.emptyList());
+        }
+
+        Set<String> statsIds = shortListItems.stream()
+                .map(LongShortList.ListItem::getStatisticsId)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toSet());
+
+        Map<String, ClusterStatistics> statsMap = clusterStatisticsRepository.findAllById(statsIds).stream()
+                .collect(Collectors.toMap(ClusterStatistics::getId, s -> s));
+
+        Map<String, List<LongShortList.ListItem>> itemsByAccount = shortListItems.stream()
+                .collect(Collectors.groupingBy(LongShortList.ListItem::getAccountName));
+
+        List<TreeNode> tree = new ArrayList<>();
+
+        for (Map.Entry<String, List<LongShortList.ListItem>> entry : itemsByAccount.entrySet()) {
+            String accountName = entry.getKey();
+            List<LongShortList.ListItem> items = entry.getValue();
+
+            List<LongShortList.ListItem> level2Items = items.stream()
+                    .filter(i -> i.getLevel() != null && i.getLevel() == 2).toList();
+            List<LongShortList.ListItem> level3Items = items.stream()
+                    .filter(i -> i.getLevel() != null && i.getLevel() == 3).toList();
+
+            Map<String, List<LongShortList.ListItem>> level3ByParent = level3Items.stream()
+                    .collect(Collectors.groupingBy(i -> i.getSessionId() + ":" + i.getParentClusterNumber()));
+
+            List<TreeNode> clusterNodes = level2Items.stream().map(l2 -> {
+                String parentKey = l2.getSessionId() + ":" + l2.getClusterNumber();
+                List<LongShortList.ListItem> subItems = level3ByParent.getOrDefault(parentKey, Collections.emptyList());
+                List<TreeNode> subChildren = subItems.stream()
+                        .map(sub -> toTreeNode(sub, statsMap.get(sub.getStatisticsId()))).toList();
+                TreeNode node = toTreeNode(l2, statsMap.get(l2.getStatisticsId()));
+                node.setChildren(new ArrayList<>(subChildren));
+                return node;
+            }).toList();
+
+            int totalCount = level2Items.stream().mapToInt(i -> i.getTotalCount() != null ? i.getTotalCount() : 0).sum();
+            double totalAmount = level2Items.stream().mapToDouble(i -> i.getTotalAmount() != null ? i.getTotalAmount() : 0.0).sum();
+            int supplierCount = level2Items.stream().map(i -> statsMap.get(i.getStatisticsId()))
+                    .filter(Objects::nonNull).mapToInt(s -> s.getSupplierCount() != null ? s.getSupplierCount() : 0).sum();
+            int costCenterCount = level2Items.stream().map(i -> statsMap.get(i.getStatisticsId()))
+                    .filter(Objects::nonNull).mapToInt(s -> s.getCostCenterCount() != null ? s.getCostCenterCount() : 0).sum();
+
+            tree.add(TreeNode.builder()
+                    .id("account:" + accountName).accountName(accountName).level(1)
+                    .totalCount(totalCount).totalAmount(totalAmount)
+                    .supplierCount(supplierCount).costCenterCount(costCenterCount)
+                    .children(new ArrayList<>(clusterNodes)).build());
+        }
+
+        return new LongListTreeResponse(tree);
+    }
+
+    /**
      * Short List 선택 항목 저장
      */
     public int saveShortListSelections(String projectId, SaveListRequest request) {

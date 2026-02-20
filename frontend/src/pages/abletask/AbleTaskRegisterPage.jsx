@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import {
   ChevronRight, ChevronDown, FilePlus, FileSpreadsheet,
   Link2, FileIcon, Plus, Trash2, Upload, ExternalLink, X, Loader2,
-  ArrowRight, CheckCircle2,
+  ArrowRight, ArrowLeft, CheckCircle2,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -267,14 +267,14 @@ export default function AbleTaskRegisterPage() {
   const [linkDialogOpen, setLinkDialogOpen] = useState(false);
   const [fileDialogOpen, setFileDialogOpen] = useState(false);
 
-  // Load Short List tree + phase stats
+  // Load Short List selection tree (shortListItems 기반) + phase stats
   useEffect(() => {
     if (!projectId) return;
     const load = async () => {
       try {
         setLoading(true);
         const [treeRes, statsRes] = await Promise.all([
-          costReductionService.getShortListTree(projectId),
+          costReductionService.getShortListSelectionTree(projectId),
           costReductionService.getShortListStats(projectId),
         ]);
         const tree = treeRes.tree || [];
@@ -401,6 +401,14 @@ export default function AbleTaskRegisterPage() {
             </div>
             <p className="text-sm text-muted-foreground mt-1">과제를 등록하고 관련 자료를 관리합니다</p>
           </div>
+          <Button
+            variant="outline"
+            onClick={() => navigate(`/projects/${projectId}/shortlist`)}
+            className="text-sm"
+          >
+            <ArrowLeft className="w-4 h-4 mr-1" />
+            Short List로 이동
+          </Button>
         </div>
         <PhaseNavigationBar stats={phaseStats} currentPhase="ABLE_REGISTER" projectId={projectId} navigate={navigate} />
       </div>

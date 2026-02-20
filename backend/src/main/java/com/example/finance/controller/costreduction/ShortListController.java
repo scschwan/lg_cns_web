@@ -75,6 +75,14 @@ public class ShortListController {
         return ResponseEntity.ok(response);
     }
 
+    @GetMapping("/selection-tree")
+    public ResponseEntity<LongListTreeResponse> getSelectionTree(
+            @PathVariable String projectId,
+            @CurrentUser UserPrincipal userPrincipal) {
+        LongListTreeResponse response = shortListService.getShortListSelectionTree(projectId);
+        return ResponseEntity.ok(response);
+    }
+
     @PostMapping("/save")
     public ResponseEntity<Map<String, Integer>> saveSelections(
             @PathVariable String projectId,
