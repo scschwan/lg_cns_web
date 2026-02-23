@@ -33,10 +33,11 @@ export default function ProjectsPage() {
         try {
             setLoading(true);
             const data = await projectService.getMyProjects();
-            setProjects(data);
+            setProjects(Array.isArray(data) ? data : []);
             setError('');
         } catch (err) {
             setError('프로젝트 목록을 불러오는데 실패했습니다.');
+            setProjects([]);
             console.error(err);
         } finally {
             setLoading(false);

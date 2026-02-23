@@ -35,10 +35,12 @@ export default function S3Management() {
                 adminService.getS3Files(),
                 adminService.getOrphanedFiles(),
             ]);
-            setFiles(allRes.data);
-            setOrphanedFiles(orphanRes.data);
+            setFiles(Array.isArray(allRes.data) ? allRes.data : []);
+            setOrphanedFiles(Array.isArray(orphanRes.data) ? orphanRes.data : []);
         } catch (e) {
             console.error('S3 파일 로딩 실패:', e);
+            setFiles([]);
+            setOrphanedFiles([]);
         } finally {
             setLoading(false);
         }

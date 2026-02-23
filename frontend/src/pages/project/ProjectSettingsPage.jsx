@@ -112,9 +112,10 @@ const ProjectSettingsPage = () => {
     try {
       setFilesLoading(true);
       const filesData = await projectService.getProjectFiles(projectId);
-      setFiles(filesData);
+      setFiles(Array.isArray(filesData) ? filesData : []);
     } catch (err) {
       console.error('파일 목록 로드 실패:', err);
+      setFiles([]);
     } finally {
       setFilesLoading(false);
     }
@@ -123,7 +124,7 @@ const ProjectSettingsPage = () => {
   const loadProjectMembers = async () => {
     try {
       const membersData = await projectService.getProjectMembers(projectId);
-      setMembers(membersData);
+      setMembers(Array.isArray(membersData) ? membersData : []);
     } catch (err) {
       console.error('멤버 목록 로드 실패:', err);
       setMembers([]);

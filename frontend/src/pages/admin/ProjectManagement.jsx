@@ -23,9 +23,10 @@ export default function ProjectManagement() {
     const loadProjects = async () => {
         try {
             const res = await adminService.getProjects();
-            setProjects(res.data);
+            setProjects(Array.isArray(res.data) ? res.data : []);
         } catch (e) {
             console.error('프로젝트 로딩 실패:', e);
+            setProjects([]);
         }
     };
 
@@ -36,9 +37,10 @@ export default function ProjectManagement() {
                 adminService.getUsers(),
             ]);
             setDetail(projRes.data);
-            setAllUsers(usersRes.data);
+            setAllUsers(Array.isArray(usersRes.data) ? usersRes.data : []);
         } catch (e) {
             console.error('프로젝트 상세 로딩 실패:', e);
+            setAllUsers([]);
         }
     };
 
