@@ -20,9 +20,10 @@ export default function SessionMonitoring() {
         setLoading(true);
         try {
             const res = await adminService.getSessions();
-            setSessions(res.data);
+            setSessions(Array.isArray(res.data) ? res.data : []);
         } catch (e) {
             console.error('세션 로딩 실패:', e);
+            setSessions([]);
         } finally {
             setLoading(false);
         }

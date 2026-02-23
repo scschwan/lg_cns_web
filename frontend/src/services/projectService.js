@@ -10,7 +10,7 @@ const projectService = {
     // 내 프로젝트 목록
     getMyProjects: async () => {
         const response = await api.get('/api/projects');
-        return response.data;
+        return Array.isArray(response.data) ? response.data : [];
     },
 
     // 프로젝트 상세
@@ -40,7 +40,7 @@ const projectService = {
      */
     getProjectFiles: async (projectId) => {
         const response = await api.get(`/api/projects/${projectId}/files`);
-        return response.data;
+        return Array.isArray(response.data) ? response.data : [];
     },
 
 

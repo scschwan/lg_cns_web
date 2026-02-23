@@ -22,9 +22,11 @@ export default function AdminDashboard() {
                 adminService.getUsers(),
             ]);
             setStats(statsRes.data);
-            setPendingUsers(usersRes.data.filter(u => !u.isApproved && u.role !== 'ADMIN'));
+            const usersData = Array.isArray(usersRes.data) ? usersRes.data : [];
+            setPendingUsers(usersData.filter(u => !u.isApproved && u.role !== 'ADMIN'));
         } catch (e) {
             console.error('대시보드 로딩 실패:', e);
+            setPendingUsers([]);
         }
     };
 

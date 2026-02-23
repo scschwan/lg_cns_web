@@ -27,9 +27,11 @@ export default function UserManagement() {
     const loadUsers = async () => {
         try {
             const res = await adminService.getUsers();
-            setUsers(res.data.filter(u => u.role !== 'ADMIN'));
+            const data = Array.isArray(res.data) ? res.data : [];
+            setUsers(data.filter(u => u.role !== 'ADMIN'));
         } catch (e) {
             console.error('사용자 목록 로딩 실패:', e);
+            setUsers([]);
         }
     };
 

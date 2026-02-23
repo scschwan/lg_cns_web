@@ -136,13 +136,15 @@ function MultiFileUploadPage() {
     const loadFiles = async () => {
         try {
             const fileList = await uploadService.getProjectFiles(projectId);
-            const initializedFiles = fileList.map(f => ({
+            const arr = Array.isArray(fileList) ? fileList : [];
+            const initializedFiles = arr.map(f => ({
                 ...f,
                 checked: false
             }));
             setFiles(initializedFiles);
         } catch (error) {
             console.error("파일 로드 실패", error);
+            setFiles([]);
         }
     };
 
@@ -150,9 +152,10 @@ function MultiFileUploadPage() {
         setSessionsLoading(true);
         try {
             const data = await uploadService.getSessions(projectId);
-            setSessions(data);
+            setSessions(Array.isArray(data) ? data : []);
         } catch (error) {
             console.error('세션 로드 실패:', error);
+            setSessions([]);
         } finally {
             setSessionsLoading(false);
         }

@@ -49,9 +49,10 @@ export default function AuditLogPage() {
             const params = {};
             if (targetType) params.targetType = targetType;
             const res = await adminService.getLogs(params);
-            setLogs(res.data);
+            setLogs(Array.isArray(res.data) ? res.data : []);
         } catch (e) {
             console.error('감사 로그 로딩 실패:', e);
+            setLogs([]);
         } finally {
             setLoading(false);
         }
