@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
   ChevronRight, ChevronDown, Database, Layers, GitBranch, Hash,
-  DollarSign, Eye, FileSpreadsheet, BarChart3, Loader2, ArrowRight, Lock,
+  DollarSign, Eye, BarChart3, Loader2, ArrowRight, Lock,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -26,7 +26,6 @@ import costReductionService from '../../services/costReductionService';
 import { useEditorLock } from '../../hooks/useEditorLock';
 import { useDashboardStatus } from '../../hooks/useDashboardStatus';
 import RawDataModal from '../../components/costreduction/RawDataModal';
-import ClusteringImportDialog from '../../components/costreduction/ClusteringImportDialog';
 
 /* ============================================================
    색상 팔레트
@@ -304,30 +303,8 @@ export default function LongListPage() {
   const [rawDataModal, setRawDataModal] = useState({ open: false, title: '', fetchFn: null });
   const [shortListConfirmOpen, setShortListConfirmOpen] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [importDialogOpen, setImportDialogOpen] = useState(false);
 
   const isReadOnly = !isEditor || dashboardStatus?.isListLocked;
-
-  // Import 완료 후 데이터 리로드
-  const handleImportComplete = useCallback(async () => {
-    setLoading(true);
-    try {
-      const [treeRes, statsRes] = await Promise.all([
-        costReductionService.getLongListTree(projectId),
-        costReductionService.getLongListStats(projectId),
-      ]);
-      setTreeData(treeRes.tree || []);
-      setStats(statsRes);
-      setCheckedIds(new Set(getAllLeafIds(treeRes.tree || [])));
-      if (treeRes.tree?.length > 0) {
-        setExpandedIds(new Set([getNodeId(treeRes.tree[0])]));
-      }
-    } catch (err) {
-      console.error('Failed to reload data after import:', err);
-    } finally {
-      setLoading(false);
-    }
-  }, [projectId]);
 
   // 데이터 로드
   useEffect(() => {
@@ -529,12 +506,6 @@ export default function LongListPage() {
             </p>
           </div>
           <div className="flex items-center gap-2">
-            {!isReadOnly && (
-              <Button variant="outline" onClick={() => setImportDialogOpen(true)} className="gap-1">
-                <FileSpreadsheet className="w-4 h-4" />
-                클러스터링 엑셀 Import
-              </Button>
-            )}
             {!isReadOnly && checkedIds.size > 0 && (
               <Button onClick={handleDeriveShortListClick} disabled={saving} className="gap-1">
                 {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <ArrowRight className="w-4 h-4" />}
@@ -754,14 +725,6 @@ export default function LongListPage() {
       {/* Modals */}
       <RatioDetailModal open={ratioDetailModal.open} onClose={() => setRatioDetailModal({ open: false, title: '', data: null })} title={ratioDetailModal.title} data={ratioDetailModal.data} />
       <RawDataModal open={rawDataModal.open} onClose={() => setRawDataModal({ open: false, title: '', fetchFn: null })} title={rawDataModal.title} fetchRawData={rawDataModal.fetchFn} />
-
-      {/* 클러스터링 엑셀 Import 다이얼로그 */}
-      <ClusteringImportDialog
-        open={importDialogOpen}
-        onClose={() => setImportDialogOpen(false)}
-        projectId={projectId}
-        onImportComplete={handleImportComplete}
-      />
 
       {/* Short List 초기화 확인 다이얼로그 */}
       <Dialog open={shortListConfirmOpen} onOpenChange={setShortListConfirmOpen}>

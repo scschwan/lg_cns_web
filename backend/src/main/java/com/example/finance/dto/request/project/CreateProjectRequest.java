@@ -19,4 +19,9 @@ public class CreateProjectRequest {
     private String name;
 
     private String description;
+
+    /**
+     * 프로젝트 유형: STANDARD(일반) / DASHBOARD(대시보드 전용)
+     */
+    private String projectType;
 }

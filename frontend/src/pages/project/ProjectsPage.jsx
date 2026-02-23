@@ -13,15 +13,18 @@ import {
     Settings,
     FolderOpen,
     Loader2,
-    TrendingDown
+    TrendingDown,
+    BarChart3,
 } from 'lucide-react';
 import CreateProjectDialog from './CreateProjectDialog';
+import CreateDashboardProjectDialog from './CreateDashboardProjectDialog';
 
 export default function ProjectsPage() {
     const [projects, setProjects] = useState([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
     const [openDialog, setOpenDialog] = useState(false);
+    const [openDashboardDialog, setOpenDashboardDialog] = useState(false);
 
     const navigate = useNavigate();
 
@@ -54,6 +57,8 @@ export default function ProjectsPage() {
         });
     };
 
+    const isDashboardProject = (project) => project.projectType === 'DASHBOARD';
+
     return (
         <div className="min-h-screen bg-gray-50">
             {/* Header */}
@@ -66,14 +71,25 @@ export default function ProjectsPage() {
                                 프로젝트를 관리하고 데이터를 분석하세요
                             </p>
                         </div>
-                        <Button
-                            onClick={() => setOpenDialog(true)}
-                            size="lg"
-                            className="gap-2"
-                        >
-                            <Plus className="h-5 w-5" />
-                            새 프로젝트
-                        </Button>
+                        <div className="flex items-center gap-2">
+                            <Button
+                                variant="outline"
+                                onClick={() => setOpenDashboardDialog(true)}
+                                size="lg"
+                                className="gap-2"
+                            >
+                                <BarChart3 className="h-5 w-5" />
+                                대시보드 프로젝트
+                            </Button>
+                            <Button
+                                onClick={() => setOpenDialog(true)}
+                                size="lg"
+                                className="gap-2"
+                            >
+                                <Plus className="h-5 w-5" />
+                                새 프로젝트
+                            </Button>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -101,17 +117,29 @@ export default function ProjectsPage() {
                             <h3 className="text-xl font-semibold text-gray-900 mb-2">
                                 아직 프로젝트가 없습니다
                             </h3>
-                            <p className="text-gray-600 mb-6 text-center max-w-sm">
-                                새 프로젝트를 생성하여 Excel 데이터 분석을 시작하세요
+                            <p className="text-gray-600 mb-6 text-center max-w-md">
+                                일반 프로젝트를 생성하여 데이터 분석 파이프라인을 시작하거나,
+                                대시보드 프로젝트로 클러스터링된 엑셀 데이터를 바로 활용하세요.
                             </p>
-                            <Button
-                                onClick={() => setOpenDialog(true)}
-                                size="lg"
-                                className="gap-2"
-                            >
-                                <Plus className="h-5 w-5" />
-                                첫 프로젝트 만들기
-                            </Button>
+                            <div className="flex gap-3">
+                                <Button
+                                    variant="outline"
+                                    onClick={() => setOpenDashboardDialog(true)}
+                                    size="lg"
+                                    className="gap-2"
+                                >
+                                    <BarChart3 className="h-5 w-5" />
+                                    대시보드 프로젝트
+                                </Button>
+                                <Button
+                                    onClick={() => setOpenDialog(true)}
+                                    size="lg"
+                                    className="gap-2"
+                                >
+                                    <Plus className="h-5 w-5" />
+                                    일반 프로젝트
+                                </Button>
+                            </div>
                         </CardContent>
                     </Card>
                 ) : (
@@ -125,15 +153,23 @@ export default function ProjectsPage() {
                                 <CardHeader>
                                     <div className="flex items-start justify-between">
                                         <div className="flex-1">
-                                            <CardTitle className="text-xl group-hover:text-blue-600 transition-colors">
-                                                {project.name}
-                                            </CardTitle>
+                                            <div className="flex items-center gap-2">
+                                                <CardTitle className="text-xl group-hover:text-blue-600 transition-colors">
+                                                    {project.name}
+                                                </CardTitle>
+                                                {isDashboardProject(project) && (
+                                                    <Badge className="bg-emerald-100 text-emerald-700 border-emerald-300 text-[10px]">대시보드</Badge>
+                                                )}
+                                            </div>
                                             <CardDescription className="mt-2 line-clamp-2">
                                                 {project.description || '설명 없음'}
                                             </CardDescription>
                                         </div>
-                                        <div className="w-12 h-12 bg-blue-50 rounded-lg flex items-center justify-center flex-shrink-0 ml-3">
-                                            <FolderOpen className="h-6 w-6 text-blue-600" />
+                                        <div className={`w-12 h-12 rounded-lg flex items-center justify-center flex-shrink-0 ml-3 ${isDashboardProject(project) ? 'bg-emerald-50' : 'bg-blue-50'}`}>
+                                            {isDashboardProject(project)
+                                                ? <BarChart3 className="h-6 w-6 text-emerald-600" />
+                                                : <FolderOpen className="h-6 w-6 text-blue-600" />
+                                            }
                                         </div>
                                     </div>
                                 </CardHeader>
@@ -150,10 +186,14 @@ export default function ProjectsPage() {
                                     </div>
 
                                     <div className="flex items-center gap-2">
-                                        <Badge variant="outline">
-                                            세션: {project.completedSessions || 0}/{project.totalSessions || 0}
-                                        </Badge>
-                                        {project.isCompleted ? (
+                                        {!isDashboardProject(project) && (
+                                            <Badge variant="outline">
+                                                세션: {project.completedSessions || 0}/{project.totalSessions || 0}
+                                            </Badge>
+                                        )}
+                                        {isDashboardProject(project) ? (
+                                            <Badge className="bg-emerald-500 text-white">대시보드 활성</Badge>
+                                        ) : project.isCompleted ? (
                                             <Badge className="bg-sky-500 text-white">프로젝트 완료</Badge>
                                         ) : project.completedSessions > 0 ? (
                                             <Badge variant="secondary">활성</Badge>
@@ -162,24 +202,36 @@ export default function ProjectsPage() {
                                 </CardContent>
 
                                 <CardFooter className="flex gap-2">
-                                    <Button
-                                        className="flex-1"
-                                        onClick={() => navigate(`/projects/${project.projectId}/upload`)}
-                                    >
-                                        열기
-                                    </Button>
-                                    {project.isCompleted && (
+                                    {isDashboardProject(project) ? (
                                         <Button
-                                            variant="secondary"
-                                            className="flex-1 gap-1"
-                                            onClick={(e) => {
-                                                e.stopPropagation();
-                                                navigate(`/projects/${project.projectId}/longlist`);
-                                            }}
+                                            className="flex-1 gap-1 bg-emerald-600 hover:bg-emerald-700"
+                                            onClick={() => navigate(`/projects/${project.projectId}/longlist`)}
                                         >
-                                            <TrendingDown className="h-4 w-4" />
+                                            <BarChart3 className="h-4 w-4" />
                                             비용 절감 수행
                                         </Button>
+                                    ) : (
+                                        <>
+                                            <Button
+                                                className="flex-1"
+                                                onClick={() => navigate(`/projects/${project.projectId}/upload`)}
+                                            >
+                                                열기
+                                            </Button>
+                                            {project.isCompleted && (
+                                                <Button
+                                                    variant="secondary"
+                                                    className="flex-1 gap-1"
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        navigate(`/projects/${project.projectId}/longlist`);
+                                                    }}
+                                                >
+                                                    <TrendingDown className="h-4 w-4" />
+                                                    비용 절감 수행
+                                                </Button>
+                                            )}
+                                        </>
                                     )}
                                     <Button
                                         variant="outline"
@@ -198,7 +250,7 @@ export default function ProjectsPage() {
                 )}
             </div>
 
-            {/* Create Project Dialog */}
+            {/* Create Project Dialog (일반) */}
             <CreateProjectDialog
                 open={openDialog}
                 onClose={() => setOpenDialog(false)}
@@ -206,6 +258,15 @@ export default function ProjectsPage() {
                     const createdProject = await projectService.createProject(projectData);
                     await loadProjects();
                     return createdProject;
+                }}
+            />
+
+            {/* Create Dashboard Project Dialog */}
+            <CreateDashboardProjectDialog
+                open={openDashboardDialog}
+                onClose={() => setOpenDashboardDialog(false)}
+                onSuccess={async () => {
+                    await loadProjects();
                 }}
             />
         </div>
