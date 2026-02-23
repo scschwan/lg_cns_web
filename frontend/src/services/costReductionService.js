@@ -230,6 +230,11 @@ const costReductionService = {
     return response.data;
   },
 
+  resetTask: async (projectId, taskId) => {
+    const response = await api.post(`/api/projects/${projectId}/tasks/${taskId}/reset`);
+    return response.data;
+  },
+
   getLockedStatisticsIds: async (projectId) => {
     const response = await api.get(`/api/projects/${projectId}/tasks/locked-statistics`);
     return response.data;

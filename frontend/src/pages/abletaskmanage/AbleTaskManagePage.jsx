@@ -201,6 +201,8 @@ export default function AbleTaskManagePage() {
   const [detailTask, setDetailTask] = useState(null);
   const [editTask, setEditTask] = useState(null);
   const [docsTask, setDocsTask] = useState(null);
+  const [deleteTask, setDeleteTask] = useState(null);
+  const [deleting, setDeleting] = useState(false);
 
   const loadData = async () => {
     try {
@@ -228,6 +230,20 @@ export default function AbleTaskManagePage() {
 
   const handleEditSave = async (taskId, form) => {
     try { await costReductionService.updateTask(projectId, taskId, form); loadData(); } catch (error) { console.error('Failed to update task:', error); }
+  };
+
+  const handleDeleteConfirm = async () => {
+    if (!deleteTask) return;
+    try {
+      setDeleting(true);
+      await costReductionService.deleteTask(projectId, deleteTask.id);
+      setDeleteTask(null);
+      loadData();
+    } catch (error) {
+      console.error('Failed to delete task:', error);
+    } finally {
+      setDeleting(false);
+    }
   };
 
   const statusChartData = useMemo(() => {
@@ -298,7 +314,7 @@ export default function AbleTaskManagePage() {
                       <TableHead>과제명</TableHead><TableHead>대계정</TableHead><TableHead>담당부서</TableHead><TableHead>컨설턴트</TableHead>
                       <TableHead className="text-right">모수 금액</TableHead><TableHead className="text-right">절감액</TableHead>
                       <TableHead className="w-[120px]">진척율</TableHead><TableHead className="text-center">상태</TableHead>
-                      <TableHead className="text-center w-[110px]">관리</TableHead>
+                      <TableHead className="text-center w-[130px]">관리</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -318,6 +334,7 @@ export default function AbleTaskManagePage() {
                             <Button variant="ghost" size="sm" className="h-6 w-6 p-0" onClick={() => setDetailTask(task)} title="상세 보기"><Eye className="w-3 h-3" /></Button>
                             <Button variant="ghost" size="sm" className="h-6 w-6 p-0" onClick={() => setEditTask(task)} title="수정" disabled={!isEditor}><Edit2 className="w-3 h-3" /></Button>
                             <Button variant="ghost" size="sm" className="h-6 w-6 p-0" onClick={() => setDocsTask(task)} title="자료 조회"><FileText className="w-3 h-3" /></Button>
+                            <Button variant="ghost" size="sm" className="h-6 w-6 p-0 text-red-500 hover:text-red-700 hover:bg-red-50" onClick={() => setDeleteTask(task)} title="삭제" disabled={!isEditor}><Trash2 className="w-3 h-3" /></Button>
                           </div>
                         </TableCell>
                       </TableRow>
@@ -335,6 +352,26 @@ export default function AbleTaskManagePage() {
       <TaskDetailModal open={!!detailTask} onClose={() => setDetailTask(null)} task={detailTask} projectId={projectId} />
       <TaskEditModal open={!!editTask} onClose={() => setEditTask(null)} task={editTask} onSave={handleEditSave} />
       <TaskDocumentsModal open={!!docsTask} onClose={() => setDocsTask(null)} task={docsTask} projectId={projectId} />
+
+      {/* Delete Confirmation Dialog */}
+      <Dialog open={!!deleteTask} onOpenChange={() => setDeleteTask(null)}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2"><Trash2 className="w-5 h-5 text-red-600" />과제 삭제</DialogTitle>
+            <DialogDescription>이 작업은 되돌릴 수 없습니다.</DialogDescription>
+          </DialogHeader>
+          <div className="py-2">
+            <p className="text-sm text-foreground"><span className="font-semibold">{deleteTask?.taskName}</span> 과제를 완전히 삭제하시겠습니까?</p>
+            <p className="text-xs text-muted-foreground mt-2">과제와 관련된 모든 데이터(첨부 자료 포함)가 영구적으로 삭제됩니다.</p>
+          </div>
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button variant="outline" onClick={() => setDeleteTask(null)} disabled={deleting}>취소</Button>
+            <Button variant="destructive" onClick={handleDeleteConfirm} disabled={deleting}>
+              {deleting ? <><Loader2 className="w-4 h-4 mr-1.5 animate-spin" />삭제 중...</> : <><Trash2 className="w-4 h-4 mr-1.5" />삭제</>}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
