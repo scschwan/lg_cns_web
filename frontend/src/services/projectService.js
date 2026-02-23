@@ -1,5 +1,23 @@
 import api from './api';
 
+/**
+ * API 응답에서 배열 데이터를 안전하게 추출
+ * - 배열이면 그대로 반환
+ * - 래핑된 객체(content, data 등)면 내부 배열 추출
+ * - 그 외에는 빈 배열 반환
+ */
+const extractArray = (data) => {
+    if (Array.isArray(data)) return data;
+    if (data && typeof data === 'object') {
+        // Spring Page 응답: { content: [...], totalElements: ... }
+        if (Array.isArray(data.content)) return data.content;
+        // 래핑된 응답: { data: [...] }
+        if (Array.isArray(data.data)) return data.data;
+    }
+    console.warn('[projectService] 예상치 못한 API 응답 형식:', typeof data, data);
+    return [];
+};
+
 const projectService = {
     // 프로젝트 생성
     createProject: async (projectData) => {
@@ -10,7 +28,7 @@ const projectService = {
     // 내 프로젝트 목록
     getMyProjects: async () => {
         const response = await api.get('/api/projects');
-        return Array.isArray(response.data) ? response.data : [];
+        return extractArray(response.data);
     },
 
     // 프로젝트 상세
@@ -40,7 +58,7 @@ const projectService = {
      */
     getProjectFiles: async (projectId) => {
         const response = await api.get(`/api/projects/${projectId}/files`);
-        return Array.isArray(response.data) ? response.data : [];
+        return extractArray(response.data);
     },
 
 

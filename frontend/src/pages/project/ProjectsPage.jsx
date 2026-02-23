@@ -33,6 +33,7 @@ export default function ProjectsPage() {
         try {
             setLoading(true);
             const data = await projectService.getMyProjects();
+            console.log('[ProjectsPage] API 응답 데이터:', data);
             setProjects(Array.isArray(data) ? data : []);
             setError('');
         } catch (err) {
