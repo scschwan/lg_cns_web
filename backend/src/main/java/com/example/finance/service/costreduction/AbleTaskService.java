@@ -128,6 +128,26 @@ public class AbleTaskService {
     }
 
     /**
+     * 완료 과제 초기화 (진행률 0%, 상태 "진행 중"으로 되돌리기)
+     */
+    public TaskResponse resetTask(String taskId) {
+        AbleTask task = ableTaskRepository.findById(taskId)
+                .orElseThrow(() -> new RuntimeException("과제를 찾을 수 없습니다: " + taskId));
+
+        task.setProgress(0);
+        task.setStatus("진행 중");
+        task.setActualSaving(null);
+        task.setRating(null);
+        task.setCompletedAt(null);
+        task.setUpdatedAt(LocalDateTime.now());
+        task = ableTaskRepository.save(task);
+
+        int docCount = (int) taskDocumentRepository.countByTaskId(taskId);
+        log.info("Task reset: taskId={}", taskId);
+        return toResponse(task, docCount);
+    }
+
+    /**
      * 과제 삭제
      */
     public void deleteTask(String taskId) {

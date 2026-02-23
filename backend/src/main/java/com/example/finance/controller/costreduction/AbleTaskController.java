@@ -77,6 +77,15 @@ public class AbleTaskController {
         return ResponseEntity.ok(response);
     }
 
+    @PostMapping("/{taskId}/reset")
+    public ResponseEntity<TaskResponse> resetTask(
+            @PathVariable String projectId,
+            @PathVariable String taskId,
+            @CurrentUser UserPrincipal userPrincipal) {
+        TaskResponse response = ableTaskService.resetTask(taskId);
+        return ResponseEntity.ok(response);
+    }
+
     @DeleteMapping("/{taskId}")
     public ResponseEntity<Void> deleteTask(
             @PathVariable String projectId,

@@ -3,7 +3,7 @@ import { useParams } from 'react-router-dom';
 import {
   Search, Eye, Download, CheckCircle2, DollarSign, TrendingUp,
   Award, FileText, BarChart3, Edit2, Link2, FileIcon,
-  ExternalLink, Save, X, Loader2,
+  ExternalLink, Save, X, Loader2, RotateCcw, AlertTriangle,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -164,6 +164,8 @@ export default function CompletedTaskManagePage() {
   const [detailTask, setDetailTask] = useState(null);
   const [editTask, setEditTask] = useState(null);
   const [docsTask, setDocsTask] = useState(null);
+  const [resetTask, setResetTask] = useState(null);
+  const [resetting, setResetting] = useState(false);
 
   const loadData = async () => {
     try {
@@ -191,6 +193,20 @@ export default function CompletedTaskManagePage() {
 
   const handleSaveTask = async (taskId, form) => {
     try { await costReductionService.updateTask(projectId, taskId, form); loadData(); } catch (error) { console.error('Failed to update task:', error); }
+  };
+
+  const handleResetConfirm = async () => {
+    if (!resetTask) return;
+    try {
+      setResetting(true);
+      await costReductionService.resetTask(projectId, resetTask.id);
+      setResetTask(null);
+      loadData();
+    } catch (error) {
+      console.error('Failed to reset task:', error);
+    } finally {
+      setResetting(false);
+    }
   };
 
   const completedSummary = useMemo(() => {
@@ -273,7 +289,7 @@ export default function CompletedTaskManagePage() {
                       <TableHead>과제명</TableHead><TableHead>담당부서</TableHead><TableHead>컨설턴트</TableHead>
                       <TableHead className="text-right">모수 금액</TableHead><TableHead className="text-right">예상 절감액</TableHead><TableHead className="text-right">실제 절감액</TableHead>
                       <TableHead className="text-center">달성율</TableHead><TableHead className="text-center">등급</TableHead>
-                      <TableHead className="text-center w-[100px]">관리</TableHead>
+                      <TableHead className="text-center w-[120px]">관리</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -295,6 +311,7 @@ export default function CompletedTaskManagePage() {
                               <Button variant="ghost" size="sm" className="h-6 w-6 p-0" onClick={() => setDetailTask(task)} title="상세 보기"><Eye className="w-3 h-3" /></Button>
                               <Button variant="ghost" size="sm" className="h-6 w-6 p-0" onClick={() => setEditTask(task)} title="수정" disabled={!isEditor}><Edit2 className="w-3 h-3" /></Button>
                               <Button variant="ghost" size="sm" className="h-6 w-6 p-0" onClick={() => setDocsTask(task)} title="자료 조회"><FileText className="w-3 h-3" /></Button>
+                              <Button variant="ghost" size="sm" className="h-6 w-6 p-0 text-orange-500 hover:text-orange-700 hover:bg-orange-50" onClick={() => setResetTask(task)} title="초기화" disabled={!isEditor}><RotateCcw className="w-3 h-3" /></Button>
                             </div>
                           </TableCell>
                         </TableRow>
@@ -313,6 +330,34 @@ export default function CompletedTaskManagePage() {
       <CompletedTaskDetailModal open={!!detailTask} onClose={() => setDetailTask(null)} task={detailTask} />
       <EditTaskModal open={!!editTask} onClose={() => setEditTask(null)} task={editTask} onSave={handleSaveTask} />
       <DocumentsModal open={!!docsTask} onClose={() => setDocsTask(null)} task={docsTask} projectId={projectId} />
+
+      {/* Reset Confirmation Dialog */}
+      <Dialog open={!!resetTask} onOpenChange={() => setResetTask(null)}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2"><AlertTriangle className="w-5 h-5 text-orange-500" />과제 초기화</DialogTitle>
+            <DialogDescription>완료된 과제를 관리 단계로 되돌립니다.</DialogDescription>
+          </DialogHeader>
+          <div className="py-2">
+            <p className="text-sm text-foreground"><span className="font-semibold">{resetTask?.taskName}</span> 과제를 초기화하시겠습니까?</p>
+            <div className="mt-3 p-3 rounded-lg bg-orange-50 border border-orange-200 space-y-1">
+              <p className="text-xs text-orange-700 font-medium">초기화 시 다음 항목이 변경됩니다:</p>
+              <ul className="text-xs text-orange-600 space-y-0.5 ml-3 list-disc">
+                <li>진척율 → 0%</li>
+                <li>상태 → "진행 중"</li>
+                <li>실제 절감액, 등급 → 초기화</li>
+              </ul>
+            </div>
+            <p className="text-xs text-muted-foreground mt-2">과제가 "Able 과제 관리" 메뉴로 이동됩니다.</p>
+          </div>
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button variant="outline" onClick={() => setResetTask(null)} disabled={resetting}>취소</Button>
+            <Button className="bg-orange-500 hover:bg-orange-600" onClick={handleResetConfirm} disabled={resetting}>
+              {resetting ? <><Loader2 className="w-4 h-4 mr-1.5 animate-spin" />초기화 중...</> : <><RotateCcw className="w-4 h-4 mr-1.5" />초기화</>}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
