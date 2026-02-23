@@ -62,6 +62,7 @@ public class S3Service {
             PutObjectRequest putObjectRequest = PutObjectRequest.builder()
                     .bucket(excelBucket)
                     .key(s3Key)
+                    .contentType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
                     .build();
 
             PutObjectPresignRequest presignRequest = PutObjectPresignRequest.builder()
