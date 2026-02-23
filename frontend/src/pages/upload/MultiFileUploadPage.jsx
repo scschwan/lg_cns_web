@@ -18,8 +18,11 @@ import {
     AlertCircle,
     CheckCircle2,
     RotateCcw,
+    BarChart3,
+    ArrowRight,
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
+import costReductionService from '../../services/costReductionService';
 
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -106,6 +109,11 @@ function MultiFileUploadPage() {
     // 프로젝트 완료
     const [completeDialogOpen, setCompleteDialogOpen] = useState(false);
 
+    // 대시보드 모드 상태
+    const [dashboardMappings, setDashboardMappings] = useState({});
+    const [generationStatus, setGenerationStatus] = useState(null);
+    const [isGenerating, setIsGenerating] = useState(false);
+
     // 메시지 다이얼로그 상태
     const [msgDialog, setMsgDialog] = useState({ open: false, type: 'error', title: '', message: '' });
     const showMessage = (type, title, message) => setMsgDialog({ open: true, type, title, message });
@@ -117,6 +125,29 @@ function MultiFileUploadPage() {
     // 뷰어 권한 제한
     const myRole = project?.myRole || 'VIEWER';
     const isViewer = myRole === 'VIEWER';
+
+    // 대시보드 프로젝트 여부
+    const isDashboard = project?.projectType === 'DASHBOARD';
+
+    // 대시보드 프로젝트: 페이지 로드 시 생성 상태 확인
+    useEffect(() => {
+        if (!isDashboard) return;
+        const checkStatus = async () => {
+            try {
+                const status = await costReductionService.getDashboardGenerationStatus(projectId);
+                if (status.status === 'PROCESSING') {
+                    setIsGenerating(true);
+                    setGenerationStatus(status);
+                    pollGenerationStatus();
+                } else if (status.status === 'COMPLETED' || status.status === 'COMPLETED_WITH_ERRORS') {
+                    setGenerationStatus(status);
+                }
+            } catch (e) {
+                // 상태 없으면 무시
+            }
+        };
+        checkStatus();
+    }, [isDashboard, projectId]);
 
     useEffect(() => {
         loadProject();
@@ -218,6 +249,7 @@ function MultiFileUploadPage() {
             // 완료된 파일이 있으면 파일 목록 새로고침
             if (hasChanges) {
                 loadFiles();
+                loadSessions();
             }
         }, 5000);
 
@@ -281,6 +313,7 @@ function MultiFileUploadPage() {
            // 업로드 완료 후 파일 목록 새로고침
            showSuccess('업로드 완료', `${excelFiles.length}개의 파일이 성공적으로 업로드되었습니다.`);
            loadFiles();
+           loadSessions();
 
        } catch (error) {
            console.error('파일 업로드 실패:', error);
@@ -720,6 +753,102 @@ function MultiFileUploadPage() {
         }
     };
 
+    // ===== 대시보드 모드 핸들러 =====
+
+    const handleDashboardMapping = (sessionId, field, value) => {
+        setDashboardMappings(prev => ({
+            ...prev,
+            [sessionId]: {
+                ...prev[sessionId],
+                [field]: value,
+            },
+        }));
+    };
+
+    const getSessionColumns = (session) => {
+        if (session.uploadedFiles && session.uploadedFiles.length > 0) {
+            return session.uploadedFiles[0].detectedColumns || [];
+        }
+        return [];
+    };
+
+    const handleStartDashboardGeneration = async () => {
+        if (sessions.length === 0) {
+            showError('세션 없음', '데이터를 생성할 세션이 없습니다.');
+            return;
+        }
+
+        const sessionsConfig = sessions.map(session => {
+            const mapping = dashboardMappings[session.sessionId] || {};
+            return {
+                sessionId: session.sessionId,
+                accountName: mapping.accountName || '',
+                clusterColumn: mapping.clusterColumn || '',
+                subClusterColumn: mapping.subClusterColumn || '',
+                amountColumn: mapping.amountColumn || '',
+                supplierColumn: mapping.supplierColumn || '',
+                costCenterColumn: mapping.costCenterColumn || '',
+            };
+        });
+
+        const invalid = sessionsConfig.filter(s => !s.accountName || !s.clusterColumn || !s.amountColumn);
+        if (invalid.length > 0) {
+            showError('매핑 필요', '모든 세션에 계정명, 클러스터 컬럼, 금액 컬럼을 설정해주세요.');
+            return;
+        }
+
+        try {
+            setIsGenerating(true);
+            setGenerationStatus({ status: 'PROCESSING', totalSessions: sessions.length, completedSessions: 0 });
+            await costReductionService.startDashboardGeneration(projectId, sessionsConfig);
+            pollGenerationStatus();
+        } catch (error) {
+            showError('생성 실패', getErrorMsg(error, '대시보드 데이터 생성 시작에 실패했습니다.'));
+            setIsGenerating(false);
+            setGenerationStatus(null);
+        }
+    };
+
+    const pollGenerationStatus = () => {
+        const poll = async () => {
+            try {
+                const status = await costReductionService.getDashboardGenerationStatus(projectId);
+                setGenerationStatus(status);
+
+                if (status.status === 'COMPLETED' || status.status === 'COMPLETED_WITH_ERRORS') {
+                    setIsGenerating(false);
+                    loadSessions();
+                    if (status.status === 'COMPLETED') {
+                        showSuccess('생성 완료', '대시보드 데이터가 성공적으로 생성되었습니다.');
+                    } else {
+                        showError('부분 완료', `일부 세션에서 오류가 발생했습니다:\n${status.errors?.join('\n')}`);
+                    }
+                    return;
+                }
+
+                if (status.status === 'FAILED') {
+                    setIsGenerating(false);
+                    showError('생성 실패', status.errors?.join('\n') || '알 수 없는 오류');
+                    return;
+                }
+
+                setTimeout(poll, 2000);
+            } catch (error) {
+                console.error('상태 조회 실패:', error);
+                setTimeout(poll, 3000);
+            }
+        };
+
+        setTimeout(poll, 1000);
+    };
+
+    // 대시보드 생성 완료 여부
+    const isDashboardGenerated = isDashboard && generationStatus?.status === 'COMPLETED';
+    // 대시보드 세션에 아직 detectedColumns가 없는 세션 수 (Lambda 처리 중)
+    const dashboardProcessingCount = isDashboard
+        ? sessions.filter(s => !getSessionColumns(s).length).length
+        : 0;
+
     return (
         <div className="min-h-screen bg-gray-50">
             <div className="container mx-auto px-4 py-6 max-w-[98vw]">
@@ -751,9 +880,18 @@ function MultiFileUploadPage() {
                     <CardHeader>
                         <div className="flex items-start justify-between">
                             <div>
-                                <CardTitle className="text-2xl">다중 파일 업로드</CardTitle>
+                                <CardTitle className="text-2xl">
+                                    {isDashboard ? (
+                                        <span className="flex items-center gap-2">
+                                            <BarChart3 className="h-6 w-6 text-emerald-600" />
+                                            대시보드 프로젝트 - 파일 업로드
+                                        </span>
+                                    ) : '다중 파일 업로드'}
+                                </CardTitle>
                                 <p className="text-sm text-muted-foreground mt-2">
-                                    여러 Excel 파일을 업로드하고 계정명/금액 컬럼을 선택한 후, 동일한 컬럼명끼리 세션을 생성하세요.
+                                    {isDashboard
+                                        ? '클러스터링된 Excel 파일을 업로드한 후, 각 세션별 컬럼 매핑을 설정하고 대시보드 데이터를 생성하세요.'
+                                        : '여러 Excel 파일을 업로드하고 계정명/금액 컬럼을 선택한 후, 동일한 컬럼명끼리 세션을 생성하세요.'}
                                 </p>
                             </div>
                         </div>
@@ -775,10 +913,12 @@ function MultiFileUploadPage() {
                                         />
                                     </label>
                                 </Button>
-                                <Button onClick={handleCreateSessions} variant="default" disabled={isViewer}>
-                                    <FolderOpen className="h-4 w-4 mr-2" />
-                                    세션 생성
-                                </Button>
+                                {!isDashboard && (
+                                    <Button onClick={handleCreateSessions} variant="default" disabled={isViewer}>
+                                        <FolderOpen className="h-4 w-4 mr-2" />
+                                        세션 생성
+                                    </Button>
+                                )}
                             </div>
                             {isViewer && (
                                 <span className="text-xs text-muted-foreground self-center ml-2">뷰어 권한: 조회만 가능</span>
@@ -788,7 +928,8 @@ function MultiFileUploadPage() {
                 </Card>
 
                 <div className="space-y-4">
-                    {/* 상단: 파일 목록 (최대 화면 절반 높이) */}
+                    {/* 상단: 파일 목록 (최대 화면 절반 높이) - 대시보드 모드에서는 숨김 */}
+                    {!isDashboard && (
                     <div>
                         <Card>
                             <CardHeader>
@@ -968,45 +1109,93 @@ function MultiFileUploadPage() {
                             </CardContent>
                         </Card>
                     </div>
+                    )}
 
                     {/* 하단: 세션 목록 */}
                     <div>
                         <Card>
                             <CardHeader>
                                 <div className="flex items-center justify-between">
-                                    <CardTitle className="text-lg">생성된 세션 목록</CardTitle>
+                                    <CardTitle className="text-lg">
+                                        {isDashboard ? '대시보드 세션 목록' : '생성된 세션 목록'}
+                                    </CardTitle>
                                     <div className="flex gap-2">
-                                        <Button
-                                            onClick={handleMergeSessions}
-                                            variant="outline"
-                                            size="sm"
-                                            disabled={selectedSessions.length < 2 || isViewer}
-                                        >
-                                            <GitMerge className="h-4 w-4 mr-1" />
-                                            세션 병합
-                                        </Button>
-                                        <Button
-                                            onClick={handleDeleteSessions}
-                                            variant="destructive"
-                                            size="sm"
-                                            disabled={selectedSessions.length === 0 || isViewer}
-                                        >
-                                            <Trash2 className="h-4 w-4 mr-1" />
-                                            세션 삭제
-                                        </Button>
-                                        <Button
-                                            onClick={handleStartAnalysis}
-                                            size="sm"
-                                            disabled={selectedSessions.length !== 1 || isViewer}
-                                            className="bg-green-600 hover:bg-green-700"
-                                        >
-                                            <Play className="h-4 w-4 mr-1" />
-                                            계정 분석 시작
-                                        </Button>
+                                        {isDashboard ? (
+                                            <>
+                                                <Button
+                                                    onClick={handleDeleteSessions}
+                                                    variant="destructive"
+                                                    size="sm"
+                                                    disabled={selectedSessions.length === 0 || isViewer || isGenerating}
+                                                >
+                                                    <Trash2 className="h-4 w-4 mr-1" />
+                                                    세션 삭제
+                                                </Button>
+                                                <Button
+                                                    onClick={handleStartDashboardGeneration}
+                                                    size="sm"
+                                                    disabled={sessions.length === 0 || isViewer || isGenerating || dashboardProcessingCount > 0}
+                                                    className="bg-emerald-600 hover:bg-emerald-700"
+                                                >
+                                                    {isGenerating ? (
+                                                        <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+                                                    ) : (
+                                                        <BarChart3 className="h-4 w-4 mr-1" />
+                                                    )}
+                                                    대시보드 데이터 생성
+                                                </Button>
+                                            </>
+                                        ) : (
+                                            <>
+                                                <Button
+                                                    onClick={handleMergeSessions}
+                                                    variant="outline"
+                                                    size="sm"
+                                                    disabled={selectedSessions.length < 2 || isViewer}
+                                                >
+                                                    <GitMerge className="h-4 w-4 mr-1" />
+                                                    세션 병합
+                                                </Button>
+                                                <Button
+                                                    onClick={handleDeleteSessions}
+                                                    variant="destructive"
+                                                    size="sm"
+                                                    disabled={selectedSessions.length === 0 || isViewer}
+                                                >
+                                                    <Trash2 className="h-4 w-4 mr-1" />
+                                                    세션 삭제
+                                                </Button>
+                                                <Button
+                                                    onClick={handleStartAnalysis}
+                                                    size="sm"
+                                                    disabled={selectedSessions.length !== 1 || isViewer}
+                                                    className="bg-green-600 hover:bg-green-700"
+                                                >
+                                                    <Play className="h-4 w-4 mr-1" />
+                                                    계정 분석 시작
+                                                </Button>
+                                            </>
+                                        )}
                                     </div>
                                 </div>
                             </CardHeader>
                             <CardContent className="p-0">
+                                {/* 대시보드 생성 진행 상태 표시 */}
+                                {isDashboard && isGenerating && generationStatus && (
+                                    <div className="px-6 py-3 bg-emerald-50 border-b flex items-center gap-3">
+                                        <Loader2 className="h-4 w-4 animate-spin text-emerald-600" />
+                                        <span className="text-sm text-emerald-700">
+                                            대시보드 데이터 생성 중... ({generationStatus.completedSessions || 0}/{generationStatus.totalSessions || 0} 세션 완료)
+                                        </span>
+                                        <div className="flex-1 bg-emerald-200 rounded-full h-2">
+                                            <div
+                                                className="bg-emerald-600 h-2 rounded-full transition-all"
+                                                style={{ width: `${generationStatus.totalSessions ? (generationStatus.completedSessions / generationStatus.totalSessions) * 100 : 0}%` }}
+                                            />
+                                        </div>
+                                    </div>
+                                )}
+
                                 {sessionsLoading ? (
                                     <div className="text-center py-12 px-6">
                                         <Loader2 className="h-8 w-8 text-muted-foreground mx-auto mb-4 animate-spin" />
@@ -1018,10 +1207,177 @@ function MultiFileUploadPage() {
                                     <div className="text-center py-12 px-6">
                                         <FolderOpen className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
                                         <p className="text-muted-foreground">
-                                            생성된 세션이 없습니다
+                                            {isDashboard ? 'Excel 파일을 업로드하면 세션이 자동 생성됩니다' : '생성된 세션이 없습니다'}
                                         </p>
                                     </div>
+                                ) : isDashboard ? (
+                                    /* ===== 대시보드 모드 세션 테이블 ===== */
+                                    <ScrollSyncTable minWidth="1400px" maxHeight="500px">
+                                        <Table>
+                                            <TableHeader className="sticky top-0 bg-background z-10">
+                                                <TableRow>
+                                                    <TableHead className="w-12">
+                                                        <Checkbox
+                                                            checked={selectedSessions.length === sessions.length && sessions.length > 0}
+                                                            onCheckedChange={(checked) => {
+                                                                setSelectedSessions(checked ? sessions.map(s => s.sessionId) : []);
+                                                            }}
+                                                        />
+                                                    </TableHead>
+                                                    <TableHead className="w-[180px]">세션명</TableHead>
+                                                    <TableHead className="w-[80px] text-center">행수</TableHead>
+                                                    <TableHead className="w-[140px]">계정명</TableHead>
+                                                    <TableHead className="w-[160px]">클러스터 컬럼</TableHead>
+                                                    <TableHead className="w-[160px]">세부클러스터 컬럼</TableHead>
+                                                    <TableHead className="w-[160px]">금액 컬럼</TableHead>
+                                                    <TableHead className="w-[160px]">공급업체 컬럼</TableHead>
+                                                    <TableHead className="w-[160px]">코스트센터 컬럼</TableHead>
+                                                    <TableHead className="w-[60px]">삭제</TableHead>
+                                                </TableRow>
+                                            </TableHeader>
+                                            <TableBody>
+                                                {(Array.isArray(sessions) ? sessions : []).map((session) => {
+                                                    const cols = getSessionColumns(session);
+                                                    const mapping = dashboardMappings[session.sessionId] || {};
+                                                    const isProcessing = cols.length === 0;
+
+                                                    return (
+                                                        <TableRow key={session.sessionId} className={session.isCompleted ? 'bg-emerald-50' : ''}>
+                                                            <TableCell>
+                                                                <Checkbox
+                                                                    checked={selectedSessions.includes(session.sessionId)}
+                                                                    onCheckedChange={(checked) => {
+                                                                        setSelectedSessions(prev =>
+                                                                            checked
+                                                                                ? [...prev, session.sessionId]
+                                                                                : prev.filter(id => id !== session.sessionId)
+                                                                        );
+                                                                    }}
+                                                                />
+                                                            </TableCell>
+                                                            <TableCell>
+                                                                <div className="truncate font-medium" title={session.sessionName}>
+                                                                    {session.sessionName}
+                                                                </div>
+                                                            </TableCell>
+                                                            <TableCell className="text-center">
+                                                                {isProcessing ? (
+                                                                    <Loader2 className="h-4 w-4 animate-spin mx-auto text-amber-500" />
+                                                                ) : (
+                                                                    (session.totalRowCount || session.totalRows || 0).toLocaleString()
+                                                                )}
+                                                            </TableCell>
+                                                            <TableCell>
+                                                                {isProcessing ? (
+                                                                    <span className="text-xs text-amber-600">처리 중...</span>
+                                                                ) : (
+                                                                    <Input
+                                                                        value={mapping.accountName || ''}
+                                                                        placeholder="계정명 입력"
+                                                                        onChange={(e) => handleDashboardMapping(session.sessionId, 'accountName', e.target.value)}
+                                                                        className="h-8"
+                                                                        disabled={isGenerating}
+                                                                    />
+                                                                )}
+                                                            </TableCell>
+                                                            <TableCell>
+                                                                {isProcessing ? (
+                                                                    <span className="text-xs text-amber-600">처리 중...</span>
+                                                                ) : (
+                                                                    <Select
+                                                                        value={mapping.clusterColumn || ''}
+                                                                        onValueChange={(v) => handleDashboardMapping(session.sessionId, 'clusterColumn', v)}
+                                                                        disabled={isGenerating}
+                                                                    >
+                                                                        <SelectTrigger className="h-8"><SelectValue placeholder="필수" /></SelectTrigger>
+                                                                        <SelectContent>
+                                                                            {cols.map(col => <SelectItem key={col} value={col}>{col}</SelectItem>)}
+                                                                        </SelectContent>
+                                                                    </Select>
+                                                                )}
+                                                            </TableCell>
+                                                            <TableCell>
+                                                                {isProcessing ? (
+                                                                    <span className="text-xs text-amber-600">처리 중...</span>
+                                                                ) : (
+                                                                    <Select
+                                                                        value={mapping.subClusterColumn || ''}
+                                                                        onValueChange={(v) => handleDashboardMapping(session.sessionId, 'subClusterColumn', v)}
+                                                                        disabled={isGenerating}
+                                                                    >
+                                                                        <SelectTrigger className="h-8"><SelectValue placeholder="선택사항" /></SelectTrigger>
+                                                                        <SelectContent>
+                                                                            {cols.map(col => <SelectItem key={col} value={col}>{col}</SelectItem>)}
+                                                                        </SelectContent>
+                                                                    </Select>
+                                                                )}
+                                                            </TableCell>
+                                                            <TableCell>
+                                                                {isProcessing ? (
+                                                                    <span className="text-xs text-amber-600">처리 중...</span>
+                                                                ) : (
+                                                                    <Select
+                                                                        value={mapping.amountColumn || ''}
+                                                                        onValueChange={(v) => handleDashboardMapping(session.sessionId, 'amountColumn', v)}
+                                                                        disabled={isGenerating}
+                                                                    >
+                                                                        <SelectTrigger className="h-8"><SelectValue placeholder="필수" /></SelectTrigger>
+                                                                        <SelectContent>
+                                                                            {cols.map(col => <SelectItem key={col} value={col}>{col}</SelectItem>)}
+                                                                        </SelectContent>
+                                                                    </Select>
+                                                                )}
+                                                            </TableCell>
+                                                            <TableCell>
+                                                                {isProcessing ? (
+                                                                    <span className="text-xs text-amber-600">처리 중...</span>
+                                                                ) : (
+                                                                    <Select
+                                                                        value={mapping.supplierColumn || ''}
+                                                                        onValueChange={(v) => handleDashboardMapping(session.sessionId, 'supplierColumn', v)}
+                                                                        disabled={isGenerating}
+                                                                    >
+                                                                        <SelectTrigger className="h-8"><SelectValue placeholder="선택사항" /></SelectTrigger>
+                                                                        <SelectContent>
+                                                                            {cols.map(col => <SelectItem key={col} value={col}>{col}</SelectItem>)}
+                                                                        </SelectContent>
+                                                                    </Select>
+                                                                )}
+                                                            </TableCell>
+                                                            <TableCell>
+                                                                {isProcessing ? (
+                                                                    <span className="text-xs text-amber-600">처리 중...</span>
+                                                                ) : (
+                                                                    <Select
+                                                                        value={mapping.costCenterColumn || ''}
+                                                                        onValueChange={(v) => handleDashboardMapping(session.sessionId, 'costCenterColumn', v)}
+                                                                        disabled={isGenerating}
+                                                                    >
+                                                                        <SelectTrigger className="h-8"><SelectValue placeholder="선택사항" /></SelectTrigger>
+                                                                        <SelectContent>
+                                                                            {cols.map(col => <SelectItem key={col} value={col}>{col}</SelectItem>)}
+                                                                        </SelectContent>
+                                                                    </Select>
+                                                                )}
+                                                            </TableCell>
+                                                            <TableCell>
+                                                                <Button
+                                                                    variant="ghost"
+                                                                    size="icon"
+                                                                    onClick={() => handleDeleteSingleSession(session.sessionId)}
+                                                                    disabled={isViewer || isGenerating}
+                                                                >
+                                                                    <Trash2 className="h-4 w-4 text-red-500" />
+                                                                </Button>
+                                                            </TableCell>
+                                                        </TableRow>
+                                                    );
+                                                })}
+                                            </TableBody>
+                                        </Table>
+                                    </ScrollSyncTable>
                                 ) : (
+                                    /* ===== 일반 모드 세션 테이블 ===== */
                                     <ScrollSyncTable minWidth="1200px" maxHeight="500px">
                                         <Table>
                                             <TableHeader className="sticky top-0 bg-background z-10">
@@ -1044,7 +1400,6 @@ function MultiFileUploadPage() {
                                                     <TableHead className="w-[180px]">세션명</TableHead>
                                                     <TableHead className="w-[100px]">작업자</TableHead>
                                                     <TableHead className="w-[120px]">대계정</TableHead>
-{/*                                                     <TableHead className="w-[80px] text-center">파일</TableHead> */}
                                                     <TableHead className="w-[100px] text-center">행수</TableHead>
                                                     <TableHead className="w-[130px]">합산금액</TableHead>
                                                     <TableHead className="w-[80px] text-center">진행상태</TableHead>
@@ -1156,9 +1511,6 @@ function MultiFileUploadPage() {
                                                                     '-'
                                                                 )}
                                                         </TableCell>
-{/*                                                         <TableCell className="text-center"> */}
-{/*                                                             {session.totalFiles || session.uploadedFiles?.length || 0} */}
-{/*                                                         </TableCell> */}
                                                         <TableCell className="text-center">
                                                             {(session.totalRowCount || session.totalRows || 0).toLocaleString()}
                                                         </TableCell>
@@ -1220,7 +1572,22 @@ function MultiFileUploadPage() {
                         </Card>
                     </div>
 
-                    {/* 프로젝트 완료 버튼 */}
+                    {/* 하단 버튼 영역 */}
+                    {isDashboard ? (
+                        <div className="flex justify-end gap-3">
+                            {isDashboardGenerated && (
+                                <Button
+                                    onClick={() => navigate(`/projects/${projectId}/longlist`)}
+                                    className="bg-emerald-600 hover:bg-emerald-700 gap-2"
+                                    size="lg"
+                                >
+                                    <BarChart3 className="h-5 w-5" />
+                                    대시보드 진입
+                                    <ArrowRight className="h-4 w-4" />
+                                </Button>
+                            )}
+                        </div>
+                    ) : (
                     <div className="flex justify-end">
                         <Button
                             onClick={() => setCompleteDialogOpen(true)}
@@ -1230,6 +1597,7 @@ function MultiFileUploadPage() {
                             {project?.isCompleted ? '프로젝트 완료됨' : '프로젝트 완료'}
                         </Button>
                     </div>
+                    )}
                 </div>
 
                 <PartitionDialog
