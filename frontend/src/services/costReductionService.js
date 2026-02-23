@@ -263,6 +263,22 @@ const costReductionService = {
     const response = await api.delete(`/api/projects/${projectId}/tasks/${taskId}/documents/${documentId}`);
     return response.data;
   },
+
+  // ===== Dashboard Batch Generation =====
+
+  startDashboardGeneration: async (projectId, sessions) => {
+    const response = await api.post(
+      `/api/projects/${projectId}/dashboard/generate/batch`,
+      { sessions },
+      { timeout: 300000 }
+    );
+    return response.data;
+  },
+
+  getDashboardGenerationStatus: async (projectId) => {
+    const response = await api.get(`/api/projects/${projectId}/dashboard/generate/status`);
+    return response.data;
+  },
 };
 
 export default costReductionService;
