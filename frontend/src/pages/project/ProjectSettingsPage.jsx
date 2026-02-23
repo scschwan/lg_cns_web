@@ -536,7 +536,7 @@ const ProjectSettingsPage = () => {
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {files.map((file) => (
+                      {(Array.isArray(files) ? files : []).map((file) => (
                         <TableRow key={file.fileId}>
                           <TableCell className="font-medium">
                             {file.fileName}
@@ -623,7 +623,7 @@ const ProjectSettingsPage = () => {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {members.map((member) => (
+                    {(Array.isArray(members) ? members : []).map((member) => (
                       <TableRow key={member.userId}>
                         <TableCell className="font-medium">
                           {member.email || '-'}

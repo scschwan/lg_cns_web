@@ -395,7 +395,7 @@ function MultiFileUploadPage() {
             const fileIds = selectedFiles.map(f => f.fileId);
             const response = await uploadService.analyzePartitions(projectId, fileIds);
 
-            const mappedPartitions = response.partitions.map((p) => ({
+            const mappedPartitions = (Array.isArray(response?.partitions) ? response.partitions : []).map((p) => ({
                 ...p,
                 totalRows: p.rowCount,
                 totalAmount: p.totalAmount,
@@ -849,7 +849,7 @@ function MultiFileUploadPage() {
                                                 </TableRow>
                                             </TableHeader>
                                             <TableBody>
-                                                {files.map((file) => (
+                                                {(Array.isArray(files) ? files : []).map((file) => (
                                                     <TableRow key={file.fileId}>
                                                         <TableCell>
                                                             <Checkbox
@@ -1054,7 +1054,7 @@ function MultiFileUploadPage() {
                                                 </TableRow>
                                             </TableHeader>
                                             <TableBody>
-                                                {sessions.map((session) => (
+                                                {(Array.isArray(sessions) ? sessions : []).map((session) => (
                                                     <TableRow
                                                         key={session.sessionId}
                                                         className={
