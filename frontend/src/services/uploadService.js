@@ -2,6 +2,16 @@
 
 import api from './api';
 
+const extractArray = (data) => {
+    if (Array.isArray(data)) return data;
+    if (data && typeof data === 'object') {
+        if (Array.isArray(data.content)) return data.content;
+        if (Array.isArray(data.data)) return data.data;
+    }
+    console.warn('[uploadService] 예상치 못한 API 응답 형식:', typeof data, data);
+    return [];
+};
+
 const uploadService = {
     // ============================================
     // 📁 파일 업로드 관련 API
@@ -108,7 +118,7 @@ const uploadService = {
         const response = await api.get(
             `/api/projects/${projectId}/upload/files`
         );
-        return Array.isArray(response.data) ? response.data : [];
+        return extractArray(response.data);
     },
 
     /**
@@ -167,7 +177,7 @@ const uploadService = {
         const response = await api.get(
             `/api/projects/${projectId}/upload/sessions`
         );
-        return Array.isArray(response.data) ? response.data : [];
+        return extractArray(response.data);
     },
 
     /**
