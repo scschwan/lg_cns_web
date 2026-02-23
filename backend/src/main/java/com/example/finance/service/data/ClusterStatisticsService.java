@@ -75,6 +75,10 @@ public class ClusterStatisticsService {
             return;
         }
 
+        // ★ 성능 최적화: process_view_data를 1회만 조회하여 raw_data_id별 Map 구성
+        Map<String, DocData> processViewDataMap = loadProcessViewData(sessionId);
+        log.info("process_view_data 로드 완료: {} rows", processViewDataMap.size());
+
         // 최상위 클러스터 분류: 독립(-1) + 병합 부모(clusterId==clusterNumber)
         List<ClusteringResult> topLevelClusters = allClusters.stream()
                 .filter(c -> {
@@ -103,7 +107,7 @@ public class ClusterStatisticsService {
 
             allDataIndicesForSession.addAll(dataIndices);
 
-            AggregationResult aggResult = aggregateFromProcessViewData(sessionId, dataIndices);
+            AggregationResult aggResult = aggregateFromMap(processViewDataMap, dataIndices);
 
             statisticsList.add(ClusterStatistics.builder()
                     .projectId(resolvedProjectId)
@@ -131,7 +135,7 @@ public class ClusterStatisticsService {
             // 상위 클러스터 번호 찾기 (clusterId가 상위 병합 클러스터 번호)
             Integer parentNumber = subParent.getClusterId();
 
-            AggregationResult aggResult = aggregateFromProcessViewData(sessionId, dataIndices);
+            AggregationResult aggResult = aggregateFromMap(processViewDataMap, dataIndices);
 
             statisticsList.add(ClusterStatistics.builder()
                     .projectId(resolvedProjectId)
@@ -189,7 +193,7 @@ public class ClusterStatisticsService {
             }
 
             AggregationResult aggResult = !etcDataIndices.isEmpty()
-                    ? aggregateFromProcessViewData(sessionId, etcDataIndices)
+                    ? aggregateFromMap(processViewDataMap, etcDataIndices)
                     : new AggregationResult();
 
             statisticsList.add(ClusterStatistics.builder()
@@ -212,7 +216,7 @@ public class ClusterStatisticsService {
 
         // ── Level 1: 세션 전체 통계 ──
         if (!allDataIndicesForSession.isEmpty()) {
-            AggregationResult sessionAgg = aggregateFromProcessViewData(sessionId, allDataIndicesForSession);
+            AggregationResult sessionAgg = aggregateFromMap(processViewDataMap, allDataIndicesForSession);
 
             int totalCount = topLevelClusters.stream()
                     .mapToInt(c -> c.getCount() != null ? c.getCount() : 0)
@@ -252,39 +256,50 @@ public class ClusterStatisticsService {
     }
 
     /**
-     * process_view_data에서 코스트센터/공급업체별 집계 수행
-     * money 필드가 String 타입이고 DocumentDB는 $toDouble 미지원이므로
-     * DB에서 원본 조회 후 Java에서 집계한다.
+     * 세션의 process_view_data를 1회 조회하여 raw_data_id → DocData Map으로 반환
      */
-    private AggregationResult aggregateFromProcessViewData(String sessionId, List<String> rawDataIds) {
-        AggregationResult aggResult = new AggregationResult();
-
-        // 필요한 필드만 projection하여 조회
+    private Map<String, DocData> loadProcessViewData(String sessionId) {
         List<Document> docs = mongoTemplate.getCollection("process_view_data")
-                .find(new Document("session_id", sessionId)
-                        .append("raw_data_id", new Document("$in", rawDataIds)))
-                .projection(new Document("department", 1).append("supplier", 1).append("money", 1))
+                .find(new Document("session_id", sessionId))
+                .projection(new Document("raw_data_id", 1).append("department", 1)
+                        .append("supplier", 1).append("money", 1))
                 .into(new ArrayList<>());
 
-        // 코스트센터별 집계 (department 기준)
-        Map<String, long[]> ccMap = new LinkedHashMap<>();  // name -> [count, totalAmount(x100 정수)]
-        // 공급업체별 집계 (supplier 기준)
+        Map<String, DocData> map = new HashMap<>(docs.size());
+        for (Document doc : docs) {
+            String rawDataId = doc.getString("raw_data_id");
+            if (rawDataId != null) {
+                String dept = doc.getString("department");
+                String sup = doc.getString("supplier");
+                double money = toDouble(doc.get("money"));
+                map.put(rawDataId, new DocData(dept, sup, money));
+            }
+        }
+        return map;
+    }
+
+    /**
+     * 메모리 Map에서 지정된 rawDataIds에 해당하는 항목을 집계
+     */
+    private AggregationResult aggregateFromMap(Map<String, DocData> dataMap, List<String> rawDataIds) {
+        AggregationResult aggResult = new AggregationResult();
+
+        Map<String, long[]> ccMap = new LinkedHashMap<>();
         Map<String, long[]> supMap = new LinkedHashMap<>();
 
-        for (Document doc : docs) {
-            double money = toDouble(doc.get("money"));
+        for (String rawDataId : rawDataIds) {
+            DocData data = dataMap.get(rawDataId);
+            if (data == null) continue;
 
-            String dept = doc.getString("department");
-            if (dept == null || dept.isBlank()) dept = "(미지정)";
+            String dept = (data.department == null || data.department.isBlank()) ? "(미지정)" : data.department;
             ccMap.computeIfAbsent(dept, k -> new long[2]);
             ccMap.get(dept)[0]++;
-            ccMap.get(dept)[1] += Math.round(money);
+            ccMap.get(dept)[1] += Math.round(data.money);
 
-            String sup = doc.getString("supplier");
-            if (sup == null || sup.isBlank()) sup = "(미지정)";
+            String sup = (data.supplier == null || data.supplier.isBlank()) ? "(미지정)" : data.supplier;
             supMap.computeIfAbsent(sup, k -> new long[2]);
             supMap.get(sup)[0]++;
-            supMap.get(sup)[1] += Math.round(money);
+            supMap.get(sup)[1] += Math.round(data.money);
         }
 
         // 코스트센터 결과 변환 (금액 내림차순)
@@ -345,5 +360,17 @@ public class ClusterStatisticsService {
     private static class AggregationResult {
         List<BreakdownItem> costCenters = new ArrayList<>();
         List<BreakdownItem> suppliers = new ArrayList<>();
+    }
+
+    private static class DocData {
+        final String department;
+        final String supplier;
+        final double money;
+
+        DocData(String department, String supplier, double money) {
+            this.department = department;
+            this.supplier = supplier;
+            this.money = money;
+        }
     }
 }
