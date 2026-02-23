@@ -91,4 +91,26 @@ public class LongListController {
         List<SaveListRequest.ListItemDto> items = longListService.getSelections(projectId);
         return ResponseEntity.ok(Map.of("items", items));
     }
+
+    @GetMapping("/raw-data/{statisticsId}")
+    public ResponseEntity<RawDataPageResponse> getRawData(
+            @PathVariable String projectId,
+            @PathVariable String statisticsId,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size,
+            @CurrentUser UserPrincipal userPrincipal) {
+        RawDataPageResponse response = longListService.getRawData(statisticsId, page, size);
+        return ResponseEntity.ok(response);
+    }
+
+    @GetMapping("/raw-data/account/{accountName}")
+    public ResponseEntity<RawDataPageResponse> getAccountRawData(
+            @PathVariable String projectId,
+            @PathVariable String accountName,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size,
+            @CurrentUser UserPrincipal userPrincipal) {
+        RawDataPageResponse response = longListService.getAccountRawData(projectId, accountName, page, size);
+        return ResponseEntity.ok(response);
+    }
 }

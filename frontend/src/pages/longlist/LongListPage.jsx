@@ -25,6 +25,7 @@ import {
 import costReductionService from '../../services/costReductionService';
 import { useEditorLock } from '../../hooks/useEditorLock';
 import { useDashboardStatus } from '../../hooks/useDashboardStatus';
+import RawDataModal from '../../components/costreduction/RawDataModal';
 
 /* ============================================================
    색상 팔레트
@@ -73,9 +74,9 @@ const formatAmount = (v) => {
 /* ============================================================
    Stat Card
    ============================================================ */
-function StatCard({ icon: Icon, label, value, unit, color }) {
+function StatCard({ icon: Icon, label, value, unit, color, onClick }) {
   return (
-    <Card className="flex-1 min-w-0">
+    <Card className={cn('flex-1 min-w-0', onClick && 'cursor-pointer hover:ring-2 hover:ring-blue-300 transition-shadow')} onClick={onClick}>
       <CardContent className="p-4">
         <div className="flex items-center gap-3">
           <div className={cn('w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0', color)}>
@@ -262,11 +263,11 @@ function RatioDetailModal({ open, onClose, title, data }) {
 /* ============================================================
    Selected Item Stats Card
    ============================================================ */
-function SelectedItemCard({ itemStats, itemName }) {
+function SelectedItemCard({ itemStats, itemName, onRawDataClick }) {
   if (!itemStats) return null;
   return (
     <div className="grid grid-cols-5 gap-3">
-      <StatCard icon={FileSpreadsheet} label="Raw Data 행 수" value={itemStats.rawDataRows || 0} color="bg-blue-500" />
+      <StatCard icon={FileSpreadsheet} label="Raw Data 행 수" value={itemStats.rawDataRows || 0} color="bg-blue-500" onClick={onRawDataClick} />
       <StatCard icon={Layers} label="공급업체 수" value={itemStats.supplierCount || 0} color="bg-purple-500" />
       <StatCard icon={GitBranch} label="코스트센터 수" value={itemStats.costCenterCount || 0} color="bg-green-500" />
       <StatCard icon={DollarSign} label="합계 금액" value={formatAmount(itemStats.totalAmount || 0)} color="bg-orange-500" />
@@ -299,6 +300,7 @@ export default function LongListPage() {
 
   // 모달
   const [ratioDetailModal, setRatioDetailModal] = useState({ open: false, title: '', data: null });
+  const [rawDataModal, setRawDataModal] = useState({ open: false, title: '', fetchFn: null });
   const [shortListConfirmOpen, setShortListConfirmOpen] = useState(false);
   const [saving, setSaving] = useState(false);
 
@@ -398,6 +400,21 @@ export default function LongListPage() {
   const collapseAll = () => setExpandedIds(new Set());
   const selectAll = () => setCheckedIds(new Set(getAllLeafIds(treeData)));
   const deselectAll = () => setCheckedIds(new Set());
+
+  /* -- Raw Data 모달 열기 -- */
+  const handleOpenRawData = useCallback(() => {
+    if (!selectedItem || !projectId) return;
+    const itemName = getNodeName(selectedItem);
+    let fetchFn;
+    if (selectedItem.statisticsId) {
+      fetchFn = (page, size) => costReductionService.getLongListRawData(projectId, selectedItem.statisticsId, page, size);
+    } else if (selectedItem.accountName) {
+      fetchFn = (page, size) => costReductionService.getLongListAccountRawData(projectId, selectedItem.accountName, page, size);
+    }
+    if (fetchFn) {
+      setRawDataModal({ open: true, title: itemName, fetchFn });
+    }
+  }, [selectedItem, projectId]);
 
   /* -- 합계 -- */
   const totals = useMemo(() => treeData.reduce(
@@ -577,7 +594,7 @@ export default function LongListPage() {
               <h3 className="text-sm font-semibold text-muted-foreground">
                 선택 항목: {getNodeName(selectedItem)}
               </h3>
-              <SelectedItemCard itemStats={itemStats} itemName={getNodeName(selectedItem)} />
+              <SelectedItemCard itemStats={itemStats} itemName={getNodeName(selectedItem)} onRawDataClick={handleOpenRawData} />
             </div>
           )}
 
@@ -707,6 +724,7 @@ export default function LongListPage() {
 
       {/* Modals */}
       <RatioDetailModal open={ratioDetailModal.open} onClose={() => setRatioDetailModal({ open: false, title: '', data: null })} title={ratioDetailModal.title} data={ratioDetailModal.data} />
+      <RawDataModal open={rawDataModal.open} onClose={() => setRawDataModal({ open: false, title: '', fetchFn: null })} title={rawDataModal.title} fetchRawData={rawDataModal.fetchFn} />
 
       {/* Short List 초기화 확인 다이얼로그 */}
       <Dialog open={shortListConfirmOpen} onOpenChange={setShortListConfirmOpen}>

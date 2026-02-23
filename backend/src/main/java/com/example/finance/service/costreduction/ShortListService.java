@@ -4,13 +4,21 @@ import com.example.finance.dto.request.costreduction.SaveListRequest;
 import com.example.finance.dto.response.costreduction.*;
 import com.example.finance.model.costreduction.LongShortList;
 import com.example.finance.model.data.ClusterStatistics;
+import com.example.finance.model.data.ClusteringResult;
+import com.example.finance.model.data.SessionDataDocument;
 import com.example.finance.repository.costreduction.LongShortListRepository;
 import com.example.finance.repository.data.ClusterStatisticsRepository;
+import com.example.finance.repository.data.ClusteringResultRepository;
+import com.example.finance.repository.data.SessionDataRepository;
 import com.example.finance.service.common.RedisService;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 
 import java.time.Duration;
@@ -25,6 +33,8 @@ public class ShortListService {
 
     private final LongShortListRepository longShortListRepository;
     private final ClusterStatisticsRepository clusterStatisticsRepository;
+    private final ClusteringResultRepository clusteringResultRepository;
+    private final SessionDataRepository sessionDataRepository;
     private final RedisService redisService;
     private final ObjectMapper objectMapper;
 
@@ -565,5 +575,120 @@ public class ShortListService {
                 .build());
 
         return result;
+    }
+
+    /**
+     * 클러스터 통계 ID 기반 Raw Data 페이징 조회
+     */
+    public RawDataPageResponse getRawData(String statisticsId, int page, int size) {
+        ClusterStatistics stats = clusterStatisticsRepository.findById(statisticsId)
+                .orElseThrow(() -> new RuntimeException("통계 데이터를 찾을 수 없습니다: " + statisticsId));
+
+        List<String> dataIndices = collectDataIndices(stats);
+        return fetchRawDataPage(dataIndices, page, size);
+    }
+
+    /**
+     * 계정명(Account) 수준 Raw Data 페이징 조회
+     */
+    public RawDataPageResponse getAccountRawData(String projectId, String accountName, int page, int size) {
+        LongShortList list = longShortListRepository.findFirstByProjectId(projectId)
+                .orElseThrow(() -> new RuntimeException("Long List 데이터를 찾을 수 없습니다: " + projectId));
+
+        List<LongShortList.ListItem> longListItems = list.getLongListItems();
+        if (longListItems == null) {
+            return RawDataPageResponse.builder()
+                    .columns(Collections.emptyList())
+                    .rows(Collections.emptyList())
+                    .page(page).size(size).totalCount(0).totalPages(0)
+                    .build();
+        }
+
+        Set<String> statsIds = longListItems.stream()
+                .filter(i -> accountName.equals(i.getAccountName()) && i.getLevel() != null && i.getLevel() == 2)
+                .map(LongShortList.ListItem::getStatisticsId)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toSet());
+
+        List<ClusterStatistics> statsList = clusterStatisticsRepository.findAllById(statsIds).stream().toList();
+
+        List<String> allDataIndices = new ArrayList<>();
+        for (ClusterStatistics stats : statsList) {
+            allDataIndices.addAll(collectDataIndices(stats));
+        }
+
+        return fetchRawDataPage(allDataIndices, page, size);
+    }
+
+    private List<String> collectDataIndices(ClusterStatistics stats) {
+        String sessionId = stats.getSessionId();
+        Integer clusterNumber = stats.getClusterNumber();
+
+        if (sessionId == null || clusterNumber == null) {
+            return Collections.emptyList();
+        }
+
+        List<String> dataIndices = new ArrayList<>();
+
+        if (stats.getLevel() == 3) {
+            clusteringResultRepository.findBySessionIdAndClusterNumber(sessionId, clusterNumber)
+                    .ifPresent(cr -> dataIndices.addAll(cr.getDataIndices()));
+        } else if (stats.getLevel() == 2) {
+            List<ClusteringResult> children = clusteringResultRepository
+                    .findBySessionIdAndClusterIdOrderByClusterNumberAsc(sessionId, clusterNumber);
+            if (!children.isEmpty()) {
+                for (ClusteringResult child : children) {
+                    if (child.getDataIndices() != null) {
+                        dataIndices.addAll(child.getDataIndices());
+                    }
+                }
+            } else {
+                clusteringResultRepository.findBySessionIdAndClusterNumber(sessionId, clusterNumber)
+                        .ifPresent(cr -> {
+                            if (cr.getDataIndices() != null) {
+                                dataIndices.addAll(cr.getDataIndices());
+                            }
+                        });
+            }
+        }
+
+        return dataIndices;
+    }
+
+    private RawDataPageResponse fetchRawDataPage(List<String> dataIndices, int page, int size) {
+        if (dataIndices.isEmpty()) {
+            return RawDataPageResponse.builder()
+                    .columns(Collections.emptyList())
+                    .rows(Collections.emptyList())
+                    .page(page).size(size).totalCount(0).totalPages(0)
+                    .build();
+        }
+
+        Pageable pageable = PageRequest.of(page, size, Sort.by("rowNumber").ascending());
+        Page<SessionDataDocument> dataPage = sessionDataRepository.findByRawDataIdIn(dataIndices, pageable);
+
+        List<String> columns = new ArrayList<>();
+        List<Map<String, Object>> rows = new ArrayList<>();
+
+        for (SessionDataDocument doc : dataPage.getContent()) {
+            if (doc.getData() != null) {
+                if (columns.isEmpty()) {
+                    columns.addAll(doc.getData().keySet());
+                }
+                Map<String, Object> row = new LinkedHashMap<>();
+                row.put("_rowNumber", doc.getRowNumber());
+                row.putAll(doc.getData());
+                rows.add(row);
+            }
+        }
+
+        return RawDataPageResponse.builder()
+                .columns(columns)
+                .rows(rows)
+                .page(page)
+                .size(size)
+                .totalCount(dataPage.getTotalElements())
+                .totalPages(dataPage.getTotalPages())
+                .build();
     }
 }
