@@ -100,6 +100,13 @@ public class Project {
     private Integer totalFiles = 0;
 
     /**
+     * 프로젝트 유형 (STANDARD: 일반, DASHBOARD: 대시보드 전용)
+     */
+    @Field("project_type")
+    @Builder.Default
+    private String projectType = "STANDARD";
+
+    /**
      * 프로젝트 완료 여부
      */
     @Field("is_completed")

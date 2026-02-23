@@ -53,6 +53,11 @@ public class ProjectSummary {
     private int memberCount;
 
     /**
+     * 프로젝트 유형 (STANDARD / DASHBOARD)
+     */
+    private String projectType;
+
+    /**
      * 프로젝트 완료 여부
      */
     private Boolean isCompleted;

@@ -64,7 +64,11 @@ public class ProjectService {
                 .invitedBy(userId)
                 .build();
 
-        // 2. 프로젝트 생성 (members 임베디드)
+        // 2. 프로젝트 유형 결정
+        String projectType = request.getProjectType() != null ? request.getProjectType() : "STANDARD";
+        boolean isDashboard = "DASHBOARD".equals(projectType);
+
+        // 3. 프로젝트 생성 (members 임베디드)
         Project project = Project.builder()
                 .projectId(UUID.randomUUID().toString())
                 .projectName(request.getName())
@@ -73,9 +77,11 @@ public class ProjectService {
                 .createdAt(LocalDateTime.now())
                 .updatedAt(LocalDateTime.now())
                 .members(new ArrayList<>(Collections.singletonList(owner)))
+                .projectType(projectType)
                 .totalSessions(0)
                 .completedSessions(0)
                 .totalFiles(0)
+                .isCompleted(isDashboard)
                 .isDeleted(false)
                 .build();
 
@@ -272,6 +278,7 @@ public class ProjectService {
                             .memberCount(project.getMembers().size())
                             .totalSessions((int) totalSessions)
                             .completedSessions((int) completedSessions)
+                            .projectType(project.getProjectType() != null ? project.getProjectType() : "STANDARD")
                             .isCompleted(project.getIsCompleted())
                             .createdAt(project.getCreatedAt())
                             .lastAccessedAt(project.getUpdatedAt())
