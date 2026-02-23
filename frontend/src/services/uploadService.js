@@ -108,7 +108,7 @@ const uploadService = {
         const response = await api.get(
             `/api/projects/${projectId}/upload/files`
         );
-        return response.data;
+        return Array.isArray(response.data) ? response.data : [];
     },
 
     /**
@@ -167,7 +167,7 @@ const uploadService = {
         const response = await api.get(
             `/api/projects/${projectId}/upload/sessions`
         );
-        return response.data;
+        return Array.isArray(response.data) ? response.data : [];
     },
 
     /**

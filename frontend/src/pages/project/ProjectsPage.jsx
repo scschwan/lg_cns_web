@@ -116,7 +116,7 @@ export default function ProjectsPage() {
                 ) : (
                     /* Project Grid */
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                        {projects.map((project) => (
+                        {(Array.isArray(projects) ? projects : []).map((project) => (
                             <Card
                                 key={project.projectId}
                                 className="hover:shadow-lg transition-shadow cursor-pointer group"

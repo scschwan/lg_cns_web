@@ -27,7 +27,7 @@ function PartitionDialog({ open, partitions, onClose, onApprove }) {
     const [selectedPartitions, setSelectedPartitions] = useState([]);
 
     useEffect(() => {
-        if (open && partitions) {
+        if (open && Array.isArray(partitions) && partitions.length > 0) {
             setEditedPartitions(
                 partitions.map((p, index) => ({
                     ...p,
