@@ -136,7 +136,7 @@ const Sidebar = () => {
   };
 
   const isStepCompleted = (step) => {
-    if (!sessionData?.stepHistory) return false;
+    if (!Array.isArray(sessionData?.stepHistory)) return false;
     const stepEnum = stepIdToEnum[step.id];
     if (!stepEnum) return false;
     return sessionData.stepHistory.some(h => h.step === stepEnum && h.status === 'completed');

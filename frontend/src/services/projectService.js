@@ -67,7 +67,8 @@ const projectService = {
     getProjectMembers: async (projectId) => {
         const response = await api.get(`/api/projects/${projectId}`);
         // Project 객체에서 members 필드만 추출
-        return response.data.members || [];
+        const members = response.data?.members;
+        return Array.isArray(members) ? members : [];
     },
 
     // 멤버 권한 변경
