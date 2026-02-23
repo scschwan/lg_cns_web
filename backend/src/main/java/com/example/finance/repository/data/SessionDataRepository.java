@@ -22,4 +22,8 @@ public interface SessionDataRepository extends MongoRepository<SessionDataDocume
     void deleteBySessionId(String sessionId);
 
     boolean existsBySessionId(String sessionId);
+
+    Page<SessionDataDocument> findByRawDataIdIn(List<String> rawDataIds, Pageable pageable);
+
+    long countByRawDataIdIn(List<String> rawDataIds);
 }

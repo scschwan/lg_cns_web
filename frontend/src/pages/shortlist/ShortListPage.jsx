@@ -23,6 +23,7 @@ import {
 import costReductionService from '@/services/costReductionService';
 import { useEditorLock } from '@/hooks/useEditorLock';
 import { useDashboardStatus } from '@/hooks/useDashboardStatus';
+import RawDataModal from '@/components/costreduction/RawDataModal';
 
 const CHART_COLORS = [
   '#3b82f6', '#ef4444', '#f59e0b', '#10b981', '#8b5cf6',
@@ -260,10 +261,10 @@ function ChartPieWithLegend({ data, title }) {
 }
 
 /* ====== Selected Item Stats Card ====== */
-function SelectedItemCard({ stats }) {
+function SelectedItemCard({ stats, onRawDataClick }) {
   if (!stats) return null;
   const items = [
-    { label: 'Raw Data 행', value: stats.rawDataRows?.toLocaleString() ?? '-', icon: Database, color: 'bg-blue-500' },
+    { label: 'Raw Data 행', value: stats.rawDataRows?.toLocaleString() ?? '-', icon: Database, color: 'bg-blue-500', clickable: true },
     { label: '공급업체', value: stats.supplierCount?.toLocaleString() ?? '-', icon: Building2, color: 'bg-purple-500' },
     { label: '코스트센터', value: stats.costCenterCount?.toLocaleString() ?? '-', icon: MapPin, color: 'bg-green-500' },
     { label: '합계 금액', value: formatAmount(stats.totalAmount ?? 0), icon: DollarSign, color: 'bg-orange-500' },
@@ -277,7 +278,11 @@ function SelectedItemCard({ stats }) {
       <CardContent className="px-5 pb-4">
         <div className="grid grid-cols-5 gap-3">
           {items.map((item, idx) => (
-            <div key={idx} className="flex items-center gap-2">
+            <div
+              key={idx}
+              className={cn('flex items-center gap-2', item.clickable && onRawDataClick && 'cursor-pointer hover:bg-blue-50 rounded-lg p-1 -m-1 transition-colors')}
+              onClick={item.clickable ? onRawDataClick : undefined}
+            >
               <div className={cn('w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0', item.color)}>
                 <item.icon className="w-3.5 h-3.5 text-white" />
               </div>
@@ -373,6 +378,7 @@ export default function ShortListPage() {
   const [chartData, setChartData] = useState(null);
   const [itemStats, setItemStats] = useState(null);
   const [chartTop, setChartTop] = useState(5);
+  const [rawDataModal, setRawDataModal] = useState({ open: false, title: '', fetchFn: null });
 
   const isListLocked = dashboardStatus?.isListLocked ?? false;
   const isDisabled = !isEditor || isListLocked;
@@ -511,6 +517,21 @@ export default function ShortListPage() {
     };
     reload();
   }, [chartTop]);
+
+  // Raw Data 모달 열기
+  const handleOpenRawData = useCallback(() => {
+    if (!selectedNode || !projectId) return;
+    const itemName = selectedNode.clusterName || selectedNode.accountName || '';
+    let fetchFn;
+    if (selectedNode.statisticsId) {
+      fetchFn = (page, size) => costReductionService.getShortListRawData(projectId, selectedNode.statisticsId, page, size);
+    } else if (selectedNode.accountName) {
+      fetchFn = (page, size) => costReductionService.getShortListAccountRawData(projectId, selectedNode.accountName, page, size);
+    }
+    if (fetchFn) {
+      setRawDataModal({ open: true, title: itemName, fetchFn });
+    }
+  }, [selectedNode, projectId]);
 
   // Able 과제 등록 전환
   const handleTransitionToAble = async () => {
@@ -698,7 +719,7 @@ export default function ShortListPage() {
           </Card>
 
           {/* Item Stats Card */}
-          {itemStats && <SelectedItemCard stats={itemStats} />}
+          {itemStats && <SelectedItemCard stats={itemStats} onRawDataClick={handleOpenRawData} />}
 
           {/* Chart area - click any leaf node to see charts */}
           {treeData.length > 0 && (
@@ -768,6 +789,9 @@ export default function ShortListPage() {
           )}
         </div>
       </div>
+
+      {/* Raw Data Modal */}
+      <RawDataModal open={rawDataModal.open} onClose={() => setRawDataModal({ open: false, title: '', fetchFn: null })} title={rawDataModal.title} fetchRawData={rawDataModal.fetchFn} />
     </div>
   );
 }

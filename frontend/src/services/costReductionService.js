@@ -100,6 +100,20 @@ const costReductionService = {
     return response.data;
   },
 
+  getLongListRawData: async (projectId, statisticsId, page = 0, size = 20) => {
+    const response = await api.get(`/api/projects/${projectId}/longlist/raw-data/${statisticsId}`, {
+      params: { page, size },
+    });
+    return response.data;
+  },
+
+  getLongListAccountRawData: async (projectId, accountName, page = 0, size = 20) => {
+    const response = await api.get(`/api/projects/${projectId}/longlist/raw-data/account/${encodeURIComponent(accountName)}`, {
+      params: { page, size },
+    });
+    return response.data;
+  },
+
   // ===== Short List =====
 
   getShortListTree: async (projectId) => {
@@ -148,6 +162,20 @@ const costReductionService = {
 
   getShortListSelectionTree: async (projectId) => {
     const response = await api.get(`/api/projects/${projectId}/shortlist/selection-tree`);
+    return response.data;
+  },
+
+  getShortListRawData: async (projectId, statisticsId, page = 0, size = 20) => {
+    const response = await api.get(`/api/projects/${projectId}/shortlist/raw-data/${statisticsId}`, {
+      params: { page, size },
+    });
+    return response.data;
+  },
+
+  getShortListAccountRawData: async (projectId, accountName, page = 0, size = 20) => {
+    const response = await api.get(`/api/projects/${projectId}/shortlist/raw-data/account/${encodeURIComponent(accountName)}`, {
+      params: { page, size },
+    });
     return response.data;
   },
 
