@@ -179,6 +179,25 @@ const costReductionService = {
     return response.data;
   },
 
+  // ===== Clustering Excel Import =====
+
+  importClusteringExcel: async (projectId, { file, accountName, clusterColumn, subClusterColumn, supplierColumn, costCenterColumn, amountColumn }) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('accountName', accountName);
+    formData.append('clusterColumn', clusterColumn);
+    formData.append('amountColumn', amountColumn);
+    if (subClusterColumn) formData.append('subClusterColumn', subClusterColumn);
+    if (supplierColumn) formData.append('supplierColumn', supplierColumn);
+    if (costCenterColumn) formData.append('costCenterColumn', costCenterColumn);
+
+    const response = await api.post(`/api/projects/${projectId}/dashboard/import/process`, formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+      timeout: 300000,
+    });
+    return response.data;
+  },
+
   // ===== Able Tasks =====
 
   createTask: async (projectId, data) => {
