@@ -17,7 +17,7 @@ if ($LASTEXITCODE -ne 0) {
 
 # ===== 2. S3 업로드 =====
 Write-Host "[2/4] Uploading to S3..." -ForegroundColor Cyan
-aws s3 sync ".\build" $S3_BUCKET --delete
+aws s3 sync ".\dist" $S3_BUCKET --delete
 if ($LASTEXITCODE -ne 0) {
     Write-Host "S3 upload failed." -ForegroundColor Red
     exit 1
