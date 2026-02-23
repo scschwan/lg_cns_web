@@ -151,6 +151,65 @@ public class ClusterStatisticsService {
                     .build());
         }
 
+        // ── Level 3 추가: 세부클러스터링이 있지만 미분류된 항목 '기타' 처리 ──
+        Set<Integer> clusterIdsWithSubClustering = subMergeParents.stream()
+                .map(ClusteringResult::getClusterId)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toSet());
+
+        for (ClusteringResult topCluster : topLevelClusters) {
+            Integer parentClusterNum = topCluster.getClusterNumber();
+            if (parentClusterNum == null) continue;
+
+            // 이 최상위 클러스터에 세부클러스터링이 존재하는지 확인
+            if (!clusterIdsWithSubClustering.contains(parentClusterNum)) {
+                continue;
+            }
+
+            // 미세부클러스터링 항목: cluster_id == parentClusterNum, 부모 자신 제외, cluster_sub_id == -1 or null
+            List<ClusteringResult> unSubClustered = allClusters.stream()
+                    .filter(c -> c.getClusterId() != null && c.getClusterId().equals(parentClusterNum)
+                            && !c.getClusterNumber().equals(parentClusterNum)
+                            && (c.getClusterSubId() == null || c.getClusterSubId() == -1))
+                    .collect(Collectors.toList());
+
+            if (unSubClustered.isEmpty()) {
+                continue;
+            }
+
+            List<String> etcDataIndices = new ArrayList<>();
+            int etcTotalCount = 0;
+            double etcTotalAmount = 0.0;
+            for (ClusteringResult c : unSubClustered) {
+                if (c.getDataIndices() != null) {
+                    etcDataIndices.addAll(c.getDataIndices());
+                }
+                etcTotalCount += c.getCount() != null ? c.getCount() : 0;
+                etcTotalAmount += c.getTotalAmount() != null ? c.getTotalAmount() : 0.0;
+            }
+
+            AggregationResult aggResult = !etcDataIndices.isEmpty()
+                    ? aggregateFromProcessViewData(sessionId, etcDataIndices)
+                    : new AggregationResult();
+
+            statisticsList.add(ClusterStatistics.builder()
+                    .projectId(resolvedProjectId)
+                    .sessionId(sessionId)
+                    .clusterNumber(null)
+                    .parentClusterNumber(parentClusterNum)
+                    .clusterName("기타")
+                    .accountName(accountName)
+                    .level(3)
+                    .totalCount(etcTotalCount)
+                    .totalAmount(etcTotalAmount)
+                    .costCenterCount(aggResult.costCenters.size())
+                    .supplierCount(aggResult.suppliers.size())
+                    .costCenterBreakdown(aggResult.costCenters)
+                    .supplierBreakdown(aggResult.suppliers)
+                    .createdAt(now)
+                    .build());
+        }
+
         // ── Level 1: 세션 전체 통계 ──
         if (!allDataIndicesForSession.isEmpty()) {
             AggregationResult sessionAgg = aggregateFromProcessViewData(sessionId, allDataIndicesForSession);
