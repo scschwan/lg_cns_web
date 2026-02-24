@@ -179,6 +179,16 @@ public class ClusteringController {
         return ResponseEntity.ok(clusteringService.mergeFinalize(sessionId, mergedClusterNumber));
     }
 
+    @GetMapping("/merge/active")
+    public ResponseEntity<Map<String, Object>> isMergeActive(
+            @PathVariable String projectId,
+            @PathVariable String sessionId,
+            @CurrentUser UserPrincipal userPrincipal) {
+
+        projectService.getProject(projectId, userPrincipal.getId());
+        return ResponseEntity.ok(clusteringService.isMergeActive(sessionId));
+    }
+
     @GetMapping("/merge/progress/{taskId}")
     public ResponseEntity<Map<String, Object>> getMergeProgress(
             @PathVariable String projectId,

@@ -568,6 +568,9 @@ public class ClusteringService {
     // ★ 비동기 병합 진행률 추적
     private final ConcurrentHashMap<String, MergeProgress> mergeProgressMap = new ConcurrentHashMap<>();
 
+    // ★ 세션별 활성 병합 추적 (sessionId → taskId)
+    private final ConcurrentHashMap<String, String> sessionMergeMap = new ConcurrentHashMap<>();
+
     public static class MergeProgress {
         public volatile String status; // RUNNING, COMPLETED, FAILED
         public volatile int progress;  // 0-100
@@ -597,6 +600,27 @@ public class ClusteringService {
                 mergeProgressMap.remove(taskId);
             }
         }
+        return r;
+    }
+
+    /**
+     * 세션에 활성 병합 작업이 있는지 확인
+     */
+    public Map<String, Object> isMergeActive(String sessionId) {
+        String taskId = sessionMergeMap.get(sessionId);
+        if (taskId == null) {
+            return Map.of("active", false);
+        }
+        MergeProgress mp = mergeProgressMap.get(taskId);
+        if (mp == null || "COMPLETED".equals(mp.status) || "FAILED".equals(mp.status)) {
+            sessionMergeMap.remove(sessionId);
+            return Map.of("active", false);
+        }
+        Map<String, Object> r = new LinkedHashMap<>();
+        r.put("active", true);
+        r.put("taskId", taskId);
+        r.put("progress", mp.progress);
+        r.put("message", mp.message);
         return r;
     }
 
@@ -637,6 +661,7 @@ public class ClusteringService {
             String taskId = UUID.randomUUID().toString();
             MergeProgress progress = new MergeProgress();
             mergeProgressMap.put(taskId, progress);
+            sessionMergeMap.put(sessionId, taskId); // ★ 세션별 활성 병합 추적
             log.info("[MERGE] 비동기 시작: taskId={}, count={}", taskId, clusterNumbers.size());
             EXECUTOR.submit(() -> {
                 try {
@@ -645,11 +670,13 @@ public class ClusteringService {
                     progress.progress = 100;
                     progress.message = "병합 완료";
                     progress.status = "COMPLETED";
+                    sessionMergeMap.remove(sessionId); // ★ 완료 시 세션 추적 해제
                     log.info("[MERGE] 비동기 완료: taskId={}, result={}", taskId, result);
                 } catch (Exception e) {
                     log.error("[MERGE] 비동기 실패: taskId={}, sessionId={}", taskId, sessionId, e);
                     progress.message = e.getMessage();
                     progress.status = "FAILED";
+                    sessionMergeMap.remove(sessionId); // ★ 실패 시에도 세션 추적 해제
                 }
             });
             return Map.of("async", true, "taskId", taskId, "totalCount", clusterNumbers.size());

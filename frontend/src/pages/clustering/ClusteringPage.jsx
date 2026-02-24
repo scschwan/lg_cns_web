@@ -186,6 +186,7 @@ function ClusteringPage() {
   const [mergingMessage, setMergingMessage] = useState(''); // 병합 진행 메시지
   const [mergingClusters, setMergingClusters] = useState(new Set()); // 현재 병합 중인 클러스터 번호들
   const [mergeOverlay, setMergeOverlay] = useState(false); // 대량 병합 시 풀스크린 오버레이
+  const [mergeActiveBlocking, setMergeActiveBlocking] = useState(false); // ★ 서버에서 병합 진행 중 차단
   const [unmerging, setUnmerging] = useState(false); // 해제 진행 중
   const [unmergingProgress, setUnmergingProgress] = useState(0); // 해제 진행률
   const [unmergingClusters, setUnmergingClusters] = useState(new Set()); // 현재 해제 중인 클러스터 번호들
@@ -391,6 +392,33 @@ function ClusteringPage() {
   const loadAllRef = useRef(loadAll);
   useEffect(() => { loadAllRef.current = loadAll; }, [loadAll]);
   useEffect(() => { loadAllRef.current(); }, [projectId, sessionId]);
+
+  /* ★ 서버에서 활성 병합 작업이 있는지 확인 → 있으면 완료까지 대기 */
+  const checkAndWaitMergeActive = useCallback(async () => {
+    try {
+      const res = await clusteringService.isMergeActive(projectId, sessionId);
+      if (!res.active) { setMergeActiveBlocking(false); return false; }
+      // 활성 병합 발견 → 차단 UI 표시 + 폴링
+      setMergeActiveBlocking(true);
+      setMergingProgress(res.progress || 0);
+      setMergingMessage(res.message || '병합 진행 중...');
+      const POLL = 2000;
+      while (true) {
+        await new Promise(r => setTimeout(r, POLL));
+        const p = await clusteringService.isMergeActive(projectId, sessionId);
+        if (!p.active) break;
+        setMergingProgress(p.progress || 0);
+        setMergingMessage(p.message || '병합 진행 중...');
+      }
+      setMergeActiveBlocking(false);
+      setMergingProgress(0);
+      setMergingMessage('');
+      await refreshAll();
+      return true;
+    } catch { setMergeActiveBlocking(false); return false; }
+  }, [projectId, sessionId, refreshAll]);
+
+  useEffect(() => { checkAndWaitMergeActive(); }, [projectId, sessionId]); // eslint-disable-line
 
   /* ============================================================
      고급 검색
@@ -1297,6 +1325,25 @@ function ClusteringPage() {
      ============================================================ */
   return (
     <div className="flex flex-col h-full bg-gray-50 overflow-hidden">
+      {/* ★ 서버 병합 진행 중 차단 오버레이 (페이지 진입 시 or 다른 탭에서 병합 시작) */}
+      {mergeActiveBlocking && !mergeOverlay && (
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 backdrop-blur-sm">
+          <div className="bg-white rounded-xl shadow-2xl p-8 w-[480px] flex flex-col items-center gap-5">
+            <Loader2 className="h-10 w-10 animate-spin text-blue-500" />
+            <div className="text-lg font-semibold text-gray-800">병합 진행 중</div>
+            <div className="w-full">
+              <Progress value={mergingProgress} className="h-4" />
+            </div>
+            <div className="flex items-center justify-between w-full text-sm">
+              <span className="text-muted-foreground">{mergingMessage || '서버에서 병합 작업이 진행 중입니다...'}</span>
+              <span className="font-mono font-bold text-blue-600">{mergingProgress}%</span>
+            </div>
+            <p className="text-xs text-muted-foreground text-center">
+              병합이 완료될 때까지 검색 및 테이블 조작이 제한됩니다.
+            </p>
+          </div>
+        </div>
+      )}
       {/* ★ 대량 병합 풀스크린 프로그레스 오버레이 */}
       {mergeOverlay && (
         <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 backdrop-blur-sm">
