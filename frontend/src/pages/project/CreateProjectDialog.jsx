@@ -12,13 +12,16 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Loader2, FolderPlus, AlertCircle } from 'lucide-react';
+import { Loader2, FolderPlus, AlertCircle, BarChart3, FolderOpen } from 'lucide-react';
 
 const CreateProjectDialog = ({ open, onClose, onSuccess }) => {
   const [projectName, setProjectName] = useState('');
   const [description, setDescription] = useState('');
+  const [projectType, setProjectType] = useState('STANDARD');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+
+  const isDashboard = projectType === 'DASHBOARD_IMPORT';
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -32,15 +35,15 @@ const CreateProjectDialog = ({ open, onClose, onSuccess }) => {
     setError('');
 
     try {
-      // 부모 컴포넌트로 데이터 전달
       await onSuccess({
         name: projectName.trim(),
-        description: description.trim()
+        description: description.trim(),
+        projectType,
       });
 
-      // 성공 시 초기화
       setProjectName('');
       setDescription('');
+      setProjectType('STANDARD');
       onClose();
     } catch (err) {
       console.error('프로젝트 생성 실패:', err);
@@ -54,6 +57,7 @@ const CreateProjectDialog = ({ open, onClose, onSuccess }) => {
     if (!loading) {
       setProjectName('');
       setDescription('');
+      setProjectType('STANDARD');
       setError('');
       onClose();
     }
@@ -64,11 +68,11 @@ const CreateProjectDialog = ({ open, onClose, onSuccess }) => {
       <DialogContent className="sm:max-w-[500px]">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <FolderPlus className="w-5 h-5" />
+            {isDashboard ? <BarChart3 className="w-5 h-5 text-emerald-600" /> : <FolderPlus className="w-5 h-5" />}
             새 프로젝트 생성
           </DialogTitle>
           <DialogDescription>
-            새로운 프로젝트를 생성하여 파일 업로드 및 분석 작업을 시작하세요.
+            프로젝트 유형을 선택하고, 이름과 설명을 입력하세요.
           </DialogDescription>
         </DialogHeader>
 
@@ -82,12 +86,54 @@ const CreateProjectDialog = ({ open, onClose, onSuccess }) => {
             )}
 
             <div className="space-y-2">
+              <Label>프로젝트 유형</Label>
+              <div className="grid grid-cols-2 gap-3">
+                <button
+                  type="button"
+                  onClick={() => setProjectType('STANDARD')}
+                  disabled={loading}
+                  className={`flex flex-col items-center gap-2 p-4 rounded-lg border-2 transition-all ${
+                    projectType === 'STANDARD'
+                      ? 'border-blue-500 bg-blue-50'
+                      : 'border-gray-200 hover:border-gray-300'
+                  }`}
+                >
+                  <FolderOpen className={`h-6 w-6 ${projectType === 'STANDARD' ? 'text-blue-600' : 'text-gray-400'}`} />
+                  <span className={`text-sm font-medium ${projectType === 'STANDARD' ? 'text-blue-700' : 'text-gray-600'}`}>
+                    일반 프로젝트
+                  </span>
+                  <span className="text-[11px] text-muted-foreground text-center leading-tight">
+                    7단계 분석 파이프라인
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setProjectType('DASHBOARD_IMPORT')}
+                  disabled={loading}
+                  className={`flex flex-col items-center gap-2 p-4 rounded-lg border-2 transition-all ${
+                    projectType === 'DASHBOARD_IMPORT'
+                      ? 'border-emerald-500 bg-emerald-50'
+                      : 'border-gray-200 hover:border-gray-300'
+                  }`}
+                >
+                  <BarChart3 className={`h-6 w-6 ${projectType === 'DASHBOARD_IMPORT' ? 'text-emerald-600' : 'text-gray-400'}`} />
+                  <span className={`text-sm font-medium ${projectType === 'DASHBOARD_IMPORT' ? 'text-emerald-700' : 'text-gray-600'}`}>
+                    대시보드 업로드
+                  </span>
+                  <span className="text-[11px] text-muted-foreground text-center leading-tight">
+                    클러스터링된 Excel 업로드
+                  </span>
+                </button>
+              </div>
+            </div>
+
+            <div className="space-y-2">
               <Label htmlFor="projectName">
                 프로젝트 이름 <span className="text-red-500">*</span>
               </Label>
               <Input
                 id="projectName"
-                placeholder="예: 2025년 1분기 재무분석"
+                placeholder={isDashboard ? '예: 2025년 1분기 대시보드' : '예: 2025년 1분기 재무분석'}
                 value={projectName}
                 onChange={(e) => setProjectName(e.target.value)}
                 disabled={loading}
@@ -102,11 +148,11 @@ const CreateProjectDialog = ({ open, onClose, onSuccess }) => {
               <Label htmlFor="description">프로젝트 설명 (선택)</Label>
               <Textarea
                 id="description"
-                placeholder="프로젝트에 대한 간단한 설명을 입력하세요..."
+                placeholder={isDashboard ? '대시보드 전용 프로젝트' : '프로젝트에 대한 간단한 설명을 입력하세요...'}
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
                 disabled={loading}
-                rows={4}
+                rows={3}
                 maxLength={500}
               />
               <p className="text-sm text-muted-foreground">

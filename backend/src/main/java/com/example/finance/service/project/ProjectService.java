@@ -66,7 +66,6 @@ public class ProjectService {
 
         // 2. 프로젝트 유형 결정
         String projectType = request.getProjectType() != null ? request.getProjectType() : "STANDARD";
-        boolean isDashboard = "DASHBOARD".equals(projectType);
 
         // 3. 프로젝트 생성 (members 임베디드)
         Project project = Project.builder()
@@ -81,7 +80,7 @@ public class ProjectService {
                 .totalSessions(0)
                 .completedSessions(0)
                 .totalFiles(0)
-                .isCompleted(isDashboard)
+                .isCompleted(false)
                 .isDeleted(false)
                 .build();
 

@@ -23,7 +23,6 @@ export default function ProjectsPage() {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
     const [openDialog, setOpenDialog] = useState(false);
-    const [creatingDashboard, setCreatingDashboard] = useState(false);
 
     const navigate = useNavigate();
 
@@ -46,25 +45,6 @@ export default function ProjectsPage() {
         }
     };
 
-    const handleCreateDashboardProject = async () => {
-        const name = window.prompt('대시보드 프로젝트 이름을 입력하세요:');
-        if (!name || !name.trim()) return;
-
-        setCreatingDashboard(true);
-        try {
-            const project = await projectService.createProject({
-                name: name.trim(),
-                description: '대시보드 전용 프로젝트',
-                projectType: 'DASHBOARD',
-            });
-            navigate(`/projects/${project.projectId}/upload`);
-        } catch (err) {
-            console.error('대시보드 프로젝트 생성 실패:', err);
-            setError(err?.response?.data?.message || '프로젝트 생성에 실패했습니다.');
-            setCreatingDashboard(false);
-        }
-    };
-
     const formatDate = (dateString) => {
         const date = new Date(dateString);
         return date.toLocaleDateString('ko-KR', {
@@ -74,7 +54,7 @@ export default function ProjectsPage() {
         });
     };
 
-    const isDashboardProject = (project) => project.projectType === 'DASHBOARD';
+    const isDashboardProject = (project) => project.projectType === 'DASHBOARD_IMPORT';
 
     return (
         <div className="min-h-screen bg-gray-50">
@@ -88,26 +68,14 @@ export default function ProjectsPage() {
                                 프로젝트를 관리하고 데이터를 분석하세요
                             </p>
                         </div>
-                        <div className="flex items-center gap-2">
-                            <Button
-                                variant="outline"
-                                onClick={handleCreateDashboardProject}
-                                size="lg"
-                                className="gap-2"
-                                disabled={creatingDashboard}
-                            >
-                                {creatingDashboard ? <Loader2 className="h-5 w-5 animate-spin" /> : <BarChart3 className="h-5 w-5" />}
-                                대시보드 프로젝트
-                            </Button>
-                            <Button
-                                onClick={() => setOpenDialog(true)}
-                                size="lg"
-                                className="gap-2"
-                            >
-                                <Plus className="h-5 w-5" />
-                                새 프로젝트
-                            </Button>
-                        </div>
+                        <Button
+                            onClick={() => setOpenDialog(true)}
+                            size="lg"
+                            className="gap-2"
+                        >
+                            <Plus className="h-5 w-5" />
+                            새 프로젝트
+                        </Button>
                     </div>
                 </div>
             </div>
@@ -138,26 +106,14 @@ export default function ProjectsPage() {
                                 일반 프로젝트를 생성하여 데이터 분석 파이프라인을 시작하거나,
                                 대시보드 프로젝트로 클러스터링된 엑셀 데이터를 바로 활용하세요.
                             </p>
-                            <div className="flex gap-3">
-                                <Button
-                                    variant="outline"
-                                    onClick={handleCreateDashboardProject}
-                                    size="lg"
-                                    className="gap-2"
-                                    disabled={creatingDashboard}
-                                >
-                                    <BarChart3 className="h-5 w-5" />
-                                    대시보드 프로젝트
-                                </Button>
-                                <Button
-                                    onClick={() => setOpenDialog(true)}
-                                    size="lg"
-                                    className="gap-2"
-                                >
-                                    <Plus className="h-5 w-5" />
-                                    일반 프로젝트
-                                </Button>
-                            </div>
+                            <Button
+                                onClick={() => setOpenDialog(true)}
+                                size="lg"
+                                className="gap-2"
+                            >
+                                <Plus className="h-5 w-5" />
+                                새 프로젝트
+                            </Button>
                         </CardContent>
                     </Card>
                 ) : (
@@ -207,7 +163,11 @@ export default function ProjectsPage() {
                                             </Badge>
                                         )}
                                         {isDashboardProject(project) ? (
-                                            <Badge className="bg-emerald-500 text-white">대시보드</Badge>
+                                            project.isCompleted ? (
+                                                <Badge className="bg-emerald-500 text-white">대시보드 완료</Badge>
+                                            ) : (
+                                                <Badge variant="secondary">설정 중</Badge>
+                                            )
                                         ) : project.isCompleted ? (
                                             <Badge className="bg-sky-500 text-white">프로젝트 완료</Badge>
                                         ) : project.completedSessions > 0 ? (
@@ -218,24 +178,26 @@ export default function ProjectsPage() {
 
                                 <CardFooter className="flex gap-2">
                                     <Button
-                                        className={`flex-1 gap-1 ${isDashboardProject(project) ? '' : ''}`}
+                                        className="flex-1 gap-1"
                                         onClick={() => navigate(`/projects/${project.projectId}/upload`)}
                                     >
                                         {isDashboardProject(project) ? <BarChart3 className="h-4 w-4" /> : null}
                                         열기
                                     </Button>
                                     {isDashboardProject(project) ? (
-                                        <Button
-                                            variant="secondary"
-                                            className="flex-1 gap-1"
-                                            onClick={(e) => {
-                                                e.stopPropagation();
-                                                navigate(`/projects/${project.projectId}/longlist`);
-                                            }}
-                                        >
-                                            <TrendingDown className="h-4 w-4" />
-                                            대시보드
-                                        </Button>
+                                        project.isCompleted && (
+                                            <Button
+                                                variant="secondary"
+                                                className="flex-1 gap-1"
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    navigate(`/projects/${project.projectId}/longlist`);
+                                                }}
+                                            >
+                                                <TrendingDown className="h-4 w-4" />
+                                                대시보드
+                                            </Button>
+                                        )
                                     ) : project.isCompleted ? (
                                         <Button
                                             variant="secondary"
@@ -271,7 +233,11 @@ export default function ProjectsPage() {
                 onClose={() => setOpenDialog(false)}
                 onSuccess={async (projectData) => {
                     const createdProject = await projectService.createProject(projectData);
-                    await loadProjects();
+                    if (projectData.projectType === 'DASHBOARD_IMPORT') {
+                        navigate(`/projects/${createdProject.projectId}/upload`);
+                    } else {
+                        await loadProjects();
+                    }
                     return createdProject;
                 }}
             />

@@ -1,17 +1,18 @@
 package com.example.finance.service.costreduction;
 
-import com.example.finance.model.data.ClusterStatistics;
-import com.example.finance.model.data.ClusterStatistics.BreakdownItem;
+import com.example.finance.enums.ProcessStep;
 import com.example.finance.model.data.ClusteringResult;
+import com.example.finance.model.data.ProcessViewData;
 import com.example.finance.model.data.RawDataDocument;
 import com.example.finance.model.data.SessionDataDocument;
 import com.example.finance.model.session.FileSession;
 import com.example.finance.model.session.UploadedFileInfo;
-import com.example.finance.repository.data.ClusterStatisticsRepository;
 import com.example.finance.repository.data.ClusteringResultRepository;
+import com.example.finance.repository.data.ProcessViewDataRepository;
 import com.example.finance.repository.data.SessionDataRepository;
 import com.example.finance.repository.session.FileSessionRepository;
 import com.example.finance.service.common.RedisService;
+import com.example.finance.service.data.ClusterStatisticsService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.mongodb.core.MongoTemplate;
@@ -29,7 +30,8 @@ import java.util.stream.Collectors;
 /**
  * 대시보드 프로젝트 배치 데이터 생성 서비스
  *
- * 업로드된 파일의 raw_data를 읽어 cluster_statistics 컬렉션을
+ * 업로드된 파일의 raw_data를 읽어 표준 파이프라인을 거쳐
+ * session_data → process_view_data → clustering_results → cluster_statistics를
  * 병렬 스레드로 생성한다.
  */
 @Service
@@ -40,7 +42,8 @@ public class DashboardGenerationService {
     private final FileSessionRepository fileSessionRepository;
     private final SessionDataRepository sessionDataRepository;
     private final ClusteringResultRepository clusteringResultRepository;
-    private final ClusterStatisticsRepository clusterStatisticsRepository;
+    private final ProcessViewDataRepository processViewDataRepository;
+    private final ClusterStatisticsService clusterStatisticsService;
     private final RedisService redisService;
     private final MongoTemplate mongoTemplate;
 
@@ -48,7 +51,7 @@ public class DashboardGenerationService {
     private final ConcurrentHashMap<String, GenerationStatus> statusMap = new ConcurrentHashMap<>();
 
     public static class GenerationStatus {
-        public volatile String status = "PROCESSING"; // PROCESSING, COMPLETED, FAILED
+        public volatile String status = "PROCESSING"; // PROCESSING, COMPLETED, COMPLETED_WITH_ERRORS, FAILED
         public volatile int totalSessions = 0;
         public volatile int completedSessions = 0;
         public volatile List<String> errors = Collections.synchronizedList(new ArrayList<>());
@@ -74,7 +77,6 @@ public class DashboardGenerationService {
         status.totalSessions = configs.size();
         statusMap.put(projectId, status);
 
-        // 비동기로 병렬 처리 시작
         CompletableFuture.runAsync(() -> {
             try {
                 processBatch(projectId, userId, configs, status);
@@ -114,7 +116,6 @@ public class DashboardGenerationService {
     private void processBatch(String projectId, String userId, List<SessionConfig> configs, GenerationStatus status) {
         AtomicInteger completed = new AtomicInteger(0);
 
-        // 각 세션을 병렬로 처리
         List<CompletableFuture<Void>> futures = configs.stream()
                 .map(config -> CompletableFuture.runAsync(() -> {
                     try {
@@ -130,10 +131,8 @@ public class DashboardGenerationService {
                 }))
                 .collect(Collectors.toList());
 
-        // 모든 처리 완료 대기
         CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
 
-        // 캐시 무효화
         invalidateCache(projectId);
 
         status.status = status.errors.isEmpty() ? "COMPLETED" : "COMPLETED_WITH_ERRORS";
@@ -142,14 +141,15 @@ public class DashboardGenerationService {
     }
 
     /**
-     * 개별 세션 처리: raw_data → session_data + cluster_statistics
+     * 개별 세션 처리: raw_data → session_data → process_view_data → clustering_results → cluster_statistics
      */
     private void processSession(String projectId, String userId, SessionConfig config) {
         FileSession session = fileSessionRepository.findBySessionId(config.sessionId)
                 .orElseThrow(() -> new RuntimeException("세션을 찾을 수 없습니다: " + config.sessionId));
 
-        // 1. uploadId 추출 → raw_data 조회
+        // ===== 1. raw_data 조회 =====
         List<Map<String, Object>> rows = new ArrayList<>();
+        List<String> rawDataIds = new ArrayList<>();
         for (UploadedFileInfo fileInfo : session.getUploadedFiles()) {
             String uploadId = extractUploadId(fileInfo.getS3Key());
             if (uploadId == null) continue;
@@ -158,7 +158,9 @@ public class DashboardGenerationService {
             List<RawDataDocument> rawDocs = mongoTemplate.find(query, RawDataDocument.class, "raw_data");
             for (RawDataDocument doc : rawDocs) {
                 if (doc.getData() != null) {
+                    String rawDataId = doc.getId() != null ? doc.getId() : UUID.randomUUID().toString();
                     rows.add(doc.getData());
+                    rawDataIds.add(rawDataId);
                 }
             }
         }
@@ -169,166 +171,160 @@ public class DashboardGenerationService {
 
         log.info("raw_data 로드 완료: sessionId={}, rows={}", config.sessionId, rows.size());
 
-        // 2. session_data 생성 (기존 데이터 삭제 후 재생성)
+        // ===== 2. session_data 생성 =====
         sessionDataRepository.deleteBySessionId(config.sessionId);
         List<SessionDataDocument> sessionDocs = new ArrayList<>();
+        // rawDataId 참조를 row와 함께 저장
+        List<String> sessionRawDataIds = new ArrayList<>();
+
         for (int i = 0; i < rows.size(); i++) {
-            Map<String, Object> rowData = new LinkedHashMap<>(rows.get(i));
-            String rawDataId = UUID.randomUUID().toString();
-            rowData.put("__rawDataId", rawDataId);
-            rows.set(i, rowData); // rawDataId 참조 유지
+            String rawDataId = rawDataIds.get(i);
+            sessionRawDataIds.add(rawDataId);
 
             sessionDocs.add(SessionDataDocument.builder()
                     .projectId(projectId)
                     .sessionId(config.sessionId)
                     .rawDataId(rawDataId)
                     .rowNumber(i + 1)
-                    .data(filterInternalKeys(rowData))
+                    .data(rows.get(i))
                     .isHidden(false)
                     .createdAt(LocalDateTime.now())
                     .build());
         }
         sessionDataRepository.saveAll(sessionDocs);
+        log.info("session_data 생성 완료: sessionId={}, count={}", config.sessionId, sessionDocs.size());
 
-        // 3. 기존 클러스터링 결과/통계 삭제
+        // ===== 3. process_view_data 생성 =====
+        processViewDataRepository.deleteBySessionId(config.sessionId);
+        List<ProcessViewData> pvdList = new ArrayList<>();
+        for (int i = 0; i < rows.size(); i++) {
+            Map<String, Object> row = rows.get(i);
+            String rawDataId = sessionRawDataIds.get(i);
+
+            String moneyVal = getStringValue(row, config.amountColumn);
+            String dept = getStringValue(row, config.costCenterColumn);
+            String sup = getStringValue(row, config.supplierColumn);
+
+            pvdList.add(ProcessViewData.builder()
+                    .sessionId(config.sessionId)
+                    .projectId(projectId)
+                    .rawDataId(rawDataId)
+                    .money(moneyVal)
+                    .department(dept)
+                    .supplier(sup)
+                    .keywords(ProcessViewData.Keywords.builder().finalKeywords(new ArrayList<>()).build())
+                    .lastModifiedDate(LocalDateTime.now())
+                    .build());
+        }
+        processViewDataRepository.saveAll(pvdList);
+        log.info("process_view_data 생성 완료: sessionId={}, count={}", config.sessionId, pvdList.size());
+
+        // ===== 4. clustering_results 생성 =====
         clusteringResultRepository.deleteBySessionId(config.sessionId);
-        clusterStatisticsRepository.deleteBySessionId(config.sessionId);
 
-        // 4. 클러스터 그룹핑
         String clusterCol = config.clusterColumn;
         String subClusterCol = config.subClusterColumn;
-        String amountCol = config.amountColumn;
-        String supplierCol = config.supplierColumn;
-        String costCenterCol = config.costCenterColumn;
-        String accountName = config.accountName;
-
-        Map<String, List<Map<String, Object>>> clusterGroups = new LinkedHashMap<>();
-        for (Map<String, Object> row : rows) {
-            String cn = getStringValue(row, clusterCol);
-            if (cn == null || cn.isBlank()) cn = "(미분류)";
-            clusterGroups.computeIfAbsent(cn, k -> new ArrayList<>()).add(row);
-        }
-
         boolean hasSubClusters = subClusterCol != null && !subClusterCol.isBlank();
-        Map<String, Map<String, List<Map<String, Object>>>> subClusterGroups = new LinkedHashMap<>();
-        if (hasSubClusters) {
-            for (var entry : clusterGroups.entrySet()) {
-                Map<String, List<Map<String, Object>>> subGroups = new LinkedHashMap<>();
-                for (Map<String, Object> row : entry.getValue()) {
-                    String scn = getStringValue(row, subClusterCol);
-                    if (scn == null || scn.isBlank() || "-".equals(scn)) scn = "(미분류)";
-                    subGroups.computeIfAbsent(scn, k -> new ArrayList<>()).add(row);
-                }
-                subClusterGroups.put(entry.getKey(), subGroups);
-            }
+
+        // 클러스터별 그룹핑
+        Map<String, List<Integer>> clusterGroups = new LinkedHashMap<>();
+        for (int i = 0; i < rows.size(); i++) {
+            String cn = getStringValue(rows.get(i), clusterCol);
+            if (cn == null || cn.isBlank()) cn = "(미분류)";
+            clusterGroups.computeIfAbsent(cn, k -> new ArrayList<>()).add(i);
         }
 
-        // 5. ClusteringResult + ClusterStatistics 생성
         List<ClusteringResult> results = new ArrayList<>();
-        List<ClusterStatistics> stats = new ArrayList<>();
-        LocalDateTime now = LocalDateTime.now();
         int seq = 1;
-        int totalCountAll = 0;
-        double totalAmountAll = 0.0;
-        Map<String, long[]> sessionCcMap = new LinkedHashMap<>();
-        Map<String, long[]> sessionSupMap = new LinkedHashMap<>();
 
         for (var entry : clusterGroups.entrySet()) {
             String clusterName = entry.getKey();
-            List<Map<String, Object>> clusterRows = entry.getValue();
-            List<String> dataIndices = clusterRows.stream()
-                    .map(r -> (String) r.get("__rawDataId"))
+            List<Integer> indices = entry.getValue();
+            List<String> dataIndices = indices.stream()
+                    .map(sessionRawDataIds::get)
                     .collect(Collectors.toList());
 
-            int cnt = clusterRows.size();
-            double amt = sumAmount(clusterRows, amountCol);
-            totalCountAll += cnt;
-            totalAmountAll += amt;
+            int cnt = indices.size();
+            double amt = sumAmount(indices, rows, config.amountColumn);
             int parentNum = seq;
 
+            // 상위 클러스터 (Level 2)
             results.add(ClusteringResult.builder()
                     .sessionId(config.sessionId)
-                    .clusterNumber(parentNum).clusterId(parentNum).clusterSubId(-1)
-                    .clusterName(clusterName).keywords(List.of(clusterName))
-                    .count(cnt).totalAmount(amt).dataIndices(dataIndices)
-                    .createdAt(now).build());
+                    .clusterNumber(parentNum)
+                    .clusterId(parentNum)
+                    .clusterSubId(-1)
+                    .clusterName(clusterName)
+                    .keywords(List.of(clusterName))
+                    .count(cnt)
+                    .totalAmount(amt)
+                    .dataIndices(dataIndices)
+                    .createdAt(LocalDateTime.now())
+                    .build());
             seq++;
 
-            AggResult l2 = aggregate(clusterRows, supplierCol, costCenterCol, amountCol);
-            mergeMaps(sessionCcMap, l2.ccMap);
-            mergeMaps(sessionSupMap, l2.supMap);
+            // 세부 클러스터 (Level 3)
+            if (hasSubClusters) {
+                Map<String, List<Integer>> subGroups = new LinkedHashMap<>();
+                for (int idx : indices) {
+                    String scn = getStringValue(rows.get(idx), subClusterCol);
+                    if (scn == null || scn.isBlank() || "-".equals(scn)) scn = "(미분류)";
+                    subGroups.computeIfAbsent(scn, k -> new ArrayList<>()).add(idx);
+                }
 
-            stats.add(ClusterStatistics.builder()
-                    .projectId(projectId).sessionId(config.sessionId)
-                    .clusterNumber(parentNum).parentClusterNumber(null)
-                    .clusterName(clusterName).accountName(accountName)
-                    .level(2).totalCount(cnt).totalAmount(amt)
-                    .costCenterCount(l2.ccMap.size()).supplierCount(l2.supMap.size())
-                    .costCenterBreakdown(toBreakdownList(l2.ccMap))
-                    .supplierBreakdown(toBreakdownList(l2.supMap))
-                    .createdAt(now).build());
-
-            if (hasSubClusters && subClusterGroups.containsKey(clusterName)) {
-                var subGroups = subClusterGroups.get(clusterName);
                 if (subGroups.size() > 1 || !subGroups.containsKey("(미분류)")) {
                     for (var subEntry : subGroups.entrySet()) {
                         String scn = subEntry.getKey();
-                        List<Map<String, Object>> subRows = subEntry.getValue();
-                        List<String> subIndices = subRows.stream()
-                                .map(r -> (String) r.get("__rawDataId"))
+                        List<Integer> subIndices = subEntry.getValue();
+                        List<String> subDataIndices = subIndices.stream()
+                                .map(sessionRawDataIds::get)
                                 .collect(Collectors.toList());
-                        int subCnt = subRows.size();
-                        double subAmt = sumAmount(subRows, amountCol);
+
+                        int subCnt = subIndices.size();
+                        double subAmt = sumAmount(subIndices, rows, config.amountColumn);
                         int subNum = seq;
 
                         results.add(ClusteringResult.builder()
                                 .sessionId(config.sessionId)
-                                .clusterNumber(subNum).clusterId(parentNum).clusterSubId(subNum)
-                                .clusterName(scn).keywords(List.of(scn))
-                                .count(subCnt).totalAmount(subAmt).dataIndices(subIndices)
-                                .createdAt(now).build());
+                                .clusterNumber(subNum)
+                                .clusterId(parentNum)
+                                .clusterSubId(subNum)
+                                .clusterName(scn)
+                                .keywords(List.of(scn))
+                                .count(subCnt)
+                                .totalAmount(subAmt)
+                                .dataIndices(subDataIndices)
+                                .createdAt(LocalDateTime.now())
+                                .build());
                         seq++;
-
-                        AggResult l3 = aggregate(subRows, supplierCol, costCenterCol, amountCol);
-                        stats.add(ClusterStatistics.builder()
-                                .projectId(projectId).sessionId(config.sessionId)
-                                .clusterNumber(subNum).parentClusterNumber(parentNum)
-                                .clusterName(scn).accountName(accountName)
-                                .level(3).totalCount(subCnt).totalAmount(subAmt)
-                                .costCenterCount(l3.ccMap.size()).supplierCount(l3.supMap.size())
-                                .costCenterBreakdown(toBreakdownList(l3.ccMap))
-                                .supplierBreakdown(toBreakdownList(l3.supMap))
-                                .createdAt(now).build());
                     }
                 }
             }
         }
 
-        // Level 1: 세션 전체
-        stats.add(ClusterStatistics.builder()
-                .projectId(projectId).sessionId(config.sessionId)
-                .clusterNumber(null).parentClusterNumber(null)
-                .clusterName(null).accountName(accountName)
-                .level(1).totalCount(totalCountAll).totalAmount(totalAmountAll)
-                .costCenterCount(sessionCcMap.size()).supplierCount(sessionSupMap.size())
-                .costCenterBreakdown(toBreakdownList(sessionCcMap))
-                .supplierBreakdown(toBreakdownList(sessionSupMap))
-                .createdAt(now).build());
-
-        // 6. 저장
         clusteringResultRepository.saveAll(results);
-        clusterStatisticsRepository.saveAll(stats);
+        log.info("clustering_results 생성 완료: sessionId={}, clusters={}", config.sessionId, results.size());
 
-        // 7. 세션 업데이트 (완료 처리)
+        // ===== 5. ClusterStatisticsService 호출 =====
+        clusterStatisticsService.generateStatistics(config.sessionId, projectId);
+        log.info("cluster_statistics 생성 완료: sessionId={}", config.sessionId);
+
+        // ===== 6. 세션 상태 업데이트 =====
         session.setIsCompleted(true);
-        session.setCompletedAt(now);
-        session.setAccountNames(List.of(accountName));
+        session.setCompletedAt(LocalDateTime.now());
+        session.setCurrentStep(ProcessStep.EXPORT);
+        session.setAccountNames(List.of(config.accountName));
         session.setTotalRowCount((long) rows.size());
+        session.setCategoryColumn(config.clusterColumn);
+        session.setCostCenterColumn(config.costCenterColumn);
+        session.setSupplierColumn(config.supplierColumn);
+        session.setAmountColumn(config.amountColumn);
         fileSessionRepository.save(session);
 
-        log.info("세션 처리 완료: sessionId={}, clusters={}, stats={}",
-                config.sessionId, clusterGroups.size(), stats.size());
+        log.info("세션 처리 완료: sessionId={}", config.sessionId);
     }
+
+    // ===== 유틸리티 메서드 =====
 
     private String extractUploadId(String s3Key) {
         if (s3Key == null) return null;
@@ -345,10 +341,10 @@ public class DashboardGenerationService {
         return val != null ? val.toString().trim() : null;
     }
 
-    private double sumAmount(List<Map<String, Object>> rows, String amountColumn) {
+    private double sumAmount(List<Integer> indices, List<Map<String, Object>> rows, String amountColumn) {
         double total = 0.0;
-        for (Map<String, Object> row : rows) {
-            Object val = row.get(amountColumn);
+        for (int idx : indices) {
+            Object val = rows.get(idx).get(amountColumn);
             if (val instanceof Number) {
                 total += ((Number) val).doubleValue();
             } else if (val != null) {
@@ -359,60 +355,10 @@ public class DashboardGenerationService {
         return total;
     }
 
-    private Map<String, Object> filterInternalKeys(Map<String, Object> data) {
-        Map<String, Object> filtered = new LinkedHashMap<>();
-        for (var e : data.entrySet()) {
-            if (!e.getKey().startsWith("__")) filtered.put(e.getKey(), e.getValue());
-        }
-        return filtered;
-    }
-
-    private AggResult aggregate(List<Map<String, Object>> rows, String supplierCol, String ccCol, String amountCol) {
-        Map<String, long[]> ccMap = new LinkedHashMap<>();
-        Map<String, long[]> supMap = new LinkedHashMap<>();
-        for (Map<String, Object> row : rows) {
-            double money = 0.0;
-            Object av = row.get(amountCol);
-            if (av instanceof Number) money = ((Number) av).doubleValue();
-            else if (av != null) { try { money = Double.parseDouble(av.toString().replaceAll("[^\\d.\\-]", "")); } catch (NumberFormatException ignored) {} }
-
-            if (ccCol != null && !ccCol.isBlank()) {
-                String cc = getStringValue(row, ccCol); cc = (cc == null || cc.isBlank()) ? "(미지정)" : cc;
-                ccMap.computeIfAbsent(cc, k -> new long[2]); ccMap.get(cc)[0]++; ccMap.get(cc)[1] += Math.round(money);
-            }
-            if (supplierCol != null && !supplierCol.isBlank()) {
-                String s = getStringValue(row, supplierCol); s = (s == null || s.isBlank()) ? "(미지정)" : s;
-                supMap.computeIfAbsent(s, k -> new long[2]); supMap.get(s)[0]++; supMap.get(s)[1] += Math.round(money);
-            }
-        }
-        AggResult r = new AggResult(); r.ccMap = ccMap; r.supMap = supMap; return r;
-    }
-
-    private void mergeMaps(Map<String, long[]> target, Map<String, long[]> source) {
-        for (var e : source.entrySet()) {
-            target.computeIfAbsent(e.getKey(), k -> new long[2]);
-            target.get(e.getKey())[0] += e.getValue()[0];
-            target.get(e.getKey())[1] += e.getValue()[1];
-        }
-    }
-
-    private List<BreakdownItem> toBreakdownList(Map<String, long[]> map) {
-        return map.entrySet().stream()
-                .sorted((a, b) -> Long.compare(b.getValue()[1], a.getValue()[1]))
-                .map(e -> BreakdownItem.builder().name(e.getKey())
-                        .count((int) e.getValue()[0]).totalAmount((double) e.getValue()[1]).build())
-                .collect(Collectors.toList());
-    }
-
     private void invalidateCache(String projectId) {
         try {
             redisService.delete("longlist:tree:" + projectId);
             redisService.delete("shortlist:tree:" + projectId);
         } catch (Exception e) { log.warn("캐시 무효화 실패: {}", e.getMessage()); }
-    }
-
-    private static class AggResult {
-        Map<String, long[]> ccMap = new LinkedHashMap<>();
-        Map<String, long[]> supMap = new LinkedHashMap<>();
     }
 }
