@@ -810,6 +810,151 @@ public class ClusteringService {
     }
 
     // ============================================================
+    // 7-1. 3-Phase 배치 병합 (프론트엔드 배치 분할 전송용)
+    // ============================================================
+
+    /**
+     * Phase 1: 빈 부모 클러스터 생성 (번호 발번만)
+     */
+    public Map<String, Object> mergeStart(String sessionId) {
+        log.info("[MERGE-BATCH] mergeStart: sessionId={}", sessionId);
+        clusterStatisticsService.cancelSessionCompletionIfNeeded(sessionId);
+
+        int newClusterNumber = getNextClusterNumber(sessionId);
+
+        ClusteringResult parent = ClusteringResult.builder()
+                .sessionId(sessionId)
+                .clusterNumber(newClusterNumber)
+                .clusterId(newClusterNumber)
+                .clusterSubId(-1)
+                .clusterName("(병합 진행 중)")
+                .keywords(new ArrayList<>())
+                .count(0)
+                .totalAmount(0.0)
+                .dataIndices(new ArrayList<>())
+                .createdAt(LocalDateTime.now())
+                .build();
+
+        clusteringResultRepository.save(parent);
+        log.info("[MERGE-BATCH] mergeStart 완료: #{}", newClusterNumber);
+
+        Map<String, Object> result = new HashMap<>();
+        result.put("mergedClusterNumber", newClusterNumber);
+        return result;
+    }
+
+    /**
+     * Phase 2: 배치 단위 자식 편입 (atomic $set cluster_id → 병렬 안전)
+     */
+    public Map<String, Object> mergeBatch(String sessionId, Integer mergedClusterNumber, List<Integer> clusterNumbers) {
+        log.info("[MERGE-BATCH] mergeBatch: sessionId={}, parent={}, batchSize={}",
+                sessionId, mergedClusterNumber, clusterNumbers != null ? clusterNumbers.size() : 0);
+
+        if (clusterNumbers == null || clusterNumbers.isEmpty()) {
+            return Map.of("updatedCount", 0);
+        }
+
+        // 편입 전 검증: 이미 다른 병합에 속해 있는지 확인
+        long alreadyMerged = mongoTemplate.count(
+                new Query(Criteria.where("session_id").is(sessionId)
+                        .and("cluster_number").in(clusterNumbers)
+                        .and("cluster_id").gt(0)),
+                ClusteringResult.class);
+        if (alreadyMerged > 0) {
+            log.warn("[MERGE-BATCH] 이미 병합된 클러스터 {}건 포함", alreadyMerged);
+            throw new BusinessException("ALREADY_MERGED",
+                    "이미 병합된 클러스터 " + alreadyMerged + "건이 포함되어 있습니다.");
+        }
+
+        // atomic $set cluster_id (병렬 호출 안전)
+        var updateResult = mongoTemplate.updateMulti(
+                new Query(Criteria.where("session_id").is(sessionId)
+                        .and("cluster_number").in(clusterNumbers)
+                        .and("cluster_id").is(-1)),
+                new Update().set("cluster_id", mergedClusterNumber),
+                "clustering_results");
+
+        long updatedCount = updateResult.getModifiedCount();
+        log.info("[MERGE-BATCH] mergeBatch 완료: {}건 편입", updatedCount);
+
+        Map<String, Object> result = new HashMap<>();
+        result.put("updatedCount", updatedCount);
+        return result;
+    }
+
+    /**
+     * Phase 3: 부모 재계산 (모든 배치 완료 후 1회만 호출)
+     */
+    public Map<String, Object> mergeFinalize(String sessionId, Integer mergedClusterNumber) {
+        log.info("[MERGE-BATCH] mergeFinalize: sessionId={}, parent={}", sessionId, mergedClusterNumber);
+
+        ClusteringResult parent = clusteringResultRepository
+                .findBySessionIdAndClusterNumber(sessionId, mergedClusterNumber)
+                .orElseThrow(() -> new BusinessException("CLUSTER_NOT_FOUND",
+                        "병합 클러스터를 찾을 수 없습니다: #" + mergedClusterNumber));
+
+        // 부모 자신 제외하고 자식만 조회
+        List<ClusteringResult> allChildren = clusteringResultRepository
+                .findBySessionIdAndClusterIdOrderByClusterNumberAsc(sessionId, mergedClusterNumber)
+                .stream()
+                .filter(c -> !c.getClusterNumber().equals(mergedClusterNumber))
+                .collect(Collectors.toList());
+
+        if (allChildren.isEmpty()) {
+            // 자식이 없으면 빈 부모 삭제
+            clusteringResultRepository.delete(parent);
+            log.warn("[MERGE-BATCH] mergeFinalize: 자식 없음, 부모 #{} 삭제", mergedClusterNumber);
+            throw new BusinessException("NO_CHILDREN", "편입된 하위 클러스터가 없습니다.");
+        }
+
+        Set<String> allKeywords = new LinkedHashSet<>();
+        List<String> allDataIndices = new ArrayList<>();
+        int totalCount = 0;
+        double totalAmount = 0;
+        long estimatedBytes = 0;
+        boolean truncated = false;
+
+        for (ClusteringResult child : allChildren) {
+            allKeywords.addAll(child.getKeywords());
+            totalCount += child.getCount();
+            totalAmount += child.getTotalAmount();
+
+            if (!truncated && child.getDataIndices() != null) {
+                long chunkBytes = child.getDataIndices().size() * 40L;
+                if (estimatedBytes + chunkBytes > 12_000_000L) {
+                    truncated = true;
+                    log.warn("[MERGE-BATCH] dataIndices 크기 제한 도달 (~{}MB)", estimatedBytes / 1_000_000);
+                } else {
+                    allDataIndices.addAll(child.getDataIndices());
+                    estimatedBytes += chunkBytes;
+                }
+            }
+        }
+
+        String mergedName = String.join("_", allKeywords);
+        if (mergedName.length() > 100) mergedName = mergedName.substring(0, 100) + "...";
+
+        parent.setKeywords(new ArrayList<>(allKeywords));
+        parent.setClusterName(mergedName);
+        parent.setCount(totalCount);
+        parent.setTotalAmount(totalAmount);
+        parent.setDataIndices(allDataIndices);
+        clusteringResultRepository.save(parent);
+
+        log.info("[MERGE-BATCH] mergeFinalize 완료: #{}, {}개 자식, count={}, amount={}{}",
+                mergedClusterNumber, allChildren.size(), totalCount, totalAmount,
+                truncated ? " (dataIndices 일부 생략)" : "");
+
+        Map<String, Object> result = new HashMap<>();
+        result.put("mergedClusterNumber", mergedClusterNumber);
+        result.put("mergedClusterName", mergedName);
+        result.put("mergedCount", allChildren.size());
+        result.put("totalCount", totalCount);
+        result.put("totalAmount", totalAmount);
+        return result;
+    }
+
+    // ============================================================
     // 8. 클러스터 병합 해제 (전체)
     // ============================================================
 
