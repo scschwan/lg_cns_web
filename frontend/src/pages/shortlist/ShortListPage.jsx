@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
   ChevronRight, ChevronDown, Database, Building2, MapPin,
@@ -99,9 +99,10 @@ function collectNodeData(nodes, checkedIds) {
   return items;
 }
 
-/* ====== Tree Row ====== */
-function TreeRow({ item, level = 0, expandedIds, toggleExpand, checkedIds, onCheck, disabled, onItemClick, lockedIds }) {
+/* ====== Tree Row (드래그/Ctrl 멀티셀렉트 지원) ====== */
+function TreeRow({ item, level = 0, expandedIds, toggleExpand, checkedIds, onCheck, disabled, onItemClick, lockedIds, cursorIds, onMouseDownRow, onMouseEnterRow }) {
   const hasChildren = item.children && item.children.length > 0;
+  const nodeId = item.statisticsId || item.id;
   const isExpanded = expandedIds.has(item.id);
   const paddingLeft = 16 + level * 24;
 
@@ -118,13 +119,26 @@ function TreeRow({ item, level = 0, expandedIds, toggleExpand, checkedIds, onChe
 
   const isChecked = leafIds.every(id => checkedIds.has(id));
   const isIndeterminate = !isChecked && leafIds.some(id => checkedIds.has(id));
+  const isCursor = cursorIds?.has(nodeId);
 
   // 이 노드의 leaf 중 잠긴 항목이 있는지 확인
   const allLocked = lockedIds && leafIds.every(id => lockedIds.has(id));
-  const hasLockedLeaf = lockedIds && leafIds.some(id => lockedIds.has(id));
 
   const handleCheck = () => {
     if (disabled || allLocked) return;
+    // 커서가 잡힌 상태에서 체크 토글 → 커서 전체에 적용
+    if (cursorIds && cursorIds.size > 0 && cursorIds.has(nodeId)) {
+      onCheck(prev => {
+        const n = new Set(prev);
+        const shouldCheck = !isChecked;
+        cursorIds.forEach(cursorNodeId => {
+          if (shouldCheck) n.add(cursorNodeId);
+          else if (!lockedIds || !lockedIds.has(cursorNodeId)) n.delete(cursorNodeId);
+        });
+        return n;
+      });
+      return;
+    }
     if (isChecked) {
       // 체크 해제 시 잠긴 항목은 유지
       onCheck(prev => {
@@ -154,19 +168,23 @@ function TreeRow({ item, level = 0, expandedIds, toggleExpand, checkedIds, onChe
     <>
       <TableRow
         className={cn(
-          'cursor-pointer transition-colors',
+          'cursor-pointer transition-colors select-none',
           level === 0 && 'bg-muted/30 font-medium',
           level > 0 && 'text-sm',
           isChecked && 'bg-blue-50',
           allLocked && 'bg-red-50/50',
+          isCursor && 'ring-1 ring-inset ring-blue-300 bg-blue-100',
         )}
         onClick={handleRowClick}
+        onMouseDown={(e) => onMouseDownRow && onMouseDownRow(e, nodeId)}
+        onMouseEnter={() => onMouseEnterRow && onMouseEnterRow(nodeId)}
       >
         <TableCell className="w-[40px] text-center py-2.5" onClick={e => e.stopPropagation()}>
           <Checkbox
             checked={isIndeterminate ? 'indeterminate' : isChecked}
             onCheckedChange={handleCheck}
             disabled={disabled || allLocked}
+            onMouseDown={e => e.stopPropagation()}
           />
         </TableCell>
         <TableCell style={{ paddingLeft: level > 0 ? paddingLeft : 8 }} className="py-2.5">
@@ -186,19 +204,25 @@ function TreeRow({ item, level = 0, expandedIds, toggleExpand, checkedIds, onChe
         <TableCell className="text-right tabular-nums py-2.5 font-medium">{formatAmount(item.totalAmount)}</TableCell>
       </TableRow>
       {isExpanded && hasChildren && item.children.map(child => (
-        <TreeRow key={child.id} item={child} level={level + 1} expandedIds={expandedIds} toggleExpand={toggleExpand} checkedIds={checkedIds} onCheck={onCheck} disabled={disabled} onItemClick={onItemClick} lockedIds={lockedIds} />
+        <TreeRow key={child.id} item={child} level={level + 1} expandedIds={expandedIds} toggleExpand={toggleExpand} checkedIds={checkedIds} onCheck={onCheck} disabled={disabled} onItemClick={onItemClick} lockedIds={lockedIds} cursorIds={cursorIds} onMouseDownRow={onMouseDownRow} onMouseEnterRow={onMouseEnterRow} />
       ))}
     </>
   );
 }
 
-/* ====== Pie Chart with Legend ====== */
+/* ====== Pie Chart with Legend (내림차순 정렬) ====== */
 function ChartPieWithLegend({ data, title }) {
   const [hiddenItems, setHiddenItems] = useState(new Set());
 
+  // 내림차순 정렬
+  const sortedData = useMemo(
+    () => [...data].sort((a, b) => (b.totalAmount || 0) - (a.totalAmount || 0)),
+    [data]
+  );
+
   const visibleData = useMemo(
-    () => data.filter((_, idx) => !hiddenItems.has(idx)),
-    [data, hiddenItems]
+    () => sortedData.filter((_, idx) => !hiddenItems.has(idx)),
+    [sortedData, hiddenItems]
   );
   const total = useMemo(() => visibleData.reduce((s, d) => s + (d.totalAmount || 0), 0), [visibleData]);
 
@@ -229,8 +253,7 @@ function ChartPieWithLegend({ data, title }) {
               <PieChart>
                 <Pie data={pieData} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius={40} outerRadius={70} paddingAngle={2}>
                   {pieData.map((entry, idx) => {
-                    const origIdx = data.findIndex(d => d.name === entry.name);
-                    return <Cell key={idx} fill={CHART_COLORS[origIdx % CHART_COLORS.length]} />;
+                    return <Cell key={idx} fill={CHART_COLORS[idx % CHART_COLORS.length]} />;
                   })}
                 </Pie>
                 <Tooltip formatter={(v) => formatAmount(v)} />
@@ -242,7 +265,7 @@ function ChartPieWithLegend({ data, title }) {
             </div>
           </div>
           <div className="flex-1 space-y-1.5 min-w-0 max-h-[160px] overflow-y-auto">
-            {data.map((item, idx) => (
+            {sortedData.map((item, idx) => (
               <div
                 key={idx}
                 className={cn('flex items-center gap-2 text-xs cursor-pointer hover:bg-muted/50 rounded px-1 py-0.5', hiddenItems.has(idx) && 'opacity-40 line-through')}
@@ -268,7 +291,7 @@ function SelectedItemCard({ stats, onRawDataClick }) {
     { label: '공급업체', value: stats.supplierCount?.toLocaleString() ?? '-', icon: Building2, color: 'bg-purple-500' },
     { label: '코스트센터', value: stats.costCenterCount?.toLocaleString() ?? '-', icon: MapPin, color: 'bg-green-500' },
     { label: '합계 금액', value: formatAmount(stats.totalAmount ?? 0), icon: DollarSign, color: 'bg-orange-500' },
-    { label: 'Long List 대비 비율', value: `${stats.ratioToTotal ?? 0}%`, icon: TrendingUp, color: 'bg-emerald-500' },
+    { label: 'Raw List 대비 비율', value: `${stats.ratioToTotal ?? 0}%`, icon: TrendingUp, color: 'bg-emerald-500' },
   ];
   return (
     <Card>
@@ -299,25 +322,25 @@ function SelectedItemCard({ stats, onRawDataClick }) {
 }
 
 /* ====== Phase Navigation Bar ====== */
-function PhaseNavigationBar({ stats, currentPhase, projectId, navigate, dynamicShortList }) {
+function PhaseNavigationBar({ stats, currentPhase, projectId, navigate, dynamicShortList, checkableItemCount }) {
   const phases = [
     {
       key: 'LONG_LIST',
-      label: 'Long List',
-      count: stats?.longListItemCount ?? '-',
+      label: 'Raw List',
+      count: checkableItemCount ?? (stats?.longListItemCount ?? '-'),
       amount: stats?.totalAmount ?? 0,
       path: `/projects/${projectId}/longlist`,
     },
     {
       key: 'SHORT_LIST',
-      label: 'Short List',
+      label: 'Long List',
       count: dynamicShortList ? dynamicShortList.count : (stats?.shortListItemCount ?? '-'),
       amount: dynamicShortList ? dynamicShortList.amount : (stats?.shortListTotalAmount ?? 0),
       path: `/projects/${projectId}/shortlist`,
     },
     {
       key: 'ABLE_REGISTER',
-      label: 'Able 과제 등록',
+      label: 'Short List',
       count: null,
       amount: null,
       path: `/projects/${projectId}/able-register`,
@@ -380,9 +403,68 @@ export default function ShortListPage() {
   const [chartTop, setChartTop] = useState(5);
   const [rawDataModal, setRawDataModal] = useState({ open: false, title: '', fetchFn: null });
 
+  // 드래그/Ctrl 멀티셀렉트 상태
+  const [cursorIds, setCursorIds] = useState(new Set());
+  const [isDragging, setIsDragging] = useState(false);
+  const dragStartRef = useRef(null);
+
   const isListLocked = dashboardStatus?.isListLocked ?? false;
   const isDisabled = !isEditor || isListLocked;
   const hasLockedItems = lockedIds.size > 0;
+
+  // 트리를 flat list로 변환 (현재 확장된 상태 기반)
+  const flatNodeIds = useMemo(() => {
+    const ids = [];
+    const traverse = (nodes) => {
+      nodes.forEach(node => {
+        const nid = node.statisticsId || node.id;
+        ids.push(nid);
+        if (node.children?.length && expandedIds.has(node.id)) {
+          traverse(node.children);
+        }
+      });
+    };
+    traverse(treeData);
+    return ids;
+  }, [treeData, expandedIds]);
+
+  const handleRowMouseDown = useCallback((e, nodeId) => {
+    if (e.ctrlKey || e.metaKey) {
+      e.preventDefault();
+      setCursorIds(prev => {
+        const next = new Set(prev);
+        if (next.has(nodeId)) next.delete(nodeId);
+        else next.add(nodeId);
+        return next;
+      });
+      return;
+    }
+    e.preventDefault();
+    setIsDragging(true);
+    const idx = flatNodeIds.indexOf(nodeId);
+    dragStartRef.current = idx >= 0 ? idx : 0;
+    setCursorIds(new Set([nodeId]));
+  }, [flatNodeIds]);
+
+  const handleRowMouseEnter = useCallback((nodeId) => {
+    if (!isDragging || dragStartRef.current === null) return;
+    const currentIdx = flatNodeIds.indexOf(nodeId);
+    if (currentIdx < 0) return;
+    const startIdx = dragStartRef.current;
+    const minIdx = Math.min(startIdx, currentIdx);
+    const maxIdx = Math.max(startIdx, currentIdx);
+    const newSet = new Set();
+    for (let i = minIdx; i <= maxIdx; i++) {
+      newSet.add(flatNodeIds[i]);
+    }
+    setCursorIds(newSet);
+  }, [isDragging, flatNodeIds]);
+
+  useEffect(() => {
+    const handleGlobalMouseUp = () => setIsDragging(false);
+    window.addEventListener('mouseup', handleGlobalMouseUp);
+    return () => window.removeEventListener('mouseup', handleGlobalMouseUp);
+  }, []);
 
   // 초기 데이터 로드
   useEffect(() => {
@@ -456,21 +538,37 @@ export default function ShortListPage() {
     return { totalAmount, supplierCount, costCenterCount };
   }, [treeData]);
 
-  // 체크된 항목 기준 동적 통계
+  // 체크 가능한 항목 수 (leaf 노드 수)
+  const checkableItemCount = useMemo(() => getAllLeafIds(treeData).length, [treeData]);
+
+  // 체크된 항목 기준 동적 통계 (leaf 단위로 정확히 계산)
   const dynamicStats = useMemo(() => {
-    const checkedItems = collectNodeData(treeData, checkedIds);
-    // level 2 항목만 합산 (level 2가 level 3를 이미 포함하므로 중복 방지)
-    const level2Items = checkedItems.filter(i => i.level === 2);
-    const selectedAmount = level2Items.reduce((s, i) => s + (i.totalAmount || 0), 0);
+    // leaf 노드 기준으로 체크된 항목의 금액 합산
+    let selectedAmount = 0;
+    let leafCheckedCount = 0;
+    const traverse = (nodes) => {
+      nodes.forEach(node => {
+        if (node.children?.length) {
+          traverse(node.children);
+        } else {
+          const nid = node.statisticsId || node.id;
+          if (checkedIds.has(nid)) {
+            selectedAmount += node.totalAmount || 0;
+            leafCheckedCount++;
+          }
+        }
+      });
+    };
+    traverse(treeData);
+
     const totalRatio = totals.totalAmount > 0 ? (selectedAmount / totals.totalAmount * 100) : 0;
     return {
-      longListItemCount: stats?.longListItemCount ?? 0,
-      level2Count: level2Items.length,
-      checkedItems: checkedItems.length,
+      checkableItemCount,
+      leafCheckedCount,
       selectedAmount,
       totalRatio: +totalRatio.toFixed(1),
     };
-  }, [treeData, checkedIds, totals, stats]);
+  }, [treeData, checkedIds, totals, checkableItemCount]);
 
   // 차트 데이터 로드 (항목 클릭 시 - 계정명/클러스터/세부클러스터 모두 지원)
   const handleItemClick = useCallback(async (node) => {
@@ -548,13 +646,16 @@ export default function ShortListPage() {
     }
   };
 
-  // 바 차트용 데이터
+  // 바 차트용 데이터 (내림차순 정렬, 0원은 하단)
   const barData = useMemo(() => {
     if (!chartData?.supplierBreakdown) return [];
-    return chartData.supplierBreakdown.map(d => ({
-      name: d.name,
-      금액: Math.round((d.totalAmount || 0) / 100000000 * 10) / 10,
-    }));
+    return chartData.supplierBreakdown
+      .map(d => ({
+        name: d.name,
+        amount: d.totalAmount || 0,
+        금액: Math.round((d.totalAmount || 0) / 100000000 * 10) / 10,
+      }))
+      .sort((a, b) => b.amount - a.amount);
   }, [chartData]);
 
   if (loading) {
@@ -576,7 +677,7 @@ export default function ShortListPage() {
               {!isEditor && <Badge variant="secondary">뷰어 모드</Badge>}
               {isListLocked && <Badge variant="destructive">리스트 잠금</Badge>}
             </div>
-            <p className="text-sm text-muted-foreground mt-1">Long List에서 선택된 항목을 추가 필터링하세요</p>
+            <p className="text-sm text-muted-foreground mt-1">Raw List에서 선택된 항목을 추가 필터링하세요</p>
           </div>
           <div className="flex items-center gap-2">
             <Button
@@ -585,11 +686,11 @@ export default function ShortListPage() {
               className="bg-blue-600 hover:bg-blue-700"
             >
               {saving ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <ArrowRight className="w-4 h-4 mr-1" />}
-              Able 과제 등록
+              Short List 도출
             </Button>
           </div>
         </div>
-        <PhaseNavigationBar stats={stats} currentPhase="SHORT_LIST" projectId={projectId} navigate={navigate} dynamicShortList={{ count: dynamicStats.level2Count, amount: dynamicStats.selectedAmount }} />
+        <PhaseNavigationBar stats={stats} currentPhase="SHORT_LIST" projectId={projectId} navigate={navigate} dynamicShortList={{ count: dynamicStats.leafCheckedCount, amount: dynamicStats.selectedAmount }} checkableItemCount={dynamicStats.checkableItemCount} />
       </div>
 
       {/* Scrollable Content */}
@@ -605,8 +706,8 @@ export default function ShortListPage() {
                     <ListChecks className="w-4 h-4 text-white" />
                   </div>
                   <div>
-                    <p className="text-[10px] text-muted-foreground">Long List 항목</p>
-                    <p className="text-lg font-bold tabular-nums">{dynamicStats.longListItemCount}</p>
+                    <p className="text-[10px] text-muted-foreground">Raw List 항목</p>
+                    <p className="text-lg font-bold tabular-nums">{dynamicStats.checkableItemCount}</p>
                   </div>
                 </div>
               </CardContent>
@@ -645,7 +746,7 @@ export default function ShortListPage() {
                   </div>
                   <div>
                     <p className="text-[10px] text-muted-foreground">선택 항목 수</p>
-                    <p className="text-lg font-bold tabular-nums">{dynamicStats.level2Count}</p>
+                    <p className="text-lg font-bold tabular-nums">{dynamicStats.leafCheckedCount}</p>
                   </div>
                 </div>
               </CardContent>
@@ -664,7 +765,7 @@ export default function ShortListPage() {
               )}
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3">
-                  <CardTitle className="text-sm font-semibold">비용 유형 분류 (Long List 기반)</CardTitle>
+                  <CardTitle className="text-sm font-semibold">비용 유형 분류 (Raw List 기반)</CardTitle>
                   <Badge variant="outline" className="text-[10px]">{checkedIds.size}개 선택</Badge>
                 </div>
                 <div className="flex items-center gap-2">
@@ -692,9 +793,9 @@ export default function ShortListPage() {
                       <TableHead className="text-right w-[140px]">합계 금액</TableHead>
                     </TableRow>
                   </TableHeader>
-                  <TableBody>
+                  <TableBody onMouseUp={() => setIsDragging(false)}>
                     {treeData.map(item => (
-                      <TreeRow key={item.id} item={item} expandedIds={expandedIds} toggleExpand={toggleExpand} checkedIds={checkedIds} onCheck={setCheckedIds} disabled={isDisabled} onItemClick={handleItemClick} lockedIds={lockedIds} />
+                      <TreeRow key={item.id} item={item} expandedIds={expandedIds} toggleExpand={toggleExpand} checkedIds={checkedIds} onCheck={setCheckedIds} disabled={isDisabled} onItemClick={handleItemClick} lockedIds={lockedIds} cursorIds={cursorIds} onMouseDownRow={handleRowMouseDown} onMouseEnterRow={handleRowMouseEnter} />
                     ))}
                     {treeData.length > 0 && (
                       <TableRow className="bg-primary/5 font-bold border-t-2">
@@ -708,7 +809,7 @@ export default function ShortListPage() {
                     {treeData.length === 0 && (
                       <TableRow>
                         <TableCell colSpan={5} className="text-center py-12 text-muted-foreground">
-                          Long List에서 선택된 항목이 없습니다. Long List 페이지에서 먼저 항목을 선택해주세요.
+                          Raw List에서 선택된 항목이 없습니다. Raw List 페이지에서 먼저 항목을 선택해주세요.
                         </TableCell>
                       </TableRow>
                     )}
@@ -755,13 +856,16 @@ export default function ShortListPage() {
                     </CardHeader>
                     <CardContent className="px-2 pb-4">
                       <ResponsiveContainer width="100%" height={Math.max(200, barData.length * 32)}>
-                        <BarChart data={barData} layout="vertical" margin={{ left: 10, right: 20 }}>
+                        <BarChart data={[...barData].reverse()} layout="vertical" margin={{ left: 10, right: 20 }}>
                           <CartesianGrid strokeDasharray="3 3" />
                           <XAxis type="number" tick={{ fontSize: 10 }} unit="억" />
                           <YAxis type="category" dataKey="name" tick={{ fontSize: 10 }} width={100} />
                           <Tooltip formatter={(v) => [`${v}억`, '금액']} />
                           <Bar dataKey="금액" radius={[0, 4, 4, 0]}>
-                            {barData.map((_, idx) => <Cell key={idx} fill={CHART_COLORS[idx % CHART_COLORS.length]} />)}
+                            {[...barData].reverse().map((item, idx) => {
+                              const origIdx = barData.findIndex(d => d.name === item.name);
+                              return <Cell key={idx} fill={CHART_COLORS[origIdx % CHART_COLORS.length]} />;
+                            })}
                           </Bar>
                         </BarChart>
                       </ResponsiveContainer>
