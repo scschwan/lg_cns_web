@@ -60,6 +60,7 @@ import {
 import projectService from '../../services/projectService';
 import uploadService from '../../services/uploadService';
 import adminService from '../../services/adminService';
+import costReductionService from '../../services/costReductionService';
 import PartitionDialog from '../../components/upload/PartitionDialog';
 import ProgressDialog from '../../components/common/ProgressDialog';
 import { Progress } from '@/components/ui/progress';
@@ -111,7 +112,7 @@ function MultiFileUploadPage() {
     const [completeDialogOpen, setCompleteDialogOpen] = useState(false);
 
     // 세션 삭제 확인 다이얼로그
-    const [deleteConfirmDialog, setDeleteConfirmDialog] = useState({ open: false, sessionIds: [] });
+    const [deleteConfirmDialog, setDeleteConfirmDialog] = useState({ open: false, sessionIds: [], hasDashboard: false });
 
     // 메시지 다이얼로그 상태
     const [msgDialog, setMsgDialog] = useState({ open: false, type: 'error', title: '', message: '' });
@@ -530,12 +531,17 @@ function MultiFileUploadPage() {
         }
     };
 
-    const handleDeleteSessions = () => {
+    const handleDeleteSessions = async () => {
         if (selectedSessions.length === 0) {
             showError('선택 필요', '삭제할 세션을 선택해주세요.');
             return;
         }
-        setDeleteConfirmDialog({ open: true, sessionIds: [...selectedSessions] });
+        let hasDashboard = false;
+        try {
+            const status = await costReductionService.getDashboardGenerationStatus(projectId);
+            hasDashboard = status?.status === 'COMPLETED' || status?.status === 'COMPLETED_WITH_ERRORS';
+        } catch { /* 대시보드 데이터 없음 */ }
+        setDeleteConfirmDialog({ open: true, sessionIds: [...selectedSessions], hasDashboard });
     };
 
     const executeDeleteSessions = async () => {
@@ -719,8 +725,13 @@ function MultiFileUploadPage() {
         }
     };
 
-    const handleDeleteSingleSession = (sessionId) => {
-        setDeleteConfirmDialog({ open: true, sessionIds: [sessionId] });
+    const handleDeleteSingleSession = async (sessionId) => {
+        let hasDashboard = false;
+        try {
+            const status = await costReductionService.getDashboardGenerationStatus(projectId);
+            hasDashboard = status?.status === 'COMPLETED' || status?.status === 'COMPLETED_WITH_ERRORS';
+        } catch { /* 대시보드 데이터 없음 */ }
+        setDeleteConfirmDialog({ open: true, sessionIds: [sessionId], hasDashboard });
     };
 
     const handleBulkDeleteFiles = async () => {
@@ -1409,7 +1420,7 @@ function MultiFileUploadPage() {
                 </Dialog>
 
                 {/* 세션 삭제 확인 다이얼로그 */}
-                <Dialog open={deleteConfirmDialog.open} onOpenChange={(open) => !open && setDeleteConfirmDialog({ open: false, sessionIds: [] })}>
+                <Dialog open={deleteConfirmDialog.open} onOpenChange={(open) => !open && setDeleteConfirmDialog({ open: false, sessionIds: [], hasDashboard: false })}>
                     <DialogContent>
                         <DialogHeader>
                             <DialogTitle className="flex items-center gap-2">
@@ -1417,11 +1428,14 @@ function MultiFileUploadPage() {
                                 세션 삭제 확인
                             </DialogTitle>
                             <DialogDescription className="pt-2">
-                                세션을 삭제하면 대시보드 데이터(Long/Short List, 과제, 대시보드)가 전부 초기화됩니다. 계속하시겠습니까?
+                                {deleteConfirmDialog.hasDashboard
+                                    ? '세션을 삭제하면 대시보드 데이터(Long/Short List, 과제, 대시보드)가 전부 초기화됩니다. 계속하시겠습니까?'
+                                    : `선택한 ${deleteConfirmDialog.sessionIds.length}개 세션을 삭제하시겠습니까?`
+                                }
                             </DialogDescription>
                         </DialogHeader>
                         <DialogFooter>
-                            <Button variant="outline" onClick={() => setDeleteConfirmDialog({ open: false, sessionIds: [] })}>취소</Button>
+                            <Button variant="outline" onClick={() => setDeleteConfirmDialog({ open: false, sessionIds: [], hasDashboard: false })}>취소</Button>
                             <Button variant="destructive" onClick={executeDeleteSessions}>삭제</Button>
                         </DialogFooter>
                     </DialogContent>

@@ -114,6 +114,14 @@ const clusteringService = {
         return response.data;
     },
 
+    /** 세션에 활성 병합 작업이 있는지 확인 */
+    isMergeActive: async (projectId, sessionId) => {
+        const response = await api.get(
+            `/api/projects/${projectId}/sessions/${sessionId}/clustering/merge/active`
+        );
+        return response.data;
+    },
+
     unmergeClusters: async (projectId, sessionId, mergedClusterNumber) => {
         const response = await api.post(
             `/api/projects/${projectId}/sessions/${sessionId}/clustering/unmerge`,

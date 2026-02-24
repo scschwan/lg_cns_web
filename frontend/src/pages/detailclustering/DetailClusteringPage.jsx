@@ -22,9 +22,10 @@ import {
   Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle,
 } from '@/components/ui/dialog';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Progress } from '@/components/ui/progress';
 import AdvancedTable from '@/components/AdvancedTable';
 import detailClusteringService from '@/services/detailClusteringService';
-import useViewerMode from '../../hooks/useViewerMode';
+import clusteringService from '@/services/clusteringService';
 
 
 const truncateName = (name, maxLen = 30) => {
@@ -139,6 +140,7 @@ function StatsListView({
 function DetailClusteringPage() {
   const { projectId, sessionId } = useParams();
   const { isEditor, editorInfo } = useSessionEditorLock(projectId, sessionId);
+  const isViewer = !isEditor;
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const clusterId = parseInt(searchParams.get('clusterId'), 10);
@@ -146,7 +148,9 @@ function DetailClusteringPage() {
   const [loading, setLoading] = useState(false);
   const [merging, setMerging] = useState(false);
   const [mergingProgress, setMergingProgress] = useState(0);
+  const [mergingMessage, setMergingMessage] = useState('');
   const [mergingClusters, setMergingClusters] = useState(new Set());
+  const [mergeActiveBlocking, setMergeActiveBlocking] = useState(false);
   const [unmerging, setUnmerging] = useState(false);
   const [unmergingProgress, setUnmergingProgress] = useState(0);
   const [unmergingClusters, setUnmergingClusters] = useState(new Set());
@@ -307,6 +311,32 @@ function DetailClusteringPage() {
     // Phase 2: 보조 데이터
     await Promise.all([loadKwStats(), loadSupStats(), loadMerged()]);
   }, [loadStatistics, loadUnmerged, clusterPage, clusterPageSize, appliedSearchParams, previousResultIds, projectId, sessionId, clusterId, loadKwStats, loadSupStats, loadMerged]);
+
+  /* ★ 서버 병합 진행 중 차단: 마운트 시 + 병합 후 체크 */
+  const checkAndWaitMergeActive = useCallback(async () => {
+    try {
+      const res = await clusteringService.isMergeActive(projectId, sessionId);
+      if (!res.active) { setMergeActiveBlocking(false); return false; }
+      setMergeActiveBlocking(true);
+      setMergingProgress(res.progress || 0);
+      setMergingMessage(res.message || '병합 진행 중...');
+      const POLL = 2000;
+      while (true) {
+        await new Promise(r => setTimeout(r, POLL));
+        const p = await clusteringService.isMergeActive(projectId, sessionId);
+        if (!p.active) break;
+        setMergingProgress(p.progress || 0);
+        setMergingMessage(p.message || '병합 진행 중...');
+      }
+      setMergeActiveBlocking(false);
+      setMergingProgress(0);
+      setMergingMessage('');
+      await refreshAll();
+      return true;
+    } catch { setMergeActiveBlocking(false); return false; }
+  }, [projectId, sessionId, refreshAll]);
+
+  useEffect(() => { checkAndWaitMergeActive(); }, [projectId, sessionId]); // eslint-disable-line
 
   /* ★ loadAll ref로 항상 최신 함수 호출 보장 */
   const loadAllRef = useRef(loadAll);
@@ -626,6 +656,24 @@ function DetailClusteringPage() {
 
   return (
     <div className="flex flex-col h-full bg-gray-50 overflow-hidden">
+      {mergeActiveBlocking && (
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 backdrop-blur-sm">
+          <div className="bg-white rounded-xl shadow-2xl p-8 w-[480px] flex flex-col items-center gap-5">
+            <Loader2 className="h-10 w-10 animate-spin text-blue-500" />
+            <div className="text-lg font-semibold text-gray-800">병합 진행 중</div>
+            <div className="w-full">
+              <Progress value={mergingProgress} className="h-4" />
+            </div>
+            <div className="flex items-center justify-between w-full text-sm">
+              <span className="text-muted-foreground">{mergingMessage || '서버에서 병합 작업이 진행 중입니다...'}</span>
+              <span className="font-mono font-bold text-blue-600">{mergingProgress}%</span>
+            </div>
+            <p className="text-xs text-muted-foreground text-center">
+              병합이 완료될 때까지 검색 및 테이블 조작이 제한됩니다.
+            </p>
+          </div>
+        </div>
+      )}
       <div className="container mx-auto px-4 py-4 h-full flex flex-col min-h-0 max-w-[98vw]">
 
         {!isEditor && (

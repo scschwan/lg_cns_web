@@ -97,7 +97,7 @@ function DashboardUploadPage() {
     const [completeDialogOpen, setCompleteDialogOpen] = useState(false);
 
     // 세션 삭제 확인 다이얼로그
-    const [deleteConfirmDialog, setDeleteConfirmDialog] = useState({ open: false, sessionIds: [] });
+    const [deleteConfirmDialog, setDeleteConfirmDialog] = useState({ open: false, sessionIds: [], hasDashboard: false });
 
     // 메시지 다이얼로그
     const [msgDialog, setMsgDialog] = useState({ open: false, type: 'error', title: '', message: '' });
@@ -319,11 +319,13 @@ function DashboardUploadPage() {
             showError('선택 필요', '삭제할 세션을 선택해주세요.');
             return;
         }
-        setDeleteConfirmDialog({ open: true, sessionIds: [...selectedSessions] });
+        const hasDashboard = generationStatus?.status === 'COMPLETED' || generationStatus?.status === 'COMPLETED_WITH_ERRORS';
+        setDeleteConfirmDialog({ open: true, sessionIds: [...selectedSessions], hasDashboard });
     };
 
     const handleDeleteSingleSession = (sessionId) => {
-        setDeleteConfirmDialog({ open: true, sessionIds: [sessionId] });
+        const hasDashboard = generationStatus?.status === 'COMPLETED' || generationStatus?.status === 'COMPLETED_WITH_ERRORS';
+        setDeleteConfirmDialog({ open: true, sessionIds: [sessionId], hasDashboard });
     };
 
     const executeDeleteSessions = async () => {
@@ -740,7 +742,7 @@ function DashboardUploadPage() {
                 </Dialog>
 
                 {/* 세션 삭제 확인 다이얼로그 */}
-                <Dialog open={deleteConfirmDialog.open} onOpenChange={(open) => !open && setDeleteConfirmDialog({ open: false, sessionIds: [] })}>
+                <Dialog open={deleteConfirmDialog.open} onOpenChange={(open) => !open && setDeleteConfirmDialog({ open: false, sessionIds: [], hasDashboard: false })}>
                     <DialogContent>
                         <DialogHeader>
                             <DialogTitle className="flex items-center gap-2">
@@ -748,11 +750,14 @@ function DashboardUploadPage() {
                                 세션 삭제 확인
                             </DialogTitle>
                             <DialogDescription className="pt-2">
-                                세션을 삭제하면 대시보드 데이터(Long/Short List, 과제, 대시보드)가 전부 초기화됩니다. 계속하시겠습니까?
+                                {deleteConfirmDialog.hasDashboard
+                                    ? '세션을 삭제하면 대시보드 데이터(Long/Short List, 과제, 대시보드)가 전부 초기화됩니다. 계속하시겠습니까?'
+                                    : `선택한 ${deleteConfirmDialog.sessionIds.length}개 세션을 삭제하시겠습니까?`
+                                }
                             </DialogDescription>
                         </DialogHeader>
                         <DialogFooter>
-                            <Button variant="outline" onClick={() => setDeleteConfirmDialog({ open: false, sessionIds: [] })}>취소</Button>
+                            <Button variant="outline" onClick={() => setDeleteConfirmDialog({ open: false, sessionIds: [], hasDashboard: false })}>취소</Button>
                             <Button variant="destructive" onClick={executeDeleteSessions}>삭제</Button>
                         </DialogFooter>
                     </DialogContent>
