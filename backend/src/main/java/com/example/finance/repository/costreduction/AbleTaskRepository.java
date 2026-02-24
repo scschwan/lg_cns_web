@@ -16,4 +16,6 @@ public interface AbleTaskRepository extends MongoRepository<AbleTask, String> {
     long countByProjectId(String projectId);
 
     long countByProjectIdAndStatus(String projectId, String status);
+
+    void deleteByProjectId(String projectId);
 }

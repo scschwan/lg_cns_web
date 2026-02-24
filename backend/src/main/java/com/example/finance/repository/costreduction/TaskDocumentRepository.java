@@ -14,4 +14,6 @@ public interface TaskDocumentRepository extends MongoRepository<TaskDocument, St
     long countByTaskId(String taskId);
 
     void deleteByTaskId(String taskId);
+
+    void deleteByProjectId(String projectId);
 }

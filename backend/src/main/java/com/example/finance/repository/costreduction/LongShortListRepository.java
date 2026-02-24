@@ -12,4 +12,6 @@ public interface LongShortListRepository extends MongoRepository<LongShortList, 
     Optional<LongShortList> findFirstByProjectId(String projectId);
 
     boolean existsByProjectId(String projectId);
+
+    void deleteByProjectId(String projectId);
 }

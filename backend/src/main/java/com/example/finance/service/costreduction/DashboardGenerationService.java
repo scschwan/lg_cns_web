@@ -60,6 +60,7 @@ public class DashboardGenerationService {
     public static class SessionConfig {
         public String sessionId;
         public String accountName;
+        public String accountColumn;
         public String clusterColumn;
         public String subClusterColumn;
         public String amountColumn;
@@ -306,10 +307,26 @@ public class DashboardGenerationService {
         log.info("clustering_results 생성 완료: sessionId={}, clusters={}", config.sessionId, results.size());
 
         // ===== 5. 세션 상태 업데이트 (generateStatistics보다 먼저 실행해야 accountName 참조 가능) =====
+        // accountColumn에서 고유값 추출하여 accountName 결정
+        String accountName;
+        if (config.accountColumn != null && !config.accountColumn.isBlank()) {
+            Set<String> uniqueAccounts = rows.stream()
+                    .map(row -> getStringValue(row, config.accountColumn))
+                    .filter(v -> v != null && !v.isBlank())
+                    .collect(Collectors.toSet());
+
+            if (uniqueAccounts.size() > 1) {
+                throw new RuntimeException("대계정 컬럼에 2개 이상의 고유값이 있습니다: " + uniqueAccounts);
+            }
+            accountName = uniqueAccounts.isEmpty() ? "(미설정)" : uniqueAccounts.iterator().next();
+        } else {
+            accountName = config.accountName != null ? config.accountName : "(미설정)";
+        }
+
         session.setIsCompleted(true);
         session.setCompletedAt(LocalDateTime.now());
         session.setCurrentStep(ProcessStep.EXPORT);
-        session.setAccountNames(List.of(config.accountName));
+        session.setAccountNames(List.of(accountName));
         session.setTotalRowCount((long) rows.size());
         session.setCategoryColumn(config.clusterColumn);
         session.setCostCenterColumn(config.costCenterColumn);
