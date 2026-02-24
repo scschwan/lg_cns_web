@@ -72,6 +72,15 @@ const clusteringService = {
         return response.data;
     },
 
+    /** selectAll 필터 방식 병합: POST body 크기를 줄이기 위해 번호 대신 필터를 전송 */
+    mergeClustersWithFilter: async (projectId, sessionId, { exceptions = [], keyword = null, supplier = null } = {}) => {
+        const response = await api.post(
+            `/api/projects/${projectId}/sessions/${sessionId}/clustering/merge`,
+            { selectAll: true, exceptions, keyword, supplier }
+        );
+        return response.data;
+    },
+
     getMergeProgress: async (projectId, sessionId, taskId) => {
         const response = await api.get(
             `/api/projects/${projectId}/sessions/${sessionId}/clustering/merge/progress/${taskId}`

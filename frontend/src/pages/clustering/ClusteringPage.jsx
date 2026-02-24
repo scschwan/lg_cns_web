@@ -685,15 +685,26 @@ function ClusteringPage() {
     setMergingProgress(0);
     setMergingMessage('병합 요청 중...');
     try {
-      const nums = await getSelectedClusterNumbers();
+      let res;
 
-      // 대량(100+)이면 풀스크린 오버레이 표시
-      if (nums.length >= 100) setMergeOverlay(true);
-
-      const res = await clusteringService.mergeClusters(projectId, sessionId, nums);
+      if (selectAllMode) {
+        // ★ selectAll 필터 방식: POST body에 번호 대신 필터만 전송 (CloudFront body 제한 회피)
+        setMergeOverlay(true);
+        res = await clusteringService.mergeClustersWithFilter(projectId, sessionId, {
+          exceptions: Array.from(exceptions),
+          keyword: appliedSearchParams?.searchColumn === 'keyword' ? appliedSearchParams.searchValue : null,
+          supplier: appliedSearchParams?.searchColumn === 'supplier' ? appliedSearchParams.searchValue : null,
+        });
+      } else {
+        // 개별 선택 방식: 기존대로 번호 배열 전송
+        const nums = Array.from(exceptions);
+        if (nums.length >= 100) setMergeOverlay(true);
+        res = await clusteringService.mergeClusters(projectId, sessionId, nums);
+      }
 
       if (res.async && res.taskId) {
         // ★ 비동기 병합: 서버 진행률 폴링
+        if (!mergeOverlay) setMergeOverlay(true);
         await pollMergeProgress(res.taskId);
       } else {
         // 동기 병합 완료
