@@ -176,6 +176,32 @@ public class FileSession {
     @Builder.Default
     private Boolean isDeleted = false;
 
+    // ===== 편집자 잠금 (세션 점유 제어) =====
+
+    /**
+     * 현재 편집자 사용자 ID
+     */
+    @Field("editor_user_id")
+    private String editorUserId;
+
+    /**
+     * 현재 편집자 사용자명
+     */
+    @Field("editor_user_name")
+    private String editorUserName;
+
+    /**
+     * 편집자 잠금 획득 시간
+     */
+    @Field("editor_acquired_at")
+    private LocalDateTime editorAcquiredAt;
+
+    /**
+     * 편집자 마지막 하트비트 시간
+     */
+    @Field("editor_heartbeat_at")
+    private LocalDateTime editorHeartbeatAt;
+
     // ===== 필수 항목 매핑 (Step 2: Start Analysis에서 설정) =====
 
     /**

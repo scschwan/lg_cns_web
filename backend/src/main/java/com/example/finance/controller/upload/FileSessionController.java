@@ -43,6 +43,85 @@ public class FileSessionController {
     private final ProjectService projectService;
     private final SessionDataService sessionDataService;
 
+    // ========== 세션 편집자 잠금 API ==========
+
+    /**
+     * 세션 편집자 잠금 획득
+     *
+     * POST /api/projects/{projectId}/upload/sessions/{sessionId}/lock/acquire
+     */
+    @Operation(summary = "세션 잠금 획득", description = "세션 편집자 잠금을 획득합니다")
+    @PostMapping("/{sessionId}/lock/acquire")
+    public ResponseEntity<Map<String, Object>> acquireSessionLock(
+            @PathVariable String projectId,
+            @PathVariable String sessionId,
+            @CurrentUser UserPrincipal userPrincipal) {
+
+        String userId = userPrincipal.getId();
+        projectService.getProject(projectId, userId);
+
+        Map<String, Object> result = fileSessionService.acquireSessionLock(
+                sessionId, userId, userPrincipal.getUsername());
+        return ResponseEntity.ok(result);
+    }
+
+    /**
+     * 세션 편집자 하트비트
+     *
+     * POST /api/projects/{projectId}/upload/sessions/{sessionId}/lock/heartbeat
+     */
+    @Operation(summary = "세션 잠금 하트비트", description = "편집자 잠금 TTL을 갱신합니다")
+    @PostMapping("/{sessionId}/lock/heartbeat")
+    public ResponseEntity<Map<String, Boolean>> sessionHeartbeat(
+            @PathVariable String projectId,
+            @PathVariable String sessionId,
+            @CurrentUser UserPrincipal userPrincipal) {
+
+        String userId = userPrincipal.getId();
+        projectService.getProject(projectId, userId);
+
+        fileSessionService.sessionHeartbeat(sessionId, userId);
+        return ResponseEntity.ok(Map.of("success", true));
+    }
+
+    /**
+     * 세션 편집자 잠금 해제
+     *
+     * POST /api/projects/{projectId}/upload/sessions/{sessionId}/lock/release
+     */
+    @Operation(summary = "세션 잠금 해제", description = "편집자 잠금을 해제합니다")
+    @PostMapping("/{sessionId}/lock/release")
+    public ResponseEntity<Map<String, Boolean>> releaseSessionLock(
+            @PathVariable String projectId,
+            @PathVariable String sessionId,
+            @CurrentUser UserPrincipal userPrincipal) {
+
+        String userId = userPrincipal.getId();
+        projectService.getProject(projectId, userId);
+
+        fileSessionService.releaseSessionLock(sessionId, userId);
+        return ResponseEntity.ok(Map.of("success", true));
+    }
+
+    /**
+     * 세션 잠금 상태 조회
+     *
+     * GET /api/projects/{projectId}/upload/sessions/{sessionId}/lock/status
+     */
+    @Operation(summary = "세션 잠금 상태", description = "세션의 편집자 잠금 상태를 조회합니다")
+    @GetMapping("/{sessionId}/lock/status")
+    public ResponseEntity<Map<String, Object>> getSessionLockStatus(
+            @PathVariable String projectId,
+            @PathVariable String sessionId,
+            @CurrentUser UserPrincipal userPrincipal) {
+
+        String userId = userPrincipal.getId();
+        projectService.getProject(projectId, userId);
+
+        Map<String, Object> result = fileSessionService.getSessionLockStatus(sessionId, userId);
+        return ResponseEntity.ok(result);
+    }
+
     /**
      * 파일 세션 생성
      *

@@ -18,7 +18,9 @@ import {
     AlertCircle,
     CheckCircle2,
     RotateCcw,
+    Lock,
     Clock,
+    Eye,
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 
@@ -585,6 +587,23 @@ function MultiFileUploadPage() {
 
        const sessionId = selectedSessions[0];
 
+       // 세션 편집자 잠금 확인: 다른 사용자가 편집 중이면 뷰어 모드로 진입
+       const targetSession = sessions.find(s => s.sessionId === sessionId);
+       if (targetSession?.isEditing && targetSession?.editorUserId) {
+           try {
+               const lockStatus = await uploadService.getSessionLockStatus(projectId, sessionId);
+               if (lockStatus.isLocked && !lockStatus.isEditor) {
+                   // 세션 상세 조회 → 현재 진행 단계로 뷰어 모드 진입
+                   const sessionDetail = await uploadService.getSession(projectId, sessionId);
+                   const lastPath = getLastStepPath(sessionDetail);
+                   navigate(`/projects/${projectId}/sessions/${sessionId}/${lastPath}`);
+                   return;
+               }
+           } catch (e) {
+               console.warn('잠금 상태 확인 실패, 계속 진행:', e);
+           }
+       }
+
        try {
            setProgressDialogOpen(true);
            setProgressValue(0);
@@ -1066,15 +1085,34 @@ function MultiFileUploadPage() {
                                                     <Trash2 className="h-4 w-4 mr-1" />
                                                     세션 삭제
                                                 </Button>
-                                                <Button
-                                                    onClick={handleStartAnalysis}
-                                                    size="sm"
-                                                    disabled={selectedSessions.length !== 1 || isViewer}
-                                                    className="bg-green-600 hover:bg-green-700"
-                                                >
-                                                    <Play className="h-4 w-4 mr-1" />
-                                                    계정 분석 시작
-                                                </Button>
+                                                {(() => {
+                                                    const sel = selectedSessions.length === 1
+                                                        ? sessions.find(s => s.sessionId === selectedSessions[0])
+                                                        : null;
+                                                    const isLockedByOther = sel?.isEditing && sel?.editorUserId;
+                                                    return (
+                                                        <Button
+                                                            onClick={handleStartAnalysis}
+                                                            size="sm"
+                                                            disabled={selectedSessions.length !== 1 || isViewer}
+                                                            className={isLockedByOther
+                                                                ? "bg-blue-600 hover:bg-blue-700"
+                                                                : "bg-green-600 hover:bg-green-700"}
+                                                        >
+                                                            {isLockedByOther ? (
+                                                                <>
+                                                                    <Eye className="h-4 w-4 mr-1" />
+                                                                    진행상황 보기
+                                                                </>
+                                                            ) : (
+                                                                <>
+                                                                    <Play className="h-4 w-4 mr-1" />
+                                                                    계정 분석 시작
+                                                                </>
+                                                            )}
+                                                        </Button>
+                                                    );
+                                                })()}
                                     </div>
                                 </div>
                             </CardHeader>
@@ -1115,6 +1153,7 @@ function MultiFileUploadPage() {
                                                         />
                                                     </TableHead>
                                                     <TableHead className="w-[180px]">세션명</TableHead>
+                                                    <TableHead className="w-[80px] text-center">편집상태</TableHead>
                                                     <TableHead className="w-[100px]">작업자</TableHead>
                                                     <TableHead className="w-[120px]">대계정</TableHead>
                                                     <TableHead className="w-[100px] text-center">행수</TableHead>
@@ -1186,6 +1225,16 @@ function MultiFileUploadPage() {
                                                                 >
                                                                     {session.sessionName}
                                                                 </div>
+                                                            )}
+                                                        </TableCell>
+                                                        <TableCell className="text-center">
+                                                            {session.isEditing ? (
+                                                                <Badge variant="destructive" className="text-xs gap-1">
+                                                                    <Lock className="h-3 w-3" />
+                                                                    {session.editorUserName || '편집중'}
+                                                                </Badge>
+                                                            ) : (
+                                                                <span className="text-xs text-muted-foreground">-</span>
                                                             )}
                                                         </TableCell>
                                                         <TableCell>

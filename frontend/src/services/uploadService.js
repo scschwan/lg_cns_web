@@ -149,6 +149,54 @@ const uploadService = {
     },
 
     // ============================================
+    // 🔒 세션 편집자 잠금 API
+    // ============================================
+
+    /**
+     * 세션 편집자 잠금 획득
+     * POST /api/projects/{projectId}/upload/sessions/{sessionId}/lock/acquire
+     */
+    acquireSessionLock: async (projectId, sessionId) => {
+        const response = await api.post(
+            `/api/projects/${projectId}/upload/sessions/${sessionId}/lock/acquire`
+        );
+        return response.data;
+    },
+
+    /**
+     * 세션 편집자 하트비트
+     * POST /api/projects/{projectId}/upload/sessions/{sessionId}/lock/heartbeat
+     */
+    sessionHeartbeat: async (projectId, sessionId) => {
+        const response = await api.post(
+            `/api/projects/${projectId}/upload/sessions/${sessionId}/lock/heartbeat`
+        );
+        return response.data;
+    },
+
+    /**
+     * 세션 편집자 잠금 해제
+     * POST /api/projects/{projectId}/upload/sessions/{sessionId}/lock/release
+     */
+    releaseSessionLock: async (projectId, sessionId) => {
+        const response = await api.post(
+            `/api/projects/${projectId}/upload/sessions/${sessionId}/lock/release`
+        );
+        return response.data;
+    },
+
+    /**
+     * 세션 잠금 상태 조회
+     * GET /api/projects/{projectId}/upload/sessions/{sessionId}/lock/status
+     */
+    getSessionLockStatus: async (projectId, sessionId) => {
+        const response = await api.get(
+            `/api/projects/${projectId}/upload/sessions/${sessionId}/lock/status`
+        );
+        return response.data;
+    },
+
+    // ============================================
     // 📋 세션 관리 API
     // ============================================
 

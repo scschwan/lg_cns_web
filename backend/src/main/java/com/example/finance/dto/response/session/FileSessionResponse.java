@@ -71,4 +71,9 @@ public class FileSessionResponse {
     private String supplierColumn;
     private String amountColumn;
     private String targetColumn;
+
+    // 편집자 잠금 정보
+    private Boolean isEditing;
+    private String editorUserId;
+    private String editorUserName;
 }

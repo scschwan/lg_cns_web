@@ -2,9 +2,9 @@
 
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ChevronRight, Home, Trash2, RotateCcw, ChevronDown, ChevronUp } from 'lucide-react';
+import { ChevronRight, Home, Trash2, RotateCcw, ChevronDown, ChevronUp, Lock } from 'lucide-react';
 import uploadService from '../../services/uploadService';
-import useViewerMode from '../../hooks/useViewerMode';
+import { useSessionEditorLock } from '../../hooks/useSessionEditorLock';
 import AdvancedTable from '@/components/AdvancedTable';
 
 // shadcn/ui components
@@ -21,6 +21,7 @@ import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Checkbox } from '@/components/ui/checkbox';
+import { Badge } from '@/components/ui/badge';
 import {
   Select,
   SelectContent,
@@ -149,6 +150,7 @@ function MultiSelectCheckList({ items, checkedSet, onCheckedChange, renderLabel,
 
 export default function StartAnalysisPage() {
   const { projectId, sessionId } = useParams();
+  const { isEditor, editorInfo } = useSessionEditorLock(projectId, sessionId);
   const navigate = useNavigate();
   const { isViewer } = useViewerMode(projectId);
 
@@ -658,6 +660,15 @@ export default function StartAnalysisPage() {
   return (
     <div className="flex flex-col h-full bg-gray-50 overflow-hidden">
       <div className="container mx-auto px-4 py-4 h-full flex flex-col min-h-0 max-w-[98vw]">
+
+        {!isEditor && (
+            <div className="mb-4 px-4 py-3 rounded-lg bg-amber-50 border border-amber-200 flex items-center gap-2">
+                <Lock className="h-4 w-4 text-amber-600" />
+                <span className="text-sm font-medium text-amber-700">
+                    뷰어 모드 - {editorInfo?.editorUserName || '다른 사용자'}님이 편집 중입니다
+                </span>
+            </div>
+        )}
 
         {/* 상단 헤더 (고정) */}
         <div className="flex-shrink-0 space-y-4 mb-4">

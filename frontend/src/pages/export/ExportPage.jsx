@@ -4,8 +4,9 @@ import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom';
 import {
   ChevronRight, ChevronDown, Home, Download, Trash2, Eye, RefreshCw,
-  CheckSquare, Square, Edit3, Save, X, ExternalLink, AlertTriangle
+  CheckSquare, Square, Edit3, Save, X, ExternalLink, AlertTriangle, Lock
 } from 'lucide-react';
+import { useSessionEditorLock } from '../../hooks/useSessionEditorLock';
 
 // shadcn/ui components
 import { Breadcrumb, BreadcrumbItem, BreadcrumbLink, BreadcrumbList, BreadcrumbPage, BreadcrumbSeparator } from '@/components/ui/breadcrumb';
@@ -122,6 +123,7 @@ function MultiSelectCheckList({ items, checkedSet, onCheckedChange, renderLabel,
 
 function ExportPage() {
   const { projectId, sessionId } = useParams();
+  const { isEditor, editorInfo } = useSessionEditorLock(projectId, sessionId);
   const navigate = useNavigate();
   const { isViewer } = useViewerMode(projectId);
 
@@ -571,6 +573,15 @@ function ExportPage() {
   return (
     <div className="flex flex-col h-full bg-gray-50 overflow-hidden">
       <div className="container mx-auto px-4 py-4 h-full flex flex-col min-h-0 max-w-[98vw]">
+
+        {!isEditor && (
+            <div className="mb-4 px-4 py-3 rounded-lg bg-amber-50 border border-amber-200 flex items-center gap-2">
+                <Lock className="h-4 w-4 text-amber-600" />
+                <span className="text-sm font-medium text-amber-700">
+                    뷰어 모드 - {editorInfo?.editorUserName || '다른 사용자'}님이 편집 중입니다
+                </span>
+            </div>
+        )}
 
         {/* 상단 헤더 */}
         <div className="flex-shrink-0 space-y-3 mb-4">

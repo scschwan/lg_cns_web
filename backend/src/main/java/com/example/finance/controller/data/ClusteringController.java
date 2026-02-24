@@ -143,6 +143,42 @@ public class ClusteringController {
         return ResponseEntity.ok(clusteringService.mergeClusters(sessionId, clusterNumbers));
     }
 
+    @PostMapping("/merge/start")
+    public ResponseEntity<Map<String, Object>> mergeStart(
+            @PathVariable String projectId,
+            @PathVariable String sessionId,
+            @CurrentUser UserPrincipal userPrincipal) {
+
+        projectService.getProject(projectId, userPrincipal.getId());
+        return ResponseEntity.ok(clusteringService.mergeStart(sessionId));
+    }
+
+    @PostMapping("/merge/batch")
+    public ResponseEntity<Map<String, Object>> mergeBatch(
+            @PathVariable String projectId,
+            @PathVariable String sessionId,
+            @RequestBody Map<String, Object> body,
+            @CurrentUser UserPrincipal userPrincipal) {
+
+        projectService.getProject(projectId, userPrincipal.getId());
+        Integer mergedClusterNumber = ((Number) body.get("mergedClusterNumber")).intValue();
+        @SuppressWarnings("unchecked")
+        List<Integer> clusterNumbers = (List<Integer>) body.get("clusterNumbers");
+        return ResponseEntity.ok(clusteringService.mergeBatch(sessionId, mergedClusterNumber, clusterNumbers));
+    }
+
+    @PostMapping("/merge/finalize")
+    public ResponseEntity<Map<String, Object>> mergeFinalize(
+            @PathVariable String projectId,
+            @PathVariable String sessionId,
+            @RequestBody Map<String, Object> body,
+            @CurrentUser UserPrincipal userPrincipal) {
+
+        projectService.getProject(projectId, userPrincipal.getId());
+        Integer mergedClusterNumber = ((Number) body.get("mergedClusterNumber")).intValue();
+        return ResponseEntity.ok(clusteringService.mergeFinalize(sessionId, mergedClusterNumber));
+    }
+
     @GetMapping("/merge/progress/{taskId}")
     public ResponseEntity<Map<String, Object>> getMergeProgress(
             @PathVariable String projectId,

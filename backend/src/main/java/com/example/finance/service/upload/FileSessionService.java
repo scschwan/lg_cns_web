@@ -28,6 +28,7 @@ import com.example.finance.repository.costreduction.CostReductionDashboardReposi
 import com.example.finance.repository.project.ProjectRepository;
 import com.example.finance.repository.session.FileSessionRepository;
 import com.example.finance.repository.upload.UploadSessionRepository;
+import com.example.finance.service.common.RedisService;
 import com.example.finance.service.common.S3Service;
 import com.example.finance.service.data.SessionDataService;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -80,6 +81,7 @@ public class FileSessionService {
     private final TaskDocumentRepository taskDocumentRepository;
     private final CostReductionDashboardRepository costReductionDashboardRepository;
     private final S3Service s3Service;
+    private final RedisService redisService;
 
     // 클래스 상단에 추가
     private final MongoTemplate mongoTemplate;
@@ -92,8 +94,152 @@ public class FileSessionService {
             "S3_BUCKET_NAME", "finance-excel-uploads"
     );
 
+    // ===== 세션 편집자 잠금 설정 =====
+    private static final String SESSION_LOCK_KEY_PREFIX = "session:lock:";
+    private static final Duration SESSION_LOCK_TTL = Duration.ofSeconds(60);
+
     @Value("${aws.sqs.excel-queue-url}")
     private String sqsQueueUrl;
+
+    // ========================================================================
+    // ===== 세션 편집자 잠금 (Redis + MongoDB 이중 관리) =====
+    // ========================================================================
+
+    /**
+     * 세션 편집자 잠금 획득 (Redis SET NX + MongoDB 저장)
+     * 대시보드 잠금 정책과 동일한 패턴 적용
+     */
+    public Map<String, Object> acquireSessionLock(String sessionId, String userId, String userName) {
+        String lockKey = SESSION_LOCK_KEY_PREFIX + sessionId;
+
+        // Redis SET NX 시도 (키가 없을 때만 설정)
+        Boolean acquired = redisService.setIfAbsent(lockKey, userId, SESSION_LOCK_TTL);
+
+        if (Boolean.TRUE.equals(acquired)) {
+            // 잠금 획득 성공 → MongoDB에도 편집자 정보 저장
+            fileSessionRepository.findBySessionId(sessionId).ifPresent(session -> {
+                session.setEditorUserId(userId);
+                session.setEditorUserName(userName);
+                session.setEditorAcquiredAt(LocalDateTime.now());
+                session.setEditorHeartbeatAt(LocalDateTime.now());
+                session.setUpdatedAt(LocalDateTime.now());
+                fileSessionRepository.save(session);
+            });
+
+            log.info("[SESSION-LOCK] 잠금 획득: sessionId={}, userId={}", sessionId, userId);
+            Map<String, Object> result = new HashMap<>();
+            result.put("isEditor", true);
+            result.put("editorUserId", userId);
+            result.put("editorUserName", userName);
+            return result;
+        }
+
+        // 이미 잠금이 있음 → 현재 편집자가 본인인지 확인
+        Object currentEditor = redisService.get(lockKey);
+        if (userId.equals(currentEditor)) {
+            // 본인이 이미 편집자 → TTL 갱신
+            redisService.expire(lockKey, SESSION_LOCK_TTL);
+            log.debug("[SESSION-LOCK] TTL 갱신 (본인): sessionId={}, userId={}", sessionId, userId);
+            Map<String, Object> result = new HashMap<>();
+            result.put("isEditor", true);
+            result.put("editorUserId", userId);
+            result.put("editorUserName", userName);
+            return result;
+        }
+
+        // 다른 사람이 편집자
+        FileSession session = fileSessionRepository.findBySessionId(sessionId).orElse(null);
+        log.info("[SESSION-LOCK] 잠금 거부: sessionId={}, requestor={}, currentEditor={}",
+                sessionId, userId, currentEditor);
+        Map<String, Object> result = new HashMap<>();
+        result.put("isEditor", false);
+        result.put("editorUserId", session != null ? session.getEditorUserId() : String.valueOf(currentEditor));
+        result.put("editorUserName", session != null ? session.getEditorUserName() : null);
+        return result;
+    }
+
+    /**
+     * 세션 편집자 하트비트 (Redis TTL 갱신 + MongoDB 하트비트 시간 업데이트)
+     */
+    public void sessionHeartbeat(String sessionId, String userId) {
+        String lockKey = SESSION_LOCK_KEY_PREFIX + sessionId;
+        Object currentEditor = redisService.get(lockKey);
+
+        if (userId.equals(currentEditor)) {
+            redisService.expire(lockKey, SESSION_LOCK_TTL);
+
+            fileSessionRepository.findBySessionId(sessionId).ifPresent(session -> {
+                session.setEditorHeartbeatAt(LocalDateTime.now());
+                session.setUpdatedAt(LocalDateTime.now());
+                fileSessionRepository.save(session);
+            });
+        } else {
+            log.warn("[SESSION-LOCK] 비편집자 하트비트: sessionId={}, userId={}", sessionId, userId);
+        }
+    }
+
+    /**
+     * 세션 편집자 잠금 해제 (Redis DEL + MongoDB 편집자 정보 삭제)
+     */
+    public void releaseSessionLock(String sessionId, String userId) {
+        String lockKey = SESSION_LOCK_KEY_PREFIX + sessionId;
+        Object currentEditor = redisService.get(lockKey);
+
+        if (userId.equals(currentEditor)) {
+            redisService.delete(lockKey);
+
+            fileSessionRepository.findBySessionId(sessionId).ifPresent(session -> {
+                session.setEditorUserId(null);
+                session.setEditorUserName(null);
+                session.setEditorAcquiredAt(null);
+                session.setEditorHeartbeatAt(null);
+                session.setUpdatedAt(LocalDateTime.now());
+                fileSessionRepository.save(session);
+            });
+
+            log.info("[SESSION-LOCK] 잠금 해제: sessionId={}, userId={}", sessionId, userId);
+        }
+    }
+
+    /**
+     * 세션 잠금 상태 확인 (세션 목록 등에서 사용)
+     */
+    public Map<String, Object> getSessionLockStatus(String sessionId, String userId) {
+        String lockKey = SESSION_LOCK_KEY_PREFIX + sessionId;
+        Object currentEditor = redisService.get(lockKey);
+        boolean isLocked = currentEditor != null;
+        boolean isEditor = userId.equals(currentEditor);
+
+        FileSession session = fileSessionRepository.findBySessionId(sessionId).orElse(null);
+
+        Map<String, Object> result = new HashMap<>();
+        result.put("isLocked", isLocked);
+        result.put("isEditor", isEditor);
+        result.put("editorUserId", isLocked ? String.valueOf(currentEditor) :
+                (session != null ? session.getEditorUserId() : null));
+        result.put("editorUserName", isLocked && session != null ? session.getEditorUserName() : null);
+        return result;
+    }
+
+    /**
+     * 세션의 편집 잠금 상태를 Redis 기준으로 확인하여 응답에 추가
+     */
+    private void populateLockInfo(FileSessionResponse response, String sessionId) {
+        String lockKey = SESSION_LOCK_KEY_PREFIX + sessionId;
+        Object currentEditor = redisService.get(lockKey);
+
+        if (currentEditor != null) {
+            response.setIsEditing(true);
+            response.setEditorUserId(String.valueOf(currentEditor));
+            // MongoDB에서 편집자명 조회
+            FileSession session = fileSessionRepository.findBySessionId(sessionId).orElse(null);
+            response.setEditorUserName(session != null ? session.getEditorUserName() : null);
+        } else {
+            response.setIsEditing(false);
+            response.setEditorUserId(null);
+            response.setEditorUserName(null);
+        }
+    }
 
     /**
      * 세션 완료 처리 (계정 분석 시작)
@@ -574,6 +720,8 @@ public class FileSessionService {
                         long sessionDataCount = sessionDataRepository.countBySessionId(s.getSessionId());
                         response.setAnalysisStatus(sessionDataCount > 0 ? "진행중" : "시작전");
                     }
+                    // 편집자 잠금 정보 추가
+                    populateLockInfo(response, s.getSessionId());
                     return response;
                 })
                 .collect(Collectors.toList());
@@ -607,7 +755,10 @@ public class FileSessionService {
         fileSession.setLastAccessedAt(LocalDateTime.now());
         fileSessionRepository.save(fileSession);
 
-        return toFileSessionResponseWithDetails(fileSession);
+        FileSessionResponse response = toFileSessionResponseWithDetails(fileSession);
+        // 편집자 잠금 정보 추가
+        populateLockInfo(response, sessionId);
+        return response;
     }
 
     /**
@@ -896,6 +1047,9 @@ public class FileSessionService {
         if (!isMember) {
             throw new RuntimeException("세션을 삭제할 권한이 없습니다");
         }
+
+        // ★ Redis 세션 잠금 정리
+        redisService.delete(SESSION_LOCK_KEY_PREFIX + sessionId);
 
         // ★ 전체 cascade 삭제
         cascadeDeleteSessionData(sessionId, fileSession.getProjectId());
@@ -1340,6 +1494,9 @@ public class FileSessionService {
             if (!session.getProjectId().equals(projectId)) {
                 throw new BusinessException("FORBIDDEN", "프로젝트 세션이 아닙니다");
             }
+
+            // ★ Redis 세션 잠금 정리
+            redisService.delete(SESSION_LOCK_KEY_PREFIX + sessionId);
 
             // ★ 전체 cascade 삭제
             cascadeDeleteSessionData(sessionId, projectId);

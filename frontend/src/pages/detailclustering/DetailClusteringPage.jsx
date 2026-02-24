@@ -3,8 +3,9 @@ import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import {
   ChevronRight, ChevronDown, Home, GitMerge, Eye, Edit2, Trash2, Plus,
   Loader2, Search, RefreshCw, ArrowUpDown, ArrowUp, ArrowDown,
-  X, Folder, FolderOpen, Tag,
+  X, Folder, FolderOpen, Tag, Lock,
 } from 'lucide-react';
+import { useSessionEditorLock } from '../../hooks/useSessionEditorLock';
 import {
   Breadcrumb, BreadcrumbItem, BreadcrumbLink, BreadcrumbList,
   BreadcrumbPage, BreadcrumbSeparator,
@@ -122,7 +123,7 @@ function StatsListView({
             <div className="text-right text-xs tabular-nums">{(item.count || 0).toLocaleString()}</div>
             <div className="text-right text-xs tabular-nums">{formatAmount(item.totalAmount || 0)}</div>
             {onDetail && (
-              <Button variant="ghost" size="sm" className="h-5 px-1.5 text-[10px] text-blue-600 hover:text-blue-800 hover:bg-blue-100"
+              <Button variant="ghost" size="sm" className="h-5 px-1.5 text-[10px] text-blue-600 hover:text-blue-800 hover:bg-blue-100"https://github.com/scschwan/lg_cns_web/pull/160/conflict?name=frontend%252Fsrc%252Fpages%252FstartAnalysis%252FStartAnalysisPage.jsx&ancestor_oid=942885113f33963136484ffd7ee288365b11cfa1&base_oid=11e35a21b14b5699fe1617ac01cf0e7d6f4dca6b&head_oid=08b62fe56e3048674b135eb4466f05261fe83474
                 onMouseDown={e => e.stopPropagation()} onClick={e => { e.stopPropagation(); onDetail(key); }}>자세히</Button>
             )}
           </div>
@@ -137,7 +138,7 @@ function StatsListView({
    ============================================================ */
 function DetailClusteringPage() {
   const { projectId, sessionId } = useParams();
-  const { isViewer } = useViewerMode(projectId);
+  const { isEditor, editorInfo } = useSessionEditorLock(projectId, sessionId);
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const clusterId = parseInt(searchParams.get('clusterId'), 10);
@@ -626,6 +627,16 @@ function DetailClusteringPage() {
   return (
     <div className="flex flex-col h-full bg-gray-50 overflow-hidden">
       <div className="container mx-auto px-4 py-4 h-full flex flex-col min-h-0 max-w-[98vw]">
+
+        {!isEditor && (
+            <div className="mb-4 px-4 py-3 rounded-lg bg-amber-50 border border-amber-200 flex items-center gap-2">
+                <Lock className="h-4 w-4 text-amber-600" />
+                <span className="text-sm font-medium text-amber-700">
+                    뷰어 모드 - {editorInfo?.editorUserName || '다른 사용자'}님이 편집 중입니다
+                </span>
+            </div>
+        )}
+
         <div className="flex-shrink-0 space-y-4 mb-4">
           <Breadcrumb><BreadcrumbList>
             <BreadcrumbItem><BreadcrumbLink href="/projects"><Home className="h-4 w-4" /></BreadcrumbLink></BreadcrumbItem>
