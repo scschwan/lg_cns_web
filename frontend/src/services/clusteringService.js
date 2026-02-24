@@ -81,6 +81,32 @@ const clusteringService = {
         return response.data;
     },
 
+    /** 3-Phase 배치 병합: Phase 1 - 빈 부모 생성 */
+    mergeStart: async (projectId, sessionId) => {
+        const response = await api.post(
+            `/api/projects/${projectId}/sessions/${sessionId}/clustering/merge/start`
+        );
+        return response.data;
+    },
+
+    /** 3-Phase 배치 병합: Phase 2 - 배치 단위 자식 편입 */
+    mergeBatch: async (projectId, sessionId, mergedClusterNumber, clusterNumbers) => {
+        const response = await api.post(
+            `/api/projects/${projectId}/sessions/${sessionId}/clustering/merge/batch`,
+            { mergedClusterNumber, clusterNumbers }
+        );
+        return response.data;
+    },
+
+    /** 3-Phase 배치 병합: Phase 3 - 부모 재계산 */
+    mergeFinalize: async (projectId, sessionId, mergedClusterNumber) => {
+        const response = await api.post(
+            `/api/projects/${projectId}/sessions/${sessionId}/clustering/merge/finalize`,
+            { mergedClusterNumber }
+        );
+        return response.data;
+    },
+
     getMergeProgress: async (projectId, sessionId, taskId) => {
         const response = await api.get(
             `/api/projects/${projectId}/sessions/${sessionId}/clustering/merge/progress/${taskId}`
