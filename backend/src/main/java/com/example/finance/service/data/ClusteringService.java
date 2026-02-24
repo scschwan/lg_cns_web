@@ -561,16 +561,25 @@ public class ClusteringService {
     // 7. 클러스터 병합
     // ============================================================
 
+    private static final int BATCH_CHUNK_SIZE = 500;
+
     public Map<String, Object> mergeClusters(String sessionId, List<Integer> clusterNumbers) {
-        log.info("클러스터 병합: sessionId={}, clusterNumbers={}", sessionId, clusterNumbers);
+        log.info("클러스터 병합: sessionId={}, count={}", sessionId,
+                clusterNumbers == null ? 0 : clusterNumbers.size());
         clusterStatisticsService.cancelSessionCompletionIfNeeded(sessionId);
 
         if (clusterNumbers == null || clusterNumbers.size() < 2) {
             throw new BusinessException("MERGE_MIN_COUNT", "병합하려면 2개 이상의 클러스터를 선택해야 합니다.");
         }
 
-        List<ClusteringResult> targets = clusteringResultRepository
-                .findBySessionIdAndClusterNumberIn(sessionId, clusterNumbers);
+        // ★ 대량 처리: $in 쿼리를 BATCH_CHUNK_SIZE 단위로 분할 조회
+        List<ClusteringResult> targets = new ArrayList<>();
+        for (int i = 0; i < clusterNumbers.size(); i += BATCH_CHUNK_SIZE) {
+            List<Integer> chunk = clusterNumbers.subList(i,
+                    Math.min(i + BATCH_CHUNK_SIZE, clusterNumbers.size()));
+            targets.addAll(clusteringResultRepository
+                    .findBySessionIdAndClusterNumberIn(sessionId, chunk));
+        }
 
         if (targets.size() != clusterNumbers.size()) {
             throw new BusinessException("CLUSTER_NOT_FOUND", "일부 클러스터를 찾을 수 없습니다.");
@@ -590,11 +599,26 @@ public class ClusteringService {
         int totalCount = 0;
         double totalAmount = 0;
 
+        // ★ 16MB 문서 제한 방지: dataIndices 누적 크기 제한 (~12MB 상한)
+        long estimatedDataIndicesBytes = 0;
+        boolean dataIndicesTruncated = false;
+
         for (ClusteringResult target : targets) {
             allKeywords.addAll(target.getKeywords());
-            allDataIndices.addAll(target.getDataIndices());
             totalCount += target.getCount();
             totalAmount += target.getTotalAmount();
+
+            if (!dataIndicesTruncated && target.getDataIndices() != null) {
+                long chunkBytes = target.getDataIndices().size() * 40L; // UUID(~36) + overhead
+                if (estimatedDataIndicesBytes + chunkBytes > 12_000_000L) {
+                    dataIndicesTruncated = true;
+                    log.warn("병합 문서 dataIndices 크기 제한 도달 (현재 {}건, ~{}MB), 이후 자식 데이터는 생략",
+                            allDataIndices.size(), estimatedDataIndicesBytes / 1_000_000);
+                } else {
+                    allDataIndices.addAll(target.getDataIndices());
+                    estimatedDataIndicesBytes += chunkBytes;
+                }
+            }
         }
 
         String mergedName = String.join("_", allKeywords);
@@ -615,17 +639,22 @@ public class ClusteringService {
 
         clusteringResultRepository.save(merged);
 
-        // ★ 최적화: saveAll(개별 save) → updateMulti 단일 쿼리로 자식 cluster_id 일괄 업데이트
+        // ★ 대량 처리: updateMulti도 BATCH_CHUNK_SIZE 단위로 분할
         List<Integer> targetNumbers = targets.stream()
                 .map(ClusteringResult::getClusterNumber)
                 .collect(Collectors.toList());
-        mongoTemplate.updateMulti(
-                new Query(Criteria.where("session_id").is(sessionId)
-                        .and("cluster_number").in(targetNumbers)),
-                new Update().set("cluster_id", newClusterNumber),
-                "clustering_results");
+        for (int i = 0; i < targetNumbers.size(); i += BATCH_CHUNK_SIZE) {
+            List<Integer> chunk = targetNumbers.subList(i,
+                    Math.min(i + BATCH_CHUNK_SIZE, targetNumbers.size()));
+            mongoTemplate.updateMulti(
+                    new Query(Criteria.where("session_id").is(sessionId)
+                            .and("cluster_number").in(chunk)),
+                    new Update().set("cluster_id", newClusterNumber),
+                    "clustering_results");
+        }
 
-        log.info("클러스터 병합 완료: #{}, {}개 합침", newClusterNumber, targets.size());
+        log.info("클러스터 병합 완료: #{}, {}개 합침{}", newClusterNumber, targets.size(),
+                dataIndicesTruncated ? " (dataIndices 일부 생략)" : "");
 
         Map<String, Object> result = new HashMap<>();
         result.put("mergedClusterNumber", newClusterNumber);
