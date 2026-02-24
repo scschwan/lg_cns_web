@@ -127,6 +127,17 @@ public class ClusteringController {
             @CurrentUser UserPrincipal userPrincipal) {
 
         projectService.getProject(projectId, userPrincipal.getId());
+
+        // ★ selectAll 필터 방식: POST body 크기를 줄이기 위해 백엔드에서 번호 해석
+        if (Boolean.TRUE.equals(body.get("selectAll"))) {
+            @SuppressWarnings("unchecked")
+            List<Integer> exceptions = (List<Integer>) body.get("exceptions");
+            String keyword = (String) body.get("keyword");
+            String supplier = (String) body.get("supplier");
+            return ResponseEntity.ok(
+                    clusteringService.mergeClustersWithFilter(sessionId, exceptions, keyword, supplier));
+        }
+
         @SuppressWarnings("unchecked")
         List<Integer> clusterNumbers = (List<Integer>) body.get("clusterNumbers");
         return ResponseEntity.ok(clusteringService.mergeClusters(sessionId, clusterNumbers));

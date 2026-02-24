@@ -528,9 +528,9 @@ public class ExportService {
         for (ClusteringResult cluster : clusters) {
             Row row = sheet.createRow(rowNum++);
             row.createCell(0).setCellValue(cluster.getClusterNumber());
-            row.createCell(1).setCellValue(cluster.getClusterName() != null ? cluster.getClusterName() : "");
+            row.createCell(1).setCellValue(truncateText(cluster.getClusterName()));
             row.createCell(2).setCellValue("-"); // 세부클러스터명
-            row.createCell(3).setCellValue(String.join(", ", cluster.getKeywords() != null ? cluster.getKeywords() : Collections.emptyList()));
+            row.createCell(3).setCellValue(truncateText(String.join(", ", cluster.getKeywords() != null ? cluster.getKeywords() : Collections.emptyList())));
             row.createCell(4).setCellValue(cluster.getCount() != null ? cluster.getCount() : 0);
             row.createCell(5).setCellValue(cluster.getTotalAmount() != null ? cluster.getTotalAmount() : 0.0);
         }
@@ -572,7 +572,7 @@ public class ExportService {
                 Row row = sheet.createRow(rowNum++);
 
                 // 클러스터명
-                row.createCell(0).setCellValue(cluster.getClusterName() != null ? cluster.getClusterName() : "");
+                row.createCell(0).setCellValue(truncateText(cluster.getClusterName()));
                 // 세부클러스터명
                 row.createCell(1).setCellValue("-");
 
@@ -719,6 +719,14 @@ public class ExportService {
         return style;
     }
 
+    private static final int MAX_CELL_TEXT_LENGTH = 100;
+
+    private String truncateText(String text) {
+        if (text == null) return "";
+        if (text.length() > MAX_CELL_TEXT_LENGTH) return text.substring(0, MAX_CELL_TEXT_LENGTH) + "...";
+        return text;
+    }
+
     private void setCellValue(Cell cell, Object value) {
         if (value == null) {
             cell.setCellValue("");
@@ -727,7 +735,11 @@ public class ExportService {
         } else if (value instanceof Boolean) {
             cell.setCellValue((Boolean) value);
         } else {
-            cell.setCellValue(value.toString());
+            String text = value.toString();
+            if (text.length() > MAX_CELL_TEXT_LENGTH) {
+                text = text.substring(0, MAX_CELL_TEXT_LENGTH) + "...";
+            }
+            cell.setCellValue(text);
         }
     }
 

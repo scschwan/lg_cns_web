@@ -129,6 +129,7 @@ public class ClusteringService {
             String supplierVal = includeSupplier ? first.getString("supplier") : null;
             String deptVal = includeCostCenter ? first.getString("department") : null;
             String clusterName = keywords.isEmpty() ? "(키워드 없음)" : String.join("_", keywords);
+            if (clusterName.length() > 100) clusterName = clusterName.substring(0, 100) + "...";
 
             clusters.add(ClusteringResult.builder()
                     .sessionId(sessionId)
@@ -592,13 +593,34 @@ public class ClusteringService {
     }
 
     /**
+     * selectAll 필터 방식 병합: POST body 크기를 줄이기 위해
+     * 백엔드에서 직접 클러스터 번호를 해석한다.
+     */
+    public Map<String, Object> mergeClustersWithFilter(String sessionId, List<Integer> exceptions,
+                                                        String keyword, String supplier) {
+        log.info("클러스터 병합(selectAll): sessionId={}, exceptions={}, keyword={}, supplier={}",
+                sessionId, exceptions != null ? exceptions.size() : 0, keyword, supplier);
+
+        List<Integer> allNumbers = getAllUnmergedClusterNumbers(sessionId, keyword, supplier);
+        if (exceptions != null && !exceptions.isEmpty()) {
+            Set<Integer> excSet = new HashSet<>(exceptions);
+            allNumbers = allNumbers.stream().filter(n -> !excSet.contains(n)).collect(Collectors.toList());
+        }
+
+        log.info("클러스터 병합(selectAll): 해석된 클러스터 수={}", allNumbers.size());
+        return mergeClusters(sessionId, allNumbers);
+    }
+
+    /**
      * 병합: 소량이면 동기, 대량이면 비동기(taskId 반환)
      */
     public Map<String, Object> mergeClusters(String sessionId, List<Integer> clusterNumbers) {
-        log.info("클러스터 병합: sessionId={}, count={}", sessionId,
+        log.info("[MERGE] 시작: sessionId={}, count={}", sessionId,
                 clusterNumbers == null ? 0 : clusterNumbers.size());
 
         if (clusterNumbers == null || clusterNumbers.size() < 2) {
+            log.warn("[MERGE] 실패: 클러스터 수 부족 (count={})",
+                    clusterNumbers == null ? 0 : clusterNumbers.size());
             throw new BusinessException("MERGE_MIN_COUNT", "병합하려면 2개 이상의 클러스터를 선택해야 합니다.");
         }
 
@@ -607,6 +629,7 @@ public class ClusteringService {
             String taskId = UUID.randomUUID().toString();
             MergeProgress progress = new MergeProgress();
             mergeProgressMap.put(taskId, progress);
+            log.info("[MERGE] 비동기 시작: taskId={}, count={}", taskId, clusterNumbers.size());
             EXECUTOR.submit(() -> {
                 try {
                     Map<String, Object> result = doMergeClusters(sessionId, clusterNumbers, progress);
@@ -614,8 +637,9 @@ public class ClusteringService {
                     progress.progress = 100;
                     progress.message = "병합 완료";
                     progress.status = "COMPLETED";
+                    log.info("[MERGE] 비동기 완료: taskId={}, result={}", taskId, result);
                 } catch (Exception e) {
-                    log.error("비동기 병합 실패: sessionId={}", sessionId, e);
+                    log.error("[MERGE] 비동기 실패: taskId={}, sessionId={}", taskId, sessionId, e);
                     progress.message = e.getMessage();
                     progress.status = "FAILED";
                 }
@@ -624,17 +648,22 @@ public class ClusteringService {
         }
 
         // 소량 → 동기 처리
+        log.info("[MERGE] 동기 처리: count={}", clusterNumbers.size());
         return doMergeClusters(sessionId, clusterNumbers, null);
     }
 
     private Map<String, Object> doMergeClusters(String sessionId, List<Integer> clusterNumbers,
                                                  MergeProgress progress) {
+        long startTime = System.currentTimeMillis();
+        log.info("[MERGE-EXEC] 실행 시작: sessionId={}, count={}", sessionId, clusterNumbers.size());
         clusterStatisticsService.cancelSessionCompletionIfNeeded(sessionId);
 
         int totalSize = clusterNumbers.size();
         updateProgress(progress, 1, "클러스터 조회 중... (0/" + totalSize + ")");
 
         // ★ Phase 1: 병렬 배치 조회 (40%)
+        log.info("[MERGE-EXEC] Phase1 시작: {}건을 {}개 배치로 병렬 조회",
+                totalSize, (totalSize + BATCH_CHUNK_SIZE - 1) / BATCH_CHUNK_SIZE);
         List<List<Integer>> queryChunks = partition(clusterNumbers, BATCH_CHUNK_SIZE);
         List<CompletableFuture<List<ClusteringResult>>> queryFutures = new ArrayList<>();
         for (List<Integer> chunk : queryChunks) {
@@ -650,7 +679,11 @@ public class ClusteringService {
                     "클러스터 조회 중... (" + targets.size() + "/" + totalSize + ")");
         }
 
+        log.info("[MERGE-EXEC] Phase1 완료: {}건 조회됨 ({}ms)",
+                targets.size(), System.currentTimeMillis() - startTime);
+
         if (targets.size() != totalSize) {
+            log.warn("[MERGE-EXEC] 클러스터 수 불일치: 요청={}, 조회={}", totalSize, targets.size());
             throw new BusinessException("CLUSTER_NOT_FOUND",
                     "일부 클러스터를 찾을 수 없습니다. (조회: " + targets.size() + "/" + totalSize + ")");
         }
@@ -663,6 +696,7 @@ public class ClusteringService {
         }
 
         // ★ Phase 2: 집계 (40% → 60%)
+        log.info("[MERGE-EXEC] Phase2 시작: 데이터 집계");
         updateProgress(progress, 40, "데이터 집계 중...");
         int newClusterNumber = getNextClusterNumber(sessionId);
 
@@ -699,9 +733,11 @@ public class ClusteringService {
         }
 
         // ★ Phase 3: 병합 문서 저장 (60% → 65%)
+        log.info("[MERGE-EXEC] Phase3 시작: 병합 문서 저장 (keywords={}, dataIndices={}, totalCount={}, ~{}MB)",
+                allKeywords.size(), allDataIndices.size(), totalCount, estimatedDataIndicesBytes / 1_000_000);
         updateProgress(progress, 60, "병합 클러스터 저장 중...");
         String mergedName = String.join("_", allKeywords);
-        if (mergedName.length() > 30) mergedName = mergedName.substring(0, 30);
+        if (mergedName.length() > 100) mergedName = mergedName.substring(0, 100) + "...";
 
         ClusteringResult merged = ClusteringResult.builder()
                 .sessionId(sessionId)
@@ -717,9 +753,11 @@ public class ClusteringService {
                 .build();
 
         clusteringResultRepository.save(merged);
+        log.info("[MERGE-EXEC] Phase3 완료: #{} 저장됨 ({}ms)", newClusterNumber, System.currentTimeMillis() - startTime);
         updateProgress(progress, 65, "자식 클러스터 업데이트 중...");
 
         // ★ Phase 4: 병렬 배치 업데이트 (65% → 95%)
+        log.info("[MERGE-EXEC] Phase4 시작: 자식 {}건 cluster_id 업데이트", targets.size());
         List<Integer> targetNumbers = targets.stream()
                 .map(ClusteringResult::getClusterNumber)
                 .collect(Collectors.toList());
@@ -743,8 +781,9 @@ public class ClusteringService {
 
         updateProgress(progress, 95, "마무리 중...");
 
-        log.info("클러스터 병합 완료: #{}, {}개 합침{}", newClusterNumber, targets.size(),
-                dataIndicesTruncated ? " (dataIndices 일부 생략)" : "");
+        long elapsed = System.currentTimeMillis() - startTime;
+        log.info("[MERGE-EXEC] 전체 완료: #{}, {}개 합침, {}ms{}", newClusterNumber, targets.size(),
+                elapsed, dataIndicesTruncated ? " (dataIndices 일부 생략)" : "");
 
         Map<String, Object> result = new HashMap<>();
         result.put("mergedClusterNumber", newClusterNumber);
@@ -872,7 +911,7 @@ public class ClusteringService {
             }
             merged.setKeywords(new ArrayList<>(allKeywords));
             String updatedName = String.join("_", allKeywords);
-            if (updatedName.length() > 30) updatedName = updatedName.substring(0, 30);
+            if (updatedName.length() > 100) updatedName = updatedName.substring(0, 100) + "...";
             merged.setClusterName(updatedName);
             merged.setCount(totalCount);
             merged.setTotalAmount(totalAmount);
@@ -933,7 +972,7 @@ public class ClusteringService {
         }
 
         String mergedName = String.join("_", allKeywords);
-        if (mergedName.length() > 30) mergedName = mergedName.substring(0, 30);
+        if (mergedName.length() > 100) mergedName = mergedName.substring(0, 100) + "...";
 
         ClusteringResult newParent = ClusteringResult.builder()
                 .sessionId(sessionId)
@@ -1024,7 +1063,7 @@ public class ClusteringService {
 
         parent.setKeywords(new ArrayList<>(allKeywords));
         String parentName = String.join("_", allKeywords);
-        if (parentName.length() > 30) parentName = parentName.substring(0, 30);
+        if (parentName.length() > 100) parentName = parentName.substring(0, 100) + "...";
         parent.setClusterName(parentName);
         parent.setCount(totalCount);
         parent.setTotalAmount(totalAmount);

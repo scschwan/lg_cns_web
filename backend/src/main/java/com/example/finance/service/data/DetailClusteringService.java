@@ -341,7 +341,7 @@ public class DetailClusteringService {
         }
 
         String mergedName = String.join("_", allKeywords);
-        if (mergedName.length() > 30) mergedName = mergedName.substring(0, 30);
+        if (mergedName.length() > 100) mergedName = mergedName.substring(0, 100) + "...";
 
         // 세부 병합 부모 생성 (cluster_id = clusterId 유지!)
         ClusteringResult merged = ClusteringResult.builder()
@@ -480,7 +480,7 @@ public class DetailClusteringService {
             }
             merged.setKeywords(new ArrayList<>(allKeywords));
             String updatedName = String.join("_", allKeywords);
-            if (updatedName.length() > 30) updatedName = updatedName.substring(0, 30);
+            if (updatedName.length() > 100) updatedName = updatedName.substring(0, 100) + "...";
             merged.setClusterName(updatedName);
             merged.setCount(totalCount);
             merged.setTotalAmount(totalAmount);
@@ -539,7 +539,7 @@ public class DetailClusteringService {
         }
 
         String mergedName = String.join("_", allKeywords);
-        if (mergedName.length() > 30) mergedName = mergedName.substring(0, 30);
+        if (mergedName.length() > 100) mergedName = mergedName.substring(0, 100) + "...";
 
         ClusteringResult newParent = ClusteringResult.builder()
                 .sessionId(sessionId)
@@ -633,7 +633,7 @@ public class DetailClusteringService {
 
         parent.setKeywords(new ArrayList<>(allKeywords));
         String parentName = String.join("_", allKeywords);
-        if (parentName.length() > 30) parentName = parentName.substring(0, 30);
+        if (parentName.length() > 100) parentName = parentName.substring(0, 100) + "...";
         parent.setClusterName(parentName);
         parent.setCount(totalCount);
         parent.setTotalAmount(totalAmount);
