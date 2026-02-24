@@ -5,6 +5,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { ChevronRight, Home, Trash2, RotateCcw, ChevronDown, ChevronUp, Lock } from 'lucide-react';
 import uploadService from '../../services/uploadService';
 import { useSessionEditorLock } from '../../hooks/useSessionEditorLock';
+import useViewerMode from '../../hooks/useViewerMode';
 import AdvancedTable from '@/components/AdvancedTable';
 
 // shadcn/ui components

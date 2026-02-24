@@ -178,6 +178,7 @@ function StatsListView({
 function ClusteringPage() {
   const { projectId, sessionId } = useParams();
   const { isEditor, editorInfo } = useSessionEditorLock(projectId, sessionId);
+  const { isViewer } = useViewerMode(projectId);
   const navigate = useNavigate();
 
   /* ----- 상태 ----- */

@@ -1,10 +1,20 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useAuth } from '../../context/AuthContext';
 import { Button } from '@/components/ui/button';
-import { FileQuestion, Home, ArrowLeft } from 'lucide-react';
+import { FileQuestion, Home, ArrowLeft, LogIn } from 'lucide-react';
 
 function NotFoundPage() {
     const navigate = useNavigate();
+    const { isAuthenticated, loading } = useAuth();
+
+    const handleGoHome = () => {
+        if (isAuthenticated) {
+            navigate('/projects');
+        } else {
+            window.location.href = '/login';
+        }
+    };
 
     return (
         <div className="min-h-screen bg-gray-50 flex items-center justify-center px-4">
@@ -24,9 +34,12 @@ function NotFoundPage() {
                         <ArrowLeft className="h-4 w-4 mr-2" />
                         뒤로 가기
                     </Button>
-                    <Button onClick={() => navigate('/projects')}>
-                        <Home className="h-4 w-4 mr-2" />
-                        프로젝트 목록
+                    <Button onClick={handleGoHome} disabled={loading}>
+                        {isAuthenticated ? (
+                            <><Home className="h-4 w-4 mr-2" />프로젝트 목록</>
+                        ) : (
+                            <><LogIn className="h-4 w-4 mr-2" />로그인</>
+                        )}
                     </Button>
                 </div>
             </div>

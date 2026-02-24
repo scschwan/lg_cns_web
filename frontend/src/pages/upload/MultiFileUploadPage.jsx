@@ -1216,12 +1216,13 @@ function MultiFileUploadPage() {
                                                                     }}
                                                                     className="h-8"
                                                                     autoFocus
+                                                                    disabled={isViewer}
                                                                 />
                                                             ) : (
                                                                 <div
-                                                                    className="cursor-pointer hover:text-primary truncate"
-                                                                    onClick={() => setEditingSession(session.sessionId)}
-                                                                    title="클릭하여 편집"
+                                                                    className={`truncate ${isViewer ? '' : 'cursor-pointer hover:text-primary'}`}
+                                                                    onClick={() => !isViewer && setEditingSession(session.sessionId)}
+                                                                    title={isViewer ? '' : '클릭하여 편집'}
                                                                 >
                                                                     {session.sessionName}
                                                                 </div>
@@ -1260,6 +1261,7 @@ function MultiFileUploadPage() {
                                                                     }
                                                                 }}
                                                                 className="h-8"
+                                                                disabled={isViewer}
                                                             />
                                                         </TableCell>
                                                         <TableCell className="truncate">

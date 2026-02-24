@@ -21,7 +21,8 @@ class ErrorBoundary extends React.Component {
     };
 
     handleGoHome = () => {
-        window.location.href = '/projects';
+        // 세션 상태를 알 수 없으므로 로그인 페이지로 이동 (full reload)
+        window.location.href = '/login';
     };
 
     render() {

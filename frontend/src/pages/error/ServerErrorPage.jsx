@@ -1,12 +1,22 @@
 import React from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
+import { useAuth } from '../../context/AuthContext';
 import { Button } from '@/components/ui/button';
-import { ServerCrash, Home, RotateCcw } from 'lucide-react';
+import { ServerCrash, Home, RotateCcw, LogIn } from 'lucide-react';
 
 function ServerErrorPage() {
     const navigate = useNavigate();
     const location = useLocation();
+    const { isAuthenticated, loading } = useAuth();
     const errorMessage = location.state?.message;
+
+    const handleGoHome = () => {
+        if (isAuthenticated) {
+            navigate('/projects');
+        } else {
+            window.location.href = '/login';
+        }
+    };
 
     return (
         <div className="min-h-screen bg-gray-50 flex items-center justify-center px-4">
@@ -32,9 +42,12 @@ function ServerErrorPage() {
                         <RotateCcw className="h-4 w-4 mr-2" />
                         새로고침
                     </Button>
-                    <Button onClick={() => navigate('/projects')}>
-                        <Home className="h-4 w-4 mr-2" />
-                        프로젝트 목록
+                    <Button onClick={handleGoHome} disabled={loading}>
+                        {isAuthenticated ? (
+                            <><Home className="h-4 w-4 mr-2" />프로젝트 목록</>
+                        ) : (
+                            <><LogIn className="h-4 w-4 mr-2" />로그인</>
+                        )}
                     </Button>
                 </div>
             </div>

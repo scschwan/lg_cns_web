@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { Button } from '@/components/ui/button';
@@ -15,8 +15,15 @@ export default function LoginPage() {
     const [error, setError] = useState('');
     const [loading, setLoading] = useState(false);
 
-    const { login } = useAuth();
+    const { login, isAuthenticated, loading: authLoading, user } = useAuth();
     const navigate = useNavigate();
+
+    // 이미 인증된 사용자는 자동으로 프로젝트 페이지로 리다이렉트
+    useEffect(() => {
+        if (!authLoading && isAuthenticated && user) {
+            navigate(user.role === 'ADMIN' ? '/admin' : '/projects', { replace: true });
+        }
+    }, [authLoading, isAuthenticated, user, navigate]);
 
     const handleSubmit = async (e) => {
         e.preventDefault();
