@@ -1023,6 +1023,7 @@ public class FileSessionService {
                 .updatedAt(session.getUpdatedAt())
                 .lastAccessedAt(session.getLastAccessedAt())
                 .completedAt(session.getCompletedAt())
+                .uploadedFiles(session.getUploadedFiles())
                 .categoryColumn(session.getCategoryColumn())
                 .costCenterColumn(session.getCostCenterColumn())
                 .supplierColumn(session.getSupplierColumn())
