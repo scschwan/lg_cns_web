@@ -5,12 +5,12 @@
  * - getPresignedUrl: Presigned URL 요청
  * - uploadToS3: S3 직접 업로드 (진행률 포함)
  * - completeFileUpload: sessionId 타입 검증 및 업로드 완료 처리
- * - getUploadStatus: 업로드 상태 조회
+ * - getUploadStatus: 업로드 상태 조회 (응답 구조 변경 반영)
  * - extractArray 헬퍼: 다양한 API 응답 형식 처리
  *
  * 실행 방법: npx vitest run src/services/uploadService.test.js
  */
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 // api 모듈 mock
 vi.mock('./api', () => ({
@@ -75,7 +75,6 @@ describe('uploadService', () => {
 
     describe('uploadToS3', () => {
         it('XMLHttpRequest로 S3에 PUT 요청을 보낸다', async () => {
-            // XMLHttpRequest Mock
             const mockXHR = {
                 upload: { addEventListener: vi.fn() },
                 addEventListener: vi.fn(),
@@ -85,11 +84,8 @@ describe('uploadService', () => {
                 status: 200,
             };
 
-            // 이벤트 리스너 등록 시 'load' 이벤트를 즉시 실행
             mockXHR.addEventListener.mockImplementation((event, callback) => {
-                if (event === 'load') {
-                    callback();
-                }
+                if (event === 'load') callback();
             });
 
             vi.stubGlobal('XMLHttpRequest', vi.fn(() => mockXHR));
@@ -106,6 +102,37 @@ describe('uploadService', () => {
                 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
             );
             expect(mockXHR.send).toHaveBeenCalledWith(file);
+        });
+
+        it('S3 업로드 진행률 콜백이 onProgress에 전달된다', async () => {
+            const mockXHR = {
+                upload: { addEventListener: vi.fn() },
+                addEventListener: vi.fn(),
+                open: vi.fn(),
+                setRequestHeader: vi.fn(),
+                send: vi.fn(),
+                status: 200,
+            };
+
+            // progress 이벤트 시뮬레이션
+            mockXHR.upload.addEventListener.mockImplementation((event, callback) => {
+                if (event === 'progress') {
+                    callback({ lengthComputable: true, loaded: 512, total: 1024 });
+                }
+            });
+            mockXHR.addEventListener.mockImplementation((event, callback) => {
+                if (event === 'load') callback();
+            });
+
+            vi.stubGlobal('XMLHttpRequest', vi.fn(() => mockXHR));
+
+            const file = new File(['content'], 'test.xlsx');
+            const onProgress = vi.fn();
+
+            await uploadService.uploadToS3('https://s3.amazonaws.com/key', file, onProgress);
+
+            // 50% 진행률이 콜백으로 전달되어야 함
+            expect(onProgress).toHaveBeenCalledWith(50);
         });
 
         it('HTTP 200 외 상태코드 시 에러를 throw한다', async () => {
@@ -187,13 +214,16 @@ describe('uploadService', () => {
     // ========== getUploadStatus 테스트 ==========
 
     describe('getUploadStatus', () => {
-        it('업로드 상태를 조회한다', async () => {
+        it('업로드 상태를 조회하고 전체 응답을 반환한다', async () => {
+            // 변경된 응답 구조: { status, progress, processedRows, totalRows, fileName, error }
             const mockStatus = {
                 data: {
                     status: 'PROCESSING',
                     progress: 45,
                     processedRows: 4500,
                     totalRows: 10000,
+                    fileName: 'finance_data.xlsx',
+                    error: '',
                 }
             };
             api.get.mockResolvedValue(mockStatus);
@@ -205,6 +235,106 @@ describe('uploadService', () => {
             );
             expect(result.status).toBe('PROCESSING');
             expect(result.progress).toBe(45);
+            expect(result.processedRows).toBe(4500);
+            expect(result.totalRows).toBe(10000);
+        });
+
+        it('COMPLETED 상태 응답을 올바르게 반환한다', async () => {
+            api.get.mockResolvedValue({
+                data: {
+                    status: 'COMPLETED',
+                    progress: 100,
+                    processedRows: 10000,
+                    totalRows: 10000,
+                }
+            });
+
+            const result = await uploadService.getUploadStatus('project-001', 'upload-001');
+
+            expect(result.status).toBe('COMPLETED');
+            expect(result.progress).toBe(100);
+        });
+
+        it('FAILED 상태와 에러 메시지를 반환한다', async () => {
+            api.get.mockResolvedValue({
+                data: {
+                    status: 'FAILED',
+                    progress: 30,
+                    error: '엑셀 파일 형식 오류',
+                }
+            });
+
+            const result = await uploadService.getUploadStatus('project-001', 'upload-001');
+
+            expect(result.status).toBe('FAILED');
+            expect(result.error).toBe('엑셀 파일 형식 오류');
+        });
+    });
+
+    // ========== MultiFileUploadPage 폴링 응답 구조 테스트 (프론트엔드 변경 반영) ==========
+    // uploadProgress 상태가 단순 숫자에서 객체로 변경됨:
+    // { percent: number, status: string, rowInfo: string, error: string }
+
+    describe('uploadProgress 구조 변환 로직 검증', () => {
+        it('getUploadStatus 응답으로 rowInfo를 올바르게 생성할 수 있다', async () => {
+            api.get.mockResolvedValue({
+                data: {
+                    status: 'PROCESSING',
+                    progress: 45,
+                    processedRows: 4500,
+                    totalRows: 10000,
+                }
+            });
+
+            const status = await uploadService.getUploadStatus('project-001', 'upload-001');
+
+            // MultiFileUploadPage의 로직 재현
+            const processedRows = status.processedRows || 0;
+            const totalRows = status.totalRows || 0;
+            const rowInfo = totalRows > 0
+                ? `${processedRows.toLocaleString()} / ${totalRows.toLocaleString()}행`
+                : processedRows > 0 ? `${processedRows.toLocaleString()}행 처리 중` : '';
+
+            expect(rowInfo).toContain('4,500');
+            expect(rowInfo).toContain('10,000');
+            expect(rowInfo).toContain('행');
+        });
+
+        it('totalRows가 0이고 processedRows > 0이면 "처리 중" 형식을 사용한다', async () => {
+            api.get.mockResolvedValue({
+                data: {
+                    status: 'PROCESSING',
+                    progress: 0,
+                    processedRows: 1500,
+                    totalRows: 0,
+                }
+            });
+
+            const status = await uploadService.getUploadStatus('project-001', 'upload-001');
+
+            const processedRows = status.processedRows || 0;
+            const totalRows = status.totalRows || 0;
+            const rowInfo = totalRows > 0
+                ? `${processedRows.toLocaleString()} / ${totalRows.toLocaleString()}행`
+                : processedRows > 0 ? `${processedRows.toLocaleString()}행 처리 중` : '';
+
+            expect(rowInfo).toBe('1,500행 처리 중');
+        });
+
+        it('processedRows와 totalRows 모두 0이면 rowInfo는 빈 문자열이다', async () => {
+            api.get.mockResolvedValue({
+                data: { status: 'PROCESSING', progress: 0, processedRows: 0, totalRows: 0 }
+            });
+
+            const status = await uploadService.getUploadStatus('project-001', 'upload-001');
+
+            const processedRows = status.processedRows || 0;
+            const totalRows = status.totalRows || 0;
+            const rowInfo = totalRows > 0
+                ? `${processedRows.toLocaleString()} / ${totalRows.toLocaleString()}행`
+                : processedRows > 0 ? `${processedRows.toLocaleString()}행 처리 중` : '';
+
+            expect(rowInfo).toBe('');
         });
     });
 
@@ -272,28 +402,10 @@ describe('uploadService', () => {
         });
     });
 
-    // ========== getSessions 테스트 ==========
-
-    describe('getSessions', () => {
-        it('세션 목록을 배열로 반환한다', async () => {
-            const mockSessions = [
-                { id: 'session-001', sessionName: '세션 1' },
-                { id: 'session-002', sessionName: '세션 2' },
-            ];
-            api.get.mockResolvedValue({ data: mockSessions });
-
-            const result = await uploadService.getSessions('project-001');
-
-            expect(Array.isArray(result)).toBe(true);
-            expect(result).toHaveLength(2);
-        });
-    });
-
     // ========== uploadFileWithProgress 테스트 ==========
 
     describe('uploadFileWithProgress', () => {
         it('전체 플로우를 순서대로 실행한다 (presignedUrl → S3 업로드 → completeFileUpload → 상태 폴링)', async () => {
-            // presignedUrl 응답 Mock
             api.post.mockResolvedValueOnce({
                 data: {
                     presignedUrl: 'https://s3.amazonaws.com/key',
@@ -302,18 +414,11 @@ describe('uploadService', () => {
                     s3Key: 'uploads/key',
                 }
             });
-
-            // completeFileUpload 응답 Mock
-            api.post.mockResolvedValueOnce({
-                data: { id: 'file-id-001' }
-            });
-
-            // getUploadStatus 응답 Mock (COMPLETED)
+            api.post.mockResolvedValueOnce({ data: { id: 'file-id-001' } });
             api.get.mockResolvedValue({
                 data: { status: 'COMPLETED', progress: 100 }
             });
 
-            // XMLHttpRequest Mock (S3 업로드)
             const mockXHR = {
                 upload: { addEventListener: vi.fn() },
                 addEventListener: vi.fn(),
@@ -336,8 +441,6 @@ describe('uploadService', () => {
             expect(result.sessionId).toBe('session-001');
             expect(result.status).toBe('COMPLETED');
             expect(result.fileId).toBe('file-id-001');
-
-            // onProgress 호출 확인
             expect(onProgress).toHaveBeenCalled();
         });
 

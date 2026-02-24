@@ -308,9 +308,87 @@ describe('엑셀 업로드 전체 플로우 통합 테스트', () => {
         });
     });
 
-    // ========== 시나리오 6: 세션 진행률 폴링 시나리오 ==========
+    // ========== 시나리오 6: getSessionParsingStatus 신규 API ==========
 
-    describe('시나리오 6: 업로드 상태 폴링 진행률 매핑 검증', () => {
+    describe('시나리오 6: 세션 전체 파싱 상태 폴링 (신규 API)', () => {
+        it('세션의 모든 파일 파싱 완료 시 COMPLETED와 전체 행 수를 반환한다', async () => {
+            api.get.mockResolvedValueOnce({
+                data: {
+                    sessionId: 'session-001',
+                    status: 'COMPLETED',
+                    progress: 100,
+                    totalRows: 15000,
+                    processedRows: 15000,
+                    totalFiles: 2,
+                    completedFiles: 2,
+                    failedFiles: 0,
+                    fileStatuses: [
+                        { fileId: 'file-001', status: 'COMPLETED', totalRows: 10000, processedRows: 10000, progress: 100 },
+                        { fileId: 'file-002', status: 'COMPLETED', totalRows: 5000, processedRows: 5000, progress: 100 },
+                    ],
+                }
+            });
+
+            const result = await api.get('/api/projects/proj-001/upload/sessions/session-001/parsing-status');
+
+            expect(result.data.status).toBe('COMPLETED');
+            expect(result.data.progress).toBe(100);
+            expect(result.data.totalRows).toBe(15000);
+            expect(result.data.completedFiles).toBe(2);
+            expect(result.data.fileStatuses).toHaveLength(2);
+        });
+
+        it('일부 파일 처리 중일 때 PROCESSING과 집계된 진행률을 반환한다', async () => {
+            api.get.mockResolvedValueOnce({
+                data: {
+                    sessionId: 'session-001',
+                    status: 'PROCESSING',
+                    progress: 36,
+                    totalRows: 11000,
+                    processedRows: 4000,
+                    totalFiles: 2,
+                    completedFiles: 1,
+                    failedFiles: 0,
+                    fileStatuses: [
+                        { fileId: 'file-001', status: 'COMPLETED', progress: 100 },
+                        { fileId: 'file-002', status: 'PROCESSING', progress: 30 },
+                    ],
+                }
+            });
+
+            const result = await api.get('/api/projects/proj-001/upload/sessions/session-001/parsing-status');
+
+            expect(result.data.status).toBe('PROCESSING');
+            expect(result.data.progress).toBeGreaterThanOrEqual(30);
+            expect(result.data.progress).toBeLessThanOrEqual(99);
+        });
+
+        it('파일 파싱 실패 시 FAILED 상태를 반환한다', async () => {
+            api.get.mockResolvedValueOnce({
+                data: {
+                    sessionId: 'session-001',
+                    status: 'FAILED',
+                    progress: 50,
+                    totalFiles: 2,
+                    completedFiles: 1,
+                    failedFiles: 1,
+                    fileStatuses: [
+                        { fileId: 'file-001', status: 'COMPLETED', progress: 100 },
+                        { fileId: 'file-002', status: 'FAILED', progress: 0 },
+                    ],
+                }
+            });
+
+            const result = await api.get('/api/projects/proj-001/upload/sessions/session-001/parsing-status');
+
+            expect(result.data.status).toBe('FAILED');
+            expect(result.data.failedFiles).toBe(1);
+        });
+    });
+
+    // ========== 시나리오 7: 업로드 상태 폴링 진행률 매핑 ==========
+
+    describe('시나리오 7: 업로드 상태 폴링 진행률 매핑 검증', () => {
         it('Lambda 진행률 0~100%가 40~100% 범위로 올바르게 매핑된다', async () => {
             api.post.mockResolvedValueOnce({
                 data: {
