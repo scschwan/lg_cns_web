@@ -7,6 +7,7 @@ import preprocessingService from '../../services/preprocessingService';
 import { useSessionEditorLock } from '../../hooks/useSessionEditorLock';
 import uploadService from '../../services/uploadService';
 import AdvancedTable from '@/components/AdvancedTable';
+import useViewerMode from '../../hooks/useViewerMode';
 
 // shadcn/ui components
 import {
@@ -39,7 +40,7 @@ import {
 } from '@/components/ui/table';
 
 // ===== 멀티셀렉트 체크박스 리스트 컴포넌트 (StartAnalysis와 동일) =====
-function MultiSelectCheckList({ items, checkedSet, onCheckedChange, renderLabel, getKey, className = '' }) {
+function MultiSelectCheckList({ items, checkedSet, onCheckedChange, renderLabel, getKey, className = '', disabled = false }) {
   const [cursorSet, setCursorSet] = useState(new Set());
   const [isDragging, setIsDragging] = useState(false);
   const dragStartRef = useRef(null);
@@ -121,6 +122,7 @@ function MultiSelectCheckList({ items, checkedSet, onCheckedChange, renderLabel,
               onCheckedChange={() => handleCheckToggle(key)}
               onMouseDown={(e) => e.stopPropagation()}
               onClick={(e) => e.stopPropagation()}
+              disabled={disabled}
             />
             {renderLabel(item, isChecked)}
           </div>
@@ -134,6 +136,7 @@ function PreprocessingPage() {
   const { projectId, sessionId } = useParams();
   const { isEditor, editorInfo } = useSessionEditorLock(projectId, sessionId);
   const navigate = useNavigate();
+  const { isViewer } = useViewerMode(projectId);
 
   // ===== 상태 관리 =====
   const [sessionInfo, setSessionInfo] = useState({
@@ -558,6 +561,11 @@ function PreprocessingPage() {
                 </div>
               </div>
             </CardHeader>
+            {isViewer && (
+              <div className="mx-4 mb-4 px-3 py-2 bg-amber-50 border border-amber-200 rounded text-xs text-amber-700 font-medium">
+                뷰어 권한: 조회만 가능합니다. 데이터 수정이 불가합니다.
+              </div>
+            )}
           </Card>
         </div>
 
@@ -667,8 +675,9 @@ function PreprocessingPage() {
                       value={newSeparator}
                       onChange={(e) => setNewSeparator(e.target.value)}
                       onKeyDown={(e) => { if (e.key === 'Enter') handleAddSeparator(); }}
+                      disabled={isViewer}
                     />
-                    <Button onClick={handleAddSeparator} className="bg-pink-600 hover:bg-pink-700 h-8 whitespace-nowrap">
+                    <Button onClick={handleAddSeparator} className="bg-pink-600 hover:bg-pink-700 h-8 whitespace-nowrap" disabled={isViewer}>
                       <Plus className="h-3 w-3 mr-1" />추가
                     </Button>
                   </div>
@@ -684,6 +693,7 @@ function PreprocessingPage() {
                             setSeparatorCheckedSet(new Set());
                           }
                         }}
+                        disabled={isViewer}
                       />
                       <span className="text-xs font-semibold">전체 선택</span>
                     </div>
@@ -695,9 +705,10 @@ function PreprocessingPage() {
                       renderLabel={(item) => (
                         <span className="text-xs">{item.value === ' ' ? '(공백)' : item.value}</span>
                       )}
+                      disabled={isViewer}
                     />
                   </div>
-                  <Button variant="outline" size="sm" className="w-full h-8 text-xs text-red-600 hover:text-red-700 hover:bg-red-50" onClick={handleRemoveSeparator}>
+                  <Button variant="outline" size="sm" className="w-full h-8 text-xs text-red-600 hover:text-red-700 hover:bg-red-50" onClick={handleRemoveSeparator} disabled={isViewer}>
                     <Trash2 className="h-3 w-3 mr-1" />선택 항목 제거
                   </Button>
                 </CardContent>
@@ -716,8 +727,9 @@ function PreprocessingPage() {
                       value={newStopword}
                       onChange={(e) => setNewStopword(e.target.value)}
                       onKeyDown={(e) => { if (e.key === 'Enter') handleAddStopword(); }}
+                      disabled={isViewer}
                     />
-                    <Button onClick={handleAddStopword} className="h-8 whitespace-nowrap">
+                    <Button onClick={handleAddStopword} className="h-8 whitespace-nowrap" disabled={isViewer}>
                       <Plus className="h-3 w-3 mr-1" />추가
                     </Button>
                   </div>
@@ -732,6 +744,7 @@ function PreprocessingPage() {
                             setStopwordCheckedSet(new Set());
                           }
                         }}
+                        disabled={isViewer}
                       />
                       <span className="text-xs font-semibold">전체 선택</span>
                     </div>
@@ -743,9 +756,10 @@ function PreprocessingPage() {
                       renderLabel={(item) => (
                         <span className="text-xs">{item.value}</span>
                       )}
+                      disabled={isViewer}
                     />
                   </div>
-                  <Button variant="outline" size="sm" className="w-full h-8 text-xs text-red-600 hover:text-red-700 hover:bg-red-50" onClick={handleRemoveStopword}>
+                  <Button variant="outline" size="sm" className="w-full h-8 text-xs text-red-600 hover:text-red-700 hover:bg-red-50" onClick={handleRemoveStopword} disabled={isViewer}>
                     <Trash2 className="h-3 w-3 mr-1" />선택 항목 제거
                   </Button>
                 </CardContent>
@@ -762,7 +776,7 @@ function PreprocessingPage() {
                     * 체크된 불용어를 제거합니다.
                   </div>
                   <div className="grid grid-cols-2 gap-2">
-                    <Button size="sm" className="h-8" onClick={handleKeywordExtract} disabled={extracting}>
+                    <Button size="sm" className="h-8" onClick={handleKeywordExtract} disabled={extracting || isViewer}>
                       {extracting ? (
                         <div className="flex items-center gap-1">
                           <div className="animate-spin h-3 w-3 border-2 border-white border-t-transparent rounded-full" />
@@ -770,7 +784,7 @@ function PreprocessingPage() {
                         </div>
                       ) : '키워드 추출'}
                     </Button>
-                    <Button size="sm" variant="secondary" className="h-8" onClick={handleRemoveSingleChar} disabled={removingSingle}>
+                    <Button size="sm" variant="secondary" className="h-8" onClick={handleRemoveSingleChar} disabled={removingSingle || isViewer}>
                       {removingSingle ? (
                         <div className="flex items-center gap-1">
                           <div className="animate-spin h-3 w-3 border-2 border-gray-500 border-t-transparent rounded-full" />
@@ -800,6 +814,7 @@ function PreprocessingPage() {
                       min="1"
                       max="10"
                       className="w-16 h-8 text-sm"
+                      disabled={isViewer}
                     />
                     <span className="text-xs text-muted-foreground">글자 이상 키워드 자동 분할</span>
                   </div>
@@ -829,7 +844,7 @@ function PreprocessingPage() {
                         setNlpProgress(0);
                       }
                     }}
-                    disabled={nlpExtracting}
+                    disabled={nlpExtracting || isViewer}
                   >
                     {nlpExtracting ? (
                       <div className="flex items-center gap-1">
@@ -856,6 +871,7 @@ function PreprocessingPage() {
               <Button
                 className="w-full bg-green-600 hover:bg-green-700 text-white shadow-lg h-12 text-base font-semibold"
                 onClick={handleComplete}
+                disabled={isViewer}
               >
                 완료 → Step 4: Transform
               </Button>

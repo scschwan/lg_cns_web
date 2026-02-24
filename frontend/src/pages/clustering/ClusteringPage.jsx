@@ -26,6 +26,7 @@ import { Progress } from '@/components/ui/progress';
 import AdvancedTable from '@/components/AdvancedTable';
 import clusteringService from '@/services/clusteringService';
 import uploadService from '@/services/uploadService';
+import useViewerMode from '../../hooks/useViewerMode';
 
 /* ============================================================
    클러스터명 30자 제한 유틸
@@ -177,6 +178,7 @@ function StatsListView({
 function ClusteringPage() {
   const { projectId, sessionId } = useParams();
   const { isEditor, editorInfo } = useSessionEditorLock(projectId, sessionId);
+  const { isViewer } = useViewerMode(projectId);
   const navigate = useNavigate();
 
   /* ----- 상태 ----- */
@@ -1243,11 +1245,13 @@ function ClusteringPage() {
         headerRender: () => (
           <Checkbox checked={isHeaderChecked}
             ref={el => { if (el) el.indeterminate = isHeaderIndeterminate; }}
-            onCheckedChange={handleHeaderCheck} />
+            onCheckedChange={handleHeaderCheck}
+            disabled={isViewer} />
         ),
         render: (row) => (
           <Checkbox checked={isRowChecked(row.clusterNumber)}
-            onCheckedChange={c => handleRowCheck(row.clusterNumber, c)} />
+            onCheckedChange={c => handleRowCheck(row.clusterNumber, c)}
+            disabled={isViewer} />
         ),
       },
       {
@@ -1279,7 +1283,7 @@ function ClusteringPage() {
       }
     }
     return cols;
-  }, [isHeaderChecked, isHeaderIndeterminate, selectAllMode, exceptions, visibleColumns, amountUnit, formatAmount]);
+  }, [isHeaderChecked, isHeaderIndeterminate, selectAllMode, exceptions, visibleColumns, amountUnit, formatAmount, isViewer]);
 
   /* 상세 다이얼로그 컬럼 (체크박스 + 동적) */
   const detailColumns = useMemo(() => {
@@ -1297,10 +1301,12 @@ function ClusteringPage() {
               if (c) setDetailChecked(new Set(detailChildren.map(ch => ch.clusterNumber)));
               else setDetailChecked(new Set());
             }}
+            disabled={isViewer}
           />
         ),
         render: r => <Checkbox checked={detailChecked.has(r.clusterNumber)}
-          onCheckedChange={c => setDetailChecked(prev => { const n = new Set(prev); c ? n.add(r.clusterNumber) : n.delete(r.clusterNumber); return n; })} />,
+          onCheckedChange={c => setDetailChecked(prev => { const n = new Set(prev); c ? n.add(r.clusterNumber) : n.delete(r.clusterNumber); return n; })}
+          disabled={isViewer} />,
       },
       { key: 'clusterNumber', label: '#', pinned: true, sortable: false, width: 70,
         render: r => <Badge variant="outline" className="text-[10px] font-mono">#{r.clusterNumber}</Badge> },
@@ -1318,7 +1324,7 @@ function ClusteringPage() {
       });
     }
     return cols;
-  }, [detailChildren, detailVisibleCols, detailChecked, amountUnit, formatAmount]);
+  }, [detailChildren, detailVisibleCols, detailChecked, amountUnit, formatAmount, isViewer]);
 
   /* ============================================================
      렌더
@@ -1398,6 +1404,12 @@ function ClusteringPage() {
             </CardContent>
           </Card>
         </div>
+
+        {isViewer && (
+          <div className="px-3 py-2 bg-amber-50 border border-amber-200 rounded text-xs text-amber-700 font-medium mb-4">
+            뷰어 권한: 조회만 가능합니다. 데이터 수정이 불가합니다.
+          </div>
+        )}
 
         {/* 메인 그리드 */}
         <div className="flex-1 min-h-0 grid grid-cols-1 xl:grid-cols-12 gap-4">
@@ -1551,8 +1563,9 @@ function ClusteringPage() {
                         value={newKeywordInput.level === 1 && !newKeywordInput.parentId ? newKeywordInput.value : ''}
                         onChange={e => setNewKeywordInput({ level: 1, parentId: null, value: e.target.value })}
                         onKeyDown={e => e.key === 'Enter' && handleAddKeyword(1, null, newKeywordInput.value)}
+                        disabled={isViewer}
                       />
-                      <Button size="sm" className="h-7 px-2 text-xs" onClick={() => handleAddKeyword(1, null, newKeywordInput.value)}>
+                      <Button size="sm" className="h-7 px-2 text-xs" onClick={() => handleAddKeyword(1, null, newKeywordInput.value)} disabled={isViewer}>
                         <Plus className="h-3 w-3" />
                       </Button>
                       <Button size="sm" variant="ghost" className="h-7 px-2" onClick={loadKeywordHierarchy} disabled={kwHierarchyLoading}>
@@ -1600,6 +1613,7 @@ function ClusteringPage() {
                               size="sm"
                               className="h-5 w-5 p-0 text-red-500"
                               onClick={() => handleDeleteKeyword(lv1.id)}
+                              disabled={isViewer}
                             >
                               <X className="h-3 w-3" />
                             </Button>
@@ -1635,6 +1649,7 @@ function ClusteringPage() {
                                       size="sm"
                                       className="h-4 w-4 p-0 text-red-500"
                                       onClick={() => handleDeleteKeyword(lv2.id)}
+                                      disabled={isViewer}
                                     >
                                       <X className="h-2 w-2" />
                                     </Button>
@@ -1657,6 +1672,7 @@ function ClusteringPage() {
                                             size="sm"
                                             className="h-4 w-4 p-0 text-red-500"
                                             onClick={() => handleDeleteKeyword(lv3.id)}
+                                            disabled={isViewer}
                                           >
                                             <X className="h-2 w-2" />
                                           </Button>
@@ -1683,7 +1699,7 @@ function ClusteringPage() {
                 <div className="flex items-center gap-2 flex-wrap">
                   {/* 병합 버튼 with 프로그레스바 */}
                   <div className="relative">
-                    <Button size="sm" className="h-8 min-w-[120px] relative overflow-hidden" onClick={handleMerge} disabled={selectedCount < 2 || merging || unmerging}>
+                    <Button size="sm" className="h-8 min-w-[120px] relative overflow-hidden" onClick={handleMerge} disabled={selectedCount < 2 || merging || unmerging || isViewer}>
                       {merging && mergingClusters.size === 0 && (
                         <div className="absolute inset-0 bg-blue-300/50 transition-all" style={{ width: `${mergingProgress}%` }} />
                       )}
@@ -1696,7 +1712,7 @@ function ClusteringPage() {
                       </span>
                     </Button>
                   </div>
-                  <Button size="sm" variant="outline" className="h-8" onClick={() => setAddMergeDialog(true)} disabled={selectedCount === 0 || mergedClusters.length === 0 || merging || unmerging}>
+                  <Button size="sm" variant="outline" className="h-8" onClick={() => setAddMergeDialog(true)} disabled={selectedCount === 0 || mergedClusters.length === 0 || merging || unmerging || isViewer}>
                     <Plus className="h-3 w-3 mr-1" />추가 병합
                   </Button>
 
@@ -1769,7 +1785,7 @@ function ClusteringPage() {
                       </CardContent>
                     </Card>
                     <Button className="w-full mt-2 bg-purple-600 hover:bg-purple-700 h-8 text-sm font-semibold flex-shrink-0"
-                      onClick={handleAutoMergeByKeywords} disabled={kwCheckedSet.size === 0 || merging}>
+                      onClick={handleAutoMergeByKeywords} disabled={kwCheckedSet.size === 0 || merging || isViewer}>
                       {merging && <Loader2 className="h-3 w-3 mr-1 animate-spin" />}
                       <GitMerge className="h-3 w-3 mr-1" />선택항목 자동 클러스터링 ({kwCheckedSet.size})
                     </Button>
@@ -1795,7 +1811,7 @@ function ClusteringPage() {
                         </CardContent>
                       </Card>
                       <Button className="w-full mt-2 bg-purple-600 hover:bg-purple-700 h-8 text-sm font-semibold flex-shrink-0"
-                        onClick={handleAutoMergeBySuppliers} disabled={supCheckedSet.size === 0 || merging}>
+                        onClick={handleAutoMergeBySuppliers} disabled={supCheckedSet.size === 0 || merging || isViewer}>
                         {merging && <Loader2 className="h-3 w-3 mr-1 animate-spin" />}
                         <GitMerge className="h-3 w-3 mr-1" />선택항목 자동 클러스터링 ({supCheckedSet.size})
                       </Button>
@@ -1818,7 +1834,7 @@ function ClusteringPage() {
                       {/* 병합 merge 버튼 with 프로그레스바 */}
                       <div className="relative">
                         <Button size="sm" variant="outline" className="h-7 px-2 text-xs min-w-[120px] relative overflow-hidden"
-                          onClick={handleMergeMerged} disabled={selectedMerged.size < 2 || merging}>
+                          onClick={handleMergeMerged} disabled={selectedMerged.size < 2 || merging || isViewer}>
                           {merging && mergingClusters.size > 0 && (
                             <div className="absolute inset-0 bg-blue-100 transition-all"
                               style={{ width: `${mergingProgress}%` }} />
@@ -1835,7 +1851,7 @@ function ClusteringPage() {
                       {/* 해제 버튼 with 프로그레스바 */}
                       <div className="relative">
                         <Button size="sm" variant="outline" className="h-7 px-2 text-xs text-red-600 min-w-[100px] relative overflow-hidden"
-                          onClick={handleBulkUnmerge} disabled={selectedMerged.size === 0 || merging || unmerging}>
+                          onClick={handleBulkUnmerge} disabled={selectedMerged.size === 0 || merging || unmerging || isViewer}>
                           {unmerging && (
                             <div className="absolute inset-0 bg-red-100 transition-all" style={{ width: `${unmergingProgress}%` }} />
                           )}
@@ -1865,7 +1881,7 @@ function ClusteringPage() {
                       <div className="grid grid-cols-[28px_1fr_60px_90px_60px] gap-1 items-center px-2 py-2 border-b bg-gray-100 font-semibold text-muted-foreground sticky top-0 z-10">
                         <Checkbox
                           checked={selectedMerged.size === mergedClusters.length && mergedClusters.length > 0}
-                          disabled={merging && mergingClusters.size > 0}
+                          disabled={(merging && mergingClusters.size > 0) || isViewer}
                           onCheckedChange={c => {
                             if (c) setSelectedMerged(new Set(mergedClusters.map(m => m.clusterNumber)));
                             else setSelectedMerged(new Set());
@@ -1885,7 +1901,7 @@ function ClusteringPage() {
                               ${isMergingThis ? 'bg-yellow-50 opacity-70' : isUnmergingThis ? 'bg-red-50 opacity-70' : selectedMerged.has(c.clusterNumber) ? 'bg-blue-50' : 'hover:bg-muted/50'}`}>
                             <Checkbox
                               checked={selectedMerged.has(c.clusterNumber)}
-                              disabled={isBusy}
+                              disabled={isBusy || isViewer}
                               onCheckedChange={ch => setSelectedMerged(prev => { const n = new Set(prev); ch ? n.add(c.clusterNumber) : n.delete(c.clusterNumber); return n; })} />
                             <div className="min-w-0">
                               <div className="flex items-center gap-1">
@@ -1905,8 +1921,8 @@ function ClusteringPage() {
                             <div className="text-right tabular-nums">{formatAmount(c.totalAmount||0)}</div>
                             <div className="flex items-center justify-center gap-0.5">
                               <Button size="sm" variant="ghost" className="h-6 w-6 p-0" onClick={() => handleOpenDetail(c)} title="상세" disabled={isBusy}><Eye className="h-3 w-3" /></Button>
-                              <Button size="sm" variant="ghost" className="h-6 w-6 p-0" onClick={() => handleOpenRename(c)} title="이름변경" disabled={isBusy}><Edit2 className="h-3 w-3" /></Button>
-                              <Button size="sm" variant="ghost" className="h-6 w-6 p-0 text-red-500" onClick={() => handleUnmerge(c.clusterNumber)} title="병합해제" disabled={isBusy}><Trash2 className="h-3 w-3" /></Button>
+                              <Button size="sm" variant="ghost" className="h-6 w-6 p-0" onClick={() => handleOpenRename(c)} title="이름변경" disabled={isBusy || isViewer}><Edit2 className="h-3 w-3" /></Button>
+                              <Button size="sm" variant="ghost" className="h-6 w-6 p-0 text-red-500" onClick={() => handleUnmerge(c.clusterNumber)} title="병합해제" disabled={isBusy || isViewer}><Trash2 className="h-3 w-3" /></Button>
                             </div>
                           </div>
                         );
@@ -1918,7 +1934,7 @@ function ClusteringPage() {
 
               {/* 완료 버튼 */}
               <Button className="w-full mt-3 bg-green-600 hover:bg-green-700 text-white shadow-lg h-12 text-base font-semibold flex-shrink-0"
-                onClick={handleComplete}>
+                onClick={handleComplete} disabled={isViewer}>
                 완료 → Step 6: Export
               </Button>
             </div>
@@ -1964,10 +1980,10 @@ function ClusteringPage() {
             <DialogTitle>클러스터 이름 변경</DialogTitle>
             <DialogDescription>클러스터 #{renameDialog.cluster?.clusterNumber}의 새 이름을 입력하세요.</DialogDescription>
           </DialogHeader>
-          <Input placeholder="클러스터 이름" value={newClusterName} onChange={e => setNewClusterName(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleRename()} />
+          <Input placeholder="클러스터 이름" value={newClusterName} onChange={e => setNewClusterName(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleRename()} disabled={isViewer} />
           <div className="flex justify-end gap-2 mt-2">
             <Button variant="outline" onClick={() => setRenameDialog({ open: false, cluster: null })}>취소</Button>
-            <Button onClick={handleRename}>변경</Button>
+            <Button onClick={handleRename} disabled={isViewer}>변경</Button>
           </div>
         </DialogContent>
       </Dialog>
@@ -2013,7 +2029,7 @@ function ClusteringPage() {
             </div>
           </div>
           <div className="flex items-center gap-2 mb-2 shrink-0">
-            <Button size="sm" variant="destructive" onClick={handlePartialUnmerge} disabled={detailChecked.size === 0}>
+            <Button size="sm" variant="destructive" onClick={handlePartialUnmerge} disabled={detailChecked.size === 0 || isViewer}>
               <Trash2 className="h-3 w-3 mr-1" />선택 항목 병합 해제 ({detailChecked.size})
             </Button>
             <span className="text-xs text-muted-foreground ml-2">
@@ -2090,11 +2106,13 @@ function ClusteringPage() {
                   handleAddKeyword(keywordHierarchyDialog.level, keywordHierarchyDialog.parentId, newKeywordInput.value);
                 }
               }}
+              disabled={isViewer}
             />
             <Button
               size="sm"
               className="h-8"
               onClick={() => handleAddKeyword(keywordHierarchyDialog.level, keywordHierarchyDialog.parentId, newKeywordInput.value)}
+              disabled={isViewer}
             >
               <Plus className="h-3 w-3 mr-1" />추가
             </Button>
@@ -2150,6 +2168,7 @@ function ClusteringPage() {
                     size="sm"
                     className="h-6 w-6 p-0 text-red-500"
                     onClick={() => handleDeleteKeyword(child.id)}
+                    disabled={isViewer}
                   >
                     <Trash2 className="h-3 w-3" />
                   </Button>
@@ -2174,7 +2193,7 @@ function ClusteringPage() {
             <Button variant="outline" onClick={handleUndefinedMergeSkip} disabled={undefinedMerging}>
               취소
             </Button>
-            <Button onClick={handleUndefinedMergeConfirm} disabled={undefinedMerging}>
+            <Button onClick={handleUndefinedMergeConfirm} disabled={undefinedMerging || isViewer}>
               {undefinedMerging ? <><Loader2 className="h-4 w-4 mr-1 animate-spin" />병합 중...</> : '일괄 병합'}
             </Button>
           </div>

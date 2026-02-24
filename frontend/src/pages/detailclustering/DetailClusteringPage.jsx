@@ -124,7 +124,7 @@ function StatsListView({
             <div className="text-right text-xs tabular-nums">{(item.count || 0).toLocaleString()}</div>
             <div className="text-right text-xs tabular-nums">{formatAmount(item.totalAmount || 0)}</div>
             {onDetail && (
-              <Button variant="ghost" size="sm" className="h-5 px-1.5 text-[10px] text-blue-600 hover:text-blue-800 hover:bg-blue-100"
+              <Button variant="ghost" size="sm" className="h-5 px-1.5 text-[10px] text-blue-600 hover:text-blue-800 hover:bg-blue-100"https://github.com/scschwan/lg_cns_web/pull/160/conflict?name=frontend%252Fsrc%252Fpages%252FstartAnalysis%252FStartAnalysisPage.jsx&ancestor_oid=942885113f33963136484ffd7ee288365b11cfa1&base_oid=11e35a21b14b5699fe1617ac01cf0e7d6f4dca6b&head_oid=08b62fe56e3048674b135eb4466f05261fe83474
                 onMouseDown={e => e.stopPropagation()} onClick={e => { e.stopPropagation(); onDetail(key); }}>자세히</Button>
             )}
           </div>
@@ -616,8 +616,8 @@ function DetailClusteringPage() {
   const clusterColumns = useMemo(() => {
     const cols = [
       { key: '_cb', label: '', pinned: true, sortable: false, resizable: false, width: 50,
-        headerRender: () => <Checkbox checked={isHeaderChecked} ref={el => { if (el) el.indeterminate = isHeaderIndeterminate; }} onCheckedChange={handleHeaderCheck} />,
-        render: (row) => <Checkbox checked={isRowChecked(row.clusterNumber)} onCheckedChange={c => handleRowCheck(row.clusterNumber, c)} />,
+        headerRender: () => <Checkbox checked={isHeaderChecked} ref={el => { if (el) el.indeterminate = isHeaderIndeterminate; }} onCheckedChange={handleHeaderCheck} disabled={isViewer} />,
+        render: (row) => <Checkbox checked={isRowChecked(row.clusterNumber)} onCheckedChange={c => handleRowCheck(row.clusterNumber, c)} disabled={isViewer} />,
       },
       { key: 'clusterNumber', label: '클러스터번호', pinned: true, sortable: true, width: 110, render: r => <Badge variant="outline" className="text-[10px] font-mono">#{r.clusterNumber}</Badge> },
       { key: 'clusterName', label: '클러스터명', sortable: true, minWidth: 150, render: r => <span className="whitespace-nowrap" title={r.clusterName}>{truncateName(r.clusterName)}</span> },
@@ -635,8 +635,8 @@ function DetailClusteringPage() {
     const isIndeterminate = detailChecked.size > 0 && detailChecked.size < all;
     const cols = [
       { key: '_cb', label: '', pinned: true, sortable: false, resizable: false, width: 40,
-        headerRender: () => <Checkbox checked={isAllChecked} ref={el => { if (el) el.indeterminate = isIndeterminate; }} onCheckedChange={c => { if (c) setDetailChecked(new Set((detailDialog.cluster?.children || []).map(ch => ch.clusterNumber))); else setDetailChecked(new Set()); }} />,
-        render: r => <Checkbox checked={detailChecked.has(r.clusterNumber)} onCheckedChange={c => setDetailChecked(prev => { const n = new Set(prev); c ? n.add(r.clusterNumber) : n.delete(r.clusterNumber); return n; })} />,
+        headerRender: () => <Checkbox checked={isAllChecked} ref={el => { if (el) el.indeterminate = isIndeterminate; }} onCheckedChange={c => { if (c) setDetailChecked(new Set((detailDialog.cluster?.children || []).map(ch => ch.clusterNumber))); else setDetailChecked(new Set()); }} disabled={isViewer} />,
+        render: r => <Checkbox checked={detailChecked.has(r.clusterNumber)} onCheckedChange={c => setDetailChecked(prev => { const n = new Set(prev); c ? n.add(r.clusterNumber) : n.delete(r.clusterNumber); return n; })} disabled={isViewer} />,
       },
       { key: 'clusterNumber', label: '#', pinned: true, sortable: false, width: 70, render: r => <Badge variant="outline" className="text-[10px] font-mono">#{r.clusterNumber}</Badge> },
       { key: 'clusterName', label: '클러스터명', sortable: false, minWidth: 120, render: r => <span className="whitespace-nowrap">{truncateName(r.clusterName)}</span> },
@@ -695,6 +695,11 @@ function DetailClusteringPage() {
             <BreadcrumbSeparator><ChevronRight className="h-4 w-4" /></BreadcrumbSeparator>
             <BreadcrumbItem><BreadcrumbPage className="font-semibold">Step 7: 세부 클러스터링 (클러스터 #{clusterId})</BreadcrumbPage></BreadcrumbItem>
           </BreadcrumbList></Breadcrumb>
+          {isViewer && (
+            <div className="px-3 py-2 bg-amber-50 border border-amber-200 rounded text-xs text-amber-700 font-medium mb-4">
+              뷰어 권한: 조회만 가능합니다. 데이터 수정이 불가합니다.
+            </div>
+          )}
           <Card className="shadow-sm"><CardContent className="py-3">
             <div className="flex items-center gap-6 text-sm flex-wrap">
               <span><span className="font-semibold">전체 행수:</span> <Badge variant="secondary">{(statistics.totalRows||0).toLocaleString()}</Badge></span>
@@ -754,8 +759,8 @@ function DetailClusteringPage() {
                 {searchTabMode === 'keyword-hierarchy' && (
                   <div className="space-y-2">
                     <div className="flex items-center gap-2">
-                      <Input className="h-7 text-xs flex-1" placeholder="새 Lv1 키워드 입력..." value={newKeywordInput.level === 1 && !newKeywordInput.parentId ? newKeywordInput.value : ''} onChange={e => setNewKeywordInput({ level: 1, parentId: null, value: e.target.value })} onKeyDown={e => e.key === 'Enter' && handleAddKeyword(1, null, newKeywordInput.value)} />
-                      <Button size="sm" className="h-7 px-2 text-xs" onClick={() => handleAddKeyword(1, null, newKeywordInput.value)}><Plus className="h-3 w-3" /></Button>
+                      <Input className="h-7 text-xs flex-1" placeholder="새 Lv1 키워드 입력..." value={newKeywordInput.level === 1 && !newKeywordInput.parentId ? newKeywordInput.value : ''} onChange={e => setNewKeywordInput({ level: 1, parentId: null, value: e.target.value })} onKeyDown={e => e.key === 'Enter' && handleAddKeyword(1, null, newKeywordInput.value)} disabled={isViewer} />
+                      <Button size="sm" className="h-7 px-2 text-xs" onClick={() => handleAddKeyword(1, null, newKeywordInput.value)} disabled={isViewer}><Plus className="h-3 w-3" /></Button>
                       <Button size="sm" variant="ghost" className="h-7 px-2" onClick={loadKeywordHierarchy} disabled={kwHierarchyLoading}><RefreshCw className={`h-3 w-3 ${kwHierarchyLoading ? 'animate-spin' : ''}`} /></Button>
                     </div>
                     <div className="max-h-[200px] overflow-y-auto border rounded p-2 text-xs space-y-1">
@@ -766,7 +771,7 @@ function DetailClusteringPage() {
                             <FolderOpen className="h-3 w-3 text-yellow-600" />
                             <span className="flex-1 cursor-pointer hover:text-blue-600 hover:underline" onClick={() => handleKeywordHierarchySearch(lv1.keyword)}>{lv1.keyword}</span>
                             <Button variant="ghost" size="sm" className="h-5 px-1 text-[10px] text-blue-600" onClick={() => setKeywordHierarchyDialog({ open: true, parentId: lv1.id, parentKeyword: lv1.keyword, level: 2 })}>자세히</Button>
-                            <Button variant="ghost" size="sm" className="h-5 w-5 p-0 text-red-500" onClick={() => handleDeleteKeyword(lv1.id)}><X className="h-3 w-3" /></Button>
+                            <Button variant="ghost" size="sm" className="h-5 w-5 p-0 text-red-500" onClick={() => handleDeleteKeyword(lv1.id)} disabled={isViewer}><X className="h-3 w-3" /></Button>
                           </div>
                           {expandedLv1.has(lv1.id) && lv1.children && lv1.children.length > 0 && (
                             <div className="ml-6 space-y-1">{lv1.children.map(lv2 => (
@@ -775,13 +780,13 @@ function DetailClusteringPage() {
                                   <Button variant="ghost" size="sm" className="h-4 w-4 p-0" onClick={() => setExpandedLv2(prev => { const next = new Set(prev); next.has(lv2.id) ? next.delete(lv2.id) : next.add(lv2.id); return next; })}>{lv2.children?.length > 0 ? (expandedLv2.has(lv2.id) ? <ChevronDown className="h-2 w-2" /> : <ChevronRight className="h-2 w-2" />) : <span className="w-2" />}</Button>
                                   <Folder className="h-3 w-3 text-blue-500" />
                                   <span className="flex-1 cursor-pointer hover:text-blue-600 hover:underline" onClick={() => handleKeywordHierarchySearch(lv2.keyword)}>{lv2.keyword}</span>
-                                  <Button variant="ghost" size="sm" className="h-4 w-4 p-0 text-red-500" onClick={() => handleDeleteKeyword(lv2.id)}><X className="h-2 w-2" /></Button>
+                                  <Button variant="ghost" size="sm" className="h-4 w-4 p-0 text-red-500" onClick={() => handleDeleteKeyword(lv2.id)} disabled={isViewer}><X className="h-2 w-2" /></Button>
                                 </div>
                                 {expandedLv2.has(lv2.id) && lv2.children && lv2.children.length > 0 && (
                                   <div className="ml-5 space-y-0.5">{lv2.children.map(lv3 => (
                                     <div key={lv3.id} className="flex items-center gap-1 p-0.5 rounded hover:bg-gray-50">
                                       <Tag className="h-2 w-2 text-green-500" /><span className="flex-1 cursor-pointer hover:text-blue-600 hover:underline text-[10px]" onClick={() => handleKeywordHierarchySearch(lv3.keyword)}>{lv3.keyword}</span>
-                                      <Button variant="ghost" size="sm" className="h-4 w-4 p-0 text-red-500" onClick={() => handleDeleteKeyword(lv3.id)}><X className="h-2 w-2" /></Button>
+                                      <Button variant="ghost" size="sm" className="h-4 w-4 p-0 text-red-500" onClick={() => handleDeleteKeyword(lv3.id)} disabled={isViewer}><X className="h-2 w-2" /></Button>
                                     </div>
                                   ))}</div>
                                 )}
@@ -800,12 +805,12 @@ function DetailClusteringPage() {
             <Card className="flex-shrink-0 shadow-sm"><CardContent className="py-3 px-4">
               <div className="flex items-center gap-2 flex-wrap">
                 <div className="relative">
-                  <Button size="sm" className="h-8 min-w-[120px] relative overflow-hidden" onClick={handleMerge} disabled={isViewer || selectedCount < 2 || merging || unmerging}>
+                  <Button size="sm" className="h-8 min-w-[120px] relative overflow-hidden" onClick={handleMerge} disabled={selectedCount < 2 || merging || unmerging || isViewer}>
                     {merging && mergingClusters.size === 0 && <div className="absolute inset-0 bg-blue-300/50 transition-all" style={{ width: `${mergingProgress}%` }} />}
                     <span className="relative z-10 flex items-center">{merging && mergingClusters.size === 0 ? <><Loader2 className="h-3 w-3 mr-1 animate-spin" />{mergingProgress}%</> : <><GitMerge className="h-3 w-3 mr-1" />세부 병합 ({selectedCount})</>}</span>
                   </Button>
                 </div>
-                <Button size="sm" variant="outline" className="h-8" onClick={() => setAddMergeDialog(true)} disabled={isViewer || selectedCount === 0 || mergedClusters.length === 0 || merging || unmerging}><Plus className="h-3 w-3 mr-1" />추가 세부 병합</Button>
+                <Button size="sm" variant="outline" className="h-8" onClick={() => setAddMergeDialog(true)} disabled={selectedCount === 0 || mergedClusters.length === 0 || merging || unmerging || isViewer}><Plus className="h-3 w-3 mr-1" />추가 세부 병합</Button>
                 <div className="flex-1" />
                 <Select value={amountUnit} onValueChange={setAmountUnit}><SelectTrigger className="w-[80px] h-8 text-xs"><SelectValue /></SelectTrigger><SelectContent>{['원','천원','백만원','억원'].map(u => <SelectItem key={u} value={u}>{u}</SelectItem>)}</SelectContent></Select>
               </div>
@@ -835,7 +840,7 @@ function DetailClusteringPage() {
                       <CardHeader className="py-2 px-3 border-b flex-shrink-0"><div className="flex items-center justify-between"><CardTitle className="text-sm font-bold">키워드 통계 ({keywordStats.length}건)</CardTitle><Button variant="ghost" size="sm" className="h-7 px-2" onClick={loadKwStats} disabled={kwLoading}><RefreshCw className={`h-3 w-3 ${kwLoading ? 'animate-spin' : ''}`} /></Button></div></CardHeader>
                       <CardContent className="p-0 flex-1 overflow-auto"><StatsListView items={sortedKwStats} checkedSet={kwCheckedSet} onCheckedChange={setKwCheckedSet} nameKey="keyword" nameLabel="키워드" sortField={kwSortField} sortDir={kwSortDir} onSort={handleKwSort} formatAmount={formatAmount} amountUnit={amountUnit} onDetail={handleKwDetail} isDragging={kwDragging} setIsDragging={setKwDragging} dragStartRef={kwDragRef} /></CardContent>
                     </Card>
-                    <Button className="w-full mt-2 bg-purple-600 hover:bg-purple-700 h-8 text-sm font-semibold flex-shrink-0" onClick={handleAutoMergeByKeywords} disabled={isViewer || kwCheckedSet.size === 0 || merging}>{merging && <Loader2 className="h-3 w-3 mr-1 animate-spin" />}<GitMerge className="h-3 w-3 mr-1" />선택항목 자동 세부 클러스터링 ({kwCheckedSet.size})</Button>
+                    <Button className="w-full mt-2 bg-purple-600 hover:bg-purple-700 h-8 text-sm font-semibold flex-shrink-0" onClick={handleAutoMergeByKeywords} disabled={kwCheckedSet.size === 0 || merging || isViewer}>{merging && <Loader2 className="h-3 w-3 mr-1 animate-spin" />}<GitMerge className="h-3 w-3 mr-1" />선택항목 자동 세부 클러스터링 ({kwCheckedSet.size})</Button>
                   </div>
                   {statistics.hasSupplier && (
                     <div className={`absolute inset-0 flex flex-col ${activeTab === 'supplier' ? '' : 'hidden'}`}>
@@ -843,7 +848,7 @@ function DetailClusteringPage() {
                         <CardHeader className="py-2 px-3 border-b flex-shrink-0"><div className="flex items-center justify-between"><CardTitle className="text-sm font-bold">공급업체 통계 ({supplierStats.length}건)</CardTitle><Button variant="ghost" size="sm" className="h-7 px-2" onClick={loadSupStats} disabled={supLoading}><RefreshCw className={`h-3 w-3 ${supLoading ? 'animate-spin' : ''}`} /></Button></div></CardHeader>
                         <CardContent className="p-0 flex-1 overflow-auto"><StatsListView items={sortedSupStats} checkedSet={supCheckedSet} onCheckedChange={setSupCheckedSet} nameKey="supplier" nameLabel="공급업체" sortField={supSortField} sortDir={supSortDir} onSort={handleSupSort} formatAmount={formatAmount} amountUnit={amountUnit} onDetail={handleSupDetail} isDragging={supDragging} setIsDragging={setSupDragging} dragStartRef={supDragRef} /></CardContent>
                       </Card>
-                      <Button className="w-full mt-2 bg-purple-600 hover:bg-purple-700 h-8 text-sm font-semibold flex-shrink-0" onClick={handleAutoMergeBySuppliers} disabled={isViewer || supCheckedSet.size === 0 || merging}>{merging && <Loader2 className="h-3 w-3 mr-1 animate-spin" />}<GitMerge className="h-3 w-3 mr-1" />선택항목 자동 세부 클러스터링 ({supCheckedSet.size})</Button>
+                      <Button className="w-full mt-2 bg-purple-600 hover:bg-purple-700 h-8 text-sm font-semibold flex-shrink-0" onClick={handleAutoMergeBySuppliers} disabled={supCheckedSet.size === 0 || merging || isViewer}>{merging && <Loader2 className="h-3 w-3 mr-1 animate-spin" />}<GitMerge className="h-3 w-3 mr-1" />선택항목 자동 세부 클러스터링 ({supCheckedSet.size})</Button>
                     </div>
                   )}
                 </div>
@@ -861,13 +866,13 @@ function DetailClusteringPage() {
                     </CardTitle>
                     <div className="flex items-center gap-1">
                       <div className="relative">
-                        <Button size="sm" variant="outline" className="h-7 px-2 text-xs min-w-[120px] relative overflow-hidden" onClick={handleMergeMerged} disabled={isViewer || selectedMerged.size < 2 || merging}>
+                        <Button size="sm" variant="outline" className="h-7 px-2 text-xs min-w-[120px] relative overflow-hidden" onClick={handleMergeMerged} disabled={selectedMerged.size < 2 || merging || isViewer}>
                           {merging && mergingClusters.size > 0 && <div className="absolute inset-0 bg-blue-100 transition-all" style={{ width: `${mergingProgress}%` }} />}
                           <span className="relative z-10 flex items-center">{merging && mergingClusters.size > 0 ? <><Loader2 className="h-3 w-3 mr-1 animate-spin" />{mergingProgress}%</> : <><GitMerge className="h-3 w-3 mr-1" />세부 병합 merge ({selectedMerged.size})</>}</span>
                         </Button>
                       </div>
                       <div className="relative">
-                        <Button size="sm" variant="outline" className="h-7 px-2 text-xs text-red-600 min-w-[100px] relative overflow-hidden" onClick={handleBulkUnmerge} disabled={isViewer || selectedMerged.size === 0 || merging || unmerging}>
+                        <Button size="sm" variant="outline" className="h-7 px-2 text-xs text-red-600 min-w-[100px] relative overflow-hidden" onClick={handleBulkUnmerge} disabled={selectedMerged.size === 0 || merging || unmerging || isViewer}>
                           {unmerging && <div className="absolute inset-0 bg-red-100 transition-all" style={{ width: `${unmergingProgress}%` }} />}
                           <span className="relative z-10 flex items-center">{unmerging ? <><Loader2 className="h-3 w-3 mr-1 animate-spin" />{unmergingProgress}%</> : <><Trash2 className="h-3 w-3 mr-1" />해제 ({selectedMerged.size})</>}</span>
                         </Button>
@@ -884,14 +889,14 @@ function DetailClusteringPage() {
                   ) : mergedClusters.length === 0 ? <div className="text-center py-8 text-xs text-muted-foreground">세부 병합된 클러스터가 없습니다</div> : (
                     <div className="text-xs">
                       <div className="grid grid-cols-[28px_1fr_60px_90px_60px] gap-1 items-center px-2 py-2 border-b bg-gray-100 font-semibold text-muted-foreground sticky top-0 z-10">
-                        <Checkbox checked={selectedMerged.size === mergedClusters.length && mergedClusters.length > 0} disabled={merging && mergingClusters.size > 0} onCheckedChange={c => { if (c) setSelectedMerged(new Set(mergedClusters.map(m => m.clusterNumber))); else setSelectedMerged(new Set()); }} />
+                        <Checkbox checked={selectedMerged.size === mergedClusters.length && mergedClusters.length > 0} disabled={(merging && mergingClusters.size > 0) || isViewer} onCheckedChange={c => { if (c) setSelectedMerged(new Set(mergedClusters.map(m => m.clusterNumber))); else setSelectedMerged(new Set()); }} />
                         <div>클러스터명</div><div className="text-right">Count</div><div className="text-right">금액({amountUnit})</div><div className="text-center">관리</div>
                       </div>
                       {mergedClusters.map(c => {
                         const isMergingThis = mergingClusters.has(c.clusterNumber); const isUnmergingThis = unmergingClusters.has(c.clusterNumber); const isBusy = isMergingThis || isUnmergingThis;
                         return (
                           <div key={c.clusterNumber} className={`grid grid-cols-[28px_1fr_60px_90px_60px] gap-1 items-center px-2 py-1.5 border-b transition-colors ${isMergingThis ? 'bg-yellow-50 opacity-70' : isUnmergingThis ? 'bg-red-50 opacity-70' : selectedMerged.has(c.clusterNumber) ? 'bg-blue-50' : 'hover:bg-muted/50'}`}>
-                            <Checkbox checked={selectedMerged.has(c.clusterNumber)} disabled={isBusy} onCheckedChange={ch => setSelectedMerged(prev => { const n = new Set(prev); ch ? n.add(c.clusterNumber) : n.delete(c.clusterNumber); return n; })} />
+                            <Checkbox checked={selectedMerged.has(c.clusterNumber)} disabled={isBusy || isViewer} onCheckedChange={ch => setSelectedMerged(prev => { const n = new Set(prev); ch ? n.add(c.clusterNumber) : n.delete(c.clusterNumber); return n; })} />
                             <div className="min-w-0">
                               <div className="flex items-center gap-1">
                                 <Badge variant="outline" className="text-[9px] font-mono flex-shrink-0">#{c.clusterNumber}</Badge>
@@ -903,8 +908,8 @@ function DetailClusteringPage() {
                             <div className="text-right tabular-nums">{formatAmount(c.totalAmount||0)}</div>
                             <div className="flex items-center justify-center gap-0.5">
                               <Button size="sm" variant="ghost" className="h-6 w-6 p-0" onClick={() => handleOpenDetail(c)} title="상세" disabled={isBusy}><Eye className="h-3 w-3" /></Button>
-                              <Button size="sm" variant="ghost" className="h-6 w-6 p-0" onClick={() => handleOpenRename(c)} title="이름변경" disabled={isViewer || isBusy}><Edit2 className="h-3 w-3" /></Button>
-                              <Button size="sm" variant="ghost" className="h-6 w-6 p-0 text-red-500" onClick={() => handleUnmerge(c.clusterNumber)} title="세부 병합해제" disabled={isViewer || isBusy}><Trash2 className="h-3 w-3" /></Button>
+                              <Button size="sm" variant="ghost" className="h-6 w-6 p-0" onClick={() => handleOpenRename(c)} title="이름변경" disabled={isBusy || isViewer}><Edit2 className="h-3 w-3" /></Button>
+                              <Button size="sm" variant="ghost" className="h-6 w-6 p-0 text-red-500" onClick={() => handleUnmerge(c.clusterNumber)} title="세부 병합해제" disabled={isBusy || isViewer}><Trash2 className="h-3 w-3" /></Button>
                             </div>
                           </div>
                         );
@@ -936,8 +941,8 @@ function DetailClusteringPage() {
       {/* 이름 변경 다이얼로그 */}
       <Dialog open={renameDialog.open} onOpenChange={o => setRenameDialog({ ...renameDialog, open: o })}><DialogContent>
         <DialogHeader><DialogTitle>클러스터 이름 변경</DialogTitle><DialogDescription>클러스터 #{renameDialog.cluster?.clusterNumber}의 새 이름을 입력하세요.</DialogDescription></DialogHeader>
-        <Input placeholder="클러스터 이름" value={newClusterName} onChange={e => setNewClusterName(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleRename()} />
-        <div className="flex justify-end gap-2 mt-2"><Button variant="outline" onClick={() => setRenameDialog({ open: false, cluster: null })}>취소</Button><Button onClick={handleRename}>변경</Button></div>
+        <Input placeholder="클러스터 이름" value={newClusterName} onChange={e => setNewClusterName(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleRename()} disabled={isViewer} />
+        <div className="flex justify-end gap-2 mt-2"><Button variant="outline" onClick={() => setRenameDialog({ open: false, cluster: null })}>취소</Button><Button onClick={handleRename} disabled={isViewer}>변경</Button></div>
       </DialogContent></Dialog>
 
       {/* 상세 다이얼로그 */}
@@ -950,7 +955,7 @@ function DetailClusteringPage() {
             <div className="flex items-center gap-2"><span className="text-muted-foreground">합산 금액:</span><Badge variant="secondary">{formatAmount(detailDialog.cluster?.totalAmount || 0)} {amountUnit}</Badge></div>
           </div>
           <div className="flex items-center gap-2 mb-2">
-            <Button size="sm" variant="destructive" onClick={handlePartialUnmerge} disabled={isViewer || detailChecked.size === 0}><Trash2 className="h-3 w-3 mr-1" />선택 항목 세부 병합 해제 ({detailChecked.size})</Button>
+            <Button size="sm" variant="destructive" onClick={handlePartialUnmerge} disabled={detailChecked.size === 0 || isViewer}><Trash2 className="h-3 w-3 mr-1" />선택 항목 세부 병합 해제 ({detailChecked.size})</Button>
             <span className="text-xs text-muted-foreground ml-2">{detailChecked.size > 0 && `${detailChecked.size}개 선택됨`}</span>
           </div>
           <div className="border rounded-md" style={{ height: 'calc(80vh - 220px)', minHeight: '200px' }}>
@@ -964,8 +969,8 @@ function DetailClusteringPage() {
         <DialogContent className="max-w-[500px]">
           <DialogHeader><DialogTitle>{keywordHierarchyDialog.level === 2 ? 'Lv2' : 'Lv3'} 키워드 관리: {keywordHierarchyDialog.parentKeyword}</DialogTitle><DialogDescription>하위 키워드를 추가하거나 삭제할 수 있습니다.</DialogDescription></DialogHeader>
           <div className="flex items-center gap-2 mb-4">
-            <Input className="h-8 text-sm flex-1" placeholder={`새 ${keywordHierarchyDialog.level === 2 ? 'Lv2' : 'Lv3'} 키워드 입력...`} value={newKeywordInput.level === keywordHierarchyDialog.level && newKeywordInput.parentId === keywordHierarchyDialog.parentId ? newKeywordInput.value : ''} onChange={e => setNewKeywordInput({ level: keywordHierarchyDialog.level, parentId: keywordHierarchyDialog.parentId, value: e.target.value })} onKeyDown={e => { if (e.key === 'Enter') handleAddKeyword(keywordHierarchyDialog.level, keywordHierarchyDialog.parentId, newKeywordInput.value); }} />
-            <Button size="sm" className="h-8" onClick={() => handleAddKeyword(keywordHierarchyDialog.level, keywordHierarchyDialog.parentId, newKeywordInput.value)}><Plus className="h-3 w-3 mr-1" />추가</Button>
+            <Input className="h-8 text-sm flex-1" placeholder={`새 ${keywordHierarchyDialog.level === 2 ? 'Lv2' : 'Lv3'} 키워드 입력...`} value={newKeywordInput.level === keywordHierarchyDialog.level && newKeywordInput.parentId === keywordHierarchyDialog.parentId ? newKeywordInput.value : ''} onChange={e => setNewKeywordInput({ level: keywordHierarchyDialog.level, parentId: keywordHierarchyDialog.parentId, value: e.target.value })} onKeyDown={e => { if (e.key === 'Enter') handleAddKeyword(keywordHierarchyDialog.level, keywordHierarchyDialog.parentId, newKeywordInput.value); }} disabled={isViewer} />
+            <Button size="sm" className="h-8" onClick={() => handleAddKeyword(keywordHierarchyDialog.level, keywordHierarchyDialog.parentId, newKeywordInput.value)} disabled={isViewer}><Plus className="h-3 w-3 mr-1" />추가</Button>
           </div>
           <div className="max-h-[300px] overflow-y-auto border rounded p-2 space-y-1">
             {(() => {
@@ -978,7 +983,7 @@ function DetailClusteringPage() {
                   {keywordHierarchyDialog.level === 2 ? <Folder className="h-4 w-4 text-blue-500 flex-shrink-0" /> : <Tag className="h-4 w-4 text-green-500 flex-shrink-0" />}
                   <span className="flex-1 cursor-pointer hover:text-blue-600 hover:underline" onClick={() => handleKeywordHierarchySearch(child.keyword)}>{child.keyword}</span>
                   {keywordHierarchyDialog.level === 2 && <Button variant="ghost" size="sm" className="h-6 px-2 text-xs text-blue-600" onClick={() => setKeywordHierarchyDialog({ open: true, parentId: child.id, parentKeyword: child.keyword, level: 3 })}>Lv3</Button>}
-                  <Button variant="ghost" size="sm" className="h-6 w-6 p-0 text-red-500" onClick={() => handleDeleteKeyword(child.id)}><Trash2 className="h-3 w-3" /></Button>
+                  <Button variant="ghost" size="sm" className="h-6 w-6 p-0 text-red-500" onClick={() => handleDeleteKeyword(child.id)} disabled={isViewer}><Trash2 className="h-3 w-3" /></Button>
                 </div>
               ));
             })()}

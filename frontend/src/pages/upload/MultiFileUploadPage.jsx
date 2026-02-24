@@ -879,6 +879,7 @@ function MultiFileUploadPage() {
                                                         <Checkbox
                                                             checked={files.length > 0 && files.every((f) => f.checked)}
                                                             onCheckedChange={(checked) => handleToggleAll(checked)}
+                                                            disabled={isViewer}
                                                         />
                                                     </TableHead>
                                                     <TableHead className="w-[300px]">파일명</TableHead>
@@ -923,6 +924,7 @@ function MultiFileUploadPage() {
                                                             <Checkbox
                                                                 checked={file.checked || false}
                                                                 onCheckedChange={() => handleToggleCheck(file.fileId)}
+                                                                disabled={isViewer}
                                                             />
                                                         </TableCell>
                                                         <TableCell className="font-medium truncate">
@@ -981,6 +983,7 @@ function MultiFileUploadPage() {
                                                                     onValueChange={(value) =>
                                                                         handleColumnSelect(file.fileId, 'accountColumnName', value)
                                                                     }
+                                                                    disabled={isViewer}
                                                                 >
                                                                     <SelectTrigger className="h-8">
                                                                         <SelectValue placeholder="선택..." />
@@ -1011,6 +1014,7 @@ function MultiFileUploadPage() {
                                                                     onValueChange={(value) =>
                                                                         handleColumnSelect(file.fileId, 'amountColumnName', value)
                                                                     }
+                                                                    disabled={isViewer}
                                                                 >
                                                                     <SelectTrigger className="h-8">
                                                                         <SelectValue placeholder="선택..." />
@@ -1156,6 +1160,7 @@ function MultiFileUploadPage() {
                                                                     setSelectedSessions([]);
                                                                 }
                                                             }}
+                                                            disabled={isViewer}
                                                         />
                                                     </TableHead>
                                                     <TableHead className="w-[180px]">세션명</TableHead>
@@ -1194,6 +1199,7 @@ function MultiFileUploadPage() {
                                                                         );
                                                                     }
                                                                 }}
+                                                                disabled={isViewer}
                                                             />
                                                         </TableCell>
                                                         <TableCell>
@@ -1221,12 +1227,13 @@ function MultiFileUploadPage() {
                                                                     }}
                                                                     className="h-8"
                                                                     autoFocus
+                                                                    disabled={isViewer}
                                                                 />
                                                             ) : (
                                                                 <div
-                                                                    className="cursor-pointer hover:text-primary truncate"
-                                                                    onClick={() => setEditingSession(session.sessionId)}
-                                                                    title="클릭하여 편집"
+                                                                    className={`truncate ${isViewer ? '' : 'cursor-pointer hover:text-primary'}`}
+                                                                    onClick={() => !isViewer && setEditingSession(session.sessionId)}
+                                                                    title={isViewer ? '' : '클릭하여 편집'}
                                                                 >
                                                                     {session.sessionName}
                                                                 </div>
@@ -1265,6 +1272,7 @@ function MultiFileUploadPage() {
                                                                     }
                                                                 }}
                                                                 className="h-8"
+                                                                disabled={isViewer}
                                                             />
                                                         </TableCell>
                                                         <TableCell className="truncate">
