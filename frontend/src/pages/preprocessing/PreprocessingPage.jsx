@@ -2,8 +2,9 @@
 
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ChevronRight, ChevronLeft, Home, Plus, Trash2 } from 'lucide-react';
+import { ChevronRight, ChevronLeft, Home, Plus, Trash2, Lock } from 'lucide-react';
 import preprocessingService from '../../services/preprocessingService';
+import { useSessionEditorLock } from '../../hooks/useSessionEditorLock';
 import uploadService from '../../services/uploadService';
 import AdvancedTable from '@/components/AdvancedTable';
 
@@ -20,6 +21,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Checkbox } from '@/components/ui/checkbox';
+import { Badge } from '@/components/ui/badge';
 import {
   Select,
   SelectContent,
@@ -130,6 +132,7 @@ function MultiSelectCheckList({ items, checkedSet, onCheckedChange, renderLabel,
 
 function PreprocessingPage() {
   const { projectId, sessionId } = useParams();
+  const { isEditor, editorInfo } = useSessionEditorLock(projectId, sessionId);
   const navigate = useNavigate();
 
   // ===== 상태 관리 =====
@@ -498,6 +501,15 @@ function PreprocessingPage() {
   return (
     <div className="flex flex-col h-full bg-gray-50 overflow-hidden">
       <div className="container mx-auto px-4 py-4 h-full flex flex-col min-h-0 max-w-[98vw]">
+
+        {!isEditor && (
+            <div className="mb-4 px-4 py-3 rounded-lg bg-amber-50 border border-amber-200 flex items-center gap-2">
+                <Lock className="h-4 w-4 text-amber-600" />
+                <span className="text-sm font-medium text-amber-700">
+                    뷰어 모드 - {editorInfo?.editorUserName || '다른 사용자'}님이 편집 중입니다
+                </span>
+            </div>
+        )}
 
         {/* 상단 헤더 (고정 높이) */}
         <div className="flex-shrink-0 space-y-4 mb-4">

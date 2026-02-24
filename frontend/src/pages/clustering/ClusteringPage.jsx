@@ -3,8 +3,9 @@ import { useParams, useNavigate } from 'react-router-dom';
 import {
   ChevronRight, ChevronDown, Home, GitMerge, Eye, Edit2, Trash2, Plus,
   Loader2, Search, RefreshCw, ArrowUpDown, ArrowUp, ArrowDown,
-  X, Folder, FolderOpen, Tag,
+  X, Folder, FolderOpen, Tag, Lock,
 } from 'lucide-react';
+import { useSessionEditorLock } from '../../hooks/useSessionEditorLock';
 import {
   Breadcrumb, BreadcrumbItem, BreadcrumbLink, BreadcrumbList,
   BreadcrumbPage, BreadcrumbSeparator,
@@ -175,6 +176,7 @@ function StatsListView({
    ============================================================ */
 function ClusteringPage() {
   const { projectId, sessionId } = useParams();
+  const { isEditor, editorInfo } = useSessionEditorLock(projectId, sessionId);
   const navigate = useNavigate();
 
   /* ----- 상태 ----- */
@@ -1293,6 +1295,15 @@ function ClusteringPage() {
         </div>
       )}
       <div className="container mx-auto px-4 py-4 h-full flex flex-col min-h-0 max-w-[98vw]">
+
+        {!isEditor && (
+            <div className="mb-4 px-4 py-3 rounded-lg bg-amber-50 border border-amber-200 flex items-center gap-2">
+                <Lock className="h-4 w-4 text-amber-600" />
+                <span className="text-sm font-medium text-amber-700">
+                    뷰어 모드 - {editorInfo?.editorUserName || '다른 사용자'}님이 편집 중입니다
+                </span>
+            </div>
+        )}
 
         {/* 헤더 */}
         <div className="flex-shrink-0 space-y-4 mb-4">

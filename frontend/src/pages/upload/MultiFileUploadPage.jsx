@@ -18,6 +18,7 @@ import {
     AlertCircle,
     CheckCircle2,
     RotateCcw,
+    Lock,
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 
@@ -538,6 +539,22 @@ function MultiFileUploadPage() {
 
        const sessionId = selectedSessions[0];
 
+       // 세션 편집자 잠금 확인: 다른 사용자가 편집 중이면 진입 차단
+       const targetSession = sessions.find(s => s.sessionId === sessionId);
+       if (targetSession?.isEditing && targetSession?.editorUserId) {
+           // 실시간 Redis 상태 재확인
+           try {
+               const lockStatus = await uploadService.getSessionLockStatus(projectId, sessionId);
+               if (lockStatus.isLocked && !lockStatus.isEditor) {
+                   showError('세션 사용 중',
+                       `현재 ${lockStatus.editorUserName || '다른 사용자'}님이 작업 중입니다. 작업이 완료된 후 다시 시도해주세요.`);
+                   return;
+               }
+           } catch (e) {
+               console.warn('잠금 상태 확인 실패, 계속 진행:', e);
+           }
+       }
+
        try {
            setProgressDialogOpen(true);
            setProgressValue(0);
@@ -1044,6 +1061,7 @@ function MultiFileUploadPage() {
                                                         />
                                                     </TableHead>
                                                     <TableHead className="w-[180px]">세션명</TableHead>
+                                                    <TableHead className="w-[80px] text-center">편집상태</TableHead>
                                                     <TableHead className="w-[100px]">작업자</TableHead>
                                                     <TableHead className="w-[120px]">대계정</TableHead>
                                                     <TableHead className="w-[100px] text-center">행수</TableHead>
@@ -1114,6 +1132,16 @@ function MultiFileUploadPage() {
                                                                 >
                                                                     {session.sessionName}
                                                                 </div>
+                                                            )}
+                                                        </TableCell>
+                                                        <TableCell className="text-center">
+                                                            {session.isEditing ? (
+                                                                <Badge variant="destructive" className="text-xs gap-1">
+                                                                    <Lock className="h-3 w-3" />
+                                                                    {session.editorUserName || '편집중'}
+                                                                </Badge>
+                                                            ) : (
+                                                                <span className="text-xs text-muted-foreground">-</span>
                                                             )}
                                                         </TableCell>
                                                         <TableCell>
