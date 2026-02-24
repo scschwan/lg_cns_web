@@ -870,25 +870,20 @@ function ClusteringPage() {
 
   const handleAddToMerged = async (targetMergedNumber) => {
     if (selectedCount === 0) return;
-    setMerging(true);
-    setMergingProgress(0);
-    setMergingClusters(new Set([targetMergedNumber]));
+    setMerging(true); setMergingProgress(0); setMergingClusters(new Set([targetMergedNumber]));
+    setMergeOverlay(true); setMergingMessage('추가 병합 요청 중...');
     try {
-      const progressInterval = setInterval(() => {
-        setMergingProgress(prev => Math.min(prev + 10, 90));
-      }, 200);
+      setMergingProgress(10); setMergingMessage('선택 클러스터 조회 중...');
       const nums = await getSelectedClusterNumbers();
+      setMergingProgress(30); setMergingMessage(`${nums.length}개 클러스터 추가 병합 중...`);
       await clusteringService.addToMergedCluster(projectId, sessionId, targetMergedNumber, nums);
-      clearInterval(progressInterval);
-      setMergingProgress(100);
-      await new Promise(r => setTimeout(r, 300));
-      setSelectAllMode(false); setExceptions(new Set());
-      setAddMergeDialog(false);
+      setMergingProgress(80); setMergingMessage('데이터 갱신 중...');
+      setSelectAllMode(false); setExceptions(new Set()); setAddMergeDialog(false);
       await refreshAll();
+      setMergingProgress(100); setMergingMessage('추가 병합 완료');
+      await new Promise(r => setTimeout(r, 500));
     } catch (e) { alert('추가 병합 실패: ' + (e.response?.data?.message || e.message)); } finally {
-      setMerging(false);
-      setMergingProgress(0);
-      setMergingClusters(new Set());
+      setMerging(false); setMergingProgress(0); setMergingClusters(new Set()); setMergeOverlay(false); setMergingMessage('');
     }
   };
 
@@ -1002,29 +997,43 @@ function ClusteringPage() {
   const handleAutoMergeByKeywords = async () => {
     if (kwCheckedSet.size === 0) { alert('키워드를 선택해주세요.'); return; }
     if (!window.confirm(`선택한 ${kwCheckedSet.size}개 키워드의 클러스터를 자동 병합합니다.`)) return;
-    setMerging(true);
+    setMerging(true); setMergeOverlay(true); setMergingProgress(0);
+    const total = kwCheckedSet.size; let done = 0;
     try {
       for (const keyword of kwCheckedSet) {
+        setMergingMessage(`키워드 병합 중... (${done + 1}/${total}): ${keyword}`);
         const ids = await clusteringService.getAllUnmergedClusterNumbers(projectId, sessionId, keyword);
         if (ids.length >= 2) await clusteringService.mergeClusters(projectId, sessionId, ids);
+        done++;
+        setMergingProgress(Math.round((done / total) * 80));
       }
+      setMergingProgress(85); setMergingMessage('데이터 갱신 중...');
       setKwCheckedSet(new Set()); setSelectAllMode(false); setExceptions(new Set());
       await refreshAll();
-    } catch (e) { alert('자동 클러스터링 실패: ' + (e.response?.data?.message || e.message)); } finally { setMerging(false); }
+      setMergingProgress(100); setMergingMessage('자동 병합 완료');
+      await new Promise(r => setTimeout(r, 500));
+    } catch (e) { alert('자동 클러스터링 실패: ' + (e.response?.data?.message || e.message)); } finally { setMerging(false); setMergeOverlay(false); setMergingProgress(0); setMergingMessage(''); }
   };
 
   const handleAutoMergeBySuppliers = async () => {
     if (supCheckedSet.size === 0) { alert('공급업체를 선택해주세요.'); return; }
     if (!window.confirm(`선택한 ${supCheckedSet.size}개 공급업체의 클러스터를 자동 병합합니다.`)) return;
-    setMerging(true);
+    setMerging(true); setMergeOverlay(true); setMergingProgress(0);
+    const total = supCheckedSet.size; let done = 0;
     try {
       for (const supplier of supCheckedSet) {
+        setMergingMessage(`공급업체 병합 중... (${done + 1}/${total}): ${supplier}`);
         const ids = await clusteringService.getAllUnmergedClusterNumbers(projectId, sessionId, null, supplier);
         if (ids.length >= 2) await clusteringService.mergeClusters(projectId, sessionId, ids);
+        done++;
+        setMergingProgress(Math.round((done / total) * 80));
       }
+      setMergingProgress(85); setMergingMessage('데이터 갱신 중...');
       setSupCheckedSet(new Set()); setSelectAllMode(false); setExceptions(new Set());
       await refreshAll();
-    } catch (e) { alert('자동 클러스터링 실패: ' + (e.response?.data?.message || e.message)); } finally { setMerging(false); }
+      setMergingProgress(100); setMergingMessage('자동 병합 완료');
+      await new Promise(r => setTimeout(r, 500));
+    } catch (e) { alert('자동 클러스터링 실패: ' + (e.response?.data?.message || e.message)); } finally { setMerging(false); setMergeOverlay(false); setMergingProgress(0); setMergingMessage(''); }
   };
 
   /* ============================================================
@@ -1051,63 +1060,53 @@ function ClusteringPage() {
   const handleUnmerge = async (cn) => {
     if (!window.confirm(`클러스터 #${cn}의 병합을 해제하시겠습니까?`)) return;
     setUnmergingClusters(prev => new Set(prev).add(cn));
+    setMergeActiveBlocking(true); setMergingProgress(30); setMergingMessage(`클러스터 #${cn} 병합 해제 중...`);
     try {
       await clusteringService.unmergeClusters(projectId, sessionId, cn);
-      setSelectedMerged(new Set());
-      await refreshAll();
+      setMergingProgress(70); setMergingMessage('데이터 갱신 중...');
+      setSelectedMerged(new Set()); await refreshAll();
+      setMergingProgress(100); setMergingMessage('병합 해제 완료');
+      await new Promise(r => setTimeout(r, 500));
     } catch (e) { alert('병합 해제 실패: ' + (e.response?.data?.message || e.message)); }
-    finally { setUnmergingClusters(prev => { const n = new Set(prev); n.delete(cn); return n; }); }
+    finally { setUnmergingClusters(prev => { const n = new Set(prev); n.delete(cn); return n; }); setMergeActiveBlocking(false); setMergingProgress(0); setMergingMessage(''); }
   };
 
   const handleBulkUnmerge = async () => {
     if (selectedMerged.size === 0) return;
     if (!window.confirm(`${selectedMerged.size}개 병합 클러스터를 해제하시겠습니까?`)) return;
-    setUnmerging(true);
-    setUnmergingProgress(0);
-    setUnmergingClusters(new Set(selectedMerged));
+    setUnmerging(true); setUnmergingProgress(0); setUnmergingClusters(new Set(selectedMerged));
+    setMergeOverlay(true); setMergingProgress(0); setMergingMessage('병합 해제 진행 중...');
     try {
-      const total = selectedMerged.size;
-      let done = 0;
+      const total = selectedMerged.size; let done = 0;
       for (const cn of selectedMerged) {
+        setMergingMessage(`병합 해제 중... (${done + 1}/${total})`);
         await clusteringService.unmergeClusters(projectId, sessionId, cn);
         done++;
         setUnmergingProgress(Math.round((done / total) * 100));
+        setMergingProgress(Math.round((done / total) * 80));
       }
-      await new Promise(r => setTimeout(r, 300));
-      setSelectedMerged(new Set());
-      await refreshAll();
+      setMergingProgress(85); setMergingMessage('데이터 갱신 중...');
+      await new Promise(r => setTimeout(r, 300)); setSelectedMerged(new Set()); await refreshAll();
+      setMergingProgress(100); setMergingMessage('병합 해제 완료');
+      await new Promise(r => setTimeout(r, 500));
     } catch (e) { alert('병합 해제 실패: ' + (e.response?.data?.message || e.message)); }
-    finally {
-      setUnmerging(false);
-      setUnmergingProgress(0);
-      setUnmergingClusters(new Set());
-    }
+    finally { setUnmerging(false); setUnmergingProgress(0); setUnmergingClusters(new Set()); setMergeOverlay(false); setMergingProgress(0); setMergingMessage(''); }
   };
 
   const handleMergeMerged = async () => {
     if (selectedMerged.size < 2) { alert('2개 이상의 병합 클러스터를 선택하세요.'); return; }
     if (!window.confirm(`${selectedMerged.size}개 병합 클러스터를 하나로 합치시겠습니까?`)) return;
-    setMerging(true);
-    setMergingClusters(new Set(selectedMerged));
-    setMergingProgress(0);
+    setMerging(true); setMergingClusters(new Set(selectedMerged)); setMergingProgress(0);
+    setMergeOverlay(true); setMergingMessage('병합 클러스터 합치는 중...');
     try {
-      // 진행률 시뮬레이션 (실제로는 API 응답에서 제공할 수 있음)
-      const progressInterval = setInterval(() => {
-        setMergingProgress(prev => Math.min(prev + 10, 90));
-      }, 200);
+      setMergingProgress(30); setMergingMessage(`${selectedMerged.size}개 클러스터 합치는 중...`);
       await clusteringService.mergeMergedClusters(projectId, sessionId, Array.from(selectedMerged));
-      clearInterval(progressInterval);
-      setMergingProgress(100);
-      await new Promise(r => setTimeout(r, 300)); // 잠깐 100% 표시
-      setSelectedMerged(new Set());
-      await refreshAll();
-    } catch (e) {
-      alert('병합 실패: ' + (e.response?.data?.message || e.message));
-    } finally {
-      setMerging(false);
-      setMergingClusters(new Set());
-      setMergingProgress(0);
-    }
+      setMergingProgress(80); setMergingMessage('데이터 갱신 중...');
+      setSelectedMerged(new Set()); await refreshAll();
+      setMergingProgress(100); setMergingMessage('병합 완료');
+      await new Promise(r => setTimeout(r, 500));
+    } catch (e) { alert('병합 실패: ' + (e.response?.data?.message || e.message)); }
+    finally { setMerging(false); setMergingClusters(new Set()); setMergingProgress(0); setMergeOverlay(false); setMergingMessage(''); }
   };
 
   /* ============================================================
@@ -1182,11 +1181,16 @@ function ClusteringPage() {
   const handlePartialUnmerge = async () => {
     if (detailChecked.size === 0) { alert('해제할 항목을 선택하세요.'); return; }
     if (!window.confirm(`선택한 ${detailChecked.size}개 클러스터를 병합 해제하시겠습니까?`)) return;
+    setMergeActiveBlocking(true); setMergingProgress(30); setMergingMessage('선택 항목 병합 해제 중...');
     try {
       await clusteringService.unmergePartialClusters(projectId, sessionId, detailDialog.cluster.clusterNumber, Array.from(detailChecked));
+      setMergingProgress(70); setMergingMessage('데이터 갱신 중...');
       setDetailDialog({ open: false, cluster: null }); setDetailChecked(new Set());
       await refreshAll();
+      setMergingProgress(100); setMergingMessage('부분 해제 완료');
+      await new Promise(r => setTimeout(r, 500));
     } catch (e) { alert('부분 해제 실패: ' + (e.response?.data?.message || e.message)); }
+    finally { setMergeActiveBlocking(false); setMergingProgress(0); setMergingMessage(''); }
   };
 
   /* 이름 변경 */
