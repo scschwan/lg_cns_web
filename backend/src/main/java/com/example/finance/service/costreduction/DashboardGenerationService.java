@@ -305,11 +305,7 @@ public class DashboardGenerationService {
         clusteringResultRepository.saveAll(results);
         log.info("clustering_results 생성 완료: sessionId={}, clusters={}", config.sessionId, results.size());
 
-        // ===== 5. ClusterStatisticsService 호출 =====
-        clusterStatisticsService.generateStatistics(config.sessionId, projectId);
-        log.info("cluster_statistics 생성 완료: sessionId={}", config.sessionId);
-
-        // ===== 6. 세션 상태 업데이트 =====
+        // ===== 5. 세션 상태 업데이트 (generateStatistics보다 먼저 실행해야 accountName 참조 가능) =====
         session.setIsCompleted(true);
         session.setCompletedAt(LocalDateTime.now());
         session.setCurrentStep(ProcessStep.EXPORT);
@@ -320,6 +316,10 @@ public class DashboardGenerationService {
         session.setSupplierColumn(config.supplierColumn);
         session.setAmountColumn(config.amountColumn);
         fileSessionRepository.save(session);
+
+        // ===== 6. ClusterStatisticsService 호출 (세션 accountNames 저장 후 실행) =====
+        clusterStatisticsService.generateStatistics(config.sessionId, projectId);
+        log.info("cluster_statistics 생성 완료: sessionId={}", config.sessionId);
 
         log.info("세션 처리 완료: sessionId={}", config.sessionId);
     }
