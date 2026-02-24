@@ -179,7 +179,11 @@ export default function ProjectsPage() {
                                 <CardFooter className="flex gap-2">
                                     <Button
                                         className="flex-1 gap-1"
-                                        onClick={() => navigate(`/projects/${project.projectId}/upload`)}
+                                        onClick={() => navigate(
+                                            isDashboardProject(project)
+                                                ? `/projects/${project.projectId}/dashboard-upload`
+                                                : `/projects/${project.projectId}/upload`
+                                        )}
                                     >
                                         {isDashboardProject(project) ? <BarChart3 className="h-4 w-4" /> : null}
                                         열기
@@ -234,7 +238,7 @@ export default function ProjectsPage() {
                 onSuccess={async (projectData) => {
                     const createdProject = await projectService.createProject(projectData);
                     if (projectData.projectType === 'DASHBOARD_IMPORT') {
-                        navigate(`/projects/${createdProject.projectId}/upload`);
+                        navigate(`/projects/${createdProject.projectId}/dashboard-upload`);
                     } else {
                         await loadProjects();
                     }
