@@ -41,7 +41,6 @@ import {
     SelectTrigger,
     SelectValue,
 } from '@/components/ui/select';
-import { Input } from '@/components/ui/input';
 import {
     Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle
 } from '@/components/ui/dialog';
@@ -67,10 +66,10 @@ function ScrollSyncTable({ children, minWidth = '1200px', maxHeight = '500px' })
 /**
  * 대시보드 프로젝트 전용 업로드 페이지
  *
- * - 파일 업로드 → 세션 자동 생성 (파일 목록 표시 없음)
- * - 세션 테이블에서 컬럼 매핑 (자동 감지 + 수동 수정)
- * - 대시보드 데이터 일괄 생성
- * - 프로젝트 완료 + 대시보드 진입
+ * - 파일 업로드 → 세션 자동 생성 (파일 목록 없음, 바로 세션 테이블에 표시)
+ * - 세션 테이블: 대계정컬럼, 금액컬럼, 공급업체명, 코스트센터명 셀렉트 박스
+ * - 클러스터/세부클러스터 컬럼 자동 감지
+ * - 대시보드 데이터 생성 → 프로젝트 완료 → 대시보드 진입
  */
 function DashboardUploadPage() {
     const { projectId } = useParams();
@@ -82,8 +81,8 @@ function DashboardUploadPage() {
     const [sessionsLoading, setSessionsLoading] = useState(false);
     const [selectedSessions, setSelectedSessions] = useState([]);
 
-    // 대시보드 컬럼 매핑
-    const [dashboardMappings, setDashboardMappings] = useState({});
+    // 컬럼 매핑 (sessionId → { accountColumn, amountColumn, supplierColumn, costCenterColumn })
+    const [columnMappings, setColumnMappings] = useState({});
 
     // 대시보드 데이터 생성 상태
     const [generationStatus, setGenerationStatus] = useState(null);
@@ -158,12 +157,9 @@ function DashboardUploadPage() {
         }
     };
 
-    // ===== Lambda 처리 상태 폴링 =====
+    // ===== Lambda 처리 상태 폴링 (파일 파싱 완료 대기) =====
     useEffect(() => {
-        const processingSessions = sessions.filter(s => {
-            const cols = getSessionColumns(s);
-            return cols.length === 0;
-        });
+        const processingSessions = sessions.filter(s => getSessionColumns(s).length === 0);
 
         if (processingSessions.length === 0) {
             if (pollingRef.current) {
@@ -179,7 +175,6 @@ function DashboardUploadPage() {
                 const updated = Array.isArray(data) ? data : [];
                 setSessions(updated);
 
-                // 모든 세션이 처리 완료되면 폴링 중지
                 const stillProcessing = updated.filter(s => getSessionColumns(s).length === 0);
                 if (stillProcessing.length === 0 && pollingRef.current) {
                     clearInterval(pollingRef.current);
@@ -198,25 +193,43 @@ function DashboardUploadPage() {
         };
     }, [sessions.map(s => s.sessionId + (getSessionColumns(s).length || 0)).join(',')]);
 
+    // ===== 유틸 =====
+    const getSessionColumns = (session) => {
+        if (session.uploadedFiles && session.uploadedFiles.length > 0) {
+            return session.uploadedFiles[0].detectedColumns || [];
+        }
+        return [];
+    };
+
     // ===== 컬럼 자동 감지 =====
     const autoDetectColumns = (columns) => {
         const find = (patterns) => columns.find(c =>
             patterns.some(p => c.toLowerCase().includes(p))
         ) || '';
         return {
-            clusterColumn: find(['클러스터', 'cluster', '분류']),
-            subClusterColumn: find(['세부', 'sub', '소분류']),
+            // 사용자가 셀렉트 박스로 선택하는 4개 컬럼
+            accountColumn: find(['대계정', '계정', 'account', '대분류']),
             amountColumn: find(['금액', 'amount', '비용', '원가', 'money']),
             supplierColumn: find(['공급업체', 'supplier', '업체', '거래처']),
             costCenterColumn: find(['코스트센터', 'cost center', 'cc', '부서', 'department']),
-            accountName: find(['계정', 'account']),
+        };
+    };
+
+    // 클러스터/세부클러스터 자동 감지 (백엔드 전송용, UI에 노출하지 않음)
+    const autoDetectClusterColumns = (columns) => {
+        const find = (patterns) => columns.find(c =>
+            patterns.some(p => c.toLowerCase().includes(p))
+        ) || '';
+        return {
+            clusterColumn: find(['클러스터', 'cluster', '분류']),
+            subClusterColumn: find(['세부클러스터', '세부', 'sub_cluster', 'subcluster', '소분류']),
         };
     };
 
     // 세션 로드 시 자동 매핑
     useEffect(() => {
         if (sessions.length === 0) return;
-        setDashboardMappings(prev => {
+        setColumnMappings(prev => {
             const updated = { ...prev };
             for (const session of sessions) {
                 if (updated[session.sessionId]) continue;
@@ -227,14 +240,6 @@ function DashboardUploadPage() {
             return updated;
         });
     }, [sessions]);
-
-    // ===== 유틸 =====
-    const getSessionColumns = (session) => {
-        if (session.uploadedFiles && session.uploadedFiles.length > 0) {
-            return session.uploadedFiles[0].detectedColumns || [];
-        }
-        return [];
-    };
 
     // ===== 파일 업로드 → 세션 자동 생성 =====
     const handleFileUpload = async (event) => {
@@ -291,13 +296,12 @@ function DashboardUploadPage() {
             setProgressDialogOpen(false);
         }
 
-        // input value 초기화 (같은 파일 재업로드 가능)
         event.target.value = '';
     };
 
-    // ===== 대시보드 컬럼 매핑 =====
-    const handleDashboardMapping = (sessionId, field, value) => {
-        setDashboardMappings(prev => ({
+    // ===== 컬럼 매핑 변경 =====
+    const handleColumnMapping = (sessionId, field, value) => {
+        setColumnMappings(prev => ({
             ...prev,
             [sessionId]: {
                 ...prev[sessionId],
@@ -351,22 +355,30 @@ function DashboardUploadPage() {
             return;
         }
 
+        // 각 세션별로 사용자 선택 + 자동 감지 컬럼 조합
         const sessionsConfig = sessions.map(session => {
-            const mapping = dashboardMappings[session.sessionId] || {};
+            const mapping = columnMappings[session.sessionId] || {};
+            const cols = getSessionColumns(session);
+            const autoCluster = autoDetectClusterColumns(cols);
+
+            // 대계정컬럼이 선택되었으면 clusterColumn으로 사용, 아니면 자동 감지 값 사용
+            const clusterColumn = mapping.accountColumn || autoCluster.clusterColumn;
+
             return {
                 sessionId: session.sessionId,
-                accountName: mapping.accountName || '',
-                clusterColumn: mapping.clusterColumn || '',
-                subClusterColumn: mapping.subClusterColumn || '',
+                accountName: session.sessionName || '',
+                clusterColumn: clusterColumn,
+                subClusterColumn: autoCluster.subClusterColumn || '',
                 amountColumn: mapping.amountColumn || '',
                 supplierColumn: mapping.supplierColumn || '',
                 costCenterColumn: mapping.costCenterColumn || '',
             };
         });
 
-        const invalid = sessionsConfig.filter(s => !s.accountName || !s.clusterColumn || !s.amountColumn);
+        // 필수 컬럼 검증: 대계정(→clusterColumn), 금액
+        const invalid = sessionsConfig.filter(s => !s.clusterColumn || !s.amountColumn);
         if (invalid.length > 0) {
-            showError('매핑 필요', '모든 세션에 계정명, 클러스터 컬럼, 금액 컬럼을 설정해주세요.');
+            showError('매핑 필요', '모든 세션에 대계정컬럼과 금액컬럼을 설정해주세요.');
             return;
         }
 
@@ -436,7 +448,27 @@ function DashboardUploadPage() {
         generationStatus?.status === 'COMPLETED_WITH_ERRORS' ||
         (sessions.length > 0 && sessions.every(s => s.isCompleted))
     );
-    const dashboardProcessingCount = sessions.filter(s => !getSessionColumns(s).length).length;
+    const dashboardProcessingCount = sessions.filter(s => getSessionColumns(s).length === 0).length;
+
+    // 셀렉트 박스 렌더 헬퍼
+    const renderColumnSelect = (session, cols, fieldName, placeholder, isSessionProcessing) => {
+        const mapping = columnMappings[session.sessionId] || {};
+        if (isSessionProcessing) {
+            return <span className="text-xs text-amber-600">처리 중...</span>;
+        }
+        return (
+            <Select
+                value={mapping[fieldName] || ''}
+                onValueChange={(v) => handleColumnMapping(session.sessionId, fieldName, v)}
+                disabled={isGenerating}
+            >
+                <SelectTrigger className="h-8"><SelectValue placeholder={placeholder} /></SelectTrigger>
+                <SelectContent>
+                    {cols.map(col => <SelectItem key={col} value={col}>{col}</SelectItem>)}
+                </SelectContent>
+            </Select>
+        );
+    };
 
     // ===== 렌더 =====
     return (
@@ -477,7 +509,8 @@ function DashboardUploadPage() {
                                     </span>
                                 </CardTitle>
                                 <p className="text-sm text-muted-foreground mt-2">
-                                    클러스터링된 Excel 파일을 업로드하면 세션이 자동 생성됩니다. 각 세션별 컬럼 매핑을 설정한 후 대시보드 데이터를 생성하세요.
+                                    클러스터링된 Excel 파일을 업로드하면 세션이 자동 생성됩니다.
+                                    각 세션의 대계정, 금액, 공급업체, 코스트센터 컬럼을 지정한 후 대시보드 데이터를 생성하세요.
                                 </p>
                             </div>
                         </div>
@@ -510,7 +543,7 @@ function DashboardUploadPage() {
                     <Card>
                         <CardHeader>
                             <div className="flex items-center justify-between">
-                                <CardTitle className="text-lg">대시보드 세션 목록</CardTitle>
+                                <CardTitle className="text-lg">세션 목록</CardTitle>
                                 <div className="flex gap-2">
                                     <Button
                                         onClick={handleDeleteSessions}
@@ -567,7 +600,7 @@ function DashboardUploadPage() {
                                     </p>
                                 </div>
                             ) : (
-                                <ScrollSyncTable minWidth="1400px" maxHeight="500px">
+                                <ScrollSyncTable minWidth="1100px" maxHeight="500px">
                                     <Table>
                                         <TableHeader className="sticky top-0 bg-background z-10">
                                             <TableRow>
@@ -579,14 +612,12 @@ function DashboardUploadPage() {
                                                         }}
                                                     />
                                                 </TableHead>
-                                                <TableHead className="w-[180px]">세션명</TableHead>
+                                                <TableHead className="w-[200px]">세션명</TableHead>
                                                 <TableHead className="w-[80px] text-center">행수</TableHead>
-                                                <TableHead className="w-[140px]">계정명</TableHead>
-                                                <TableHead className="w-[160px]">클러스터 컬럼</TableHead>
-                                                <TableHead className="w-[160px]">세부클러스터 컬럼</TableHead>
-                                                <TableHead className="w-[160px]">금액 컬럼</TableHead>
-                                                <TableHead className="w-[160px]">공급업체 컬럼</TableHead>
-                                                <TableHead className="w-[160px]">코스트센터 컬럼</TableHead>
+                                                <TableHead className="w-[180px]">대계정컬럼</TableHead>
+                                                <TableHead className="w-[180px]">금액컬럼</TableHead>
+                                                <TableHead className="w-[180px]">공급업체명</TableHead>
+                                                <TableHead className="w-[180px]">코스트센터명</TableHead>
                                                 <TableHead className="w-[80px] text-center">상태</TableHead>
                                                 <TableHead className="w-[60px]">삭제</TableHead>
                                             </TableRow>
@@ -594,7 +625,6 @@ function DashboardUploadPage() {
                                         <TableBody>
                                             {sessions.map((session) => {
                                                 const cols = getSessionColumns(session);
-                                                const mapping = dashboardMappings[session.sessionId] || {};
                                                 const isSessionProcessing = cols.length === 0;
 
                                                 return (
@@ -624,97 +654,16 @@ function DashboardUploadPage() {
                                                             )}
                                                         </TableCell>
                                                         <TableCell>
-                                                            {isSessionProcessing ? (
-                                                                <span className="text-xs text-amber-600">처리 중...</span>
-                                                            ) : (
-                                                                <Input
-                                                                    value={mapping.accountName || ''}
-                                                                    placeholder="계정명 입력"
-                                                                    onChange={(e) => handleDashboardMapping(session.sessionId, 'accountName', e.target.value)}
-                                                                    className="h-8"
-                                                                    disabled={isGenerating}
-                                                                />
-                                                            )}
+                                                            {renderColumnSelect(session, cols, 'accountColumn', '필수', isSessionProcessing)}
                                                         </TableCell>
                                                         <TableCell>
-                                                            {isSessionProcessing ? (
-                                                                <span className="text-xs text-amber-600">처리 중...</span>
-                                                            ) : (
-                                                                <Select
-                                                                    value={mapping.clusterColumn || ''}
-                                                                    onValueChange={(v) => handleDashboardMapping(session.sessionId, 'clusterColumn', v)}
-                                                                    disabled={isGenerating}
-                                                                >
-                                                                    <SelectTrigger className="h-8"><SelectValue placeholder="필수" /></SelectTrigger>
-                                                                    <SelectContent>
-                                                                        {cols.map(col => <SelectItem key={col} value={col}>{col}</SelectItem>)}
-                                                                    </SelectContent>
-                                                                </Select>
-                                                            )}
+                                                            {renderColumnSelect(session, cols, 'amountColumn', '필수', isSessionProcessing)}
                                                         </TableCell>
                                                         <TableCell>
-                                                            {isSessionProcessing ? (
-                                                                <span className="text-xs text-amber-600">처리 중...</span>
-                                                            ) : (
-                                                                <Select
-                                                                    value={mapping.subClusterColumn || ''}
-                                                                    onValueChange={(v) => handleDashboardMapping(session.sessionId, 'subClusterColumn', v)}
-                                                                    disabled={isGenerating}
-                                                                >
-                                                                    <SelectTrigger className="h-8"><SelectValue placeholder="선택사항" /></SelectTrigger>
-                                                                    <SelectContent>
-                                                                        {cols.map(col => <SelectItem key={col} value={col}>{col}</SelectItem>)}
-                                                                    </SelectContent>
-                                                                </Select>
-                                                            )}
+                                                            {renderColumnSelect(session, cols, 'supplierColumn', '선택', isSessionProcessing)}
                                                         </TableCell>
                                                         <TableCell>
-                                                            {isSessionProcessing ? (
-                                                                <span className="text-xs text-amber-600">처리 중...</span>
-                                                            ) : (
-                                                                <Select
-                                                                    value={mapping.amountColumn || ''}
-                                                                    onValueChange={(v) => handleDashboardMapping(session.sessionId, 'amountColumn', v)}
-                                                                    disabled={isGenerating}
-                                                                >
-                                                                    <SelectTrigger className="h-8"><SelectValue placeholder="필수" /></SelectTrigger>
-                                                                    <SelectContent>
-                                                                        {cols.map(col => <SelectItem key={col} value={col}>{col}</SelectItem>)}
-                                                                    </SelectContent>
-                                                                </Select>
-                                                            )}
-                                                        </TableCell>
-                                                        <TableCell>
-                                                            {isSessionProcessing ? (
-                                                                <span className="text-xs text-amber-600">처리 중...</span>
-                                                            ) : (
-                                                                <Select
-                                                                    value={mapping.supplierColumn || ''}
-                                                                    onValueChange={(v) => handleDashboardMapping(session.sessionId, 'supplierColumn', v)}
-                                                                    disabled={isGenerating}
-                                                                >
-                                                                    <SelectTrigger className="h-8"><SelectValue placeholder="선택사항" /></SelectTrigger>
-                                                                    <SelectContent>
-                                                                        {cols.map(col => <SelectItem key={col} value={col}>{col}</SelectItem>)}
-                                                                    </SelectContent>
-                                                                </Select>
-                                                            )}
-                                                        </TableCell>
-                                                        <TableCell>
-                                                            {isSessionProcessing ? (
-                                                                <span className="text-xs text-amber-600">처리 중...</span>
-                                                            ) : (
-                                                                <Select
-                                                                    value={mapping.costCenterColumn || ''}
-                                                                    onValueChange={(v) => handleDashboardMapping(session.sessionId, 'costCenterColumn', v)}
-                                                                    disabled={isGenerating}
-                                                                >
-                                                                    <SelectTrigger className="h-8"><SelectValue placeholder="선택사항" /></SelectTrigger>
-                                                                    <SelectContent>
-                                                                        {cols.map(col => <SelectItem key={col} value={col}>{col}</SelectItem>)}
-                                                                    </SelectContent>
-                                                                </Select>
-                                                            )}
+                                                            {renderColumnSelect(session, cols, 'costCenterColumn', '선택', isSessionProcessing)}
                                                         </TableCell>
                                                         <TableCell className="text-center">
                                                             {isSessionProcessing ? (
