@@ -29,6 +29,7 @@ const handleSessionExpired = () => {
   localStorage.removeItem('authToken');
   localStorage.removeItem('refreshToken');
   localStorage.removeItem('user');
+  sessionStorage.setItem('sessionExpired', 'true');
   window.location.href = '/login';
 };
 

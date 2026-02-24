@@ -110,6 +110,9 @@ function MultiFileUploadPage() {
     // 프로젝트 완료
     const [completeDialogOpen, setCompleteDialogOpen] = useState(false);
 
+    // 세션 삭제 확인 다이얼로그
+    const [deleteConfirmDialog, setDeleteConfirmDialog] = useState({ open: false, sessionIds: [] });
+
     // 메시지 다이얼로그 상태
     const [msgDialog, setMsgDialog] = useState({ open: false, type: 'error', title: '', message: '' });
     const showMessage = (type, title, message) => setMsgDialog({ open: true, type, title, message });
@@ -527,22 +530,22 @@ function MultiFileUploadPage() {
         }
     };
 
-    const handleDeleteSessions = async () => {
+    const handleDeleteSessions = () => {
         if (selectedSessions.length === 0) {
             showError('선택 필요', '삭제할 세션을 선택해주세요.');
             return;
         }
+        setDeleteConfirmDialog({ open: true, sessionIds: [...selectedSessions] });
+    };
 
-        const confirmed = window.confirm(
-            `선택된 ${selectedSessions.length}개의 세션을 삭제하시겠습니까?`
-        );
-
-        if (!confirmed) return;
+    const executeDeleteSessions = async () => {
+        const { sessionIds } = deleteConfirmDialog;
+        setDeleteConfirmDialog({ open: false, sessionIds: [] });
 
         try {
-            await uploadService.deleteSessions(projectId, selectedSessions);
+            await uploadService.deleteSessions(projectId, sessionIds);
             loadSessions();
-            setSelectedSessions([]);
+            setSelectedSessions(prev => prev.filter(id => !sessionIds.includes(id)));
             showSuccess('삭제 완료', '세션이 삭제되었습니다.');
         } catch (error) {
             console.error('세션 삭제 실패:', error);
@@ -716,19 +719,8 @@ function MultiFileUploadPage() {
         }
     };
 
-    const handleDeleteSingleSession = async (sessionId) => {
-        const confirmed = window.confirm('이 세션을 삭제하시겠습니까?');
-        if (!confirmed) return;
-
-        try {
-            await uploadService.deleteSessions(projectId, [sessionId]);
-            loadSessions();
-            setSelectedSessions(prev => prev.filter(id => id !== sessionId));
-            showSuccess('삭제 완료', '세션이 삭제되었습니다.');
-        } catch (error) {
-            console.error('세션 삭제 실패:', error);
-            showError('삭제 실패', getErrorMsg(error, '세션 삭제 중 오류가 발생했습니다.'));
-        }
+    const handleDeleteSingleSession = (sessionId) => {
+        setDeleteConfirmDialog({ open: true, sessionIds: [sessionId] });
     };
 
     const handleBulkDeleteFiles = async () => {
@@ -1404,6 +1396,25 @@ function MultiFileUploadPage() {
                         <DialogFooter>
                             <Button variant="outline" onClick={() => { setResetDialogOpen(false); setResetTargetSession(null); }}>취소</Button>
                             <Button variant="destructive" onClick={handleResetSession}>초기화</Button>
+                        </DialogFooter>
+                    </DialogContent>
+                </Dialog>
+
+                {/* 세션 삭제 확인 다이얼로그 */}
+                <Dialog open={deleteConfirmDialog.open} onOpenChange={(open) => !open && setDeleteConfirmDialog({ open: false, sessionIds: [] })}>
+                    <DialogContent>
+                        <DialogHeader>
+                            <DialogTitle className="flex items-center gap-2">
+                                <AlertCircle className="h-5 w-5 text-red-500" />
+                                세션 삭제 확인
+                            </DialogTitle>
+                            <DialogDescription className="pt-2">
+                                세션을 삭제하면 대시보드 데이터(Long/Short List, 과제, 대시보드)가 전부 초기화됩니다. 계속하시겠습니까?
+                            </DialogDescription>
+                        </DialogHeader>
+                        <DialogFooter>
+                            <Button variant="outline" onClick={() => setDeleteConfirmDialog({ open: false, sessionIds: [] })}>취소</Button>
+                            <Button variant="destructive" onClick={executeDeleteSessions}>삭제</Button>
                         </DialogFooter>
                     </DialogContent>
                 </Dialog>

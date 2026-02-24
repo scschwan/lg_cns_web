@@ -7,10 +7,15 @@ import { useAuth } from './context/AuthContext';
 import Navbar from './components/layout/Navbar';
 import DashboardLayout from './components/layout/DashboardLayout';
 import PrivateRoute from './components/PrivateRoute';
+import ErrorBoundary from './components/ErrorBoundary';
 
 // Auth Pages
 import LoginPage from './pages/auth/LoginPage';
 import RegisterPage from './pages/auth/RegisterPage';
+
+// Error Pages
+import NotFoundPage from './pages/error/NotFoundPage';
+import ServerErrorPage from './pages/error/ServerErrorPage';
 
 // Project Pages
 import ProjectsPage from './pages/project/ProjectsPage';
@@ -64,6 +69,7 @@ function LayoutWrapper({ children, showNavbar = true }) {
 
 function App() {
   return (
+    <ErrorBoundary>
     <AuthProvider>
       <Router>
         <Routes>
@@ -247,11 +253,18 @@ function App() {
             <Route path="profile" element={<AdminProfile />} />
           </Route>
 
+          {/* Error Pages */}
+          <Route path="/error/500" element={<ServerErrorPage />} />
+
           {/* Default Redirect */}
           <Route path="/" element={<Navigate to="/login" replace />} />
+
+          {/* 404 Catch-All */}
+          <Route path="*" element={<NotFoundPage />} />
         </Routes>
       </Router>
     </AuthProvider>
+    </ErrorBoundary>
   );
 }
 

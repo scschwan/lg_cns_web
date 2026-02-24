@@ -1,0 +1,45 @@
+import React from 'react';
+import { useNavigate, useLocation } from 'react-router-dom';
+import { Button } from '@/components/ui/button';
+import { ServerCrash, Home, RotateCcw } from 'lucide-react';
+
+function ServerErrorPage() {
+    const navigate = useNavigate();
+    const location = useLocation();
+    const errorMessage = location.state?.message;
+
+    return (
+        <div className="min-h-screen bg-gray-50 flex items-center justify-center px-4">
+            <div className="text-center max-w-md">
+                <div className="flex justify-center mb-6">
+                    <div className="w-20 h-20 rounded-full bg-red-50 flex items-center justify-center">
+                        <ServerCrash className="h-10 w-10 text-red-400" />
+                    </div>
+                </div>
+                <h1 className="text-6xl font-bold text-red-200 mb-2">500</h1>
+                <h2 className="text-xl font-semibold text-gray-700 mb-2">서버 오류가 발생했습니다</h2>
+                <p className="text-gray-500 mb-2">
+                    일시적인 서버 문제입니다. 잠시 후 다시 시도해주세요.
+                </p>
+                {errorMessage && (
+                    <p className="text-sm text-red-500 bg-red-50 rounded px-3 py-2 mb-6 break-words">
+                        {errorMessage}
+                    </p>
+                )}
+                {!errorMessage && <div className="mb-8" />}
+                <div className="flex gap-3 justify-center">
+                    <Button variant="outline" onClick={() => window.location.reload()}>
+                        <RotateCcw className="h-4 w-4 mr-2" />
+                        새로고침
+                    </Button>
+                    <Button onClick={() => navigate('/projects')}>
+                        <Home className="h-4 w-4 mr-2" />
+                        프로젝트 목록
+                    </Button>
+                </div>
+            </div>
+        </div>
+    );
+}
+
+export default ServerErrorPage;

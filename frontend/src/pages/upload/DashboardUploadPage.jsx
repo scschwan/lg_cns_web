@@ -96,6 +96,9 @@ function DashboardUploadPage() {
     // 프로젝트 완료 다이얼로그
     const [completeDialogOpen, setCompleteDialogOpen] = useState(false);
 
+    // 세션 삭제 확인 다이얼로그
+    const [deleteConfirmDialog, setDeleteConfirmDialog] = useState({ open: false, sessionIds: [] });
+
     // 메시지 다이얼로그
     const [msgDialog, setMsgDialog] = useState({ open: false, type: 'error', title: '', message: '' });
     const showMessage = (type, title, message) => setMsgDialog({ open: true, type, title, message });
@@ -311,36 +314,27 @@ function DashboardUploadPage() {
     };
 
     // ===== 세션 삭제 =====
-    const handleDeleteSessions = async () => {
+    const handleDeleteSessions = () => {
         if (selectedSessions.length === 0) {
             showError('선택 필요', '삭제할 세션을 선택해주세요.');
             return;
         }
-
-        const confirmed = window.confirm(
-            `선택된 ${selectedSessions.length}개의 세션을 삭제하시겠습니까?`
-        );
-        if (!confirmed) return;
-
-        try {
-            await uploadService.deleteSessions(projectId, selectedSessions);
-            loadSessions();
-            setSelectedSessions([]);
-            showSuccess('삭제 완료', '세션이 삭제되었습니다.');
-        } catch (error) {
-            console.error('세션 삭제 실패:', error);
-            showError('삭제 실패', getErrorMsg(error, '세션 삭제 중 오류가 발생했습니다.'));
-        }
+        setDeleteConfirmDialog({ open: true, sessionIds: [...selectedSessions] });
     };
 
-    const handleDeleteSingleSession = async (sessionId) => {
-        const confirmed = window.confirm('이 세션을 삭제하시겠습니까?');
-        if (!confirmed) return;
+    const handleDeleteSingleSession = (sessionId) => {
+        setDeleteConfirmDialog({ open: true, sessionIds: [sessionId] });
+    };
+
+    const executeDeleteSessions = async () => {
+        const { sessionIds } = deleteConfirmDialog;
+        setDeleteConfirmDialog({ open: false, sessionIds: [] });
 
         try {
-            await uploadService.deleteSessions(projectId, [sessionId]);
+            await uploadService.deleteSessions(projectId, sessionIds);
             loadSessions();
-            setSelectedSessions(prev => prev.filter(id => id !== sessionId));
+            loadProject();
+            setSelectedSessions(prev => prev.filter(id => !sessionIds.includes(id)));
             showSuccess('삭제 완료', '세션이 삭제되었습니다.');
         } catch (error) {
             console.error('세션 삭제 실패:', error);
@@ -361,13 +355,11 @@ function DashboardUploadPage() {
             const cols = getSessionColumns(session);
             const autoCluster = autoDetectClusterColumns(cols);
 
-            // 대계정컬럼이 선택되었으면 clusterColumn으로 사용, 아니면 자동 감지 값 사용
-            const clusterColumn = mapping.accountColumn || autoCluster.clusterColumn;
-
             return {
                 sessionId: session.sessionId,
                 accountName: session.sessionName || '',
-                clusterColumn: clusterColumn,
+                accountColumn: mapping.accountColumn || '',
+                clusterColumn: autoCluster.clusterColumn || '',
                 subClusterColumn: autoCluster.subClusterColumn || '',
                 amountColumn: mapping.amountColumn || '',
                 supplierColumn: mapping.supplierColumn || '',
@@ -375,10 +367,10 @@ function DashboardUploadPage() {
             };
         });
 
-        // 필수 컬럼 검증: 대계정(→clusterColumn), 금액
-        const invalid = sessionsConfig.filter(s => !s.clusterColumn || !s.amountColumn);
+        // 필수 컬럼 검증: 대계정(accountColumn), 클러스터(clusterColumn), 금액(amountColumn)
+        const invalid = sessionsConfig.filter(s => !s.accountColumn || !s.clusterColumn || !s.amountColumn);
         if (invalid.length > 0) {
-            showError('매핑 필요', '모든 세션에 대계정컬럼과 금액컬럼을 설정해주세요.');
+            showError('매핑 필요', '모든 세션에 대계정컬럼, 클러스터컬럼, 금액컬럼을 설정해주세요.');
             return;
         }
 
@@ -741,6 +733,25 @@ function DashboardUploadPage() {
                         <DialogFooter>
                             <Button variant="outline" onClick={() => setCompleteDialogOpen(false)}>취소</Button>
                             <Button onClick={handleProjectComplete} className="bg-sky-500 hover:bg-sky-600">프로젝트 완료</Button>
+                        </DialogFooter>
+                    </DialogContent>
+                </Dialog>
+
+                {/* 세션 삭제 확인 다이얼로그 */}
+                <Dialog open={deleteConfirmDialog.open} onOpenChange={(open) => !open && setDeleteConfirmDialog({ open: false, sessionIds: [] })}>
+                    <DialogContent>
+                        <DialogHeader>
+                            <DialogTitle className="flex items-center gap-2">
+                                <AlertCircle className="h-5 w-5 text-red-500" />
+                                세션 삭제 확인
+                            </DialogTitle>
+                            <DialogDescription className="pt-2">
+                                세션을 삭제하면 대시보드 데이터(Long/Short List, 과제, 대시보드)가 전부 초기화됩니다. 계속하시겠습니까?
+                            </DialogDescription>
+                        </DialogHeader>
+                        <DialogFooter>
+                            <Button variant="outline" onClick={() => setDeleteConfirmDialog({ open: false, sessionIds: [] })}>취소</Button>
+                            <Button variant="destructive" onClick={executeDeleteSessions}>삭제</Button>
                         </DialogFooter>
                     </DialogContent>
                 </Dialog>

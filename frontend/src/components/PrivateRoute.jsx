@@ -1,6 +1,7 @@
 import React from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import { Loader2 } from 'lucide-react';
 
 function PrivateRoute({ children, requireAdmin = false }) {
   const { user, isAuthenticated, loading } = useAuth();
@@ -8,8 +9,9 @@ function PrivateRoute({ children, requireAdmin = false }) {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-screen">
-        <div className="text-gray-500">세션 확인 중...</div>
+      <div className="flex flex-col items-center justify-center h-screen bg-gray-50 gap-3">
+        <Loader2 className="h-8 w-8 text-blue-500 animate-spin" />
+        <p className="text-gray-500 text-sm">세션 확인 중...</p>
       </div>
     );
   }

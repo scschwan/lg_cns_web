@@ -21,6 +21,10 @@ import com.example.finance.repository.data.ProcessDataRepository;
 import com.example.finance.repository.data.RawDataRepository;
 import com.example.finance.repository.data.SessionDataRepository;
 import com.example.finance.repository.data.SearchKeywordHierarchyRepository;
+import com.example.finance.repository.costreduction.LongShortListRepository;
+import com.example.finance.repository.costreduction.AbleTaskRepository;
+import com.example.finance.repository.costreduction.TaskDocumentRepository;
+import com.example.finance.repository.costreduction.CostReductionDashboardRepository;
 import com.example.finance.repository.project.ProjectRepository;
 import com.example.finance.repository.session.FileSessionRepository;
 import com.example.finance.repository.upload.UploadSessionRepository;
@@ -72,6 +76,10 @@ public class FileSessionService {
     private final SessionDataRepository sessionDataRepository;
     private final SessionDataService sessionDataService;
     private final SearchKeywordHierarchyRepository searchKeywordHierarchyRepository;
+    private final LongShortListRepository longShortListRepository;
+    private final AbleTaskRepository ableTaskRepository;
+    private final TaskDocumentRepository taskDocumentRepository;
+    private final CostReductionDashboardRepository costReductionDashboardRepository;
     private final S3Service s3Service;
     private final RedisService redisService;
 
@@ -1497,11 +1505,36 @@ public class FileSessionService {
             fileSessionRepository.delete(session);
         }
 
-        // ★ 프로젝트 통계 재계산 (totalSessions, totalFiles 등) + 완료 상태 확인
+        // ★ 프로젝트 레벨 대시보드 데이터 초기화
+        resetProjectDashboardData(projectId);
+
+        // ★ 프로젝트 통계 재계산 (totalSessions, totalFiles 등)
         refreshProjectStats(projectId);
-        checkAndUpdateProjectCompletion(projectId);
 
         log.info("세션 일괄 완전 삭제 완료: {} 개", sessionIds.size());
+    }
+
+    /**
+     * 프로젝트 레벨 대시보드 데이터 초기화
+     * 세션 삭제 시 관련 대시보드 컬렉션을 모두 삭제하고 프로젝트 완료 상태를 해제한다.
+     */
+    private void resetProjectDashboardData(String projectId) {
+        try {
+            longShortListRepository.deleteByProjectId(projectId);
+            ableTaskRepository.deleteByProjectId(projectId);
+            taskDocumentRepository.deleteByProjectId(projectId);
+            costReductionDashboardRepository.deleteByProjectId(projectId);
+
+            Project project = projectRepository.findByProjectId(projectId).orElse(null);
+            if (project != null) {
+                project.setIsCompleted(false);
+                project.setUpdatedAt(LocalDateTime.now());
+                projectRepository.save(project);
+            }
+            log.info("프로젝트 대시보드 데이터 초기화 완료: projectId={}", projectId);
+        } catch (Exception e) {
+            log.warn("프로젝트 대시보드 데이터 초기화 실패: {}", e.getMessage());
+        }
     }
 
     /**
