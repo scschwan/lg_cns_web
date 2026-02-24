@@ -196,21 +196,21 @@ function PhaseNavigationBar({ stats, currentPhase, projectId, navigate, dynamicS
   const phases = [
     {
       key: 'LONG_LIST',
-      label: 'Long List',
+      label: 'Raw List',
       count: stats?.longListItemCount ?? '-',
       amount: stats?.totalAmount ?? 0,
       path: `/projects/${projectId}/longlist`,
     },
     {
       key: 'SHORT_LIST',
-      label: 'Short List',
+      label: 'Long List',
       count: dynamicShortList ? dynamicShortList.count : (stats?.shortListItemCount ?? '-'),
       amount: dynamicShortList ? dynamicShortList.amount : (stats?.shortListTotalAmount ?? 0),
       path: `/projects/${projectId}/shortlist`,
     },
     {
       key: 'ABLE_REGISTER',
-      label: 'Able 과제 등록',
+      label: 'Short List',
       count: null,
       amount: null,
       path: `/projects/${projectId}/able-register`,
@@ -490,7 +490,7 @@ export default function AbleTaskRegisterPage() {
           <Card>
             <CardHeader className="pb-3 px-5 pt-5">
               <div className="flex items-center justify-between">
-                <CardTitle className="text-sm font-semibold">비용 유형 분류 (Short List 기반)</CardTitle>
+                <CardTitle className="text-sm font-semibold">비용 유형 분류 (Long List 기반)</CardTitle>
                 <div className="flex items-center gap-2">
                   <Button variant="ghost" size="sm" className="text-xs h-7 px-2" onClick={() => { const ids = new Set(); const t = (nodes) => { nodes.forEach(n => { ids.add(n.id); if (n.children?.length) t(n.children); }); }; t(treeData); setExpandedIds(ids); }}>모두 펼치기</Button>
                   <Button variant="ghost" size="sm" className="text-xs h-7 px-2" onClick={() => setExpandedIds(new Set())}>모두 접기</Button>
@@ -523,7 +523,7 @@ export default function AbleTaskRegisterPage() {
                       </TableRow>
                     )}
                     {treeData.length === 0 && (
-                      <TableRow><TableCell colSpan={5} className="text-center py-12 text-muted-foreground">Short List에서 선택된 항목이 없습니다.</TableCell></TableRow>
+                      <TableRow><TableCell colSpan={5} className="text-center py-12 text-muted-foreground">Long List에서 선택된 항목이 없습니다.</TableCell></TableRow>
                     )}
                   </TableBody>
                 </Table>

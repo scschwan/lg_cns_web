@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
   ChevronRight, ChevronDown, Database, Layers, GitBranch, Hash,
@@ -96,9 +96,9 @@ function StatCard({ icon: Icon, label, value, unit, color, onClick }) {
 }
 
 /* ============================================================
-   Tree Table Row (체크박스 포함)
+   Tree Table Row (체크박스 포함 + 드래그/Ctrl 멀티셀렉트)
    ============================================================ */
-function TreeRow({ item, level = 0, expandedIds, toggleExpand, checkedIds, onCheck, isReadOnly, onItemClick }) {
+function TreeRow({ item, level = 0, expandedIds, toggleExpand, checkedIds, onCheck, isReadOnly, onItemClick, cursorIds, onMouseDownRow, onMouseEnterRow, flatIndex }) {
   const hasChildren = item.children && item.children.length > 0;
   const nodeId = getNodeId(item);
   const isExpanded = expandedIds.has(nodeId);
@@ -121,9 +121,25 @@ function TreeRow({ item, level = 0, expandedIds, toggleExpand, checkedIds, onChe
   const leafIds = hasChildren ? getChildLeafIds(item) : [nodeId];
   const isChecked = leafIds.every(id => checkedIds.has(id));
   const isIndeterminate = !isChecked && leafIds.some(id => checkedIds.has(id));
+  const isCursor = cursorIds?.has(nodeId);
 
   const handleCheck = () => {
     if (isReadOnly) return;
+    // 커서가 잡힌 상태에서 체크 토글 → 커서 전체에 적용
+    if (cursorIds && cursorIds.size > 0 && cursorIds.has(nodeId)) {
+      onCheck(prev => {
+        const n = new Set(prev);
+        const shouldCheck = !isChecked;
+        cursorIds.forEach(cursorNodeId => {
+          // 커서에 있는 각 nodeId의 leaf ids를 찾아서 적용
+          // 단순히 nodeId 자체가 leaf인 경우
+          if (shouldCheck) n.add(cursorNodeId);
+          else n.delete(cursorNodeId);
+        });
+        return n;
+      });
+      return;
+    }
     if (isChecked) {
       onCheck(prev => { const n = new Set(prev); leafIds.forEach(id => n.delete(id)); return n; });
     } else {
@@ -131,7 +147,7 @@ function TreeRow({ item, level = 0, expandedIds, toggleExpand, checkedIds, onChe
     }
   };
 
-  const handleRowClick = () => {
+  const handleRowClick = (e) => {
     if (hasChildren) {
       toggleExpand(nodeId);
     }
@@ -140,22 +156,34 @@ function TreeRow({ item, level = 0, expandedIds, toggleExpand, checkedIds, onChe
     }
   };
 
+  const handleRowMouseDown = (e) => {
+    if (onMouseDownRow) onMouseDownRow(e, nodeId, flatIndex);
+  };
+
+  const handleRowMouseEnter = () => {
+    if (onMouseEnterRow) onMouseEnterRow(nodeId, flatIndex);
+  };
+
   return (
     <>
       <TableRow
         className={cn(
-          'cursor-pointer transition-colors',
+          'cursor-pointer transition-colors select-none',
           level === 0 && 'bg-muted/30 font-medium',
           level > 0 && 'text-sm',
           leafIds.some(id => checkedIds.has(id)) && 'bg-blue-50',
+          isCursor && 'ring-1 ring-inset ring-blue-300 bg-blue-100',
         )}
         onClick={handleRowClick}
+        onMouseDown={handleRowMouseDown}
+        onMouseEnter={handleRowMouseEnter}
       >
         <TableCell className="w-[40px] text-center py-2.5" onClick={e => e.stopPropagation()}>
           <Checkbox
             checked={isIndeterminate ? 'indeterminate' : isChecked}
             onCheckedChange={handleCheck}
             disabled={isReadOnly}
+            onMouseDown={e => e.stopPropagation()}
           />
         </TableCell>
         <TableCell style={{ paddingLeft: level > 0 ? paddingLeft : 8 }} className="py-2.5">
@@ -174,7 +202,7 @@ function TreeRow({ item, level = 0, expandedIds, toggleExpand, checkedIds, onChe
         <TableCell className="text-right tabular-nums py-2.5 font-medium">{formatAmount(item.totalAmount)}</TableCell>
       </TableRow>
       {isExpanded && hasChildren && item.children.map(child => (
-        <TreeRow key={getNodeId(child)} item={child} level={level + 1} expandedIds={expandedIds} toggleExpand={toggleExpand} checkedIds={checkedIds} onCheck={onCheck} isReadOnly={isReadOnly} onItemClick={onItemClick} />
+        <TreeRow key={getNodeId(child)} item={child} level={level + 1} expandedIds={expandedIds} toggleExpand={toggleExpand} checkedIds={checkedIds} onCheck={onCheck} isReadOnly={isReadOnly} onItemClick={onItemClick} cursorIds={cursorIds} onMouseDownRow={onMouseDownRow} onMouseEnterRow={onMouseEnterRow} flatIndex={flatIndex} />
       ))}
     </>
   );
@@ -304,7 +332,66 @@ export default function LongListPage() {
   const [shortListConfirmOpen, setShortListConfirmOpen] = useState(false);
   const [saving, setSaving] = useState(false);
 
+  // 드래그/Ctrl 멀티셀렉트 상태
+  const [cursorIds, setCursorIds] = useState(new Set());
+  const [isDragging, setIsDragging] = useState(false);
+  const dragStartRef = useRef(null);
+
   const isReadOnly = !isEditor || dashboardStatus?.isListLocked;
+
+  // 트리를 flat list로 변환 (현재 확장된 상태 기반)
+  const flatNodeIds = useMemo(() => {
+    const ids = [];
+    const traverse = (nodes, expandedIds) => {
+      nodes.forEach(node => {
+        const nodeId = getNodeId(node);
+        ids.push(nodeId);
+        if (node.children?.length && expandedIds.has(nodeId)) {
+          traverse(node.children, expandedIds);
+        }
+      });
+    };
+    traverse(treeData, expandedIds);
+    return ids;
+  }, [treeData, expandedIds]);
+
+  const handleRowMouseDown = useCallback((e, nodeId, flatIdx) => {
+    if (e.ctrlKey || e.metaKey) {
+      e.preventDefault();
+      setCursorIds(prev => {
+        const next = new Set(prev);
+        if (next.has(nodeId)) next.delete(nodeId);
+        else next.add(nodeId);
+        return next;
+      });
+      return;
+    }
+    e.preventDefault();
+    setIsDragging(true);
+    const idx = flatNodeIds.indexOf(nodeId);
+    dragStartRef.current = idx >= 0 ? idx : 0;
+    setCursorIds(new Set([nodeId]));
+  }, [flatNodeIds]);
+
+  const handleRowMouseEnter = useCallback((nodeId, flatIdx) => {
+    if (!isDragging || dragStartRef.current === null) return;
+    const currentIdx = flatNodeIds.indexOf(nodeId);
+    if (currentIdx < 0) return;
+    const startIdx = dragStartRef.current;
+    const minIdx = Math.min(startIdx, currentIdx);
+    const maxIdx = Math.max(startIdx, currentIdx);
+    const newSet = new Set();
+    for (let i = minIdx; i <= maxIdx; i++) {
+      newSet.add(flatNodeIds[i]);
+    }
+    setCursorIds(newSet);
+  }, [isDragging, flatNodeIds]);
+
+  useEffect(() => {
+    const handleGlobalMouseUp = () => setIsDragging(false);
+    window.addEventListener('mouseup', handleGlobalMouseUp);
+    return () => window.removeEventListener('mouseup', handleGlobalMouseUp);
+  }, []);
 
   // 데이터 로드
   useEffect(() => {
@@ -456,29 +543,33 @@ export default function LongListPage() {
     }
   };
 
-  /* -- 차트 데이터 변환 (공급업체/코스트센터) -- */
+  /* -- 차트 데이터 변환 (공급업체/코스트센터) - 내림차순 정렬, 0원은 하단 -- */
   const supplierChartData = useMemo(() => {
     if (!chartData?.supplierBreakdown) return [];
     const total = chartData.supplierBreakdown.reduce((s, i) => s + (i.totalAmount || 0), 0);
-    return chartData.supplierBreakdown.map(i => ({
-      name: i.name,
-      amount: i.totalAmount || 0,
-      count: i.count || 0,
-      ratio: total > 0 ? +((i.totalAmount || 0) / total * 100).toFixed(1) : 0,
-      금액: Math.round((i.totalAmount || 0) / 100000000 * 10) / 10,
-    }));
+    return chartData.supplierBreakdown
+      .map(i => ({
+        name: i.name,
+        amount: i.totalAmount || 0,
+        count: i.count || 0,
+        ratio: total > 0 ? +((i.totalAmount || 0) / total * 100).toFixed(1) : 0,
+        금액: Math.round((i.totalAmount || 0) / 100000000 * 10) / 10,
+      }))
+      .sort((a, b) => b.amount - a.amount);
   }, [chartData]);
 
   const costCenterChartData = useMemo(() => {
     if (!chartData?.costCenterBreakdown) return [];
     const total = chartData.costCenterBreakdown.reduce((s, i) => s + (i.totalAmount || 0), 0);
-    return chartData.costCenterBreakdown.map(i => ({
-      name: i.name,
-      amount: i.totalAmount || 0,
-      count: i.count || 0,
-      ratio: total > 0 ? +((i.totalAmount || 0) / total * 100).toFixed(1) : 0,
-      금액: Math.round((i.totalAmount || 0) / 100000000 * 10) / 10,
-    }));
+    return chartData.costCenterBreakdown
+      .map(i => ({
+        name: i.name,
+        amount: i.totalAmount || 0,
+        count: i.count || 0,
+        ratio: total > 0 ? +((i.totalAmount || 0) / total * 100).toFixed(1) : 0,
+        금액: Math.round((i.totalAmount || 0) / 100000000 * 10) / 10,
+      }))
+      .sort((a, b) => b.amount - a.amount);
   }, [chartData]);
 
   if (loading) {
@@ -509,7 +600,7 @@ export default function LongListPage() {
             {!isReadOnly && checkedIds.size > 0 && (
               <Button onClick={handleDeriveShortListClick} disabled={saving} className="gap-1">
                 {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <ArrowRight className="w-4 h-4" />}
-                Short List 도출 ({checkedIds.size}개)
+                Long List 도출 ({checkedIds.size}개)
               </Button>
             )}
           </div>
@@ -562,7 +653,7 @@ export default function LongListPage() {
                       <TableHead className="text-right w-[140px]">합계 금액</TableHead>
                     </TableRow>
                   </TableHeader>
-                  <TableBody>
+                  <TableBody onMouseUp={() => setIsDragging(false)}>
                     {treeData.map(item => (
                       <TreeRow
                         key={getNodeId(item)}
@@ -573,6 +664,9 @@ export default function LongListPage() {
                         onCheck={setCheckedIds}
                         isReadOnly={isReadOnly}
                         onItemClick={handleItemClick}
+                        cursorIds={cursorIds}
+                        onMouseDownRow={handleRowMouseDown}
+                        onMouseEnterRow={handleRowMouseEnter}
                       />
                     ))}
                     <TableRow className="bg-primary/5 font-bold border-t-2">
@@ -632,13 +726,16 @@ export default function LongListPage() {
                         </CardHeader>
                         <CardContent className="px-2 pb-4">
                           <ResponsiveContainer width="100%" height={Math.max(200, supplierChartData.length * 32)}>
-                            <BarChart data={supplierChartData} layout="vertical" margin={{ left: 10, right: 20 }}>
+                            <BarChart data={[...supplierChartData].reverse()} layout="vertical" margin={{ left: 10, right: 20 }}>
                               <CartesianGrid strokeDasharray="3 3" />
                               <XAxis type="number" tick={{ fontSize: 10 }} unit="억" />
                               <YAxis type="category" dataKey="name" tick={{ fontSize: 10 }} width={100} />
                               <Tooltip formatter={(v) => [`${v}억`, '금액']} />
                               <Bar dataKey="금액" radius={[0, 4, 4, 0]}>
-                                {supplierChartData.map((_, idx) => <Cell key={idx} fill={CHART_COLORS[idx % CHART_COLORS.length]} />)}
+                                {[...supplierChartData].reverse().map((item, idx) => {
+                                  const origIdx = supplierChartData.findIndex(d => d.name === item.name);
+                                  return <Cell key={idx} fill={CHART_COLORS[origIdx % CHART_COLORS.length]} />;
+                                })}
                               </Bar>
                             </BarChart>
                           </ResponsiveContainer>
@@ -676,13 +773,16 @@ export default function LongListPage() {
                         </CardHeader>
                         <CardContent className="px-2 pb-4">
                           <ResponsiveContainer width="100%" height={Math.max(200, costCenterChartData.length * 32)}>
-                            <BarChart data={costCenterChartData} layout="vertical" margin={{ left: 10, right: 20 }}>
+                            <BarChart data={[...costCenterChartData].reverse()} layout="vertical" margin={{ left: 10, right: 20 }}>
                               <CartesianGrid strokeDasharray="3 3" />
                               <XAxis type="number" tick={{ fontSize: 10 }} unit="억" />
                               <YAxis type="category" dataKey="name" tick={{ fontSize: 10 }} width={100} />
                               <Tooltip formatter={(v) => [`${v}억`, '금액']} />
                               <Bar dataKey="금액" radius={[0, 4, 4, 0]}>
-                                {costCenterChartData.map((_, idx) => <Cell key={idx} fill={CHART_COLORS[idx % CHART_COLORS.length]} />)}
+                                {[...costCenterChartData].reverse().map((item, idx) => {
+                                  const origIdx = costCenterChartData.findIndex(d => d.name === item.name);
+                                  return <Cell key={idx} fill={CHART_COLORS[origIdx % CHART_COLORS.length]} />;
+                                })}
                               </Bar>
                             </BarChart>
                           </ResponsiveContainer>
@@ -730,9 +830,9 @@ export default function LongListPage() {
       <Dialog open={shortListConfirmOpen} onOpenChange={setShortListConfirmOpen}>
         <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle>Short List 초기화</DialogTitle>
+            <DialogTitle>Long List 초기화</DialogTitle>
             <DialogDescription>
-              기존에 저장된 Short List 항목이 있습니다. 새로 Short List를 도출하면 기존 Short List 선택 항목이 초기화됩니다. 계속하시겠습니까?
+              기존에 저장된 Long List 항목이 있습니다. 새로 Long List를 도출하면 기존 Long List 선택 항목이 초기화됩니다. 계속하시겠습니까?
             </DialogDescription>
           </DialogHeader>
           <div className="flex justify-end gap-2 pt-4 border-t">
