@@ -99,6 +99,48 @@ public class AuthController {
     }
 
     /**
+     * 사용자 프로필 수정 (이름)
+     *
+     * PUT /api/auth/profile
+     */
+    @PutMapping("/profile")
+    public ResponseEntity<Map<String, Object>> updateProfile(
+            @CurrentUser UserPrincipal userPrincipal,
+            @RequestBody Map<String, String> body) {
+        if (userPrincipal == null) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+        }
+
+        log.info("프로필 수정 요청: userId={}", userPrincipal.getId());
+
+        Map<String, Object> updated = authService.updateProfile(userPrincipal.getId(), body.get("name"));
+
+        return ResponseEntity.ok(updated);
+    }
+
+    /**
+     * 비밀번호 변경 (일반 사용자용)
+     *
+     * PUT /api/auth/profile/password
+     */
+    @PutMapping("/profile/password")
+    public ResponseEntity<Map<String, String>> changePassword(
+            @CurrentUser UserPrincipal userPrincipal,
+            @RequestBody Map<String, String> body) {
+        if (userPrincipal == null) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+        }
+
+        log.info("비밀번호 변경 요청: userId={}", userPrincipal.getId());
+
+        authService.changePassword(userPrincipal.getId(), body.get("currentPassword"), body.get("newPassword"));
+
+        Map<String, String> response = new HashMap<>();
+        response.put("message", "비밀번호가 변경되었습니다");
+        return ResponseEntity.ok(response);
+    }
+
+    /**
      * 헬스 체크
      *
      * GET /api/auth/health

@@ -51,6 +51,24 @@ const authService = {
         }
     },
 
+    // 프로필 수정 (이름)
+    updateProfile: async (name) => {
+        const response = await api.put('/api/auth/profile', { name });
+        // localStorage 동기화
+        const current = authService.getCurrentUser();
+        if (current) {
+            const updated = { ...current, name: response.data.name };
+            localStorage.setItem('user', JSON.stringify(updated));
+        }
+        return response.data;
+    },
+
+    // 비밀번호 변경
+    changePassword: async (currentPassword, newPassword) => {
+        const response = await api.put('/api/auth/profile/password', { currentPassword, newPassword });
+        return response.data;
+    },
+
     // 인증 여부 확인
     isAuthenticated: () => {
         const token = localStorage.getItem('authToken');
