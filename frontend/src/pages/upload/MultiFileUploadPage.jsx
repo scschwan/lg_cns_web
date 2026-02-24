@@ -20,6 +20,7 @@ import {
     RotateCcw,
     Lock,
     Clock,
+    Eye,
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 
@@ -583,15 +584,16 @@ function MultiFileUploadPage() {
 
        const sessionId = selectedSessions[0];
 
-       // 세션 편집자 잠금 확인: 다른 사용자가 편집 중이면 진입 차단
+       // 세션 편집자 잠금 확인: 다른 사용자가 편집 중이면 뷰어 모드로 진입
        const targetSession = sessions.find(s => s.sessionId === sessionId);
        if (targetSession?.isEditing && targetSession?.editorUserId) {
-           // 실시간 Redis 상태 재확인
            try {
                const lockStatus = await uploadService.getSessionLockStatus(projectId, sessionId);
                if (lockStatus.isLocked && !lockStatus.isEditor) {
-                   showError('세션 사용 중',
-                       `현재 ${lockStatus.editorUserName || '다른 사용자'}님이 작업 중입니다. 작업이 완료된 후 다시 시도해주세요.`);
+                   // 세션 상세 조회 → 현재 진행 단계로 뷰어 모드 진입
+                   const sessionDetail = await uploadService.getSession(projectId, sessionId);
+                   const lastPath = getLastStepPath(sessionDetail);
+                   navigate(`/projects/${projectId}/sessions/${sessionId}/${lastPath}`);
                    return;
                }
            } catch (e) {
@@ -1087,15 +1089,34 @@ function MultiFileUploadPage() {
                                                     <Trash2 className="h-4 w-4 mr-1" />
                                                     세션 삭제
                                                 </Button>
-                                                <Button
-                                                    onClick={handleStartAnalysis}
-                                                    size="sm"
-                                                    disabled={selectedSessions.length !== 1 || isViewer}
-                                                    className="bg-green-600 hover:bg-green-700"
-                                                >
-                                                    <Play className="h-4 w-4 mr-1" />
-                                                    계정 분석 시작
-                                                </Button>
+                                                {(() => {
+                                                    const sel = selectedSessions.length === 1
+                                                        ? sessions.find(s => s.sessionId === selectedSessions[0])
+                                                        : null;
+                                                    const isLockedByOther = sel?.isEditing && sel?.editorUserId;
+                                                    return (
+                                                        <Button
+                                                            onClick={handleStartAnalysis}
+                                                            size="sm"
+                                                            disabled={selectedSessions.length !== 1 || isViewer}
+                                                            className={isLockedByOther
+                                                                ? "bg-blue-600 hover:bg-blue-700"
+                                                                : "bg-green-600 hover:bg-green-700"}
+                                                        >
+                                                            {isLockedByOther ? (
+                                                                <>
+                                                                    <Eye className="h-4 w-4 mr-1" />
+                                                                    진행상황 보기
+                                                                </>
+                                                            ) : (
+                                                                <>
+                                                                    <Play className="h-4 w-4 mr-1" />
+                                                                    계정 분석 시작
+                                                                </>
+                                                            )}
+                                                        </Button>
+                                                    );
+                                                })()}
                                     </div>
                                 </div>
                             </CardHeader>
