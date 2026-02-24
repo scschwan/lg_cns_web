@@ -18,6 +18,7 @@ import ProjectSettingsPage from './pages/project/ProjectSettingsPage';
 
 // Step 1-7 Pages
 import MultiFileUploadPage from './pages/upload/MultiFileUploadPage';
+import DashboardUploadPage from './pages/upload/DashboardUploadPage';
 import StartAnalysisPage from './pages/startAnalysis/StartAnalysisPage';
 import PreprocessingPage from './pages/preprocessing/PreprocessingPage';
 import DataTransformPage from './pages/transform/DataTransformPage';
@@ -122,6 +123,20 @@ function App() {
                 <LayoutWrapper>
                   <DashboardLayout>
                     <MultiFileUploadPage />
+                  </DashboardLayout>
+                </LayoutWrapper>
+              </PrivateRoute>
+            }
+          />
+
+          {/* Dashboard Upload (대시보드 프로젝트 전용) */}
+          <Route
+            path="/projects/:projectId/dashboard-upload"
+            element={
+              <PrivateRoute>
+                <LayoutWrapper>
+                  <DashboardLayout>
+                    <DashboardUploadPage />
                   </DashboardLayout>
                 </LayoutWrapper>
               </PrivateRoute>
