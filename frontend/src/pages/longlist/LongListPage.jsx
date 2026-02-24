@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
   ChevronRight, ChevronDown, Database, Layers, GitBranch, Hash,
-  DollarSign, Eye, BarChart3, Loader2, ArrowRight, Lock,
+  DollarSign, Eye, BarChart3, Loader2, ArrowRight, Lock, FileSpreadsheet,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
