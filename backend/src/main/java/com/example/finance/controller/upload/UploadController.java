@@ -62,10 +62,16 @@ public class UploadController {
                 projectId, userId, request.getFileName());
 
         // 1. 프로젝트 권한 확인
-        projectService.getProject(projectId, userId);
+        var project = projectService.getProject(projectId, userId);
 
         // 2. 세션 ID와 업로드 ID 생성
-        String sessionId = uploadService.createSession(projectId, userId);
+        // 대시보드 프로젝트: 파일명을 세션명으로 자동 설정 (파일 1개 = 세션 1개)
+        String sessionName = null;
+        if ("DASHBOARD_IMPORT".equals(project.getProjectType())) {
+            String fileName = request.getFileName();
+            sessionName = fileName.replaceAll("\\.(xlsx|xls)$", "");
+        }
+        String sessionId = uploadService.createSession(projectId, userId, sessionName);
         String uploadId = uploadService.createUploadId();
 
         // 3. S3 키 생성

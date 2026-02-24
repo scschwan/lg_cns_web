@@ -127,7 +127,7 @@ function MultiFileUploadPage() {
     const isViewer = myRole === 'VIEWER';
 
     // 대시보드 프로젝트 여부
-    const isDashboard = project?.projectType === 'DASHBOARD';
+    const isDashboard = project?.projectType === 'DASHBOARD_IMPORT';
 
     // 대시보드 프로젝트: 페이지 로드 시 생성 상태 확인
     useEffect(() => {
@@ -842,12 +842,48 @@ function MultiFileUploadPage() {
         setTimeout(poll, 1000);
     };
 
-    // 대시보드 생성 완료 여부
-    const isDashboardGenerated = isDashboard && generationStatus?.status === 'COMPLETED';
+    // 대시보드 진입 가능 여부: 프로젝트가 완료 처리되었을 때만
+    const canEnterDashboard = isDashboard && project?.isCompleted === true;
+    // 대시보드 데이터 생성 완료 여부 (생성 완료 or 세션이 모두 isCompleted)
+    const isDashboardGenerated = isDashboard && (
+        generationStatus?.status === 'COMPLETED' ||
+        generationStatus?.status === 'COMPLETED_WITH_ERRORS' ||
+        (sessions.length > 0 && sessions.every(s => s.isCompleted))
+    );
     // 대시보드 세션에 아직 detectedColumns가 없는 세션 수 (Lambda 처리 중)
     const dashboardProcessingCount = isDashboard
         ? sessions.filter(s => !getSessionColumns(s).length).length
         : 0;
+
+    // 컬럼 자동 감지
+    const autoDetectColumns = (columns) => {
+        const find = (patterns) => columns.find(c =>
+            patterns.some(p => c.toLowerCase().includes(p))
+        ) || '';
+        return {
+            clusterColumn: find(['클러스터', 'cluster', '분류']),
+            subClusterColumn: find(['세부', 'sub', '소분류']),
+            amountColumn: find(['금액', 'amount', '비용', '원가', 'money']),
+            supplierColumn: find(['공급업체', 'supplier', '업체', '거래처']),
+            costCenterColumn: find(['코스트센터', 'cost center', 'cc', '부서', 'department']),
+            accountName: find(['계정', 'account']),
+        };
+    };
+
+    // 세션 로드 시 자동 매핑 설정
+    useEffect(() => {
+        if (!isDashboard || sessions.length === 0) return;
+        setDashboardMappings(prev => {
+            const updated = { ...prev };
+            for (const session of sessions) {
+                if (updated[session.sessionId]) continue; // 이미 매핑 존재
+                const cols = getSessionColumns(session);
+                if (cols.length === 0) continue; // 아직 detectedColumns 없음
+                updated[session.sessionId] = autoDetectColumns(cols);
+            }
+            return updated;
+        });
+    }, [isDashboard, sessions]);
 
     return (
         <div className="min-h-screen bg-gray-50">
@@ -1575,7 +1611,16 @@ function MultiFileUploadPage() {
                     {/* 하단 버튼 영역 */}
                     {isDashboard ? (
                         <div className="flex justify-end gap-3">
-                            {isDashboardGenerated && (
+                            {isDashboardGenerated && !project?.isCompleted && (
+                                <Button
+                                    onClick={() => setCompleteDialogOpen(true)}
+                                    disabled={isViewer}
+                                    className="bg-sky-500 hover:bg-sky-600"
+                                >
+                                    프로젝트 완료
+                                </Button>
+                            )}
+                            {canEnterDashboard && (
                                 <Button
                                     onClick={() => navigate(`/projects/${projectId}/longlist`)}
                                     className="bg-emerald-600 hover:bg-emerald-700 gap-2"
