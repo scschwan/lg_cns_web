@@ -573,9 +573,13 @@ public class ClusteringService {
         public volatile int progress;  // 0-100
         public volatile String message;
         public volatile Map<String, Object> result;
+        public volatile long completedAt; // ★ 완료 시각 (millis)
 
         MergeProgress() { this.status = "RUNNING"; this.progress = 0; this.message = "시작 중..."; }
     }
+
+    // ★ 완료 후 30초간 결과를 유지하여 늦은 폴링에도 응답
+    private static final long PROGRESS_RETAIN_MS = 30_000;
 
     public Map<String, Object> getMergeProgress(String taskId) {
         MergeProgress mp = mergeProgressMap.get(taskId);
@@ -585,9 +589,13 @@ public class ClusteringService {
         r.put("progress", mp.progress);
         r.put("message", mp.message);
         if (mp.result != null) r.put("result", mp.result);
-        // 완료/실패 시 메모리에서 제거 (조회 후)
+        // ★ 완료/실패 후 일정 시간 경과 시에만 메모리에서 제거
         if ("COMPLETED".equals(mp.status) || "FAILED".equals(mp.status)) {
-            mergeProgressMap.remove(taskId);
+            if (mp.completedAt == 0) {
+                mp.completedAt = System.currentTimeMillis();
+            } else if (System.currentTimeMillis() - mp.completedAt > PROGRESS_RETAIN_MS) {
+                mergeProgressMap.remove(taskId);
+            }
         }
         return r;
     }

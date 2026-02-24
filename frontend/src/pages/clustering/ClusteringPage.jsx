@@ -789,12 +789,17 @@ function ClusteringPage() {
   const pollMergeProgress = async (taskId) => {
     const POLL_INTERVAL = 1500; // 1.5초 간격
     const MAX_POLLS = 600;      // 최대 15분
+    let sawRunning = false;     // ★ RUNNING 상태를 한 번이라도 받았는지 추적
+    let notFoundRetries = 0;    // ★ NOT_FOUND 연속 횟수
+    const MAX_NOT_FOUND_RETRIES = 3;
+
     for (let i = 0; i < MAX_POLLS; i++) {
       await new Promise(r => setTimeout(r, POLL_INTERVAL));
       try {
         const p = await clusteringService.getMergeProgress(projectId, sessionId, taskId);
         setMergingProgress(p.progress || 0);
         setMergingMessage(p.message || '처리 중...');
+
         if (p.status === 'COMPLETED') {
           setMergingProgress(100);
           setMergingMessage('병합 완료');
@@ -804,12 +809,29 @@ function ClusteringPage() {
         if (p.status === 'FAILED') {
           throw new Error(p.message || '서버에서 병합 실패');
         }
+        if (p.status === 'RUNNING') {
+          sawRunning = true;
+          notFoundRetries = 0;
+        }
         if (p.status === 'NOT_FOUND') {
-          throw new Error('병합 작업을 찾을 수 없습니다.');
+          notFoundRetries++;
+          // ★ 이전에 RUNNING을 받았다면 서버에서 이미 완료 후 정리된 것으로 간주
+          if (sawRunning) {
+            console.warn('[pollMergeProgress] NOT_FOUND but previously RUNNING → treating as completed');
+            setMergingProgress(100);
+            setMergingMessage('병합 완료');
+            await new Promise(r => setTimeout(r, 500));
+            return;
+          }
+          // ★ RUNNING을 한번도 못 받은 경우 몇 차례 재시도 후 실패 처리
+          if (notFoundRetries >= MAX_NOT_FOUND_RETRIES) {
+            throw new Error('병합 작업을 찾을 수 없습니다.');
+          }
+          console.warn(`[pollMergeProgress] NOT_FOUND (${notFoundRetries}/${MAX_NOT_FOUND_RETRIES}), retrying...`);
         }
       } catch (pollErr) {
-        // 네트워크 에러는 무시하고 계속 폴링 (일시적 장애 가능)
-        if (pollErr.message?.includes('서버에서') || pollErr.message?.includes('찾을 수 없')) {
+        // 서버 에러(명시적 실패)만 즉시 중단, 네트워크 에러는 무시하고 계속 폴링
+        if (pollErr.message?.includes('서버에서') || pollErr.message?.includes('찾을 수 없습니다')) {
           throw pollErr;
         }
         console.warn('[pollMergeProgress] 폴링 에러 (재시도):', pollErr.message);
