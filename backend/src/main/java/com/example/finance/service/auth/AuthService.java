@@ -129,6 +129,49 @@ public class AuthService {
     }
 
     /**
+     * 사용자 프로필 수정 (이름)
+     */
+    @Transactional
+    public Map<String, Object> updateProfile(String userId, String name) {
+        log.info("프로필 수정: userId={}", userId);
+
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new UserNotFoundException("사용자를 찾을 수 없습니다: " + userId));
+
+        if (name != null && !name.isBlank()) {
+            user.setName(name);
+        }
+
+        userRepository.save(user);
+
+        Map<String, Object> userInfo = new HashMap<>();
+        userInfo.put("userId", user.getId());
+        userInfo.put("email", user.getEmail());
+        userInfo.put("name", user.getName());
+        userInfo.put("role", user.getRole());
+
+        return userInfo;
+    }
+
+    /**
+     * 비밀번호 변경 (일반 사용자용)
+     */
+    @Transactional
+    public void changePassword(String userId, String currentPassword, String newPassword) {
+        log.info("비밀번호 변경: userId={}", userId);
+
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new UserNotFoundException("사용자를 찾을 수 없습니다: " + userId));
+
+        if (!passwordEncoder.matches(currentPassword, user.getPassword())) {
+            throw new InvalidCredentialsException("현재 비밀번호가 일치하지 않습니다");
+        }
+
+        user.setPassword(passwordEncoder.encode(newPassword));
+        userRepository.save(user);
+    }
+
+    /**
      * Refresh Token으로 새 Access Token 발급
      *
      * @param refreshToken 클라이언트에서 전달한 refresh token
