@@ -60,7 +60,7 @@ const uploadService = {
             });
 
             xhr.open('PUT', presignedUrl);
-            xhr.setRequestHeader('Content-Type', file.type || 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+            xhr.setRequestHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
             xhr.send(file);
         });
     },
