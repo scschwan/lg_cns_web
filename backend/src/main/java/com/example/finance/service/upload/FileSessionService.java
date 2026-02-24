@@ -13,6 +13,7 @@ import com.example.finance.model.project.Project;
 import com.example.finance.model.session.StepHistory;
 import com.example.finance.model.session.UploadedFileInfo;
 import com.example.finance.model.upload.UploadSession;
+import com.example.finance.repository.data.ClusterStatisticsRepository;
 import com.example.finance.repository.data.ClusteringResultRepository;
 import com.example.finance.repository.data.PreprocessingConfigRepository;
 import com.example.finance.repository.data.ProcessViewDataRepository;
@@ -65,6 +66,7 @@ public class FileSessionService {
     private final RawDataRepository rawDataRepository;
     private final ProcessDataRepository processDataRepository;
     private final ClusteringResultRepository clusteringResultRepository;
+    private final ClusterStatisticsRepository clusterStatisticsRepository;
     private final PreprocessingConfigRepository preprocessingConfigRepository;
     private final ProcessViewDataRepository processViewDataRepository;
     private final SessionDataRepository sessionDataRepository;
@@ -953,6 +955,14 @@ public class FileSessionService {
             log.info("clustering_results 삭제 완료: sessionId={}", sessionId);
         } catch (Exception e) {
             log.warn("clustering_results 삭제 실패 (계속 진행): sessionId={}", sessionId, e);
+        }
+
+        // 5-1. cluster_statistics 삭제
+        try {
+            clusterStatisticsRepository.deleteBySessionId(sessionId);
+            log.info("cluster_statistics 삭제 완료: sessionId={}", sessionId);
+        } catch (Exception e) {
+            log.warn("cluster_statistics 삭제 실패 (계속 진행): sessionId={}", sessionId, e);
         }
 
         // 6. search_keyword_hierarchy 삭제
