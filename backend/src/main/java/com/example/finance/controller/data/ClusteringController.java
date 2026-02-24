@@ -132,6 +132,17 @@ public class ClusteringController {
         return ResponseEntity.ok(clusteringService.mergeClusters(sessionId, clusterNumbers));
     }
 
+    @GetMapping("/merge/progress/{taskId}")
+    public ResponseEntity<Map<String, Object>> getMergeProgress(
+            @PathVariable String projectId,
+            @PathVariable String sessionId,
+            @PathVariable String taskId,
+            @CurrentUser UserPrincipal userPrincipal) {
+
+        projectService.getProject(projectId, userPrincipal.getId());
+        return ResponseEntity.ok(clusteringService.getMergeProgress(taskId));
+    }
+
     @PostMapping("/unmerge")
     public ResponseEntity<Map<String, Object>> unmergeClusters(
             @PathVariable String projectId,
