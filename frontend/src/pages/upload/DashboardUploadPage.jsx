@@ -110,6 +110,61 @@ function DashboardUploadPage() {
     // Lambda 처리 폴링
     const pollingRef = useRef(null);
 
+    // ===== 유틸 (useEffect보다 먼저 선언) =====
+    const getSessionColumns = (session) => {
+        if (session.uploadedFiles && session.uploadedFiles.length > 0) {
+            return session.uploadedFiles[0].detectedColumns || [];
+        }
+        return [];
+    };
+
+    // ===== 컬럼 자동 감지 =====
+    const autoDetectColumns = (columns) => {
+        const find = (patterns) => columns.find(c =>
+            patterns.some(p => c.toLowerCase().includes(p))
+        ) || '';
+        return {
+            accountColumn: find(['대계정', '계정', 'account', '대분류']),
+            amountColumn: find(['금액', 'amount', '비용', '원가', 'money']),
+            supplierColumn: find(['공급업체', 'supplier', '업체', '거래처']),
+            costCenterColumn: find(['코스트센터', 'cost center', 'cc', '부서', 'department']),
+        };
+    };
+
+    // 클러스터/세부클러스터 자동 감지 (백엔드 전송용, UI에 노출하지 않음)
+    const autoDetectClusterColumns = (columns) => {
+        const find = (patterns) => columns.find(c =>
+            patterns.some(p => c.toLowerCase().includes(p))
+        ) || '';
+        return {
+            clusterColumn: find(['클러스터', 'cluster', '분류']),
+            subClusterColumn: find(['세부클러스터', '세부', 'sub_cluster', 'subcluster', '소분류']),
+        };
+    };
+
+    // ===== 데이터 로드 =====
+    const loadProject = async () => {
+        try {
+            const data = await projectService.getProject(projectId);
+            setProject(data);
+        } catch (error) {
+            console.error('프로젝트 로드 실패:', error);
+        }
+    };
+
+    const loadSessions = async () => {
+        setSessionsLoading(true);
+        try {
+            const data = await uploadService.getSessions(projectId);
+            setSessions(Array.isArray(data) ? data : []);
+        } catch (error) {
+            console.error('세션 로드 실패:', error);
+            setSessions([]);
+        } finally {
+            setSessionsLoading(false);
+        }
+    };
+
     // ===== 초기 로드 =====
     useEffect(() => {
         loadProject();
@@ -134,28 +189,6 @@ function DashboardUploadPage() {
         };
         checkStatus();
     }, [projectId]);
-
-    const loadProject = async () => {
-        try {
-            const data = await projectService.getProject(projectId);
-            setProject(data);
-        } catch (error) {
-            console.error('프로젝트 로드 실패:', error);
-        }
-    };
-
-    const loadSessions = async () => {
-        setSessionsLoading(true);
-        try {
-            const data = await uploadService.getSessions(projectId);
-            setSessions(Array.isArray(data) ? data : []);
-        } catch (error) {
-            console.error('세션 로드 실패:', error);
-            setSessions([]);
-        } finally {
-            setSessionsLoading(false);
-        }
-    };
 
     // ===== Lambda 처리 상태 폴링 (파일 파싱 완료 대기) =====
     useEffect(() => {
@@ -192,39 +225,6 @@ function DashboardUploadPage() {
             }
         };
     }, [sessions.map(s => s.sessionId + (getSessionColumns(s).length || 0)).join(',')]);
-
-    // ===== 유틸 =====
-    const getSessionColumns = (session) => {
-        if (session.uploadedFiles && session.uploadedFiles.length > 0) {
-            return session.uploadedFiles[0].detectedColumns || [];
-        }
-        return [];
-    };
-
-    // ===== 컬럼 자동 감지 =====
-    const autoDetectColumns = (columns) => {
-        const find = (patterns) => columns.find(c =>
-            patterns.some(p => c.toLowerCase().includes(p))
-        ) || '';
-        return {
-            // 사용자가 셀렉트 박스로 선택하는 4개 컬럼
-            accountColumn: find(['대계정', '계정', 'account', '대분류']),
-            amountColumn: find(['금액', 'amount', '비용', '원가', 'money']),
-            supplierColumn: find(['공급업체', 'supplier', '업체', '거래처']),
-            costCenterColumn: find(['코스트센터', 'cost center', 'cc', '부서', 'department']),
-        };
-    };
-
-    // 클러스터/세부클러스터 자동 감지 (백엔드 전송용, UI에 노출하지 않음)
-    const autoDetectClusterColumns = (columns) => {
-        const find = (patterns) => columns.find(c =>
-            patterns.some(p => c.toLowerCase().includes(p))
-        ) || '';
-        return {
-            clusterColumn: find(['클러스터', 'cluster', '분류']),
-            subClusterColumn: find(['세부클러스터', '세부', 'sub_cluster', 'subcluster', '소분류']),
-        };
-    };
 
     // 세션 로드 시 자동 매핑
     useEffect(() => {
