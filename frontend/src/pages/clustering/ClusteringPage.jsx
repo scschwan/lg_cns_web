@@ -181,7 +181,9 @@ function ClusteringPage() {
   const [loading, setLoading] = useState(false);
   const [merging, setMerging] = useState(false);
   const [mergingProgress, setMergingProgress] = useState(0); // 병합 진행률 (0~100)
+  const [mergingMessage, setMergingMessage] = useState(''); // 병합 진행 메시지
   const [mergingClusters, setMergingClusters] = useState(new Set()); // 현재 병합 중인 클러스터 번호들
+  const [mergeOverlay, setMergeOverlay] = useState(false); // 대량 병합 시 풀스크린 오버레이
   const [unmerging, setUnmerging] = useState(false); // 해제 진행 중
   const [unmergingProgress, setUnmergingProgress] = useState(0); // 해제 진행률
   const [unmergingClusters, setUnmergingClusters] = useState(new Set()); // 현재 해제 중인 클러스터 번호들
@@ -681,21 +683,64 @@ function ClusteringPage() {
     if (!window.confirm(`선택한 ${selectedCount}개 클러스터를 병합하시겠습니까?`)) return;
     setMerging(true);
     setMergingProgress(0);
+    setMergingMessage('병합 요청 중...');
     try {
-      const progressInterval = setInterval(() => {
-        setMergingProgress(prev => Math.min(prev + 10, 90));
-      }, 200);
       const nums = await getSelectedClusterNumbers();
-      await clusteringService.mergeClusters(projectId, sessionId, nums);
-      clearInterval(progressInterval);
-      setMergingProgress(100);
-      await new Promise(r => setTimeout(r, 300));
+
+      // 대량(100+)이면 풀스크린 오버레이 표시
+      if (nums.length >= 100) setMergeOverlay(true);
+
+      const res = await clusteringService.mergeClusters(projectId, sessionId, nums);
+
+      if (res.async && res.taskId) {
+        // ★ 비동기 병합: 서버 진행률 폴링
+        await pollMergeProgress(res.taskId);
+      } else {
+        // 동기 병합 완료
+        setMergingProgress(100);
+        setMergingMessage('병합 완료');
+        await new Promise(r => setTimeout(r, 300));
+      }
       setSelectAllMode(false); setExceptions(new Set());
       await refreshAll();
     } catch (e) { alert('병합 실패: ' + (e.response?.data?.message || e.message)); } finally {
       setMerging(false);
       setMergingProgress(0);
+      setMergingMessage('');
+      setMergeOverlay(false);
     }
+  };
+
+  const pollMergeProgress = async (taskId) => {
+    const POLL_INTERVAL = 1500; // 1.5초 간격
+    const MAX_POLLS = 600;      // 최대 15분
+    for (let i = 0; i < MAX_POLLS; i++) {
+      await new Promise(r => setTimeout(r, POLL_INTERVAL));
+      try {
+        const p = await clusteringService.getMergeProgress(projectId, sessionId, taskId);
+        setMergingProgress(p.progress || 0);
+        setMergingMessage(p.message || '처리 중...');
+        if (p.status === 'COMPLETED') {
+          setMergingProgress(100);
+          setMergingMessage('병합 완료');
+          await new Promise(r => setTimeout(r, 500));
+          return;
+        }
+        if (p.status === 'FAILED') {
+          throw new Error(p.message || '서버에서 병합 실패');
+        }
+        if (p.status === 'NOT_FOUND') {
+          throw new Error('병합 작업을 찾을 수 없습니다.');
+        }
+      } catch (pollErr) {
+        // 네트워크 에러는 무시하고 계속 폴링 (일시적 장애 가능)
+        if (pollErr.message?.includes('서버에서') || pollErr.message?.includes('찾을 수 없')) {
+          throw pollErr;
+        }
+        console.warn('[pollMergeProgress] 폴링 에러 (재시도):', pollErr.message);
+      }
+    }
+    throw new Error('병합 시간이 초과되었습니다.');
   };
 
   const handleAddToMerged = async (targetMergedNumber) => {
@@ -1157,6 +1202,25 @@ function ClusteringPage() {
      ============================================================ */
   return (
     <div className="flex flex-col h-full bg-gray-50 overflow-hidden">
+      {/* ★ 대량 병합 풀스크린 프로그레스 오버레이 */}
+      {mergeOverlay && (
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 backdrop-blur-sm">
+          <div className="bg-white rounded-xl shadow-2xl p-8 w-[480px] flex flex-col items-center gap-5">
+            <Loader2 className="h-10 w-10 animate-spin text-blue-500" />
+            <div className="text-lg font-semibold text-gray-800">클러스터 병합 진행 중</div>
+            <div className="w-full">
+              <Progress value={mergingProgress} className="h-4" />
+            </div>
+            <div className="flex items-center justify-between w-full text-sm">
+              <span className="text-muted-foreground">{mergingMessage}</span>
+              <span className="font-mono font-bold text-blue-600">{mergingProgress}%</span>
+            </div>
+            <p className="text-xs text-muted-foreground text-center">
+              병합이 완료될 때까지 페이지를 닫지 마세요.
+            </p>
+          </div>
+        </div>
+      )}
       <div className="container mx-auto px-4 py-4 h-full flex flex-col min-h-0 max-w-[98vw]">
 
         {/* 헤더 */}
@@ -1765,17 +1829,25 @@ function ClusteringPage() {
           setDetailDragging(false);
         }
       }}>
-        <DialogContent className="max-w-[900px] max-h-[80vh] flex flex-col">
+        <DialogContent
+          className="flex flex-col"
+          style={{
+            width: '90vw', maxWidth: '1400px',
+            height: '85vh', maxHeight: '90vh',
+            minWidth: '600px', minHeight: '400px',
+            resize: 'both', overflow: 'hidden',
+          }}
+        >
           <DialogHeader>
             <DialogTitle>
               병합 상세: #{detailDialog.cluster?.clusterNumber} {truncateName(detailDialog.cluster?.clusterName)}
             </DialogTitle>
             <DialogDescription>
-              드래그 또는 Ctrl+클릭으로 복수 선택 가능
+              드래그 또는 Ctrl+클릭으로 복수 선택 가능 · 우측 하단 모서리를 드래그하여 크기 조절
             </DialogDescription>
           </DialogHeader>
           {/* 병합 클러스터 통계 정보 */}
-          <div className="flex items-center gap-4 p-3 bg-gray-50 rounded-md border mb-2 text-sm">
+          <div className="flex items-center gap-4 p-3 bg-gray-50 rounded-md border mb-2 text-sm shrink-0">
             <div className="flex items-center gap-2">
               <span className="text-muted-foreground">Row Data:</span>
               <Badge variant="secondary">{(detailDialog.cluster?.count || 0).toLocaleString()}건</Badge>
@@ -1789,7 +1861,7 @@ function ClusteringPage() {
               <Badge variant="secondary">{formatAmount(detailDialog.cluster?.totalAmount || 0)} {amountUnit}</Badge>
             </div>
           </div>
-          <div className="flex items-center gap-2 mb-2">
+          <div className="flex items-center gap-2 mb-2 shrink-0">
             <Button size="sm" variant="destructive" onClick={handlePartialUnmerge} disabled={detailChecked.size === 0}>
               <Trash2 className="h-3 w-3 mr-1" />선택 항목 병합 해제 ({detailChecked.size})
             </Button>
@@ -1797,8 +1869,8 @@ function ClusteringPage() {
               {detailChecked.size > 0 && `${detailChecked.size}개 선택됨`}
             </span>
           </div>
-          {/* 테이블 컨테이너 */}
-          <div className="border rounded-md" style={{ height: 'calc(80vh - 280px)', minHeight: '200px' }}>
+          {/* 테이블 컨테이너 - flex-1로 남은 공간 전부 사용 */}
+          <div className="border rounded-md flex-1 min-h-0">
             {detailLoading ? (
               <div className="flex flex-col items-center justify-center h-full gap-2">
                 <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
@@ -1817,27 +1889,26 @@ function ClusteringPage() {
               />
             )}
           </div>
-          {/* 페이징 */}
-          {detailTotalPages > 1 && (
-            <div className="flex items-center justify-between pt-2 text-xs">
-              <span className="text-muted-foreground">
-                총 {detailTotalCount.toLocaleString()}개 중 {detailPage * detailPageSize + 1}-{Math.min((detailPage + 1) * detailPageSize, detailTotalCount)}
-              </span>
-              <div className="flex items-center gap-1">
-                <Button size="sm" variant="outline" className="h-7 px-2 text-xs"
-                  disabled={detailPage === 0 || detailLoading}
-                  onClick={() => loadDetailChildren(detailDialog.cluster.clusterNumber, detailPage - 1)}>
-                  이전
-                </Button>
-                <span className="px-2">{detailPage + 1} / {detailTotalPages}</span>
-                <Button size="sm" variant="outline" className="h-7 px-2 text-xs"
-                  disabled={detailPage >= detailTotalPages - 1 || detailLoading}
-                  onClick={() => loadDetailChildren(detailDialog.cluster.clusterNumber, detailPage + 1)}>
-                  다음
-                </Button>
-              </div>
+          {/* 페이징 - 항상 표시 */}
+          <div className="flex items-center justify-between pt-2 text-xs shrink-0">
+            <span className="text-muted-foreground">
+              총 {detailTotalCount.toLocaleString()}개
+              {detailTotalCount > 0 && ` 중 ${detailPage * detailPageSize + 1}-${Math.min((detailPage + 1) * detailPageSize, detailTotalCount)}`}
+            </span>
+            <div className="flex items-center gap-1">
+              <Button size="sm" variant="outline" className="h-7 px-2 text-xs"
+                disabled={detailPage === 0 || detailLoading}
+                onClick={() => loadDetailChildren(detailDialog.cluster.clusterNumber, detailPage - 1)}>
+                이전
+              </Button>
+              <span className="px-2">{detailPage + 1} / {Math.max(detailTotalPages, 1)}</span>
+              <Button size="sm" variant="outline" className="h-7 px-2 text-xs"
+                disabled={detailPage >= detailTotalPages - 1 || detailLoading}
+                onClick={() => loadDetailChildren(detailDialog.cluster.clusterNumber, detailPage + 1)}>
+                다음
+              </Button>
             </div>
-          )}
+          </div>
         </DialogContent>
       </Dialog>
 

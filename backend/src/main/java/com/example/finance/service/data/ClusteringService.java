@@ -561,28 +561,98 @@ public class ClusteringService {
     // 7. 클러스터 병합
     // ============================================================
 
-    private static final int BATCH_CHUNK_SIZE = 500;
+    private static final int BATCH_CHUNK_SIZE = 2000;
+    private static final int ASYNC_MERGE_THRESHOLD = 100;
 
+    // ★ 비동기 병합 진행률 추적
+    private final ConcurrentHashMap<String, MergeProgress> mergeProgressMap = new ConcurrentHashMap<>();
+
+    public static class MergeProgress {
+        public volatile String status; // RUNNING, COMPLETED, FAILED
+        public volatile int progress;  // 0-100
+        public volatile String message;
+        public volatile Map<String, Object> result;
+
+        MergeProgress() { this.status = "RUNNING"; this.progress = 0; this.message = "시작 중..."; }
+    }
+
+    public Map<String, Object> getMergeProgress(String taskId) {
+        MergeProgress mp = mergeProgressMap.get(taskId);
+        if (mp == null) return Map.of("status", "NOT_FOUND");
+        Map<String, Object> r = new LinkedHashMap<>();
+        r.put("status", mp.status);
+        r.put("progress", mp.progress);
+        r.put("message", mp.message);
+        if (mp.result != null) r.put("result", mp.result);
+        // 완료/실패 시 메모리에서 제거 (조회 후)
+        if ("COMPLETED".equals(mp.status) || "FAILED".equals(mp.status)) {
+            mergeProgressMap.remove(taskId);
+        }
+        return r;
+    }
+
+    /**
+     * 병합: 소량이면 동기, 대량이면 비동기(taskId 반환)
+     */
     public Map<String, Object> mergeClusters(String sessionId, List<Integer> clusterNumbers) {
         log.info("클러스터 병합: sessionId={}, count={}", sessionId,
                 clusterNumbers == null ? 0 : clusterNumbers.size());
-        clusterStatisticsService.cancelSessionCompletionIfNeeded(sessionId);
 
         if (clusterNumbers == null || clusterNumbers.size() < 2) {
             throw new BusinessException("MERGE_MIN_COUNT", "병합하려면 2개 이상의 클러스터를 선택해야 합니다.");
         }
 
-        // ★ 대량 처리: $in 쿼리를 BATCH_CHUNK_SIZE 단위로 분할 조회
-        List<ClusteringResult> targets = new ArrayList<>();
-        for (int i = 0; i < clusterNumbers.size(); i += BATCH_CHUNK_SIZE) {
-            List<Integer> chunk = clusterNumbers.subList(i,
-                    Math.min(i + BATCH_CHUNK_SIZE, clusterNumbers.size()));
-            targets.addAll(clusteringResultRepository
-                    .findBySessionIdAndClusterNumberIn(sessionId, chunk));
+        // 대량 → 비동기 처리
+        if (clusterNumbers.size() >= ASYNC_MERGE_THRESHOLD) {
+            String taskId = UUID.randomUUID().toString();
+            MergeProgress progress = new MergeProgress();
+            mergeProgressMap.put(taskId, progress);
+            EXECUTOR.submit(() -> {
+                try {
+                    Map<String, Object> result = doMergeClusters(sessionId, clusterNumbers, progress);
+                    progress.result = result;
+                    progress.progress = 100;
+                    progress.message = "병합 완료";
+                    progress.status = "COMPLETED";
+                } catch (Exception e) {
+                    log.error("비동기 병합 실패: sessionId={}", sessionId, e);
+                    progress.message = e.getMessage();
+                    progress.status = "FAILED";
+                }
+            });
+            return Map.of("async", true, "taskId", taskId, "totalCount", clusterNumbers.size());
         }
 
-        if (targets.size() != clusterNumbers.size()) {
-            throw new BusinessException("CLUSTER_NOT_FOUND", "일부 클러스터를 찾을 수 없습니다.");
+        // 소량 → 동기 처리
+        return doMergeClusters(sessionId, clusterNumbers, null);
+    }
+
+    private Map<String, Object> doMergeClusters(String sessionId, List<Integer> clusterNumbers,
+                                                 MergeProgress progress) {
+        clusterStatisticsService.cancelSessionCompletionIfNeeded(sessionId);
+
+        int totalSize = clusterNumbers.size();
+        updateProgress(progress, 1, "클러스터 조회 중... (0/" + totalSize + ")");
+
+        // ★ Phase 1: 병렬 배치 조회 (40%)
+        List<List<Integer>> queryChunks = partition(clusterNumbers, BATCH_CHUNK_SIZE);
+        List<CompletableFuture<List<ClusteringResult>>> queryFutures = new ArrayList<>();
+        for (List<Integer> chunk : queryChunks) {
+            queryFutures.add(CompletableFuture.supplyAsync(() ->
+                    clusteringResultRepository.findBySessionIdAndClusterNumberIn(sessionId, chunk), EXECUTOR));
+        }
+
+        List<ClusteringResult> targets = new ArrayList<>();
+        for (int i = 0; i < queryFutures.size(); i++) {
+            targets.addAll(queryFutures.get(i).join());
+            int pct = 1 + (int) ((i + 1.0) / queryFutures.size() * 39);
+            updateProgress(progress, pct,
+                    "클러스터 조회 중... (" + targets.size() + "/" + totalSize + ")");
+        }
+
+        if (targets.size() != totalSize) {
+            throw new BusinessException("CLUSTER_NOT_FOUND",
+                    "일부 클러스터를 찾을 수 없습니다. (조회: " + targets.size() + "/" + totalSize + ")");
         }
 
         for (ClusteringResult target : targets) {
@@ -592,6 +662,8 @@ public class ClusteringService {
             }
         }
 
+        // ★ Phase 2: 집계 (40% → 60%)
+        updateProgress(progress, 40, "데이터 집계 중...");
         int newClusterNumber = getNextClusterNumber(sessionId);
 
         Set<String> allKeywords = new LinkedHashSet<>();
@@ -599,35 +671,42 @@ public class ClusteringService {
         int totalCount = 0;
         double totalAmount = 0;
 
-        // ★ 16MB 문서 제한 방지: dataIndices 누적 크기 제한 (~12MB 상한)
         long estimatedDataIndicesBytes = 0;
         boolean dataIndicesTruncated = false;
 
-        for (ClusteringResult target : targets) {
+        for (int i = 0; i < targets.size(); i++) {
+            ClusteringResult target = targets.get(i);
             allKeywords.addAll(target.getKeywords());
             totalCount += target.getCount();
             totalAmount += target.getTotalAmount();
 
             if (!dataIndicesTruncated && target.getDataIndices() != null) {
-                long chunkBytes = target.getDataIndices().size() * 40L; // UUID(~36) + overhead
+                long chunkBytes = target.getDataIndices().size() * 40L;
                 if (estimatedDataIndicesBytes + chunkBytes > 12_000_000L) {
                     dataIndicesTruncated = true;
-                    log.warn("병합 문서 dataIndices 크기 제한 도달 (현재 {}건, ~{}MB), 이후 자식 데이터는 생략",
-                            allDataIndices.size(), estimatedDataIndicesBytes / 1_000_000);
+                    log.warn("병합 문서 dataIndices 크기 제한 도달 (~{}MB), 이후 생략",
+                            estimatedDataIndicesBytes / 1_000_000);
                 } else {
                     allDataIndices.addAll(target.getDataIndices());
                     estimatedDataIndicesBytes += chunkBytes;
                 }
             }
+
+            if (i % 1000 == 0) {
+                int pct = 40 + (int) ((i + 1.0) / targets.size() * 20);
+                updateProgress(progress, pct, "데이터 집계 중... (" + (i + 1) + "/" + totalSize + ")");
+            }
         }
 
+        // ★ Phase 3: 병합 문서 저장 (60% → 65%)
+        updateProgress(progress, 60, "병합 클러스터 저장 중...");
         String mergedName = String.join("_", allKeywords);
         if (mergedName.length() > 30) mergedName = mergedName.substring(0, 30);
 
         ClusteringResult merged = ClusteringResult.builder()
                 .sessionId(sessionId)
                 .clusterNumber(newClusterNumber)
-                .clusterId(newClusterNumber)   // 자기 자신의 cluster_number
+                .clusterId(newClusterNumber)
                 .clusterSubId(-1)
                 .clusterName(mergedName)
                 .keywords(new ArrayList<>(allKeywords))
@@ -638,20 +717,31 @@ public class ClusteringService {
                 .build();
 
         clusteringResultRepository.save(merged);
+        updateProgress(progress, 65, "자식 클러스터 업데이트 중...");
 
-        // ★ 대량 처리: updateMulti도 BATCH_CHUNK_SIZE 단위로 분할
+        // ★ Phase 4: 병렬 배치 업데이트 (65% → 95%)
         List<Integer> targetNumbers = targets.stream()
                 .map(ClusteringResult::getClusterNumber)
                 .collect(Collectors.toList());
-        for (int i = 0; i < targetNumbers.size(); i += BATCH_CHUNK_SIZE) {
-            List<Integer> chunk = targetNumbers.subList(i,
-                    Math.min(i + BATCH_CHUNK_SIZE, targetNumbers.size()));
-            mongoTemplate.updateMulti(
-                    new Query(Criteria.where("session_id").is(sessionId)
-                            .and("cluster_number").in(chunk)),
-                    new Update().set("cluster_id", newClusterNumber),
-                    "clustering_results");
+        List<List<Integer>> updateChunks = partition(targetNumbers, BATCH_CHUNK_SIZE);
+        List<CompletableFuture<Void>> updateFutures = new ArrayList<>();
+        for (List<Integer> chunk : updateChunks) {
+            updateFutures.add(CompletableFuture.runAsync(() ->
+                    mongoTemplate.updateMulti(
+                            new Query(Criteria.where("session_id").is(sessionId)
+                                    .and("cluster_number").in(chunk)),
+                            new Update().set("cluster_id", newClusterNumber),
+                            "clustering_results"), EXECUTOR));
         }
+
+        for (int i = 0; i < updateFutures.size(); i++) {
+            updateFutures.get(i).join();
+            int pct = 65 + (int) ((i + 1.0) / updateFutures.size() * 30);
+            updateProgress(progress, pct,
+                    "자식 클러스터 업데이트 중... (" + (i + 1) + "/" + updateChunks.size() + ")");
+        }
+
+        updateProgress(progress, 95, "마무리 중...");
 
         log.info("클러스터 병합 완료: #{}, {}개 합침{}", newClusterNumber, targets.size(),
                 dataIndicesTruncated ? " (dataIndices 일부 생략)" : "");
@@ -663,6 +753,21 @@ public class ClusteringService {
         result.put("totalCount", totalCount);
         result.put("totalAmount", totalAmount);
         return result;
+    }
+
+    private void updateProgress(MergeProgress progress, int pct, String msg) {
+        if (progress != null) {
+            progress.progress = pct;
+            progress.message = msg;
+        }
+    }
+
+    private <T> List<List<T>> partition(List<T> list, int size) {
+        List<List<T>> partitions = new ArrayList<>();
+        for (int i = 0; i < list.size(); i += size) {
+            partitions.add(list.subList(i, Math.min(i + size, list.size())));
+        }
+        return partitions;
     }
 
     // ============================================================

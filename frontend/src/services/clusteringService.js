@@ -72,6 +72,13 @@ const clusteringService = {
         return response.data;
     },
 
+    getMergeProgress: async (projectId, sessionId, taskId) => {
+        const response = await api.get(
+            `/api/projects/${projectId}/sessions/${sessionId}/clustering/merge/progress/${taskId}`
+        );
+        return response.data;
+    },
+
     unmergeClusters: async (projectId, sessionId, mergedClusterNumber) => {
         const response = await api.post(
             `/api/projects/${projectId}/sessions/${sessionId}/clustering/unmerge`,
