@@ -24,8 +24,8 @@ import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 
 /**
- * Excel Coordinator Lambda Handler (StAX Ver - Final Fix)
- * - 값 존재 여부 체크 제거 (모든 물리적 행 카운트)
+ * Excel Coordinator Lambda Handler (StAX Ver - Final Fix v2)
+ * - 빈 행(phantom rows) 제외: &lt;v&gt; 또는 &lt;is&gt; 태그가 있는 행만 카운트
  * - 1,000,001건 데이터 정합성 보장
  */
 public class ExcelCoordinatorHandler implements RequestStreamHandler {
@@ -53,7 +53,7 @@ public class ExcelCoordinatorHandler implements RequestStreamHandler {
 
     @Override
     public void handleRequest(InputStream input, OutputStream output, Context context) throws IOException {
-        context.getLogger().log("=== [Fix] Excel Coordinator 시작 (All Rows Count) ===");
+        context.getLogger().log("=== [Fix v2] Excel Coordinator 시작 (Data Rows Only) ===");
 
         try {
             BufferedReader reader = new BufferedReader(new InputStreamReader(input, StandardCharsets.UTF_8));
@@ -124,7 +124,7 @@ public class ExcelCoordinatorHandler implements RequestStreamHandler {
     }
 
     private int analyzeExcelMetadata(String bucket, String key, Context context) {
-        context.getLogger().log("Excel 행 개수 분석 시작 (물리적 행 전체 카운트)...");
+        context.getLogger().log("Excel 행 개수 분석 시작 (값이 있는 행만 카운트)...");
 
         try (ResponseInputStream<GetObjectResponse> s3Stream = s3Client.getObject(
                 GetObjectRequest.builder().bucket(bucket).key(key).build());
@@ -141,17 +141,35 @@ public class ExcelCoordinatorHandler implements RequestStreamHandler {
 
                     XMLStreamReader xmlReader = factory.createXMLStreamReader(zipIn);
                     int rowCount = 0;
+                    int totalPhysicalRows = 0;
+                    boolean rowHasValue = false;
 
                     while (xmlReader.hasNext()) {
                         int event = xmlReader.next();
-                        // ★ [수정됨] 값 존재 여부(isRowHasData) 체크 삭제
-                        // <row> 태그가 끝나면 무조건 카운트합니다.
-                        if (event == XMLStreamConstants.END_ELEMENT && "row".equals(xmlReader.getLocalName())) {
-                            rowCount++;
+
+                        if (event == XMLStreamConstants.START_ELEMENT) {
+                            String name = xmlReader.getLocalName();
+                            if ("row".equals(name)) {
+                                // 새 행 시작: 값 존재 플래그 초기화
+                                rowHasValue = false;
+                            } else if ("v".equals(name) || "is".equals(name)) {
+                                // <v> = 셀 값, <is> = 인라인 문자열 → 데이터 있는 행
+                                rowHasValue = true;
+                            }
+                        } else if (event == XMLStreamConstants.END_ELEMENT && "row".equals(xmlReader.getLocalName())) {
+                            totalPhysicalRows++;
+                            if (rowHasValue) {
+                                rowCount++;
+                            }
                         }
                     }
 
-                    context.getLogger().log("물리적 행 개수(헤더 포함): " + rowCount);
+                    context.getLogger().log("물리적 행 개수(헤더 포함): " + totalPhysicalRows);
+                    context.getLogger().log("데이터 존재 행 개수(헤더 포함): " + rowCount);
+                    int skipped = totalPhysicalRows - rowCount;
+                    if (skipped > 0) {
+                        context.getLogger().log("빈 행(phantom rows) 제외: " + skipped + "건");
+                    }
                     // 헤더(1행) 제외하고 반환
                     return rowCount > 0 ? rowCount - 1 : 0;
                 }
