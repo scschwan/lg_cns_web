@@ -18,6 +18,7 @@ import {
     AlertCircle,
     CheckCircle2,
     RotateCcw,
+    Clock,
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 
@@ -59,6 +60,7 @@ import uploadService from '../../services/uploadService';
 import adminService from '../../services/adminService';
 import PartitionDialog from '../../components/upload/PartitionDialog';
 import ProgressDialog from '../../components/common/ProgressDialog';
+import { Progress } from '@/components/ui/progress';
 
 /**
  * 가로 스크롤 동기화 테이블 래퍼
@@ -177,6 +179,8 @@ function MultiFileUploadPage() {
 
     /**
      * 업로드 중인 파일들의 진행률 폴링
+     * - PROCESSING 상태이거나 detectedColumns/rowCount가 없는 파일 대상
+     * - 2초 간격으로 폴링하여 파싱 진행률 업데이트
      */
     useEffect(() => {
         const processingFiles = files.filter(
@@ -192,7 +196,7 @@ function MultiFileUploadPage() {
             return;
         }
 
-        // 5초 간격으로 진행률 폴링
+        // 2초 간격으로 진행률 폴링 (기존 5초에서 단축)
         pollingRef.current = setInterval(async () => {
             let hasChanges = false;
             const newProgress = { ...uploadProgress };
@@ -203,7 +207,18 @@ function MultiFileUploadPage() {
 
                 try {
                     const status = await uploadService.getUploadStatus(projectId, uploadId);
-                    newProgress[uploadId] = status.progress || 0;
+                    // 백엔드 응답: { status, progress(0-100), processedRows, totalRows, fileName, error }
+                    const processedRows = status.processedRows || 0;
+                    const totalRows = status.totalRows || 0;
+                    const rowInfo = totalRows > 0
+                        ? `${processedRows.toLocaleString()} / ${totalRows.toLocaleString()}행`
+                        : processedRows > 0 ? `${processedRows.toLocaleString()}행 처리 중` : '';
+                    newProgress[uploadId] = {
+                        percent: status.progress || 0,
+                        status: status.status || 'PROCESSING',
+                        rowInfo,
+                        error: status.error || '',
+                    };
 
                     if (status.status === 'COMPLETED' || status.status === 'FAILED') {
                         hasChanges = true;
@@ -220,7 +235,7 @@ function MultiFileUploadPage() {
                 loadFiles();
                 loadSessions();
             }
-        }, 5000);
+        }, 2000);
 
         return () => {
             if (pollingRef.current) {
@@ -252,17 +267,30 @@ function MultiFileUploadPage() {
 
        try {
            const uploadResults = [];
+           const totalFiles = excelFiles.length;
 
-           for (let i = 0; i < excelFiles.length; i++) {
+           for (let i = 0; i < totalFiles; i++) {
                const file = excelFiles[i];
+               // 파일당 진행률 구간: 0~90% (각 파일 = 90/totalFiles%)
+               const fileBaseProgress = (i / totalFiles) * 90;
+               const fileEndProgress = ((i + 1) / totalFiles) * 90;
 
-               setProgressValue(((i + 1) / excelFiles.length) * 80);
-               setProgressMessage(`파일 처리 중... (${i + 1}/${excelFiles.length})`);
+               setProgressValue(Math.round(fileBaseProgress + 5));
+               setProgressMessage(`[${i + 1}/${totalFiles}] ${file.name} - Presigned URL 요청 중...`);
 
                const { presignedUrl, uploadId, sessionId, s3Key } =
                    await uploadService.getPresignedUrl(projectId, file.name, file.size);
 
-               await uploadService.uploadToS3(presignedUrl, file);
+               setProgressMessage(`[${i + 1}/${totalFiles}] ${file.name} - S3 업로드 중...`);
+
+               await uploadService.uploadToS3(presignedUrl, file, (s3Pct) => {
+                   // S3 업로드 진행률을 파일 구간 내 50%까지 매핑
+                   const mapped = fileBaseProgress + (s3Pct / 100) * (fileEndProgress - fileBaseProgress) * 0.5;
+                   setProgressValue(Math.round(mapped));
+               });
+
+               setProgressMessage(`[${i + 1}/${totalFiles}] ${file.name} - 서버 등록 중...`);
+               setProgressValue(Math.round(fileBaseProgress + (fileEndProgress - fileBaseProgress) * 0.7));
 
                const result = await uploadService.completeFileUpload(projectId, {
                    uploadId,
@@ -273,16 +301,20 @@ function MultiFileUploadPage() {
                });
 
                uploadResults.push(result);
+               setProgressValue(Math.round(fileEndProgress));
            }
 
-           setProgressValue(100);
-           setProgressMessage('완료');
-           setTimeout(() => setProgressDialogOpen(false), 500);
+           setProgressValue(95);
+           setProgressMessage('파일 목록 갱신 중...');
+           await loadFiles();
+           await loadSessions();
 
-           // 업로드 완료 후 파일 목록 새로고침
-           showSuccess('업로드 완료', `${excelFiles.length}개의 파일이 성공적으로 업로드되었습니다.`);
-           loadFiles();
-           loadSessions();
+           setProgressValue(100);
+           setProgressMessage('업로드 완료!');
+           setTimeout(() => {
+               setProgressDialogOpen(false);
+               showSuccess('업로드 완료', `${totalFiles}개의 파일이 업로드되었습니다.\n백그라운드에서 파싱이 진행됩니다.`);
+           }, 400);
 
        } catch (error) {
            console.error('파일 업로드 실패:', error);
@@ -422,26 +454,38 @@ function MultiFileUploadPage() {
     const handlePartitionsApproved = async (approvedItems) => {
         setPartitionDialogOpen(false);
         setProgressDialogOpen(true);
-        setProgressMessage('세션 생성 중...');
+        setProgressValue(10);
+        setProgressMessage(`${approvedItems.length}개 세션 생성 준비 중...`);
 
         try {
+            setProgressValue(30);
+            setProgressMessage('서버에 세션 생성 요청 중...');
+
             const createdSessions = await uploadService.createSessions(
                 projectId,
                 approvedItems
             );
 
+            setProgressValue(90);
+            setProgressMessage('세션 목록 갱신 중...');
+
             if (!createdSessions || createdSessions.length === 0) {
+                setProgressDialogOpen(false);
                 showError('세션 생성 실패', '생성된 세션이 없습니다.');
             } else {
                 setSessions((prev) => [...prev, ...createdSessions]);
                 setSelectedFiles([]);
-                showSuccess('세션 생성 완료', `${createdSessions.length}개의 세션이 생성되었습니다.`);
+                setProgressValue(100);
+                setProgressMessage('완료!');
+                setTimeout(() => {
+                    setProgressDialogOpen(false);
+                    showSuccess('세션 생성 완료', `${createdSessions.length}개의 세션이 생성되었습니다.`);
+                }, 400);
             }
         } catch (error) {
             console.error('세션 생성 실패:', error);
-            showError('세션 생성 실패', getErrorMsg(error, '세션 생성 중 오류가 발생했습니다.'));
-        } finally {
             setProgressDialogOpen(false);
+            showError('세션 생성 실패', getErrorMsg(error, '세션 생성 중 오류가 발생했습니다.'));
         }
     };
 
@@ -863,21 +907,52 @@ function MultiFileUploadPage() {
                                                             {file.fileName}
                                                         </TableCell>
                                                         <TableCell className="text-center">
-                                                            {file.rowCount?.toLocaleString() || '0'}
+                                                            {(file.uploadStatus === 'PROCESSING' || (!file.detectedColumns?.length && !file.rowCount)) ? (
+                                                                <Clock className="h-4 w-4 text-amber-400 mx-auto" />
+                                                            ) : (
+                                                                file.rowCount?.toLocaleString() || '0'
+                                                            )}
                                                         </TableCell>
                                                         <TableCell>
                                                             {(file.uploadStatus === 'PROCESSING' || (!file.detectedColumns?.length && !file.rowCount)) ? (
-                                                                <div className="flex items-center gap-2 text-sm text-amber-600">
-                                                                    <Loader2 className="h-4 w-4 animate-spin" />
-                                                                    <span>
-                                                                        데이터 업로드 중
-                                                                        {(() => {
-                                                                            const uid = extractUploadId(file.s3Key);
-                                                                            const progress = uid && uploadProgress[uid];
-                                                                            return progress > 0 ? ` (${progress}%)` : '';
-                                                                        })()}
-                                                                    </span>
-                                                                </div>
+                                                                (() => {
+                                                                    const uid = extractUploadId(file.s3Key);
+                                                                    const progressData = uid && uploadProgress[uid];
+                                                                    const percent = progressData?.percent || 0;
+                                                                    const isFailed = progressData?.status === 'FAILED';
+                                                                    const rowInfo = progressData?.rowInfo || '';
+                                                                    return (
+                                                                        <div className="space-y-1 min-w-[130px]">
+                                                                            <div className="flex items-center gap-1.5">
+                                                                                {isFailed ? (
+                                                                                    <AlertCircle className="h-3.5 w-3.5 text-red-500 flex-shrink-0" />
+                                                                                ) : (
+                                                                                    <Loader2 className="h-3.5 w-3.5 animate-spin text-amber-500 flex-shrink-0" />
+                                                                                )}
+                                                                                <span className={`text-xs font-medium ${isFailed ? 'text-red-600' : 'text-amber-600'}`}>
+                                                                                    {isFailed ? '파싱 실패' : '파싱 중...'}
+                                                                                </span>
+                                                                                {!isFailed && percent > 0 && (
+                                                                                    <span className="text-xs text-amber-500 ml-auto">{percent}%</span>
+                                                                                )}
+                                                                            </div>
+                                                                            {!isFailed && (
+                                                                                <Progress
+                                                                                    value={percent}
+                                                                                    className="h-1.5 bg-amber-100 [&>div]:bg-amber-500"
+                                                                                />
+                                                                            )}
+                                                                            {!isFailed && rowInfo && (
+                                                                                <span className="text-[10px] text-amber-400 leading-none">{rowInfo}</span>
+                                                                            )}
+                                                                            {isFailed && progressData?.error && (
+                                                                                <span className="text-[10px] text-red-400 leading-none truncate block max-w-[130px]" title={progressData.error}>
+                                                                                    {progressData.error}
+                                                                                </span>
+                                                                            )}
+                                                                        </div>
+                                                                    );
+                                                                })()
                                                             ) : (
                                                                 <Select
                                                                     value={file.accountColumnName || ''}
@@ -898,17 +973,16 @@ function MultiFileUploadPage() {
                                                         </TableCell>
                                                         <TableCell>
                                                             {(file.uploadStatus === 'PROCESSING' || (!file.detectedColumns?.length && !file.rowCount)) ? (
-                                                                <div className="flex items-center gap-2 text-sm text-amber-600">
-                                                                    <Loader2 className="h-4 w-4 animate-spin" />
-                                                                    <span>
-                                                                        데이터 업로드 중
-                                                                        {(() => {
-                                                                            const uid = extractUploadId(file.s3Key);
-                                                                            const progress = uid && uploadProgress[uid];
-                                                                            return progress > 0 ? ` (${progress}%)` : '';
-                                                                        })()}
-                                                                    </span>
-                                                                </div>
+                                                                (() => {
+                                                                    const uid = extractUploadId(file.s3Key);
+                                                                    const progressData = uid && uploadProgress[uid];
+                                                                    const isFailed = progressData?.status === 'FAILED';
+                                                                    return (
+                                                                        <span className={`text-xs ${isFailed ? 'text-red-500' : 'text-amber-500'}`}>
+                                                                            {isFailed ? '-' : '대기 중'}
+                                                                        </span>
+                                                                    );
+                                                                })()
                                                             ) : (
                                                                 <Select
                                                                     value={file.amountColumnName || ''}

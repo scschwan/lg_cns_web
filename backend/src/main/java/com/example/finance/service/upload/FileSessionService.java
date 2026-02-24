@@ -1337,7 +1337,10 @@ public class FileSessionService {
     }
 
     /**
-     * 세션 완료 처리 (Step 2 진입)
+     * 세션 완료 처리 (Step 1 → Step 2 진입)
+     *
+     * 파일 행 수를 기반으로 청크를 나눠 ExcelWorkerHandler가 처리할 수 있는
+     * 정확한 ProcessingMessage 포맷의 SQS 메시지를 발행합니다.
      *
      * @param sessionId 세션 ID
      * @param userId 사용자 ID
@@ -1361,38 +1364,94 @@ public class FileSessionService {
             throw new BusinessException("NO_FILES", "업로드된 파일이 없습니다");
         }
 
-        // ⭐⭐⭐ 4. raw_data 컬렉션 초기화 (신규 추가)
+        // 4. raw_data 컬렉션 초기화
         Query deleteQuery = new Query(Criteria.where("sessionId").is(sessionId));
         long deletedRawData = mongoTemplate.remove(deleteQuery, "raw_data").getDeletedCount();
         log.info("raw_data 초기화 완료: {} 건 삭제", deletedRawData);
 
-        // ⭐⭐⭐ 5. Lambda 병렬 처리 트리거 (신규 추가)
+        // 5. 세션 파싱 진행 상태 Redis 초기화
+        String sessionParseKey = "session:parse:" + sessionId;
+        Map<String, String> parseInitData = new HashMap<>();
+        parseInitData.put("status", "PROCESSING");
+        parseInitData.put("totalFiles", String.valueOf(session.getUploadedFiles().size()));
+        parseInitData.put("completedFiles", "0");
+        parseInitData.put("totalRows", "0");
+        parseInitData.put("processedRows", "0");
+        parseInitData.put("progress", "0");
+        parseInitData.put("startTime", String.valueOf(System.currentTimeMillis()));
+        redisTemplate.opsForHash().putAll(sessionParseKey, parseInitData);
+        redisTemplate.expire(sessionParseKey, 24, TimeUnit.HOURS);
+
+        // 6. 파일별 청크 분할 후 SQS 메시지 발행 (ProcessingMessage 포맷 준수)
         int processedFileCount = 0;
+        int totalChunksPublished = 0;
+        final int CHUNK_SIZE = 50000;
+
         for (UploadedFileInfo fileInfo : session.getUploadedFiles()) {
             try {
-                // SQS 메시지 발행
-                Map<String, Object> message = new HashMap<>();
-                message.put("operation", "RAW_DATA_INSERT");
-                message.put("sessionId", sessionId);
-                message.put("fileId", fileInfo.getFileId());
-                message.put("s3Bucket", "finance-excel-uploads");
-                message.put("s3Key", fileInfo.getS3Key());
-                message.put("fileName", fileInfo.getFileName());
-                message.put("accountColumnName", fileInfo.getAccountColumnName());
-                message.put("amountColumnName", fileInfo.getAmountColumnName());
-                message.put("accountContents", fileInfo.getAccountContents());
+                String uploadId = extractUploadIdFromFileS3Key(fileInfo.getS3Key());
+                if (uploadId == null) {
+                    log.warn("uploadId 추출 실패: s3Key={}", fileInfo.getS3Key());
+                    continue;
+                }
 
-                String messageBody = objectMapper.writeValueAsString(message);
+                // 행 수 결정: rowCount가 이미 있으면 사용, 없으면 추정
+                long totalRows = (fileInfo.getRowCount() != null && fileInfo.getRowCount() > 0)
+                        ? fileInfo.getRowCount()
+                        : estimateRowCount(fileInfo);
 
-                SendMessageRequest request = SendMessageRequest.builder()
-                        .queueUrl(sqsQueueUrl)
-                        .messageBody(messageBody)
-                        .build();
+                if (totalRows == 0) {
+                    log.warn("행 수를 알 수 없음 (기본값 사용): file={}", fileInfo.getFileName());
+                    totalRows = 1000;
+                }
 
-                sqsClient.sendMessage(request);
+                int totalChunks = (int) Math.ceil((double) totalRows / CHUNK_SIZE);
+                String coordinatorRunId = "backend-" + UUID.randomUUID().toString().substring(0, 8);
+
+                log.info("⭐ 파일 청크 분할: file={}, totalRows={}, chunks={}",
+                        fileInfo.getFileName(), totalRows, totalChunks);
+
+                // Redis에 해당 uploadId 상태 초기화 (ExcelWorkerHandler.ensureRedisStatus와 동일 구조)
+                String uploadStatusKey = "upload:status:" + uploadId;
+                redisTemplate.opsForHash().put(uploadStatusKey, "totalRows", String.valueOf(totalRows));
+                redisTemplate.opsForHash().put(uploadStatusKey, "status", "PROCESSING");
+                if (!Boolean.TRUE.equals(redisTemplate.hasKey(uploadStatusKey))) {
+                    redisTemplate.opsForHash().put(uploadStatusKey, "processedRows", "0");
+                    redisTemplate.opsForHash().put(uploadStatusKey, "completedChunks", "0");
+                }
+                redisTemplate.expire(uploadStatusKey, 86400, TimeUnit.SECONDS);
+
+                // 청크별 SQS 메시지 발행 (ProcessingMessage 포맷 - ExcelWorkerHandler가 처리)
+                for (int i = 0; i < totalChunks; i++) {
+                    int startRow = i * CHUNK_SIZE + 2; // 헤더(1행) 제외, 데이터는 2행부터
+                    int endRow = (int) Math.min((long)(i + 1) * CHUNK_SIZE + 1, totalRows + 1);
+
+                    Map<String, Object> message = new HashMap<>();
+                    message.put("projectId", session.getProjectId());
+                    message.put("sessionId", sessionId);
+                    message.put("uploadId", uploadId);
+                    message.put("s3Bucket", S3_BUCKET);
+                    message.put("s3Key", fileInfo.getS3Key());
+                    message.put("fileName", fileInfo.getFileName());
+                    message.put("startRow", startRow);
+                    message.put("endRow", endRow);
+                    message.put("totalRows", (int) totalRows);
+                    message.put("chunkNumber", i + 1);
+                    message.put("totalChunks", totalChunks);
+                    message.put("isFirstChunk", i == 0);
+                    message.put("coordinatorRunId", coordinatorRunId);
+
+                    String messageBody = objectMapper.writeValueAsString(message);
+                    sqsClient.sendMessage(SendMessageRequest.builder()
+                            .queueUrl(sqsQueueUrl)
+                            .messageBody(messageBody)
+                            .build());
+
+                    totalChunksPublished++;
+                }
+
                 processedFileCount++;
-
-                log.info("SQS 메시지 발행 완료: file={}", fileInfo.getFileName());
+                log.info("SQS 청크 메시지 발행 완료: file={}, chunks={}", fileInfo.getFileName(), totalChunks);
 
             } catch (Exception e) {
                 log.error("Lambda 트리거 실패: file={}, error={}",
@@ -1400,7 +1459,7 @@ public class FileSessionService {
             }
         }
 
-        // 6. 현재 단계 업데이트
+        // 7. 현재 단계 업데이트
         session.setCurrentStep(ProcessStep.START_ANALYSIS);
         session.setUpdatedAt(LocalDateTime.now());
         fileSessionRepository.save(session);
@@ -1410,12 +1469,140 @@ public class FileSessionService {
         result.put("currentStep", "FILE_LOAD");
         result.put("fileCount", session.getUploadedFiles().size());
         result.put("processedFileCount", processedFileCount);
+        result.put("totalChunksPublished", totalChunksPublished);
         result.put("message", "세션이 Step 2로 진행되었습니다. Lambda 병렬 처리 시작됨");
 
-        log.info("⭐ 세션 완료 처리 완료: sessionId={}, 처리 파일={}",
-                sessionId, processedFileCount);
+        log.info("⭐ 세션 완료 처리 완료: sessionId={}, 처리 파일={}, 총 청크={}",
+                sessionId, processedFileCount, totalChunksPublished);
 
         return result;
+    }
+
+    /**
+     * 세션 파싱 진행 상태 조회 (프론트엔드 폴링용)
+     *
+     * 각 파일의 upload:status:{uploadId} Redis 키를 집계하여
+     * 전체 세션 파싱 진행률을 반환합니다.
+     *
+     * @param sessionId 세션 ID
+     * @return 집계된 파싱 진행 상태
+     */
+    public Map<String, Object> getSessionParsingStatus(String sessionId) {
+        FileSession session = fileSessionRepository.findBySessionId(sessionId).orElse(null);
+
+        Map<String, Object> result = new HashMap<>();
+        result.put("sessionId", sessionId);
+
+        if (session == null || session.getUploadedFiles() == null || session.getUploadedFiles().isEmpty()) {
+            result.put("status", "NOT_STARTED");
+            result.put("progress", 0);
+            result.put("totalRows", 0L);
+            result.put("processedRows", 0L);
+            result.put("fileStatuses", new ArrayList<>());
+            return result;
+        }
+
+        long totalRows = 0;
+        long processedRows = 0;
+        int completedFiles = 0;
+        int failedFiles = 0;
+        List<Map<String, Object>> fileStatuses = new ArrayList<>();
+
+        for (UploadedFileInfo fileInfo : session.getUploadedFiles()) {
+            String uploadId = extractUploadIdFromFileS3Key(fileInfo.getS3Key());
+            Map<String, Object> fileStatus = new HashMap<>();
+            fileStatus.put("fileId", fileInfo.getFileId());
+            fileStatus.put("fileName", fileInfo.getFileName());
+
+            if (uploadId != null) {
+                String key = "upload:status:" + uploadId;
+                Map<Object, Object> redisData = redisTemplate.opsForHash().entries(key);
+
+                String fileStatusStr = redisData.containsKey("status")
+                        ? redisData.get("status").toString() : "UNKNOWN";
+                long fileTotalRows = redisData.containsKey("totalRows")
+                        ? parseLongSafe(redisData.get("totalRows").toString()) : 0L;
+                long fileProcessedRows = redisData.containsKey("processedRows")
+                        ? parseLongSafe(redisData.get("processedRows").toString()) : 0L;
+                int fileProgress = redisData.containsKey("progress")
+                        ? parseIntSafe(redisData.get("progress").toString()) : 0;
+
+                fileStatus.put("uploadId", uploadId);
+                fileStatus.put("status", fileStatusStr);
+                fileStatus.put("totalRows", fileTotalRows);
+                fileStatus.put("processedRows", fileProcessedRows);
+                fileStatus.put("progress", fileProgress);
+
+                totalRows += fileTotalRows;
+                processedRows += fileProcessedRows;
+
+                if ("COMPLETED".equals(fileStatusStr)) completedFiles++;
+                if ("FAILED".equals(fileStatusStr)) failedFiles++;
+            } else {
+                fileStatus.put("status", "UNKNOWN");
+                fileStatus.put("totalRows", 0L);
+                fileStatus.put("processedRows", 0L);
+                fileStatus.put("progress", 0);
+            }
+
+            fileStatuses.add(fileStatus);
+        }
+
+        int totalFiles = session.getUploadedFiles().size();
+        String overallStatus;
+        int overallProgress;
+
+        if (failedFiles > 0 && completedFiles + failedFiles == totalFiles) {
+            overallStatus = "FAILED";
+            overallProgress = totalRows > 0 ? (int) (processedRows * 100.0 / totalRows) : 0;
+        } else if (completedFiles == totalFiles) {
+            overallStatus = "COMPLETED";
+            overallProgress = 100;
+        } else {
+            overallStatus = "PROCESSING";
+            overallProgress = totalRows > 0
+                    ? (int) Math.min(processedRows * 100.0 / totalRows, 99)
+                    : (totalFiles > 0 ? completedFiles * 100 / totalFiles : 0);
+        }
+
+        result.put("status", overallStatus);
+        result.put("progress", overallProgress);
+        result.put("totalRows", totalRows);
+        result.put("processedRows", processedRows);
+        result.put("totalFiles", totalFiles);
+        result.put("completedFiles", completedFiles);
+        result.put("failedFiles", failedFiles);
+        result.put("fileStatuses", fileStatuses);
+
+        return result;
+    }
+
+    private long parseLongSafe(String val) {
+        try { return Long.parseLong(val); } catch (Exception e) { return 0L; }
+    }
+
+    private int parseIntSafe(String val) {
+        try { return Integer.parseInt(val); } catch (Exception e) { return 0; }
+    }
+
+    /**
+     * s3Key에서 uploadId 추출
+     * 형식: uploads/{projectId}/sessions/{sessionId}/uploads/{uploadId}/filename
+     */
+    private String extractUploadIdFromFileS3Key(String s3Key) {
+        if (s3Key == null) return null;
+        String[] parts = s3Key.split("/");
+        // "uploads" 토큰을 찾아 그 다음 파트가 upload- 로 시작하면 반환
+        for (int i = 0; i < parts.length - 1; i++) {
+            if ("uploads".equals(parts[i]) && i > 0 && parts[i + 1].startsWith("upload-")) {
+                return parts[i + 1];
+            }
+        }
+        // fallback: upload- 로 시작하는 파트
+        for (String part : parts) {
+            if (part.startsWith("upload-")) return part;
+        }
+        return null;
     }
 
     /**

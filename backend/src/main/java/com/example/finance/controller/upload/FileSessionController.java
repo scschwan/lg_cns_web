@@ -633,6 +633,31 @@ public class FileSessionController {
     }
 
     /**
+     * 세션 파싱 진행 상태 조회 (프론트엔드 폴링용)
+     *
+     * GET /api/projects/{projectId}/upload/sessions/{sessionId}/parsing-status
+     *
+     * /complete API 호출 후 Lambda가 raw_data를 삽입하는 진행률을 실시간 조회.
+     * 각 파일의 upload:status:{uploadId} Redis 키를 집계하여 반환.
+     */
+    @Operation(summary = "세션 파싱 진행 상태 조회", description = "세션 complete 후 Lambda 파싱 진행률 폴링")
+    @GetMapping("/{sessionId}/parsing-status")
+    public ResponseEntity<Map<String, Object>> getSessionParsingStatus(
+            @PathVariable String projectId,
+            @PathVariable String sessionId,
+            @CurrentUser UserPrincipal userPrincipal) {
+
+        String userId = userPrincipal.getId();
+        log.debug("세션 파싱 상태 조회: projectId={}, sessionId={}", projectId, sessionId);
+
+        projectService.getProject(projectId, userId);
+
+        Map<String, Object> status = fileSessionService.getSessionParsingStatus(sessionId);
+
+        return ResponseEntity.ok(status);
+    }
+
+    /**
      * 결과 다운로드 URL
      */
     @GetMapping("/{sessionId}/result/download")
