@@ -452,7 +452,7 @@ function DashboardUploadPage() {
             <Select
                 value={mapping[fieldName] || ''}
                 onValueChange={(v) => handleColumnMapping(session.sessionId, fieldName, v)}
-                disabled={isGenerating}
+                disabled={isGenerating || isViewer}
             >
                 <SelectTrigger className="h-8"><SelectValue placeholder={placeholder} /></SelectTrigger>
                 <SelectContent>
@@ -602,6 +602,7 @@ function DashboardUploadPage() {
                                                         onCheckedChange={(checked) => {
                                                             setSelectedSessions(checked ? sessions.map(s => s.sessionId) : []);
                                                         }}
+                                                        disabled={isViewer}
                                                     />
                                                 </TableHead>
                                                 <TableHead className="w-[200px]">세션명</TableHead>
@@ -631,6 +632,7 @@ function DashboardUploadPage() {
                                                                             : prev.filter(id => id !== session.sessionId)
                                                                     );
                                                                 }}
+                                                                disabled={isViewer}
                                                             />
                                                         </TableCell>
                                                         <TableCell>

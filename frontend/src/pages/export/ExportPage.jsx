@@ -21,13 +21,14 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 // Services
 import exportService from '@/services/exportService';
 import costReductionService from '@/services/costReductionService';
+import useViewerMode from '../../hooks/useViewerMode';
 
 // Shared component
 import AdvancedTable from '@/components/AdvancedTable';
 
 // ===== 멀티셀렉트 체크박스 리스트 컴포넌트 =====
 // 드래그 선택 + Ctrl+클릭 복수 커서 지원
-function MultiSelectCheckList({ items, checkedSet, onCheckedChange, renderLabel, getKey, className = '' }) {
+function MultiSelectCheckList({ items, checkedSet, onCheckedChange, renderLabel, getKey, className = '', disabled = false }) {
   const [cursorSet, setCursorSet] = useState(new Set());
   const [isDragging, setIsDragging] = useState(false);
   const dragStartRef = useRef(null);
@@ -109,6 +110,7 @@ function MultiSelectCheckList({ items, checkedSet, onCheckedChange, renderLabel,
               onCheckedChange={() => handleCheckToggle(key)}
               onMouseDown={(e) => e.stopPropagation()}
               onClick={(e) => e.stopPropagation()}
+              disabled={disabled}
             />
             {renderLabel(item, isChecked)}
           </div>
@@ -121,6 +123,7 @@ function MultiSelectCheckList({ items, checkedSet, onCheckedChange, renderLabel,
 function ExportPage() {
   const { projectId, sessionId } = useParams();
   const navigate = useNavigate();
+  const { isViewer } = useViewerMode(projectId);
 
   // ===== 상태 관리 =====
   const [loading, setLoading] = useState(false);
@@ -580,6 +583,11 @@ function ExportPage() {
               <BreadcrumbItem><BreadcrumbPage className="font-semibold">Step 6: Export</BreadcrumbPage></BreadcrumbItem>
             </BreadcrumbList>
           </Breadcrumb>
+          {isViewer && (
+            <div className="mx-4 mb-4 px-3 py-2 bg-amber-50 border border-amber-200 rounded text-xs text-amber-700 font-medium">
+              뷰어 권한: 조회만 가능합니다. 데이터 수정이 불가합니다.
+            </div>
+          )}
         </div>
 
         {/* 메인 콘텐츠 그리드 */}
@@ -699,6 +707,7 @@ function ExportPage() {
                   <Checkbox
                     checked={selectedClusterCount === parentClusterCount && parentClusterCount > 0}
                     onCheckedChange={handleSelectAllClusters}
+                    disabled={isViewer}
                   />
                   <span className="text-xs text-muted-foreground">전체선택</span>
                 </div>
@@ -742,6 +751,7 @@ function ExportPage() {
                               <Checkbox
                                 checked={isChecked}
                                 onCheckedChange={() => handleClusterCheck(cluster.clusterNumber)}
+                                disabled={isViewer}
                               />
                             )}
                           </td>
@@ -758,11 +768,12 @@ function ExportPage() {
                                     if (e.key === 'Escape') handleCancelEdit();
                                   }}
                                   autoFocus
+                                  disabled={isViewer}
                                 />
-                                <Button size="sm" variant="ghost" className="h-5 w-5 p-0 flex-shrink-0" onClick={() => handleSaveClusterName(cluster.clusterNumber)}>
+                                <Button size="sm" variant="ghost" className="h-5 w-5 p-0 flex-shrink-0" onClick={() => handleSaveClusterName(cluster.clusterNumber)} disabled={isViewer}>
                                   <Save className="h-3 w-3 text-green-600" />
                                 </Button>
-                                <Button size="sm" variant="ghost" className="h-5 w-5 p-0 flex-shrink-0" onClick={handleCancelEdit}>
+                                <Button size="sm" variant="ghost" className="h-5 w-5 p-0 flex-shrink-0" onClick={handleCancelEdit} disabled={isViewer}>
                                   <X className="h-3 w-3 text-red-600" />
                                 </Button>
                               </div>
@@ -771,8 +782,8 @@ function ExportPage() {
                             <>
                               <td className="px-2 py-1.5" onMouseDown={(e) => e.stopPropagation()}>
                                 <span
-                                  className={`cursor-pointer hover:underline ${isParent ? 'font-medium' : 'pl-3 text-gray-600'}`}
-                                  onClick={() => isParent && handleEditClusterName(cluster)}
+                                  className={`${!isViewer ? 'cursor-pointer hover:underline' : ''} ${isParent ? 'font-medium' : 'pl-3 text-gray-600'}`}
+                                  onClick={() => !isViewer && isParent && handleEditClusterName(cluster)}
                                 >
                                   {isParent ? cluster.clusterName : ''}
                                 </span>
@@ -789,18 +800,19 @@ function ExportPage() {
                                         if (e.key === 'Escape') handleCancelSubEdit();
                                       }}
                                       autoFocus
+                                      disabled={isViewer}
                                     />
-                                    <Button size="sm" variant="ghost" className="h-5 w-5 p-0 flex-shrink-0" onClick={() => handleSaveSubClusterName(cluster.clusterNumber)}>
+                                    <Button size="sm" variant="ghost" className="h-5 w-5 p-0 flex-shrink-0" onClick={() => handleSaveSubClusterName(cluster.clusterNumber)} disabled={isViewer}>
                                       <Save className="h-3 w-3 text-green-600" />
                                     </Button>
-                                    <Button size="sm" variant="ghost" className="h-5 w-5 p-0 flex-shrink-0" onClick={handleCancelSubEdit}>
+                                    <Button size="sm" variant="ghost" className="h-5 w-5 p-0 flex-shrink-0" onClick={handleCancelSubEdit} disabled={isViewer}>
                                       <X className="h-3 w-3 text-red-600" />
                                     </Button>
                                   </div>
                                 ) : (
                                   <span
-                                    className={`${isSub ? 'text-blue-600 cursor-pointer hover:underline' : isUndef ? 'text-orange-600' : ''}`}
-                                    onClick={() => isSub && handleEditSubClusterName(cluster)}
+                                    className={`${isSub && !isViewer ? 'text-blue-600 cursor-pointer hover:underline' : isSub && isViewer ? 'text-blue-600' : isUndef ? 'text-orange-600' : ''}`}
+                                    onClick={() => !isViewer && isSub && handleEditSubClusterName(cluster)}
                                   >
                                     {cluster.subClusterName}
                                   </span>
@@ -853,6 +865,7 @@ function ExportPage() {
                         : new Set();
                       handleColumnCheckedChange(newSet);
                     }}
+                    disabled={isViewer}
                   />
                   <span className="text-xs text-muted-foreground">전체선택</span>
                 </div>
@@ -864,6 +877,7 @@ function ExportPage() {
                   checkedSet={columnCheckedSet}
                   onCheckedChange={handleColumnCheckedChange}
                   getKey={(item) => item.originalName}
+                  disabled={isViewer}
                   renderLabel={(item, isChecked) => (
                     <>
                       <span className={`text-xs flex-1 ${!isChecked ? 'text-gray-400 line-through' : ''}`}>
@@ -886,7 +900,7 @@ function ExportPage() {
                   variant="outline"
                   className="h-10 relative overflow-hidden"
                   onClick={handleExportSelected}
-                  disabled={exporting || selectedClusterCount === 0}
+                  disabled={exporting || selectedClusterCount === 0 || isViewer}
                 >
                   {exportingType === 'selected' && exportProgress > 0 && (
                     <div
@@ -906,7 +920,7 @@ function ExportPage() {
                   variant="outline"
                   className="h-10 relative overflow-hidden"
                   onClick={handleExportAll}
-                  disabled={exporting}
+                  disabled={exporting || isViewer}
                 >
                   {exportingType === 'all' && exportProgress > 0 && (
                     <div
@@ -926,7 +940,7 @@ function ExportPage() {
               <Button
                 className="w-full bg-green-600 hover:bg-green-700 text-white shadow-lg h-12 text-base font-semibold"
                 onClick={handleCompleteSession}
-                disabled={exporting}
+                disabled={exporting || isViewer}
               >
                 {exporting ? (
                   <RefreshCw className="h-5 w-5 mr-2 animate-spin" />

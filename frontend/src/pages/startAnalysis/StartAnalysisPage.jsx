@@ -4,6 +4,7 @@ import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom';
 import { ChevronRight, Home, Trash2, RotateCcw, ChevronDown, ChevronUp } from 'lucide-react';
 import uploadService from '../../services/uploadService';
+import useViewerMode from '../../hooks/useViewerMode';
 import AdvancedTable from '@/components/AdvancedTable';
 
 // shadcn/ui components
@@ -46,13 +47,14 @@ import {
 
 // ===== 멀티셀렉트 체크박스 리스트 컴포넌트 =====
 // 드래그 선택 + Ctrl+클릭 복수 커서 지원
-function MultiSelectCheckList({ items, checkedSet, onCheckedChange, renderLabel, getKey, className = '' }) {
+function MultiSelectCheckList({ items, checkedSet, onCheckedChange, renderLabel, getKey, className = '', disabled = false }) {
   const [cursorSet, setCursorSet] = useState(new Set());
   const [isDragging, setIsDragging] = useState(false);
   const dragStartRef = useRef(null);
   const listRef = useRef(null);
 
   const handleMouseDown = (e, key, idx) => {
+    if (disabled) return;
     // Ctrl/Cmd 클릭: 개별 커서 토글
     if (e.ctrlKey || e.metaKey) {
       e.preventDefault();
@@ -96,6 +98,7 @@ function MultiSelectCheckList({ items, checkedSet, onCheckedChange, renderLabel,
 
   // 커서가 잡힌 항목의 체크 토글 → 커서 전체에 적용
   const handleCheckToggle = (key) => {
+    if (disabled) return;
     if (cursorSet.size > 0 && cursorSet.has(key)) {
       // 커서가 잡힌 상태에서 그 중 하나를 체크/해제 → 전체 커서 항목 동시 적용
       const isCurrentlyChecked = checkedSet.has(key);
@@ -134,6 +137,7 @@ function MultiSelectCheckList({ items, checkedSet, onCheckedChange, renderLabel,
               onCheckedChange={() => handleCheckToggle(key)}
               onMouseDown={(e) => e.stopPropagation()}
               onClick={(e) => e.stopPropagation()}
+              disabled={disabled}
             />
             {renderLabel(item, isChecked)}
           </div>
@@ -146,6 +150,7 @@ function MultiSelectCheckList({ items, checkedSet, onCheckedChange, renderLabel,
 export default function StartAnalysisPage() {
   const { projectId, sessionId } = useParams();
   const navigate = useNavigate();
+  const { isViewer } = useViewerMode(projectId);
 
   // ===== 상태 관리 =====
   const [sessionInfo, setSessionInfo] = useState({
@@ -691,6 +696,11 @@ export default function StartAnalysisPage() {
                 </div>
               </CardTitle>
             </CardHeader>
+            {isViewer && (
+              <div className="mx-4 mb-4 px-3 py-2 bg-amber-50 border border-amber-200 rounded text-xs text-amber-700 font-medium">
+                뷰어 권한: 조회만 가능합니다. 데이터 수정이 불가합니다.
+              </div>
+            )}
           </Card>
         </div>
 
@@ -832,6 +842,7 @@ export default function StartAnalysisPage() {
                               {item.originalName}
                             </span>
                           )}
+                          disabled={isViewer}
                         />
                         {columnMappings.length === 0 && (
                           <p className="text-xs text-gray-400 p-2">컬럼 정보가 없습니다.</p>
@@ -843,7 +854,7 @@ export default function StartAnalysisPage() {
                     <TabsContent value="delete-data" className="space-y-3 mt-0">
                       <div>
                         <label className="text-xs font-medium mb-1.5 block">기준 열 선택</label>
-                        <Select value={deleteBaseColumn} onValueChange={handleDeleteBaseColumnChange}>
+                        <Select value={deleteBaseColumn} onValueChange={handleDeleteBaseColumnChange} disabled={isViewer}>
                           <SelectTrigger className="h-9">
                             <SelectValue placeholder="데이터 삭제 기준 열 선택" />
                           </SelectTrigger>
@@ -883,6 +894,7 @@ export default function StartAnalysisPage() {
                                     id="select-all-visible"
                                     checked={deleteCheckedSet.size > 0 && deleteCheckedSet.size === filteredVisibleValues.length}
                                     onCheckedChange={handleDeleteSelectAll}
+                                    disabled={isViewer}
                                   />
                                   <label htmlFor="select-all-visible" className="text-xs cursor-pointer">
                                     전체 선택 ({filteredVisibleValues.length}건)
@@ -912,6 +924,7 @@ export default function StartAnalysisPage() {
                                       <span className="text-gray-400 ml-2 flex-shrink-0">({item.count})</span>
                                     </span>
                                   )}
+                                  disabled={isViewer}
                                 />
                               </div>
                             </>
@@ -940,7 +953,7 @@ export default function StartAnalysisPage() {
                               variant="destructive"
                               className="flex-1 h-9"
                               onClick={handleDataDeleteByValues}
-                              disabled={deleteCheckedSet.size === 0}
+                              disabled={deleteCheckedSet.size === 0 || isViewer}
                             >
                               <Trash2 className="h-4 w-4 mr-1" /> 데이터 삭제 ({deleteCheckedSet.size})
                             </Button>
@@ -957,6 +970,7 @@ export default function StartAnalysisPage() {
                                 id="select-all-hidden"
                                 checked={deleteCheckedSet.size > 0 && deleteCheckedSet.size === filteredHiddenValues.length}
                                 onCheckedChange={handleDeleteSelectAll}
+                                disabled={isViewer}
                               />
                               <label htmlFor="select-all-hidden" className="text-xs cursor-pointer text-orange-700">
                                 삭제된 항목 ({filteredHiddenValues.length}건)
@@ -985,6 +999,7 @@ export default function StartAnalysisPage() {
                                     <span className="text-orange-400 ml-2 flex-shrink-0">({item.count})</span>
                                   </span>
                                 )}
+                                disabled={isViewer}
                               />
                             </div>
                           ) : (
@@ -996,7 +1011,7 @@ export default function StartAnalysisPage() {
                               variant="outline"
                               className="flex-1 h-9 border-orange-300 text-orange-700 hover:bg-orange-50"
                               onClick={handleDataRestoreByValues}
-                              disabled={deleteCheckedSet.size === 0}
+                              disabled={deleteCheckedSet.size === 0 || isViewer}
                             >
                               <RotateCcw className="h-4 w-4 mr-1" /> 데이터 원복 ({deleteCheckedSet.size})
                             </Button>
@@ -1017,7 +1032,7 @@ export default function StartAnalysisPage() {
                   <div className="grid grid-cols-2 gap-2">
                     <div>
                       <label className="text-xs font-medium mb-1 block">Key 열</label>
-                      <Select value={standardKeyColumn} onValueChange={(v) => { setStandardKeyColumn(v); if (v === standardValueColumn) setStandardValueColumn(''); }}>
+                      <Select value={standardKeyColumn} onValueChange={(v) => { setStandardKeyColumn(v); if (v === standardValueColumn) setStandardValueColumn(''); }} disabled={isViewer}>
                         <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="선택" /></SelectTrigger>
                         <SelectContent>
                           {visibleColumns.filter(c => c !== '_id' && c !== 'row_number' && c !== standardValueColumn).map((col) => (
@@ -1028,7 +1043,7 @@ export default function StartAnalysisPage() {
                     </div>
                     <div>
                       <label className="text-xs font-medium mb-1 block">변경 열</label>
-                      <Select value={standardValueColumn} onValueChange={(v) => { setStandardValueColumn(v); if (v === standardKeyColumn) setStandardKeyColumn(''); }}>
+                      <Select value={standardValueColumn} onValueChange={(v) => { setStandardValueColumn(v); if (v === standardKeyColumn) setStandardKeyColumn(''); }} disabled={isViewer}>
                         <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="선택" /></SelectTrigger>
                         <SelectContent>
                           {visibleColumns.filter(c => c !== '_id' && c !== 'row_number' && c !== standardKeyColumn).map((col) => (
@@ -1080,7 +1095,7 @@ export default function StartAnalysisPage() {
                   <Button
                     className="w-full h-8 text-xs"
                     onClick={handleStandardize}
-                    disabled={!standardKeyColumn || !standardValueColumn || standardData.length === 0 || standardLoading}
+                    disabled={!standardKeyColumn || !standardValueColumn || standardData.length === 0 || standardLoading || isViewer}
                   >
                     표준화 수행
                   </Button>
@@ -1115,6 +1130,7 @@ export default function StartAnalysisPage() {
                           onValueChange={(value) =>
                             setRequiredColumns(prev => ({ ...prev, [field.key]: value }))
                           }
+                          disabled={isViewer}
                         >
                           <SelectTrigger className="h-8 text-xs flex-1">
                             <SelectValue placeholder="선택" />
@@ -1151,7 +1167,7 @@ export default function StartAnalysisPage() {
               <Button
                 className="w-full bg-green-600 hover:bg-green-700 text-white shadow-lg h-12 text-base font-semibold"
                 onClick={handleComplete}
-                disabled={completeLoading}
+                disabled={completeLoading || isViewer}
               >
                 {completeLoading ? (
                   <div className="flex items-center gap-2">

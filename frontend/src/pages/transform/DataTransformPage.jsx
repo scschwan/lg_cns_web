@@ -39,6 +39,7 @@ import AdvancedTable from '@/components/AdvancedTable';
 import transformService from '../../services/transformService';
 import uploadService from '../../services/uploadService';
 import clusteringService from '../../services/clusteringService';
+import useViewerMode from '../../hooks/useViewerMode';
 
 /**
  * 페이징 컴포넌트
@@ -92,7 +93,7 @@ function Pagination({ currentPage, totalPages, totalCount, pageSize, onPageChang
  * 멀티셀렉트 체크박스 리스트 컴포넌트
  * 드래그 선택 + Ctrl+클릭 복수 커서 지원
  */
-function MultiSelectCheckList({ items, checkedSet, onCheckedChange, renderLabel, getKey, className = '' }) {
+function MultiSelectCheckList({ items, checkedSet, onCheckedChange, renderLabel, getKey, className = '', disabled = false }) {
   const [cursorSet, setCursorSet] = useState(new Set());
   const [isDragging, setIsDragging] = useState(false);
   const dragStartRef = useRef(null);
@@ -174,6 +175,7 @@ function MultiSelectCheckList({ items, checkedSet, onCheckedChange, renderLabel,
               onCheckedChange={() => handleCheckToggle(key)}
               onMouseDown={(e) => e.stopPropagation()}
               onClick={(e) => e.stopPropagation()}
+              disabled={disabled}
             />
             {renderLabel(item, isChecked)}
           </div>
@@ -204,6 +206,7 @@ function renderKeywordBadges(value) {
 function DataTransformPage() {
   const { projectId, sessionId } = useParams();
   const navigate = useNavigate();
+  const { isViewer } = useViewerMode(projectId);
 
   // ===== 세션 정보 =====
   const [sessionInfo, setSessionInfo] = useState({ sessionName: '', totalRecords: 0 });
@@ -608,6 +611,11 @@ function DataTransformPage() {
                 </div>
               </CardTitle>
             </CardHeader>
+            {isViewer && (
+              <div className="mx-4 mb-4 px-3 py-2 bg-amber-50 border border-amber-200 rounded text-xs text-amber-700 font-medium">
+                뷰어 권한: 조회만 가능합니다. 데이터 수정이 불가합니다.
+              </div>
+            )}
           </Card>
         </div>
 
@@ -828,11 +836,13 @@ function DataTransformPage() {
                           variant={searchMethod === 'input' ? 'default' : 'outline'}
                           className="flex-1 h-8 text-xs"
                           onClick={() => setSearchMethod('input')}
+                          disabled={isViewer}
                         >직접 입력</Button>
                         <Button size="sm"
                           variant={searchMethod === 'select' ? 'default' : 'outline'}
                           className="flex-1 h-8 text-xs"
                           onClick={() => setSearchMethod('select')}
+                          disabled={isViewer}
                         >통계에서 선택</Button>
                       </div>
 
@@ -845,15 +855,16 @@ function DataTransformPage() {
                             value={searchKeyword}
                             onChange={(e) => setSearchKeyword(e.target.value)}
                             onKeyDown={(e) => { if (e.key === 'Enter') handleMergeSearch(); }}
+                            disabled={isViewer}
                           />
                           <Button size="sm" className="h-8 whitespace-nowrap"
-                            onClick={handleMergeSearch} disabled={mergeLoading}>
+                            onClick={handleMergeSearch} disabled={mergeLoading || isViewer}>
                             <Search className="h-3 w-3 mr-1" />검색
                           </Button>
                         </div>
                       ) : (
                         <div className="flex gap-2">
-                          <Select value={selectedKeywordFromStats} onValueChange={setSelectedKeywordFromStats}>
+                          <Select value={selectedKeywordFromStats} onValueChange={setSelectedKeywordFromStats} disabled={isViewer}>
                             <SelectTrigger className="h-8 text-sm">
                               <SelectValue placeholder="키워드 선택" />
                             </SelectTrigger>
@@ -866,7 +877,7 @@ function DataTransformPage() {
                             </SelectContent>
                           </Select>
                           <Button size="sm" className="h-8 whitespace-nowrap"
-                            onClick={handleMergeSearch} disabled={mergeLoading}>
+                            onClick={handleMergeSearch} disabled={mergeLoading || isViewer}>
                             <Search className="h-3 w-3 mr-1" />검색
                           </Button>
                         </div>
@@ -895,6 +906,7 @@ function DataTransformPage() {
                                       setMergeCheckedSet(new Set());
                                     }
                                   }}
+                                  disabled={isViewer}
                                 />
                                 <span className="text-xs font-semibold">전체 선택</span>
                               </div>
@@ -903,6 +915,7 @@ function DataTransformPage() {
                                 checkedSet={mergeCheckedSet}
                                 onCheckedChange={setMergeCheckedSet}
                                 getKey={(item) => item.keyword}
+                                disabled={isViewer}
                                 renderLabel={(item, isChecked) => (
                                   <div
                                     className={`flex-1 flex items-center justify-between text-xs ${
@@ -945,6 +958,7 @@ function DataTransformPage() {
                           placeholder="변환할 키워드를 입력하세요"
                           value={toKeyword}
                           onChange={(e) => setToKeyword(e.target.value)}
+                          disabled={isViewer}
                         />
                       </div>
 
@@ -952,7 +966,7 @@ function DataTransformPage() {
                       <Button
                         className="w-full bg-purple-600 hover:bg-purple-700 h-10 font-semibold"
                         onClick={handleReplaceKeywords}
-                        disabled={mergeCheckedSet.size === 0 || mergeLoading}
+                        disabled={mergeCheckedSet.size === 0 || mergeLoading || isViewer}
                       >
                         <RefreshCw className="h-4 w-4 mr-2" />
                         키워드 변환 실행 ({mergeCheckedSet.size}건 선택)
@@ -982,6 +996,7 @@ function DataTransformPage() {
                       onCheckedChange={(checked) =>
                         setClusteringOptions(prev => ({ ...prev, supplier: !!checked }))
                       }
+                      disabled={isViewer}
                     />
                     <Label htmlFor="supplier" className="text-sm cursor-pointer">공급업체명</Label>
                   </div>
@@ -992,6 +1007,7 @@ function DataTransformPage() {
                       onCheckedChange={(checked) =>
                         setClusteringOptions(prev => ({ ...prev, costCenter: !!checked }))
                       }
+                      disabled={isViewer}
                     />
                     <Label htmlFor="costCenter" className="text-sm cursor-pointer">코스트센터명</Label>
                   </div>
@@ -1004,7 +1020,7 @@ function DataTransformPage() {
               <Button
                 className="w-full bg-green-600 hover:bg-green-700 text-white shadow-lg h-12 text-base font-semibold"
                 onClick={handleComplete}
-                disabled={completing}
+                disabled={completing || isViewer}
               >
                 {completing ? '클러스터 생성 중...' : '완료 → Step 5: Clustering'}
               </Button>
