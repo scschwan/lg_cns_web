@@ -388,7 +388,7 @@ public class DetailClusteringService {
         log.info("세부 병합 해제: sessionId={}, clusterId={}, mergedClusterNumber={}", sessionId, clusterId, mergedClusterNumber);
 
         ClusteringResult merged = clusteringResultRepository
-                .findBySessionIdAndClusterNumber(sessionId, mergedClusterNumber)
+                .findFirstBySessionIdAndClusterNumber(sessionId, mergedClusterNumber)
                 .orElseThrow(() -> new BusinessException("CLUSTER_NOT_FOUND",
                         "세부 병합 클러스터를 찾을 수 없습니다: #" + mergedClusterNumber));
 
@@ -433,7 +433,7 @@ public class DetailClusteringService {
                 sessionId, clusterId, mergedClusterNumber, childClusterNumbers);
 
         ClusteringResult merged = clusteringResultRepository
-                .findBySessionIdAndClusterNumber(sessionId, mergedClusterNumber)
+                .findFirstBySessionIdAndClusterNumber(sessionId, mergedClusterNumber)
                 .orElseThrow(() -> new BusinessException("CLUSTER_NOT_FOUND",
                         "세부 병합 클러스터를 찾을 수 없습니다: #" + mergedClusterNumber));
 
@@ -592,7 +592,7 @@ public class DetailClusteringService {
                 sessionId, clusterId, targetMergedClusterNumber, clusterNumbers);
 
         ClusteringResult parent = clusteringResultRepository
-                .findBySessionIdAndClusterNumber(sessionId, targetMergedClusterNumber)
+                .findFirstBySessionIdAndClusterNumber(sessionId, targetMergedClusterNumber)
                 .orElseThrow(() -> new BusinessException("CLUSTER_NOT_FOUND",
                         "대상 세부 병합 클러스터를 찾을 수 없습니다: #" + targetMergedClusterNumber));
 
@@ -655,7 +655,7 @@ public class DetailClusteringService {
 
     public void updateClusterName(String sessionId, Integer clusterNumber, String newName) {
         ClusteringResult cluster = clusteringResultRepository
-                .findBySessionIdAndClusterNumber(sessionId, clusterNumber)
+                .findFirstBySessionIdAndClusterNumber(sessionId, clusterNumber)
                 .orElseThrow(() -> new BusinessException("CLUSTER_NOT_FOUND",
                         "클러스터를 찾을 수 없습니다: #" + clusterNumber));
         cluster.setClusterName(newName);

@@ -532,7 +532,7 @@ public class LongListService {
 
         if (stats.getLevel() == 3) {
             // Level 3: 단일 클러스터의 dataIndices
-            clusteringResultRepository.findBySessionIdAndClusterNumber(sessionId, clusterNumber)
+            clusteringResultRepository.findFirstBySessionIdAndClusterNumber(sessionId, clusterNumber)
                     .ifPresent(cr -> dataIndices.addAll(cr.getDataIndices()));
         } else if (stats.getLevel() == 2) {
             // Level 2: 병합된 하위 클러스터들 + 독립 클러스터
@@ -547,7 +547,7 @@ public class LongListService {
                 }
             } else {
                 // 2) 독립 클러스터 (children이 없으면 자기 자신)
-                clusteringResultRepository.findBySessionIdAndClusterNumber(sessionId, clusterNumber)
+                clusteringResultRepository.findFirstBySessionIdAndClusterNumber(sessionId, clusterNumber)
                         .ifPresent(cr -> {
                             if (cr.getDataIndices() != null) {
                                 dataIndices.addAll(cr.getDataIndices());
