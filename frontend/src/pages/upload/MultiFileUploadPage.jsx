@@ -21,6 +21,7 @@ import {
     Lock,
     Clock,
     Eye,
+    RefreshCw,
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 
@@ -113,6 +114,10 @@ function MultiFileUploadPage() {
 
     // 세션 삭제 확인 다이얼로그
     const [deleteConfirmDialog, setDeleteConfirmDialog] = useState({ open: false, sessionIds: [], hasDashboard: false });
+
+    // 엑셀 데이터 재분석 상태
+    const [isReanalyzing, setIsReanalyzing] = useState(false);
+    const [reanalyzeConfirmOpen, setReanalyzeConfirmOpen] = useState(false);
 
     // 메시지 다이얼로그 상태
     const [msgDialog, setMsgDialog] = useState({ open: false, type: 'error', title: '', message: '' });
@@ -788,6 +793,52 @@ function MultiFileUploadPage() {
         }
     };
 
+    // ===== 엑셀 데이터 재분석 =====
+    const handleReanalyzeExcelData = () => {
+        const checkedFiles = files.filter(f => f.checked);
+        if (checkedFiles.length === 0) {
+            showError('선택 필요', '재분석할 파일을 선택해주세요.');
+            return;
+        }
+        setReanalyzeConfirmOpen(true);
+    };
+
+    const executeReanalyze = async () => {
+        setReanalyzeConfirmOpen(false);
+        const checkedFiles = files.filter(f => f.checked);
+        const fileIds = checkedFiles.map(f => f.fileId);
+
+        setIsReanalyzing(true);
+        setProgressDialogOpen(true);
+        setProgressValue(10);
+        setProgressMessage('엑셀 데이터 재분석 요청 중...');
+
+        try {
+            const result = await uploadService.reanalyzeExcelData(projectId, { fileIds });
+
+            setProgressValue(30);
+            setProgressMessage(`${result.totalFilesProcessed}개 파일 재분석 시작됨. Lambda 처리 대기 중...`);
+
+            // 파일 목록 갱신 (PROCESSING 상태로 변경되어 폴링에 잡히도록)
+            await loadFiles();
+            await loadSessions();
+
+            setProgressValue(100);
+            setProgressMessage('재분석이 시작되었습니다.');
+            setTimeout(() => {
+                setProgressDialogOpen(false);
+                setIsReanalyzing(false);
+                showSuccess('재분석 시작', result.message);
+            }, 500);
+
+        } catch (error) {
+            console.error('엑셀 데이터 재분석 실패:', error);
+            setProgressDialogOpen(false);
+            setIsReanalyzing(false);
+            showError('재분석 실패', getErrorMsg(error, '엑셀 데이터 재분석 중 오류가 발생했습니다.'));
+        }
+    };
+
     return (
         <div className="min-h-screen bg-gray-50">
             <div className="container mx-auto px-4 py-6 max-w-[98vw]">
@@ -846,6 +897,18 @@ function MultiFileUploadPage() {
                                 <Button onClick={handleCreateSessions} variant="default" disabled={isViewer}>
                                     <FolderOpen className="h-4 w-4 mr-2" />
                                     세션 생성
+                                </Button>
+                                <Button
+                                    onClick={handleReanalyzeExcelData}
+                                    variant="outline"
+                                    disabled={isViewer || isReanalyzing || !files.some(f => f.checked)}
+                                >
+                                    {isReanalyzing ? (
+                                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                                    ) : (
+                                        <RefreshCw className="h-4 w-4 mr-2" />
+                                    )}
+                                    엑셀 데이터 재분석
                                 </Button>
                             </div>
                             {isViewer && (
@@ -1437,6 +1500,30 @@ function MultiFileUploadPage() {
                         <DialogFooter>
                             <Button variant="outline" onClick={() => setDeleteConfirmDialog({ open: false, sessionIds: [], hasDashboard: false })}>취소</Button>
                             <Button variant="destructive" onClick={executeDeleteSessions}>삭제</Button>
+                        </DialogFooter>
+                    </DialogContent>
+                </Dialog>
+
+                {/* 엑셀 데이터 재분석 확인 다이얼로그 */}
+                <Dialog open={reanalyzeConfirmOpen} onOpenChange={setReanalyzeConfirmOpen}>
+                    <DialogContent>
+                        <DialogHeader>
+                            <DialogTitle className="flex items-center gap-2">
+                                <RefreshCw className="h-5 w-5 text-blue-500" />
+                                엑셀 데이터 재분석
+                            </DialogTitle>
+                            <DialogDescription className="pt-2">
+                                선택한 <strong>{files.filter(f => f.checked).length}개 파일</strong>의 엑셀 데이터를 재분석합니다.
+                                <br /><br />
+                                기존 raw_data와 session_data가 삭제되고 엑셀 파일에서 데이터를 다시 추출합니다.
+                                행 수가 0건으로 표시되는 문제를 해결할 수 있습니다.
+                                <br /><br />
+                                <span className="text-amber-600 font-medium">재분석 중에는 해당 파일의 데이터를 사용할 수 없습니다.</span>
+                            </DialogDescription>
+                        </DialogHeader>
+                        <DialogFooter>
+                            <Button variant="outline" onClick={() => setReanalyzeConfirmOpen(false)}>취소</Button>
+                            <Button onClick={executeReanalyze} className="bg-blue-600 hover:bg-blue-700">재분석 시작</Button>
                         </DialogFooter>
                     </DialogContent>
                 </Dialog>

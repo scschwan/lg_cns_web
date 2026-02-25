@@ -783,6 +783,22 @@ const uploadService = {
         return response.data;
     },
 
+    /**
+     * 엑셀 데이터 재분석
+     * POST /api/projects/{projectId}/upload/reanalyze
+     *
+     * 선택한 세션 또는 파일의 raw_data를 삭제하고 Lambda Worker를 재트리거하여 재생성.
+     * @param {string} projectId
+     * @param {Object} params - { sessionIds?: string[], fileIds?: string[] }
+     */
+    reanalyzeExcelData: async (projectId, params) => {
+        const response = await api.post(
+            `/api/projects/${projectId}/upload/reanalyze`,
+            params
+        );
+        return response.data;
+    },
+
 };
 
 
