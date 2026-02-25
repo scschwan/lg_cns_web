@@ -62,6 +62,7 @@ import projectService from '../../services/projectService';
 import uploadService from '../../services/uploadService';
 import adminService from '../../services/adminService';
 import costReductionService from '../../services/costReductionService';
+import { useAuth } from '../../context/AuthContext';
 import { useUploadPageLock } from '../../hooks/useUploadPageLock';
 import PartitionDialog from '../../components/upload/PartitionDialog';
 import ProgressDialog from '../../components/common/ProgressDialog';
@@ -88,6 +89,12 @@ function MultiFileUploadPage() {
 
     // 편집자 잠금: 다른 편집자가 사용 중이면 진입 차단
     const { isEditor: isPageEditor, editorInfo, loading: lockLoading } = useUploadPageLock(projectId);
+    const { user: currentUser } = useAuth();
+
+    // 다른 사용자가 편집 중인 세션인지 판별
+    const isSessionLockedByOther = (session) => {
+        return session?.isEditing && session?.editorUserId && session.editorUserId !== currentUser?.userId;
+    };
 
     // 상태 관리
     const [project, setProject] = useState(null);
@@ -1262,20 +1269,25 @@ function MultiFileUploadPage() {
                                             <TableHeader className="sticky top-0 bg-background z-10">
                                                 <TableRow>
                                                     <TableHead className="w-12">
-                                                        <Checkbox
-                                                            checked={
-                                                                selectedSessions.length === sessions.length &&
-                                                                sessions.length > 0
-                                                            }
-                                                            onCheckedChange={(checked) => {
-                                                                if (checked) {
-                                                                    setSelectedSessions(sessions.map((s) => s.sessionId));
-                                                                } else {
-                                                                    setSelectedSessions([]);
-                                                                }
-                                                            }}
-                                                            disabled={isViewer}
-                                                        />
+                                                        {(() => {
+                                                            const selectableSessions = sessions.filter(s => !isSessionLockedByOther(s));
+                                                            return (
+                                                                <Checkbox
+                                                                    checked={
+                                                                        selectableSessions.length > 0 &&
+                                                                        selectableSessions.every(s => selectedSessions.includes(s.sessionId))
+                                                                    }
+                                                                    onCheckedChange={(checked) => {
+                                                                        if (checked) {
+                                                                            setSelectedSessions(selectableSessions.map((s) => s.sessionId));
+                                                                        } else {
+                                                                            setSelectedSessions([]);
+                                                                        }
+                                                                    }}
+                                                                    disabled={isViewer || selectableSessions.length === 0}
+                                                                />
+                                                            );
+                                                        })()}
                                                     </TableHead>
                                                     <TableHead className="w-[180px]">세션명</TableHead>
                                                     <TableHead className="w-[80px] text-center">편집상태</TableHead>
@@ -1294,11 +1306,13 @@ function MultiFileUploadPage() {
                                                     <TableRow
                                                         key={session.sessionId}
                                                         className={
-                                                            session.analysisStatus === '완료'
-                                                                ? 'bg-sky-50'
-                                                                : session.analysisStatus === '진행중'
-                                                                    ? 'bg-yellow-50'
-                                                                    : ''
+                                                            isSessionLockedByOther(session)
+                                                                ? 'bg-gray-100 opacity-60'
+                                                                : session.analysisStatus === '완료'
+                                                                    ? 'bg-sky-50'
+                                                                    : session.analysisStatus === '진행중'
+                                                                        ? 'bg-yellow-50'
+                                                                        : ''
                                                         }
                                                     >
                                                         <TableCell>
@@ -1313,7 +1327,8 @@ function MultiFileUploadPage() {
                                                                         );
                                                                     }
                                                                 }}
-                                                                disabled={isViewer}
+                                                                disabled={isViewer || isSessionLockedByOther(session)}
+                                                                title={isSessionLockedByOther(session) ? `${session.editorUserName || '다른 사용자'}님이 작업 중입니다` : ''}
                                                             />
                                                         </TableCell>
                                                         <TableCell>
