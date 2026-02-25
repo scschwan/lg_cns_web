@@ -1388,6 +1388,31 @@ public class FileSessionService {
     }
 
     /**
+     * 대시보드 컬럼 매핑 저장
+     * - categoryColumn(=대계정), amountColumn, supplierColumn, costCenterColumn
+     */
+    public FileSession updateDashboardColumnMappings(String sessionId, Map<String, String> mappings) {
+        FileSession session = fileSessionRepository.findById(sessionId)
+                .orElseThrow(() -> new BusinessException("SESSION_NOT_FOUND", "세션을 찾을 수 없습니다: " + sessionId));
+
+        if (mappings.containsKey("accountColumn")) {
+            session.setCategoryColumn(mappings.get("accountColumn"));
+        }
+        if (mappings.containsKey("amountColumn")) {
+            session.setAmountColumn(mappings.get("amountColumn"));
+        }
+        if (mappings.containsKey("supplierColumn")) {
+            session.setSupplierColumn(mappings.get("supplierColumn"));
+        }
+        if (mappings.containsKey("costCenterColumn")) {
+            session.setCostCenterColumn(mappings.get("costCenterColumn"));
+        }
+
+        session.setUpdatedAt(LocalDateTime.now());
+        return fileSessionRepository.save(session);
+    }
+
+    /**
      * 파티션 기반 세션 일괄 생성 (Full Logic)
      * * @param userId 사용자 ID
      * @param projectId 프로젝트 ID
