@@ -85,6 +85,7 @@ public class FileSessionService {
 
     // 클래스 상단에 추가
     private final MongoTemplate mongoTemplate;
+    private final com.example.finance.service.admin.MaintenanceService maintenanceService;
     private final ObjectMapper objectMapper;
     private final SqsClient sqsClient;
     private final StringRedisTemplate redisTemplate;
@@ -432,6 +433,16 @@ public class FileSessionService {
                     .build();
 
             sqsClient.sendMessage(request);
+
+            // Lambda 작업 시작 - 유지보수 모드 자동 활성화
+            try {
+                String lambdaUploadId = extractUploadIdFromFileS3Key(fileInfo.getS3Key());
+                if (lambdaUploadId != null) {
+                    maintenanceService.onLambdaStart(lambdaUploadId);
+                }
+            } catch (Exception e) {
+                log.warn("[MAINTENANCE] Lambda 시작 상태 업데이트 실패: {}", e.getMessage());
+            }
 
             log.info("SQS 메시지 발행 완료: file={}", fileInfo.getFileName());
 
@@ -2002,6 +2013,13 @@ public class FileSessionService {
                                 .build());
 
                         totalChunksPublished++;
+                    }
+
+                    // Lambda 재분석 시작 - 유지보수 모드 자동 활성화
+                    try {
+                        maintenanceService.onLambdaStart(uploadId);
+                    } catch (Exception ex) {
+                        log.warn("[MAINTENANCE] 재분석 Lambda 시작 상태 업데이트 실패: {}", ex.getMessage());
                     }
 
                     totalFilesProcessed++;

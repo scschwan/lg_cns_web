@@ -3,6 +3,7 @@ package com.example.finance.controller.admin;
 import com.example.finance.model.admin.AuditLog;
 import com.example.finance.security.UserPrincipal;
 import com.example.finance.service.admin.AdminService;
+import com.example.finance.service.admin.MaintenanceService;
 import com.example.finance.service.admin.S3AdminService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
@@ -19,6 +20,7 @@ public class AdminController {
 
     private final AdminService adminService;
     private final S3AdminService s3AdminService;
+    private final MaintenanceService maintenanceService;
 
     private void checkAdmin(UserPrincipal principal) {
         if (principal == null) {
@@ -246,5 +248,24 @@ public class AdminController {
                 body.get("detail")
         );
         return ResponseEntity.ok().build();
+    }
+
+    // ========== 유지보수 모드 관리 ==========
+
+    /**
+     * 유지보수 모드 on/off 제어 (관리자 전용)
+     *
+     * POST /api/admin/maintenance-mode
+     * Body: { "enabled": true/false, "reason": "..." }
+     */
+    @PostMapping("/maintenance-mode")
+    public ResponseEntity<Map<String, Object>> setMaintenanceMode(
+            @AuthenticationPrincipal UserPrincipal principal,
+            @RequestBody Map<String, Object> body) {
+        checkAdmin(principal);
+        boolean enabled = Boolean.TRUE.equals(body.get("enabled"));
+        String reason = (String) body.get("reason");
+        Map<String, Object> result = maintenanceService.setMaintenanceMode(enabled, reason, principal.getId());
+        return ResponseEntity.ok(result);
     }
 }
