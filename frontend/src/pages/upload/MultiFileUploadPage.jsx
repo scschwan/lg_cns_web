@@ -1355,7 +1355,7 @@ function MultiFileUploadPage() {
                                                                 )}
                                                         </TableCell>
                                                         <TableCell className="text-center">
-                                                            {(session.totalRowCount || session.totalRows || 0).toLocaleString()}
+                                                            {(session.totalRowCount || session.totalRows || (session.uploadedFiles?.reduce((sum, f) => sum + (f.rowCount || 0), 0)) || 0).toLocaleString()}
                                                         </TableCell>
                                                         <TableCell className="truncate">
                                                             {session.totalAmount

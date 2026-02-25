@@ -337,14 +337,20 @@ function DashboardUploadPage() {
         const { sessionIds } = deleteConfirmDialog;
         setDeleteConfirmDialog({ open: false, sessionIds: [] });
 
+        // ★ UI에서 먼저 삭제 대상 세션을 제거 (Optimistic UI)
+        const previousSessions = [...sessions];
+        const sessionIdSet = new Set(sessionIds);
+        setSessions(prev => prev.filter(s => !sessionIdSet.has(s.sessionId)));
+        setSelectedSessions(prev => prev.filter(id => !sessionIdSet.has(id)));
+
         try {
             await uploadService.deleteSessions(projectId, sessionIds);
-            loadSessions();
             loadProject();
-            setSelectedSessions(prev => prev.filter(id => !sessionIds.includes(id)));
             showSuccess('삭제 완료', '세션이 삭제되었습니다.');
         } catch (error) {
             console.error('세션 삭제 실패:', error);
+            // ★ 실패 시 이전 상태로 복원
+            setSessions(previousSessions);
             showError('삭제 실패', getErrorMsg(error, '세션 삭제 중 오류가 발생했습니다.'));
         }
     };
@@ -707,7 +713,9 @@ function DashboardUploadPage() {
                                                             {isSessionProcessing ? (
                                                                 <Loader2 className="h-4 w-4 animate-spin mx-auto text-amber-500" />
                                                             ) : (
-                                                                (session.totalRowCount || session.totalRows || 0).toLocaleString()
+                                                                (session.totalRowCount || session.totalRows ||
+                                                                    (session.uploadedFiles?.reduce((sum, f) => sum + (f.rowCount || 0), 0)) || 0
+                                                                ).toLocaleString()
                                                             )}
                                                         </TableCell>
                                                         <TableCell>
