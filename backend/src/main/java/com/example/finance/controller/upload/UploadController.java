@@ -11,6 +11,7 @@ import com.example.finance.model.session.UploadedFileInfo;
 import com.example.finance.service.common.S3Service;
 import com.example.finance.service.project.ProjectService;
 import com.example.finance.service.upload.FileAnalysisService;
+import com.example.finance.service.upload.FileSessionService;
 import com.example.finance.service.upload.UploadService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -42,6 +43,7 @@ public class UploadController {
     private final S3Service s3Service;
     private final UploadService uploadService;
     private final FileAnalysisService fileAnalysisService;
+    private final FileSessionService fileSessionService;
     private final ProjectService projectService;
 
     /**
@@ -337,5 +339,40 @@ public class UploadController {
         uploadService.deleteFile(projectId, fileId);
 
         return ResponseEntity.noContent().build();
+    }
+
+    /**
+     * 엑셀 데이터 재분석
+     *
+     * POST /api/projects/{projectId}/upload/reanalyze
+     *
+     * 선택한 세션 또는 파일의 raw_data를 삭제하고 Lambda Worker를 재트리거하여
+     * Excel 파일에서 raw_data를 재생성합니다.
+     *
+     * Request Body:
+     *   sessionIds: 재분석할 세션 ID 목록 (대시보드용)
+     *   fileIds: 재분석할 파일 ID 목록 (프로젝트용)
+     */
+    @Operation(summary = "엑셀 데이터 재분석", description = "선택한 세션/파일의 raw_data를 삭제하고 재생성")
+    @PostMapping("/reanalyze")
+    public ResponseEntity<Map<String, Object>> reanalyzeExcelData(
+            @PathVariable String projectId,
+            @AuthenticationPrincipal UserPrincipal userPrincipal,
+            @RequestBody Map<String, List<String>> request) {
+
+        String userId = userPrincipal.getId();
+        List<String> sessionIds = request.get("sessionIds");
+        List<String> fileIds = request.get("fileIds");
+
+        log.info("엑셀 데이터 재분석 요청: projectId={}, userId={}, sessionIds={}, fileIds={}",
+                projectId, userId, sessionIds, fileIds);
+
+        // 프로젝트 권한 확인
+        projectService.getProject(projectId, userId);
+
+        Map<String, Object> result = fileSessionService.reanalyzeExcelData(
+                projectId, sessionIds, fileIds, userId);
+
+        return ResponseEntity.ok(result);
     }
 }

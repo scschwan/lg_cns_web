@@ -1863,6 +1863,201 @@ public class FileSessionService {
         return presignedRequest.url().toString();
     }
 
+    // ========================================================================
+    // ===== 엑셀 데이터 재분석 (raw_data 재생성) =====
+    // ========================================================================
+
+    /**
+     * 엑셀 데이터 재분석
+     *
+     * 선택한 세션(대시보드) 또는 파일(프로젝트)의 raw_data를 삭제하고
+     * Lambda Worker를 재트리거하여 raw_data를 재생성합니다.
+     *
+     * @param projectId 프로젝트 ID
+     * @param sessionIds 재분석할 세션 ID 목록 (null이면 fileIds 사용)
+     * @param fileIds 재분석할 파일 ID 목록 (null이면 sessionIds 사용)
+     * @param userId 요청 사용자 ID
+     * @return 처리 결과 요약
+     */
+    public Map<String, Object> reanalyzeExcelData(String projectId, List<String> sessionIds,
+                                                   List<String> fileIds, String userId) {
+        log.info("⭐ 엑셀 데이터 재분석 시작: projectId={}, sessionIds={}, fileIds={}", projectId, sessionIds, fileIds);
+
+        // 1. 대상 세션 수집
+        List<FileSession> targetSessions = new ArrayList<>();
+
+        if (sessionIds != null && !sessionIds.isEmpty()) {
+            // 세션 ID로 직접 조회 (대시보드 모드)
+            for (String sessionId : sessionIds) {
+                fileSessionRepository.findBySessionId(sessionId).ifPresent(targetSessions::add);
+            }
+        } else if (fileIds != null && !fileIds.isEmpty()) {
+            // 파일 ID로 세션 조회 (프로젝트 모드) - 해당 파일이 포함된 세션 찾기
+            Set<String> fileIdSet = new HashSet<>(fileIds);
+            List<FileSession> allSessions = fileSessionRepository.findByProjectId(projectId);
+            for (FileSession session : allSessions) {
+                if (session.getUploadedFiles() != null) {
+                    boolean hasTargetFile = session.getUploadedFiles().stream()
+                            .anyMatch(f -> fileIdSet.contains(f.getFileId()));
+                    if (hasTargetFile) {
+                        targetSessions.add(session);
+                    }
+                }
+            }
+        }
+
+        if (targetSessions.isEmpty()) {
+            throw new BusinessException("NO_TARGET", "재분석 대상 세션을 찾을 수 없습니다.");
+        }
+
+        // fileIds가 지정된 경우, 해당 파일만 대상으로 제한
+        Set<String> targetFileIds = (fileIds != null && !fileIds.isEmpty())
+                ? new HashSet<>(fileIds) : null;
+
+        int totalFilesProcessed = 0;
+        int totalChunksPublished = 0;
+        List<String> processedSessionIds = new ArrayList<>();
+        final int CHUNK_SIZE = 50000;
+
+        for (FileSession session : targetSessions) {
+            if (session.getUploadedFiles() == null || session.getUploadedFiles().isEmpty()) continue;
+
+            String sessionId = session.getSessionId();
+            processedSessionIds.add(sessionId);
+
+            // 대상 파일 필터링
+            List<UploadedFileInfo> filesToProcess = session.getUploadedFiles();
+            if (targetFileIds != null) {
+                filesToProcess = filesToProcess.stream()
+                        .filter(f -> targetFileIds.contains(f.getFileId()))
+                        .collect(Collectors.toList());
+            }
+
+            for (UploadedFileInfo fileInfo : filesToProcess) {
+                try {
+                    String uploadId = extractUploadIdFromFileS3Key(fileInfo.getS3Key());
+                    if (uploadId == null) {
+                        log.warn("uploadId 추출 실패 (재분석 스킵): s3Key={}", fileInfo.getS3Key());
+                        continue;
+                    }
+
+                    // 2. 기존 raw_data 삭제
+                    Query deleteRawQuery = new Query(Criteria.where("upload_id").is(uploadId));
+                    long deletedRaw = mongoTemplate.remove(deleteRawQuery, "raw_data").getDeletedCount();
+                    log.info("raw_data 삭제: uploadId={}, 삭제건수={}", uploadId, deletedRaw);
+
+                    // 3. 파일 메타데이터 초기화 (파싱 재시작 상태로)
+                    fileInfo.setRowCount(0L);
+                    fileInfo.setDetectedColumns(null);
+                    fileInfo.setUploadStatus("PROCESSING");
+
+                    // 4. Redis 업로드 상태 초기화
+                    String uploadStatusKey = "upload:status:" + uploadId;
+                    Map<String, String> statusInit = new HashMap<>();
+                    statusInit.put("status", "PROCESSING");
+                    statusInit.put("progress", "0");
+                    statusInit.put("processedRows", "0");
+                    statusInit.put("completedChunks", "0");
+                    statusInit.put("totalRows", "0");
+                    statusInit.put("projectId", projectId);
+                    statusInit.put("sessionId", sessionId);
+                    statusInit.put("fileName", fileInfo.getFileName());
+                    redisTemplate.opsForHash().putAll(uploadStatusKey, statusInit);
+                    redisTemplate.expire(uploadStatusKey, 24, TimeUnit.HOURS);
+
+                    // 5. 행 수 추정 (파일 크기 기반)
+                    long estimatedRows = estimateRowCount(fileInfo);
+                    if (estimatedRows <= 0) estimatedRows = 1000;
+
+                    int totalChunks = (int) Math.ceil((double) estimatedRows / CHUNK_SIZE);
+                    String coordinatorRunId = "reanalyze-" + UUID.randomUUID().toString().substring(0, 8);
+
+                    log.info("⭐ 재분석 청크 분할: file={}, estimatedRows={}, chunks={}",
+                            fileInfo.getFileName(), estimatedRows, totalChunks);
+
+                    // 6. SQS 메시지 발행 (Lambda Worker 트리거)
+                    for (int i = 0; i < totalChunks; i++) {
+                        int startRow = i * CHUNK_SIZE + 2;
+                        int endRow = (int) Math.min((long)(i + 1) * CHUNK_SIZE + 1, estimatedRows + 1);
+
+                        Map<String, Object> message = new HashMap<>();
+                        message.put("projectId", projectId);
+                        message.put("sessionId", sessionId);
+                        message.put("uploadId", uploadId);
+                        message.put("s3Bucket", S3_BUCKET);
+                        message.put("s3Key", fileInfo.getS3Key());
+                        message.put("fileName", fileInfo.getFileName());
+                        message.put("startRow", startRow);
+                        message.put("endRow", endRow);
+                        message.put("totalRows", (int) estimatedRows);
+                        message.put("chunkNumber", i + 1);
+                        message.put("totalChunks", totalChunks);
+                        message.put("isFirstChunk", i == 0);
+                        message.put("coordinatorRunId", coordinatorRunId);
+
+                        String messageBody = objectMapper.writeValueAsString(message);
+                        sqsClient.sendMessage(SendMessageRequest.builder()
+                                .queueUrl(sqsQueueUrl)
+                                .messageBody(messageBody)
+                                .build());
+
+                        totalChunksPublished++;
+                    }
+
+                    totalFilesProcessed++;
+                    log.info("재분석 SQS 발행 완료: file={}, chunks={}", fileInfo.getFileName(), totalChunks);
+
+                } catch (Exception e) {
+                    log.error("재분석 실패 (파일): file={}, error={}", fileInfo.getFileName(), e.getMessage(), e);
+                }
+            }
+
+            // 7. session_data 삭제 (raw_data 기반이므로 재생성 필요)
+            Query deleteSessionDataQuery = new Query(Criteria.where("session_id").is(sessionId));
+            long deletedSessionData = mongoTemplate.remove(deleteSessionDataQuery, "session_data").getDeletedCount();
+            if (deletedSessionData > 0) {
+                log.info("session_data 삭제: sessionId={}, 삭제건수={}", sessionId, deletedSessionData);
+            }
+
+            // 8. 세션 상태 초기화 (totalRowCount 리셋)
+            session.setTotalRowCount(0L);
+            session.setUpdatedAt(LocalDateTime.now());
+            fileSessionRepository.save(session);
+        }
+
+        // 9. 세션 파싱 진행 상태 Redis 초기화
+        for (String sessionId : processedSessionIds) {
+            String sessionParseKey = "session:parse:" + sessionId;
+            Map<String, String> parseInitData = new HashMap<>();
+            parseInitData.put("status", "PROCESSING");
+            parseInitData.put("totalFiles", String.valueOf(
+                    targetSessions.stream()
+                            .filter(s -> s.getSessionId().equals(sessionId))
+                            .mapToInt(s -> s.getUploadedFiles() != null ? s.getUploadedFiles().size() : 0)
+                            .sum()));
+            parseInitData.put("completedFiles", "0");
+            parseInitData.put("totalRows", "0");
+            parseInitData.put("processedRows", "0");
+            parseInitData.put("progress", "0");
+            parseInitData.put("startTime", String.valueOf(System.currentTimeMillis()));
+            redisTemplate.opsForHash().putAll(sessionParseKey, parseInitData);
+            redisTemplate.expire(sessionParseKey, 24, TimeUnit.HOURS);
+        }
+
+        Map<String, Object> result = new HashMap<>();
+        result.put("status", "PROCESSING");
+        result.put("processedSessions", processedSessionIds);
+        result.put("totalFilesProcessed", totalFilesProcessed);
+        result.put("totalChunksPublished", totalChunksPublished);
+        result.put("message", String.format("%d개 세션, %d개 파일의 재분석이 시작되었습니다.",
+                processedSessionIds.size(), totalFilesProcessed));
+
+        log.info("⭐ 엑셀 데이터 재분석 완료: sessions={}, files={}, chunks={}",
+                processedSessionIds.size(), totalFilesProcessed, totalChunksPublished);
+
+        return result;
+    }
+
     /**
      * 프로젝트 내 모든 세션 완료 여부 확인 후 프로젝트 상태 자동 갱신
      */
