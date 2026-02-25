@@ -326,6 +326,33 @@ public class ExcelWorkerHandler implements RequestHandler<SQSEvent, String> {
                     new Document("$set", updateFields)
             );
 
+            // 6. ★ 세션 레벨 total_row_count 재계산 (모든 파일의 row_count 합산)
+            //    → 프론트엔드에서 즉시 행 수 표시 가능
+            try {
+                // 업데이트된 세션 다시 읽기
+                Document updatedSession = fileSessionsCol.find(Filters.eq("session_id", sessionId)).first();
+                if (updatedSession != null) {
+                    List<Document> allFiles = updatedSession.getList("uploaded_files", Document.class);
+                    long totalRowCount = 0;
+                    if (allFiles != null) {
+                        for (Document f : allFiles) {
+                            Object rc = f.get("row_count");
+                            if (rc instanceof Number) {
+                                totalRowCount += ((Number) rc).longValue();
+                            }
+                        }
+                    }
+                    fileSessionsCol.updateOne(
+                            Filters.eq("session_id", sessionId),
+                            new Document("$set", new Document("total_row_count", totalRowCount))
+                    );
+                    context.getLogger().log("★ session total_row_count 갱신: sessionId=" + sessionId +
+                            ", totalRowCount=" + totalRowCount);
+                }
+            } catch (Exception e2) {
+                context.getLogger().log("WARNING: total_row_count 갱신 실패 (무시): " + e2.getMessage());
+            }
+
             context.getLogger().log("★ file_sessions 업데이트 완료: uploadId=" + uploadId +
                     ", rowCount=" + rowCount + ", columns=" + columns.size() +
                     ", sessionId=" + sessionId);
