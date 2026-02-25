@@ -1,6 +1,7 @@
 import React from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import CostReductionSidebar from './CostReductionSidebar';
+import ViewerModeOverlay from '../common/ViewerModeOverlay';
 import { Button } from '@/components/ui/button';
 import { ArrowLeft } from 'lucide-react';
 
@@ -29,9 +30,13 @@ const CostReductionLayout = ({ children }) => {
 
       {/* Main Area */}
       <div className="flex flex-1 overflow-hidden">
+        {/* 사이드바 — 뷰어도 메뉴 이동 가능 */}
         <CostReductionSidebar projectId={projectId} />
+        {/* 콘텐츠 — 뷰어 모드 시 모든 인터랙션 차단 */}
         <main className="flex-1 overflow-hidden flex flex-col">
-          {children}
+          <ViewerModeOverlay projectId={projectId}>
+            {children}
+          </ViewerModeOverlay>
         </main>
       </div>
     </div>
