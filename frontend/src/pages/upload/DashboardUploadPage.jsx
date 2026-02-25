@@ -362,13 +362,18 @@ function DashboardUploadPage() {
 
     // ===== 대시보드 데이터 생성 =====
     const handleStartDashboardGeneration = async () => {
-        if (sessions.length === 0) {
-            showError('세션 없음', '데이터를 생성할 세션이 없습니다.');
+        // ★ 체크된 세션만 대상으로 처리
+        const targetSessions = selectedSessions.length > 0
+            ? sessions.filter(s => selectedSessions.includes(s.sessionId))
+            : sessions;
+
+        if (targetSessions.length === 0) {
+            showError('세션 없음', '데이터를 생성할 세션이 없습니다. 세션을 선택해주세요.');
             return;
         }
 
         // 각 세션별로 사용자 선택 + 자동 감지 컬럼 조합
-        const sessionsConfig = sessions.map(session => {
+        const sessionsConfig = targetSessions.map(session => {
             const mapping = columnMappings[session.sessionId] || {};
             const cols = getSessionColumns(session);
             const autoCluster = autoDetectClusterColumns(cols);
@@ -388,13 +393,13 @@ function DashboardUploadPage() {
         // 필수 컬럼 검증: 대계정(accountColumn), 클러스터(clusterColumn), 금액(amountColumn)
         const invalid = sessionsConfig.filter(s => !s.accountColumn || !s.clusterColumn || !s.amountColumn);
         if (invalid.length > 0) {
-            showError('매핑 필요', '모든 세션에 대계정컬럼, 클러스터컬럼, 금액컬럼을 설정해주세요.');
+            showError('매핑 필요', '선택한 세션에 대계정컬럼, 클러스터컬럼, 금액컬럼을 모두 설정해주세요.');
             return;
         }
 
         try {
             setIsGenerating(true);
-            setGenerationStatus({ status: 'PROCESSING', totalSessions: sessions.length, completedSessions: 0 });
+            setGenerationStatus({ status: 'PROCESSING', totalSessions: targetSessions.length, completedSessions: 0 });
             await costReductionService.startDashboardGeneration(projectId, sessionsConfig);
             pollGenerationStatus();
         } catch (error) {
