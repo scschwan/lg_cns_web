@@ -405,7 +405,19 @@ function DashboardUploadPage() {
     };
 
     const pollGenerationStatus = () => {
+        const startTime = Date.now();
+        const MAX_POLL_DURATION = 10 * 60 * 1000; // 최대 10분 폴링
+        let notFoundCount = 0;
+        let errorCount = 0;
+
         const poll = async () => {
+            // 타임아웃 체크
+            if (Date.now() - startTime > MAX_POLL_DURATION) {
+                setIsGenerating(false);
+                showError('시간 초과', '대시보드 데이터 생성이 10분을 초과했습니다. 페이지를 새로고침하여 상태를 확인해주세요.');
+                return;
+            }
+
             try {
                 const status = await costReductionService.getDashboardGenerationStatus(projectId);
                 setGenerationStatus(status);
@@ -427,9 +439,30 @@ function DashboardUploadPage() {
                     return;
                 }
 
+                // NOT_FOUND: 서버 재시작 등으로 상태가 유실된 경우
+                if (status.status === 'NOT_FOUND') {
+                    notFoundCount++;
+                    if (notFoundCount >= 3) {
+                        setIsGenerating(false);
+                        // 세션 목록 새로고침하여 실제 완료 여부 확인
+                        loadSessions();
+                        showError('상태 확인 실패', '서버에서 생성 상태를 찾을 수 없습니다. 세션 목록을 확인해주세요.');
+                        return;
+                    }
+                } else {
+                    notFoundCount = 0;
+                }
+
+                errorCount = 0;
                 setTimeout(poll, 2000);
             } catch (error) {
                 console.error('상태 조회 실패:', error);
+                errorCount++;
+                if (errorCount >= 10) {
+                    setIsGenerating(false);
+                    showError('통신 오류', '서버와의 통신이 반복적으로 실패했습니다. 페이지를 새로고침해주세요.');
+                    return;
+                }
                 setTimeout(poll, 3000);
             }
         };

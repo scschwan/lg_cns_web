@@ -73,8 +73,11 @@ public class HealthController {
                     .runCommand(new Document("serverStatus", 1));
             Document connections = serverStatus.get("connections", Document.class);
             if (connections != null) {
-                currentConnections = connections.getInteger("current", -1);
-                availableConnections = connections.getInteger("available", -1);
+                // DocumentDB는 Long 타입을 반환할 수 있으므로 Number로 안전하게 변환
+                Number current = (Number) connections.get("current");
+                Number available = (Number) connections.get("available");
+                currentConnections = current != null ? current.intValue() : -1;
+                availableConnections = available != null ? available.intValue() : -1;
             }
         } catch (Exception e) {
             // DocumentDB에서 serverStatus가 제한될 수 있음 - 무시

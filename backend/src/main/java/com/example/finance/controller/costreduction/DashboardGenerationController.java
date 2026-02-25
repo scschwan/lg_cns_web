@@ -45,6 +45,7 @@ public class DashboardGenerationController {
             SessionConfig c = new SessionConfig();
             c.sessionId = m.get("sessionId");
             c.accountName = m.get("accountName");
+            c.accountColumn = m.get("accountColumn");
             c.clusterColumn = m.get("clusterColumn");
             c.subClusterColumn = m.get("subClusterColumn");
             c.amountColumn = m.get("amountColumn");

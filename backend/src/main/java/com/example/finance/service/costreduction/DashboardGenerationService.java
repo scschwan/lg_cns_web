@@ -22,8 +22,7 @@ import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
 import java.util.*;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 
@@ -49,6 +48,12 @@ public class DashboardGenerationService {
 
     // 진행 상태 추적 (projectId → status)
     private final ConcurrentHashMap<String, GenerationStatus> statusMap = new ConcurrentHashMap<>();
+
+    // 대시보드 생성 전용 쓰레드풀 (기본 ForkJoinPool 점유 방지)
+    private static final ExecutorService GENERATION_EXECUTOR = Executors.newFixedThreadPool(
+            Math.max(2, Runtime.getRuntime().availableProcessors()),
+            r -> { Thread t = new Thread(r, "dashboard-gen"); t.setDaemon(true); return t; }
+    );
 
     public static class GenerationStatus {
         public volatile String status = "PROCESSING"; // PROCESSING, COMPLETED, COMPLETED_WITH_ERRORS, FAILED
@@ -86,7 +91,7 @@ public class DashboardGenerationService {
                 status.status = "FAILED";
                 status.errors.add(e.getMessage());
             }
-        });
+        }, GENERATION_EXECUTOR);
 
         Map<String, Object> result = new HashMap<>();
         result.put("status", "PROCESSING");
@@ -129,10 +134,23 @@ public class DashboardGenerationService {
                         status.errors.add(config.sessionId + ": " + e.getMessage());
                         status.completedSessions = completed.incrementAndGet();
                     }
-                }))
+                }, GENERATION_EXECUTOR))
                 .collect(Collectors.toList());
 
-        CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
+        try {
+            CompletableFuture.allOf(futures.toArray(new CompletableFuture[0]))
+                    .get(10, TimeUnit.MINUTES);
+        } catch (TimeoutException e) {
+            log.error("배치 처리 타임아웃 (10분 초과): projectId={}", projectId);
+            status.errors.add("처리 시간이 10분을 초과했습니다.");
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            log.error("배치 처리 인터럽트: projectId={}", projectId);
+            status.errors.add("처리가 중단되었습니다.");
+        } catch (ExecutionException e) {
+            log.error("배치 처리 실행 오류: projectId={}", projectId, e);
+            status.errors.add("실행 오류: " + e.getMessage());
+        }
 
         invalidateCache(projectId);
 
