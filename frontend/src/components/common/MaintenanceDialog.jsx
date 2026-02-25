@@ -1,6 +1,7 @@
 // frontend/src/components/common/MaintenanceDialog.jsx
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { useLocation } from 'react-router-dom';
 import { Loader2, AlertTriangle } from 'lucide-react';
 import systemService from '../../services/systemService';
 
@@ -12,6 +13,7 @@ import systemService from '../../services/systemService';
  * - Lambda 진행률 프로그레스바 표시
  */
 export default function MaintenanceDialog() {
+    const location = useLocation();
     const [status, setStatus] = useState(null);
     const pollingRef = useRef(null);
 
@@ -31,6 +33,10 @@ export default function MaintenanceDialog() {
             if (pollingRef.current) clearInterval(pollingRef.current);
         };
     }, [fetchStatus]);
+
+    // 관리자 페이지에서는 차단 다이얼로그를 표시하지 않음 (차단 해제를 위해)
+    const isAdminPage = location.pathname.startsWith('/admin');
+    if (isAdminPage) return null;
 
     // 서비스 이용 불가 상태가 아니면 렌더링하지 않음
     if (!status) return null;

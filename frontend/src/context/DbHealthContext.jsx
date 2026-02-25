@@ -62,6 +62,11 @@ export function DbHealthProvider({ children }) {
                 setIsOverloaded(false);
             }
         } catch (error) {
+            // 503 (유지보수 모드) 응답은 DB 과부하가 아님 - 무시
+            if (error.response?.status === 503) {
+                return;
+            }
+
             // 네트워크 에러 또는 타임아웃 → DB 과부하 가능성
             consecutiveFailuresRef.current++;
 
