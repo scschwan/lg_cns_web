@@ -1386,7 +1386,7 @@ public class ClusteringService {
                         "대상 병합 클러스터를 찾을 수 없습니다: #" + targetMergedClusterNumber));
 
         List<ClusteringResult> targets = clusteringResultRepository
-                .findFirstBySessionIdAndClusterNumberIn(sessionId, clusterNumbers);
+                .findBySessionIdAndClusterNumberIn(sessionId, clusterNumbers);
 
         if (targets.isEmpty()) {
             throw new BusinessException("CLUSTER_NOT_FOUND", "추가할 클러스터를 찾을 수 없습니다.");
