@@ -23,7 +23,7 @@ export default function useViewerMode(projectId) {
             })
             .catch(() => {
                 // 프로젝트 조회 실패 시 안전하게 뷰어 처리
-                if (!cancelled) setIsViewer(false);
+                if (!cancelled) setIsViewer(true);
             });
         return () => { cancelled = true; };
     }, [projectId]);

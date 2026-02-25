@@ -419,6 +419,7 @@ export default function StartAnalysisPage() {
 
   // 데이터 삭제 (선택된 값 기반)
   const handleDataDeleteByValues = async () => {
+    if (isViewer) return;
     if (deleteCheckedSet.size === 0) {
       alert('삭제할 항목을 선택해주세요.');
       return;
@@ -452,6 +453,7 @@ export default function StartAnalysisPage() {
 
   // 데이터 원복 (hidden 항목 선택 기반)
   const handleDataRestoreByValues = async () => {
+    if (isViewer) return;
     if (deleteCheckedSet.size === 0) {
       alert('원복할 항목을 선택해주세요.');
       return;
@@ -521,6 +523,7 @@ export default function StartAnalysisPage() {
   }, [loadStandardizationData]);
 
   const handleStandardize = async () => {
+    if (isViewer) return;
     if (!standardKeyColumn || !standardValueColumn) {
       alert('Key 열과 변경 열을 모두 선택해주세요.');
       return;
@@ -566,6 +569,7 @@ export default function StartAnalysisPage() {
   const [missingColumnsDialog, setMissingColumnsDialog] = useState({ open: false, missing: [] });
 
   const handleComplete = async () => {
+    if (isViewer) return;
     // 필수 항목 검증 - 모든 컬럼 체크
     const columnLabels = {
       category: '세목 열',

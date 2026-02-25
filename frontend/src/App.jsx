@@ -56,6 +56,7 @@ import S3Management from './pages/admin/S3Management';
 import SessionMonitoring from './pages/admin/SessionMonitoring';
 import AuditLogPage from './pages/admin/AuditLogPage';
 import AdminProfile from './pages/admin/AdminProfile';
+import MaintenanceDialog from './components/common/MaintenanceDialog';
 
 // ⭐ Layout Wrapper Component
 function LayoutWrapper({ children, showNavbar = true }) {
@@ -76,6 +77,8 @@ function App() {
     <AuthProvider>
       <DbOverloadOverlay />
       <Router>
+        {/* 전역 서비스 차단 다이얼로그 - 모든 페이지에서 표시 */}
+        <MaintenanceDialog />
         <Routes>
           {/* 🔓 Public Routes (No Navbar) */}
           <Route path="/login" element={<LoginPage />} />

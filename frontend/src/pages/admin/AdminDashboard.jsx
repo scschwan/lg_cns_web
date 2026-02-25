@@ -1,18 +1,27 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Users, FolderKanban, Monitor, Clock } from 'lucide-react';
+import { Input } from '@/components/ui/input';
+import { Users, FolderKanban, Monitor, Clock, ShieldAlert, ShieldCheck, Loader2, RefreshCw } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import adminService from '@/services/adminService';
+import systemService from '@/services/systemService';
 
 export default function AdminDashboard() {
     const [stats, setStats] = useState(null);
     const [pendingUsers, setPendingUsers] = useState([]);
     const navigate = useNavigate();
 
+    // 서비스 차단 상태
+    const [maintenanceStatus, setMaintenanceStatus] = useState(null);
+    const [maintenanceLoading, setMaintenanceLoading] = useState(false);
+    const [maintenanceReason, setMaintenanceReason] = useState('');
+    const [statusLoading, setStatusLoading] = useState(true);
+
     useEffect(() => {
         loadData();
+        loadMaintenanceStatus();
     }, []);
 
     const loadData = async () => {
@@ -30,6 +39,18 @@ export default function AdminDashboard() {
         }
     };
 
+    const loadMaintenanceStatus = useCallback(async () => {
+        setStatusLoading(true);
+        try {
+            const data = await systemService.getMaintenanceStatus();
+            setMaintenanceStatus(data);
+        } catch (e) {
+            console.error('유지보수 상태 조회 실패:', e);
+        } finally {
+            setStatusLoading(false);
+        }
+    }, []);
+
     const handleQuickApprove = async (userId) => {
         try {
             await adminService.approveUser(userId);
@@ -39,9 +60,134 @@ export default function AdminDashboard() {
         }
     };
 
+    const handleToggleMaintenance = async () => {
+        const currentEnabled = maintenanceStatus?.isMaintenance ?? false;
+        const newEnabled = !currentEnabled;
+
+        setMaintenanceLoading(true);
+        try {
+            const reason = newEnabled ? (maintenanceReason.trim() || '관리자 점검') : '';
+            await adminService.setMaintenanceMode(newEnabled, reason);
+            await loadMaintenanceStatus();
+            if (!newEnabled) setMaintenanceReason('');
+        } catch (e) {
+            console.error('유지보수 모드 설정 실패:', e);
+            alert('서비스 차단 설정에 실패했습니다: ' + (e?.response?.data?.message || e.message));
+        } finally {
+            setMaintenanceLoading(false);
+        }
+    };
+
+    const isMaintenance = maintenanceStatus?.isMaintenance ?? false;
+    const isLambdaRunning = maintenanceStatus?.isLambdaRunning ?? false;
+    const lambdaProgress = maintenanceStatus?.lambdaProgress ?? 0;
+
     return (
         <div className="space-y-6">
             <h1 className="text-2xl font-bold">대시보드</h1>
+
+            {/* 서비스 차단 제어 카드 */}
+            <Card className={`border-2 ${isMaintenance ? 'border-red-400 bg-red-50' : isLambdaRunning ? 'border-amber-400 bg-amber-50' : 'border-green-400 bg-green-50'}`}>
+                <CardHeader className="pb-3">
+                    <CardTitle className="text-lg flex items-center justify-between">
+                        <span className="flex items-center gap-2">
+                            {isMaintenance ? (
+                                <ShieldAlert className="h-5 w-5 text-red-500" />
+                            ) : (
+                                <ShieldCheck className="h-5 w-5 text-green-500" />
+                            )}
+                            서비스 차단 제어
+                        </span>
+                        <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={loadMaintenanceStatus}
+                            disabled={statusLoading}
+                        >
+                            {statusLoading ? (
+                                <Loader2 className="h-4 w-4 animate-spin" />
+                            ) : (
+                                <RefreshCw className="h-4 w-4" />
+                            )}
+                        </Button>
+                    </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                    {/* 현재 상태 표시 */}
+                    <div className="flex items-center gap-3">
+                        <span className="text-sm font-medium text-muted-foreground">현재 상태:</span>
+                        {statusLoading ? (
+                            <Badge variant="outline">조회 중...</Badge>
+                        ) : isMaintenance ? (
+                            <Badge variant="destructive">서비스 차단 중</Badge>
+                        ) : isLambdaRunning ? (
+                            <Badge className="bg-amber-500 text-white">Lambda 처리 중 (자동 차단)</Badge>
+                        ) : (
+                            <Badge className="bg-green-500 text-white">서비스 정상</Badge>
+                        )}
+                    </div>
+
+                    {/* Lambda 진행률 */}
+                    {isLambdaRunning && (
+                        <div>
+                            <div className="flex justify-between text-xs text-muted-foreground mb-1">
+                                <span>Lambda 파일 처리 중...</span>
+                                <span>{lambdaProgress}%</span>
+                            </div>
+                            <div className="w-full h-2 bg-amber-200 rounded-full overflow-hidden">
+                                <div
+                                    className="h-full bg-amber-500 rounded-full transition-all"
+                                    style={{ width: `${lambdaProgress}%` }}
+                                />
+                            </div>
+                            <p className="text-xs text-amber-600 mt-1">
+                                Lambda 작업이 완료되면 자동으로 서비스가 재개됩니다.
+                            </p>
+                        </div>
+                    )}
+
+                    {/* 차단 이유 */}
+                    {isMaintenance && maintenanceStatus?.reason && (
+                        <div className="text-sm text-red-700">
+                            <span className="font-medium">차단 이유:</span> {maintenanceStatus.reason}
+                        </div>
+                    )}
+
+                    {/* 수동 차단 제어 */}
+                    <div className="border-t pt-4 space-y-3">
+                        <p className="text-sm text-muted-foreground">
+                            수동으로 서비스 차단을 제어합니다. Lambda 작업 중에는 자동으로 차단됩니다.
+                        </p>
+                        {!isMaintenance && (
+                            <Input
+                                placeholder="차단 이유 입력 (선택사항)"
+                                value={maintenanceReason}
+                                onChange={(e) => setMaintenanceReason(e.target.value)}
+                                className="text-sm"
+                                disabled={isLambdaRunning}
+                            />
+                        )}
+                        <Button
+                            onClick={handleToggleMaintenance}
+                            disabled={maintenanceLoading || isLambdaRunning}
+                            variant={isMaintenance ? 'outline' : 'destructive'}
+                            className={isMaintenance ? 'border-green-500 text-green-700 hover:bg-green-50' : ''}
+                        >
+                            {maintenanceLoading ? (
+                                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                            ) : isMaintenance ? (
+                                <ShieldCheck className="h-4 w-4 mr-2" />
+                            ) : (
+                                <ShieldAlert className="h-4 w-4 mr-2" />
+                            )}
+                            {isMaintenance ? '서비스 차단 해제' : '서비스 차단 활성화'}
+                        </Button>
+                        {isLambdaRunning && (
+                            <p className="text-xs text-amber-600">Lambda 처리 중에는 수동 제어가 불가합니다.</p>
+                        )}
+                    </div>
+                </CardContent>
+            </Card>
 
             {/* 통계 카드 */}
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4">

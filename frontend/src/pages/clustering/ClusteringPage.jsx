@@ -600,6 +600,7 @@ function ClusteringPage() {
 
   /* 키워드 계층 CRUD */
   const handleAddKeyword = async (level, parentId, keyword) => {
+    if (isViewer) return;
     if (!keyword.trim()) return;
     try {
       await clusteringService.addKeywordHierarchy(projectId, sessionId, level, parentId, keyword.trim());
@@ -611,6 +612,7 @@ function ClusteringPage() {
   };
 
   const handleDeleteKeyword = async (id) => {
+    if (isViewer) return;
     if (!window.confirm('키워드를 삭제하시겠습니까? 하위 키워드도 함께 삭제됩니다.')) return;
     try {
       await clusteringService.deleteKeywordHierarchy(projectId, sessionId, id);
@@ -728,6 +730,7 @@ function ClusteringPage() {
   const BATCH_PARALLEL_LIMIT = 5;
 
   const handleMerge = async () => {
+    if (isViewer) return;
     if (selectedCount < 2) { alert('2개 이상의 클러스터를 선택하세요.'); return; }
     if (!window.confirm(`선택한 ${selectedCount}개 클러스터를 병합하시겠습니까?`)) return;
     setMerging(true);
@@ -869,6 +872,7 @@ function ClusteringPage() {
   };
 
   const handleAddToMerged = async (targetMergedNumber) => {
+    if (isViewer) return;
     if (selectedCount === 0) return;
     setMerging(true); setMergingProgress(0); setMergingClusters(new Set([targetMergedNumber]));
     setMergeOverlay(true); setMergingMessage('추가 병합 요청 중...');
@@ -995,6 +999,7 @@ function ClusteringPage() {
   };
 
   const handleAutoMergeByKeywords = async () => {
+    if (isViewer) return;
     if (kwCheckedSet.size === 0) { alert('키워드를 선택해주세요.'); return; }
     if (!window.confirm(`선택한 ${kwCheckedSet.size}개 키워드의 클러스터를 자동 병합합니다.`)) return;
     setMerging(true); setMergeOverlay(true); setMergingProgress(0);
@@ -1016,6 +1021,7 @@ function ClusteringPage() {
   };
 
   const handleAutoMergeBySuppliers = async () => {
+    if (isViewer) return;
     if (supCheckedSet.size === 0) { alert('공급업체를 선택해주세요.'); return; }
     if (!window.confirm(`선택한 ${supCheckedSet.size}개 공급업체의 클러스터를 자동 병합합니다.`)) return;
     setMerging(true); setMergeOverlay(true); setMergingProgress(0);
@@ -1058,6 +1064,7 @@ function ClusteringPage() {
      병합 결과: 전체해제 / merge-merged / 개별해제
      ============================================================ */
   const handleUnmerge = async (cn) => {
+    if (isViewer) return;
     if (!window.confirm(`클러스터 #${cn}의 병합을 해제하시겠습니까?`)) return;
     setUnmergingClusters(prev => new Set(prev).add(cn));
     setMergeActiveBlocking(true); setMergingProgress(30); setMergingMessage(`클러스터 #${cn} 병합 해제 중...`);
@@ -1072,6 +1079,7 @@ function ClusteringPage() {
   };
 
   const handleBulkUnmerge = async () => {
+    if (isViewer) return;
     if (selectedMerged.size === 0) return;
     if (!window.confirm(`${selectedMerged.size}개 병합 클러스터를 해제하시겠습니까?`)) return;
     setUnmerging(true); setUnmergingProgress(0); setUnmergingClusters(new Set(selectedMerged));
@@ -1094,6 +1102,7 @@ function ClusteringPage() {
   };
 
   const handleMergeMerged = async () => {
+    if (isViewer) return;
     if (selectedMerged.size < 2) { alert('2개 이상의 병합 클러스터를 선택하세요.'); return; }
     if (!window.confirm(`${selectedMerged.size}개 병합 클러스터를 하나로 합치시겠습니까?`)) return;
     setMerging(true); setMergingClusters(new Set(selectedMerged)); setMergingProgress(0);
@@ -1196,6 +1205,7 @@ function ClusteringPage() {
   /* 이름 변경 */
   const handleOpenRename = (c) => { setRenameDialog({ open: true, cluster: c }); setNewClusterName(c.clusterName); };
   const handleRename = async () => {
+    if (isViewer) return;
     if (!newClusterName.trim()) return;
     try {
       const cn = renameDialog.cluster.clusterNumber;
@@ -1212,6 +1222,7 @@ function ClusteringPage() {
 
   /* 완료 */
   const handleComplete = async () => {
+    if (isViewer) return;
     // 미병합 항목이 남아있는지 확인
     if (statistics.unmergedCount > 0) {
       setUndefinedMergeDialog(true);
@@ -1222,6 +1233,7 @@ function ClusteringPage() {
   };
 
   const handleUndefinedMergeConfirm = async () => {
+    if (isViewer) return;
     setUndefinedMerging(true);
     try {
       await clusteringService.autoMergeUndefined(projectId, sessionId);

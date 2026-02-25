@@ -24,6 +24,7 @@ import costReductionService from '@/services/costReductionService';
 import { useEditorLock } from '@/hooks/useEditorLock';
 import { useDashboardStatus } from '@/hooks/useDashboardStatus';
 import RawDataModal from '@/components/costreduction/RawDataModal';
+import useViewerMode from '@/hooks/useViewerMode';
 
 const CHART_COLORS = [
   '#3b82f6', '#ef4444', '#f59e0b', '#10b981', '#8b5cf6',
@@ -387,6 +388,7 @@ export default function ShortListPage() {
   const navigate = useNavigate();
   const { isEditor } = useEditorLock(projectId);
   const { dashboardStatus } = useDashboardStatus(projectId);
+  const { isViewer } = useViewerMode(projectId);
 
   const [treeData, setTreeData] = useState([]);
   const [stats, setStats] = useState(null);
@@ -409,7 +411,7 @@ export default function ShortListPage() {
   const dragStartRef = useRef(null);
 
   const isListLocked = dashboardStatus?.isListLocked ?? false;
-  const isDisabled = !isEditor || isListLocked;
+  const isDisabled = isViewer || !isEditor || isListLocked;
   const hasLockedItems = lockedIds.size > 0;
 
   // 트리를 flat list로 변환 (현재 확장된 상태 기반)
@@ -674,7 +676,7 @@ export default function ShortListPage() {
           <div>
             <div className="flex items-center gap-2">
               <h1 className="text-xl font-bold text-foreground">Short List 도출</h1>
-              {!isEditor && <Badge variant="secondary">뷰어 모드</Badge>}
+              {(isViewer || !isEditor) && <Badge variant="secondary">뷰어 모드</Badge>}
               {isListLocked && <Badge variant="destructive">리스트 잠금</Badge>}
             </div>
             <p className="text-sm text-muted-foreground mt-1">Raw List에서 선택된 항목을 추가 필터링하세요</p>

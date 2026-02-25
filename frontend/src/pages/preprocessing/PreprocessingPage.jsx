@@ -272,6 +272,7 @@ function PreprocessingPage() {
 
   // ===== 구분자 핸들러 =====
   const handleAddSeparator = () => {
+    if (isViewer) return;
     if (newSeparator.trim()) {
       const updated = [...separatorList, { value: newSeparator.trim(), checked: true }];
       setSeparatorList(updated);
@@ -281,6 +282,7 @@ function PreprocessingPage() {
   };
 
   const handleRemoveSeparator = () => {
+    if (isViewer) return;
     if (separatorCheckedSet.size === 0) {
       alert('제거할 항목을 선택해주세요.');
       return;
@@ -297,6 +299,7 @@ function PreprocessingPage() {
 
   // ===== 불용어 핸들러 =====
   const handleAddStopword = () => {
+    if (isViewer) return;
     if (newStopword.trim()) {
       const updated = [...stopwordList, { value: newStopword.trim(), checked: true }];
       setStopwordList(updated);
@@ -306,6 +309,7 @@ function PreprocessingPage() {
   };
 
   const handleRemoveStopword = () => {
+    if (isViewer) return;
     if (stopwordCheckedSet.size === 0) {
       alert('제거할 항목을 선택해주세요.');
       return;
@@ -336,6 +340,7 @@ function PreprocessingPage() {
 
   // ===== 키워드 추출 =====
   const handleKeywordExtract = async () => {
+    if (isViewer) return;
     setExtracting(true);
     setExtractProgress(0);
     try {
@@ -364,6 +369,7 @@ function PreprocessingPage() {
 
   // ===== 1글자 제거 (병렬 처리 + 진행률 폴링) =====
   const handleRemoveSingleChar = async () => {
+    if (isViewer) return;
     setRemovingSingle(true);
     setSingleCharProgress(0);
     try {

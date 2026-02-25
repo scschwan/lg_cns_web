@@ -46,6 +46,10 @@ const adminService = {
     // ========== 사용자 활동 로그 ==========
     logUserActivity: (action, targetType, targetId, detail) =>
         api.post('/api/admin/user-activity', { action, targetType, targetId, detail }).catch(() => {}),
+
+    // ========== 유지보수 모드 ==========
+    setMaintenanceMode: (enabled, reason) =>
+        api.post('/api/admin/maintenance-mode', { enabled, reason }),
 };
 
 export default adminService;
