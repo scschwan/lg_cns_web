@@ -504,6 +504,9 @@ function ExportPage() {
   const pollCompleteProgress = async (taskId) => {
     const POLL_INTERVAL = 1500;
     const MAX_POLLS = 400; // 최대 10분
+    const MAX_NOT_FOUND_RETRIES = 5; // NOT_FOUND 허용 재시도 횟수
+    let notFoundCount = 0;
+
     for (let i = 0; i < MAX_POLLS; i++) {
       await new Promise(r => setTimeout(r, POLL_INTERVAL));
       try {
@@ -518,8 +521,16 @@ function ExportPage() {
           throw new Error(p.message || '세션 완료 실패');
         }
         if (p.status === 'NOT_FOUND') {
-          throw new Error('작업을 찾을 수 없습니다.');
+          notFoundCount++;
+          console.warn(`[pollCompleteProgress] NOT_FOUND (${notFoundCount}/${MAX_NOT_FOUND_RETRIES}), taskId=${taskId}`);
+          if (notFoundCount >= MAX_NOT_FOUND_RETRIES) {
+            throw new Error('작업을 찾을 수 없습니다.');
+          }
+          // NOT_FOUND도 재시도 (서버 일시적 상태 불일치 대응)
+          continue;
         }
+        // 정상 응답이면 NOT_FOUND 카운터 리셋
+        notFoundCount = 0;
       } catch (e) {
         if (e.message && !e.message.includes('Network')) throw e;
         // 네트워크 오류는 재시도

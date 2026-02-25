@@ -641,8 +641,9 @@ public class ExportService {
                 progress.completedAt = System.currentTimeMillis();
                 sessionCompleteMap.remove(sessionId);
                 log.info("[COMPLETE-ASYNC] 완료: taskId={}", taskId);
-            } catch (Exception e) {
-                log.error("[COMPLETE-ASYNC] 실패: taskId={}, sessionId={}", taskId, sessionId, e);
+            } catch (Throwable e) {
+                log.error("[COMPLETE-ASYNC] 실패: taskId={}, sessionId={}, errorType={}",
+                        taskId, sessionId, e.getClass().getName(), e);
                 progress.message = e.getMessage();
                 progress.status = "FAILED";
                 progress.completedAt = System.currentTimeMillis();
@@ -658,7 +659,11 @@ public class ExportService {
      */
     public Map<String, Object> getCompleteProgress(String taskId) {
         CompleteProgress cp = completeProgressMap.get(taskId);
-        if (cp == null) return Map.of("status", "NOT_FOUND");
+        if (cp == null) {
+            log.warn("[COMPLETE-PROGRESS] NOT_FOUND: taskId={}, mapSize={}, mapKeys={}",
+                    taskId, completeProgressMap.size(), completeProgressMap.keySet());
+            return Map.of("status", "NOT_FOUND");
+        }
         Map<String, Object> r = new LinkedHashMap<>();
         r.put("status", cp.status);
         r.put("progress", cp.progress);
