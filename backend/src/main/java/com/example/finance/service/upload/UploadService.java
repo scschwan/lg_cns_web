@@ -65,6 +65,7 @@ public class UploadService {
     private final S3Service s3Service;
     private final SqsClient sqsClient;
     private final MongoTemplate mongoTemplate;
+    private final com.example.finance.service.admin.MaintenanceService maintenanceService;
 
     @Value("${aws.sqs.excel-queue-url}")
     private String sqsQueueUrl;
@@ -223,7 +224,7 @@ public class UploadService {
                 status.put("error", rawData.get("error"));
             }
 
-            // ★ COMPLETED 감지 시 file_sessions.row_count 업데이트
+            // ★ COMPLETED 감지 시 file_sessions.row_count 업데이트 및 Lambda 완료 처리
             String currentStatus = rawData.getOrDefault("status", "UNKNOWN");
             if ("COMPLETED".equals(currentStatus)) {
                 String sessionId = rawData.get("sessionId");
@@ -234,6 +235,20 @@ public class UploadService {
                         status.put("processedRows", finalRowCount);
                     }
                 }
+                // Lambda 완료 - 유지보수 모드 자동 비활성화
+                try {
+                    maintenanceService.onLambdaComplete(uploadId);
+                } catch (Exception e) {
+                    log.warn("[MAINTENANCE] Lambda 완료 상태 업데이트 실패: {}", e.getMessage());
+                }
+            }
+
+            // 진행률에 따라 MaintenanceService 업데이트
+            try {
+                int progressValue = Integer.parseInt(rawData.getOrDefault("progress", "0"));
+                maintenanceService.updateLambdaProgress(uploadId, progressValue);
+            } catch (Exception e) {
+                log.debug("[MAINTENANCE] Lambda 진행률 업데이트 실패: {}", e.getMessage());
             }
 
             return status;
