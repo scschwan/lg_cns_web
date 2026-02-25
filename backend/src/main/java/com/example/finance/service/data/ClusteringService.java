@@ -44,15 +44,13 @@ public class ClusteringService {
     public Map<String, Object> generateUnmergedClusters(
             String sessionId, boolean includeSupplier, boolean includeCostCenter) {
 
-        log.info("미병합 클러스터 생성: sessionId={}, supplier={}, costCenter={}",
+        log.info("[GENERATE] 미병합 클러스터 생성 시작: sessionId={}, supplier={}, costCenter={}",
                 sessionId, includeSupplier, includeCostCenter);
         clusterStatisticsService.cancelSessionCompletionIfNeeded(sessionId);
         long start = System.currentTimeMillis();
 
-        // ★ 최적화1: Spring Data deleteBySessionId → 직접 deleteMany (개별삭제 → 단일 벌크삭제)
-        mongoTemplate.remove(
-                new Query(Criteria.where("session_id").is(sessionId)),
-                "clustering_results");
+        // ★ 안전 패턴: 모든 데이터를 메모리에 준비한 후에만 DB를 변경한다.
+        // 조회/그룹핑/객체 생성 중 실패하면 기존 데이터가 보존됨.
 
         Query query = new Query(Criteria.where("session_id").is(sessionId));
         query.fields()
@@ -62,10 +60,20 @@ public class ClusteringService {
                 .include("department")
                 .include("supplier");
 
-        // ★ 최적화2: 커서 기반 스트리밍으로 메모리 사용 최소화
-        // find()는 MongoDB 드라이버가 내부적으로 배치 커서를 사용하므로 그대로 사용
-        List<Document> pvDocs = mongoTemplate.find(query, Document.class, "process_view_data");
-        log.info("process_view_data 조회: {}건, {}ms", pvDocs.size(), System.currentTimeMillis() - start);
+        List<Document> pvDocs;
+        try {
+            pvDocs = mongoTemplate.find(query, Document.class, "process_view_data");
+        } catch (Exception e) {
+            log.error("[GENERATE] process_view_data 조회 실패: sessionId={}", sessionId, e);
+            throw new BusinessException("GENERATE_FAILED",
+                    "process_view_data 조회 중 오류가 발생했습니다: " + e.getMessage());
+        }
+        log.info("[GENERATE] process_view_data 조회: {}건, {}ms", pvDocs.size(), System.currentTimeMillis() - start);
+
+        if (pvDocs.isEmpty()) {
+            log.warn("[GENERATE] process_view_data가 비어 있음: sessionId={}", sessionId);
+            throw new BusinessException("NO_DATA", "클러스터링할 데이터가 없습니다. 이전 단계를 먼저 완료해주세요.");
+        }
 
         // 그룹핑: 순차 처리 (parallelStream의 ConcurrentHashMap 동기화 오버헤드 제거)
         Map<String, List<Document>> groupMap = new HashMap<>();
@@ -95,7 +103,7 @@ public class ClusteringService {
             groupMap.computeIfAbsent(keyBuilder.toString(), k -> new ArrayList<>()).add(doc);
         }
 
-        log.info("그룹핑 완료: {}그룹, {}ms", groupMap.size(), System.currentTimeMillis() - start);
+        log.info("[GENERATE] 그룹핑 완료: {}그룹, {}ms", groupMap.size(), System.currentTimeMillis() - start);
 
         // 클러스터 객체 생성 (순차 - 그룹 수는 수천이므로 parallelStream 불필요)
         AtomicInteger clusterCounter = new AtomicInteger(1);
@@ -147,21 +155,39 @@ public class ClusteringService {
                     .build());
         }
 
-        log.info("클러스터 객체 생성 완료: {}개, {}ms", clusters.size(), System.currentTimeMillis() - start);
+        log.info("[GENERATE] 클러스터 객체 생성 완료: {}개 (메모리 준비), {}ms",
+                clusters.size(), System.currentTimeMillis() - start);
 
-        // ★ 최적화3: saveAll(개별 upsert) → BulkOperations.insert (단일 벌크 삽입)
-        if (!clusters.isEmpty()) {
-            int batchSize = 2000;
-            for (int i = 0; i < clusters.size(); i += batchSize) {
-                int end = Math.min(i + batchSize, clusters.size());
-                BulkOperations bulkOps = mongoTemplate.bulkOps(BulkOperations.BulkMode.UNORDERED, ClusteringResult.class);
-                bulkOps.insert(clusters.subList(i, end));
-                bulkOps.execute();
+        // ★ 여기서부터 DB 변경 시작 - 모든 메모리 준비가 완료된 후
+        // 기존 데이터 삭제 후 새 데이터 삽입 (삭제-삽입 사이 실패 가능성 최소화)
+        var deleteResult = mongoTemplate.remove(
+                new Query(Criteria.where("session_id").is(sessionId)),
+                "clustering_results");
+        log.info("[GENERATE] 기존 데이터 삭제: {}건", deleteResult.getDeletedCount());
+
+        int insertedCount = 0;
+        try {
+            if (!clusters.isEmpty()) {
+                int batchSize = 2000;
+                for (int i = 0; i < clusters.size(); i += batchSize) {
+                    int end = Math.min(i + batchSize, clusters.size());
+                    BulkOperations bulkOps = mongoTemplate.bulkOps(BulkOperations.BulkMode.UNORDERED, ClusteringResult.class);
+                    bulkOps.insert(clusters.subList(i, end));
+                    bulkOps.execute();
+                    insertedCount += (end - i);
+                }
             }
+        } catch (Exception e) {
+            log.error("[GENERATE] ★ 벌크 삽입 실패! ({}건 삽입됨/{}건 시도): sessionId={}. " +
+                      "기존 데이터 {}건이 삭제된 상태입니다. 재시도 필요.",
+                    insertedCount, clusters.size(), sessionId, deleteResult.getDeletedCount(), e);
+            throw new BusinessException("GENERATE_FAILED",
+                    "클러스터 데이터 저장 중 오류가 발생했습니다 (" + insertedCount + "/" + clusters.size()
+                    + "건 저장됨). 클러스터 재생성을 다시 시도해주세요.");
         }
 
         long elapsed = System.currentTimeMillis() - start;
-        log.info("미병합 클러스터 생성 완료: {}개, {}ms", clusters.size(), elapsed);
+        log.info("[GENERATE] 미병합 클러스터 생성 완료: {}개, {}ms", clusters.size(), elapsed);
 
         // 메모리 즉시 해제
         pvDocs.clear();
@@ -380,6 +406,26 @@ public class ClusteringService {
             }
         }
 
+        // ★ 고아 부모 자동 정리: 자식이 없고 "(병합 진행 중)" 이름인 부모는 3-Phase 배치 병합 중단 잔여물
+        List<Integer> orphanParents = new ArrayList<>();
+        for (Integer pn : parentNumbers) {
+            ClusteringResult p = parentMap.get(pn);
+            if (p != null && childrenByParent.getOrDefault(pn, Collections.emptyList()).isEmpty()) {
+                // 자식이 없는 부모 = 고아 (3-Phase 중단 또는 병합 해제 후 잔여)
+                orphanParents.add(pn);
+                log.warn("[getMergedClusters] 고아 부모 발견 → 자동 삭제: #{} ({})", pn, p.getClusterName());
+            }
+        }
+        if (!orphanParents.isEmpty()) {
+            mongoTemplate.remove(
+                    new Query(Criteria.where("session_id").is(sessionId)
+                            .and("cluster_number").in(orphanParents)
+                            .and("cluster_id").gt(0)),
+                    "clustering_results");
+            orphanParents.forEach(parentNumbers::remove);
+            log.info("[getMergedClusters] 고아 부모 {}건 자동 삭제됨", orphanParents.size());
+        }
+
         List<Map<String, Object>> result = new ArrayList<>();
         for (Integer pn : parentNumbers) {
             ClusteringResult p = parentMap.get(pn);
@@ -571,6 +617,9 @@ public class ClusteringService {
     // ★ 세션별 활성 병합 추적 (sessionId → taskId)
     private final ConcurrentHashMap<String, String> sessionMergeMap = new ConcurrentHashMap<>();
 
+    // ★ 세션별 활성 3-Phase 배치 병합 추적 (sessionId → parentClusterNumber)
+    private final ConcurrentHashMap<String, Integer> sessionBatchMergeMap = new ConcurrentHashMap<>();
+
     public static class MergeProgress {
         public volatile String status; // RUNNING, COMPLETED, FAILED
         public volatile int progress;  // 0-100
@@ -696,22 +745,32 @@ public class ClusteringService {
         int totalSize = clusterNumbers.size();
         updateProgress(progress, 1, "클러스터 조회 중... (0/" + totalSize + ")");
 
-        // ★ Phase 1: 병렬 배치 조회 (40%)
-        log.info("[MERGE-EXEC] Phase1 시작: {}건을 {}개 배치로 병렬 조회",
+        // ★ Phase 1: 병렬 배치 경량 조회 — dataIndices 제외 (40%)
+        log.info("[MERGE-EXEC] Phase1 시작: {}건을 {}개 배치로 병렬 조회 (projection)",
                 totalSize, (totalSize + BATCH_CHUNK_SIZE - 1) / BATCH_CHUNK_SIZE);
         List<List<Integer>> queryChunks = partition(clusterNumbers, BATCH_CHUNK_SIZE);
         List<CompletableFuture<List<ClusteringResult>>> queryFutures = new ArrayList<>();
         for (List<Integer> chunk : queryChunks) {
-            queryFutures.add(CompletableFuture.supplyAsync(() ->
-                    clusteringResultRepository.findBySessionIdAndClusterNumberIn(sessionId, chunk), EXECUTOR));
+            queryFutures.add(CompletableFuture.supplyAsync(() -> {
+                Query q = new Query(Criteria.where("session_id").is(sessionId)
+                        .and("cluster_number").in(chunk));
+                q.fields().include("cluster_number").include("cluster_id")
+                        .include("keywords").include("count").include("total_amount");
+                return mongoTemplate.find(q, ClusteringResult.class);
+            }, EXECUTOR));
         }
 
         List<ClusteringResult> targets = new ArrayList<>();
-        for (int i = 0; i < queryFutures.size(); i++) {
-            targets.addAll(queryFutures.get(i).join());
-            int pct = 1 + (int) ((i + 1.0) / queryFutures.size() * 39);
-            updateProgress(progress, pct,
-                    "클러스터 조회 중... (" + targets.size() + "/" + totalSize + ")");
+        try {
+            for (int i = 0; i < queryFutures.size(); i++) {
+                targets.addAll(queryFutures.get(i).join());
+                int pct = 1 + (int) ((i + 1.0) / queryFutures.size() * 39);
+                updateProgress(progress, pct,
+                        "클러스터 조회 중... (" + targets.size() + "/" + totalSize + ")");
+            }
+        } catch (CompletionException e) {
+            log.error("[MERGE-EXEC] Phase1 병렬 조회 실패: sessionId={}", sessionId, e.getCause());
+            throw new BusinessException("MERGE_FAILED", "클러스터 조회 중 오류: " + e.getCause().getMessage());
         }
 
         log.info("[MERGE-EXEC] Phase1 완료: {}건 조회됨 ({}ms)",
@@ -736,12 +795,8 @@ public class ClusteringService {
         int newClusterNumber = getNextClusterNumber(sessionId);
 
         Set<String> allKeywords = new LinkedHashSet<>();
-        List<String> allDataIndices = new ArrayList<>();
         int totalCount = 0;
         double totalAmount = 0;
-
-        long estimatedDataIndicesBytes = 0;
-        boolean dataIndicesTruncated = false;
 
         for (int i = 0; i < targets.size(); i++) {
             ClusteringResult target = targets.get(i);
@@ -749,21 +804,42 @@ public class ClusteringService {
             totalCount += target.getCount();
             totalAmount += target.getTotalAmount();
 
-            if (!dataIndicesTruncated && target.getDataIndices() != null) {
-                long chunkBytes = target.getDataIndices().size() * 40L;
-                if (estimatedDataIndicesBytes + chunkBytes > 12_000_000L) {
-                    dataIndicesTruncated = true;
-                    log.warn("병합 문서 dataIndices 크기 제한 도달 (~{}MB), 이후 생략",
-                            estimatedDataIndicesBytes / 1_000_000);
-                } else {
-                    allDataIndices.addAll(target.getDataIndices());
-                    estimatedDataIndicesBytes += chunkBytes;
-                }
-            }
-
             if (i % 1000 == 0) {
-                int pct = 40 + (int) ((i + 1.0) / targets.size() * 20);
+                int pct = 40 + (int) ((i + 1.0) / targets.size() * 10);
                 updateProgress(progress, pct, "데이터 집계 중... (" + (i + 1) + "/" + totalSize + ")");
+            }
+        }
+
+        // ★ Phase 2B: dataIndices 배치 조회 (50% → 60%) — 12MB 도달 시 즉시 중단
+        updateProgress(progress, 50, "dataIndices 집계 중...");
+        List<String> allDataIndices = new ArrayList<>();
+        long estimatedDataIndicesBytes = 0;
+        boolean dataIndicesTruncated = false;
+
+        List<Integer> targetNumbers = targets.stream()
+                .map(ClusteringResult::getClusterNumber).collect(Collectors.toList());
+
+        for (List<Integer> diChunkNums : partition(targetNumbers, 500)) {
+            if (dataIndicesTruncated) break;
+
+            Query diQuery = new Query(Criteria.where("session_id").is(sessionId)
+                    .and("cluster_number").in(diChunkNums));
+            diQuery.fields().include("cluster_number").include("data_indices");
+
+            List<ClusteringResult> diChunk = mongoTemplate.find(diQuery, ClusteringResult.class);
+            for (ClusteringResult c : diChunk) {
+                if (dataIndicesTruncated) break;
+                if (c.getDataIndices() != null) {
+                    long chunkBytes = c.getDataIndices().size() * 40L;
+                    if (estimatedDataIndicesBytes + chunkBytes > 12_000_000L) {
+                        dataIndicesTruncated = true;
+                        log.warn("[MERGE-EXEC] 병합 문서 dataIndices 크기 제한 도달 (~{}MB), 이후 생략",
+                                estimatedDataIndicesBytes / 1_000_000);
+                    } else {
+                        allDataIndices.addAll(c.getDataIndices());
+                        estimatedDataIndicesBytes += chunkBytes;
+                    }
+                }
             }
         }
 
@@ -793,9 +869,7 @@ public class ClusteringService {
 
         // ★ Phase 4: 병렬 배치 업데이트 (65% → 95%)
         log.info("[MERGE-EXEC] Phase4 시작: 자식 {}건 cluster_id 업데이트", targets.size());
-        List<Integer> targetNumbers = targets.stream()
-                .map(ClusteringResult::getClusterNumber)
-                .collect(Collectors.toList());
+        // targetNumbers는 Phase 2B에서 이미 생성됨
         List<List<Integer>> updateChunks = partition(targetNumbers, BATCH_CHUNK_SIZE);
         List<CompletableFuture<Void>> updateFutures = new ArrayList<>();
         for (List<Integer> chunk : updateChunks) {
@@ -807,11 +881,33 @@ public class ClusteringService {
                             "clustering_results"), EXECUTOR));
         }
 
-        for (int i = 0; i < updateFutures.size(); i++) {
-            updateFutures.get(i).join();
-            int pct = 65 + (int) ((i + 1.0) / updateFutures.size() * 30);
-            updateProgress(progress, pct,
-                    "자식 클러스터 업데이트 중... (" + (i + 1) + "/" + updateChunks.size() + ")");
+        try {
+            for (int i = 0; i < updateFutures.size(); i++) {
+                updateFutures.get(i).join();
+                int pct = 65 + (int) ((i + 1.0) / updateFutures.size() * 30);
+                updateProgress(progress, pct,
+                        "자식 클러스터 업데이트 중... (" + (i + 1) + "/" + updateChunks.size() + ")");
+            }
+        } catch (CompletionException e) {
+            // ★ Phase 4 실패 시: 부모는 저장되었지만 자식이 일부만 업데이트된 상태
+            // 고아 부모를 정리하고 자식들의 cluster_id를 원복
+            log.error("[MERGE-EXEC] Phase4 자식 업데이트 실패 → 롤백 시작: sessionId={}, parent=#{}",
+                    sessionId, newClusterNumber, e.getCause());
+            try {
+                mongoTemplate.updateMulti(
+                        new Query(Criteria.where("session_id").is(sessionId)
+                                .and("cluster_id").is(newClusterNumber)
+                                .and("cluster_number").ne(newClusterNumber)),
+                        new Update().set("cluster_id", -1),
+                        "clustering_results");
+                clusteringResultRepository.delete(merged);
+                log.info("[MERGE-EXEC] 롤백 완료: 부모 #{} 삭제, 자식 cluster_id 원복", newClusterNumber);
+            } catch (Exception rollbackErr) {
+                log.error("[MERGE-EXEC] ★ 롤백 실패! 수동 정리 필요: sessionId={}, parent=#{}",
+                        sessionId, newClusterNumber, rollbackErr);
+            }
+            throw new BusinessException("MERGE_FAILED",
+                    "자식 클러스터 업데이트 중 오류가 발생했습니다. 롤백되었습니다.");
         }
 
         updateProgress(progress, 95, "마무리 중...");
@@ -853,6 +949,18 @@ public class ClusteringService {
      */
     public Map<String, Object> mergeStart(String sessionId) {
         log.info("[MERGE-BATCH] mergeStart: sessionId={}", sessionId);
+
+        // ★ B3: 동시 실행 방지 — 기존 비동기 병합 또는 다른 3-phase 병합 진행 중이면 차단
+        if (sessionMergeMap.containsKey(sessionId)) {
+            throw new BusinessException("MERGE_IN_PROGRESS", "이미 병합이 진행 중입니다.");
+        }
+        if (sessionBatchMergeMap.containsKey(sessionId)) {
+            throw new BusinessException("MERGE_IN_PROGRESS", "이미 배치 병합이 진행 중입니다.");
+        }
+
+        // ★ B4: 고아 부모 정리 (10분 이상 된 "(병합 진행 중)" 상태)
+        cleanupOrphanedBatchParents(sessionId);
+
         clusterStatisticsService.cancelSessionCompletionIfNeeded(sessionId);
 
         int newClusterNumber = getNextClusterNumber(sessionId);
@@ -871,6 +979,7 @@ public class ClusteringService {
                 .build();
 
         clusteringResultRepository.save(parent);
+        sessionBatchMergeMap.put(sessionId, newClusterNumber); // ★ B3: 잠금 등록
         log.info("[MERGE-BATCH] mergeStart 완료: #{}", newClusterNumber);
 
         Map<String, Object> result = new HashMap<>();
@@ -910,10 +1019,19 @@ public class ClusteringService {
                 "clustering_results");
 
         long updatedCount = updateResult.getModifiedCount();
-        log.info("[MERGE-BATCH] mergeBatch 완료: {}건 편입", updatedCount);
+        long requestedCount = clusterNumbers.size();
+
+        // ★ B5: 편입 수 불일치 검증
+        if (updatedCount < requestedCount) {
+            log.warn("[MERGE-BATCH] 편입 수 불일치: 요청={}, 실제={} (이미 병합된 클러스터 또는 미존재 가능)",
+                    requestedCount, updatedCount);
+        }
+        log.info("[MERGE-BATCH] mergeBatch 완료: {}건 편입 (요청: {}건)", updatedCount, requestedCount);
 
         Map<String, Object> result = new HashMap<>();
         result.put("updatedCount", updatedCount);
+        result.put("requestedCount", requestedCount);
+        result.put("skippedCount", requestedCount - updatedCount);
         return result;
     }
 
@@ -923,70 +1041,128 @@ public class ClusteringService {
     public Map<String, Object> mergeFinalize(String sessionId, Integer mergedClusterNumber) {
         log.info("[MERGE-BATCH] mergeFinalize: sessionId={}, parent={}", sessionId, mergedClusterNumber);
 
-        ClusteringResult parent = clusteringResultRepository
-                .findBySessionIdAndClusterNumber(sessionId, mergedClusterNumber)
-                .orElseThrow(() -> new BusinessException("CLUSTER_NOT_FOUND",
-                        "병합 클러스터를 찾을 수 없습니다: #" + mergedClusterNumber));
+        try {
+            ClusteringResult parent = clusteringResultRepository
+                    .findBySessionIdAndClusterNumber(sessionId, mergedClusterNumber)
+                    .orElseThrow(() -> new BusinessException("CLUSTER_NOT_FOUND",
+                            "병합 클러스터를 찾을 수 없습니다: #" + mergedClusterNumber));
 
-        // 부모 자신 제외하고 자식만 조회
-        List<ClusteringResult> allChildren = clusteringResultRepository
-                .findBySessionIdAndClusterIdOrderByClusterNumberAsc(sessionId, mergedClusterNumber)
-                .stream()
-                .filter(c -> !c.getClusterNumber().equals(mergedClusterNumber))
-                .collect(Collectors.toList());
+            // ★ Pass 1: 경량 조회 — dataIndices 제외 (메모리 절감)
+            Query childQuery = new Query(Criteria.where("session_id").is(sessionId)
+                    .and("cluster_id").is(mergedClusterNumber)
+                    .and("cluster_number").ne(mergedClusterNumber));
+            childQuery.fields().include("cluster_number").include("keywords")
+                    .include("count").include("total_amount");
+            childQuery.with(Sort.by(Sort.Direction.ASC, "cluster_number"));
 
-        if (allChildren.isEmpty()) {
-            // 자식이 없으면 빈 부모 삭제
-            clusteringResultRepository.delete(parent);
-            log.warn("[MERGE-BATCH] mergeFinalize: 자식 없음, 부모 #{} 삭제", mergedClusterNumber);
-            throw new BusinessException("NO_CHILDREN", "편입된 하위 클러스터가 없습니다.");
-        }
+            List<ClusteringResult> allChildren = mongoTemplate.find(childQuery, ClusteringResult.class);
 
-        Set<String> allKeywords = new LinkedHashSet<>();
-        List<String> allDataIndices = new ArrayList<>();
-        int totalCount = 0;
-        double totalAmount = 0;
-        long estimatedBytes = 0;
-        boolean truncated = false;
+            if (allChildren.isEmpty()) {
+                // 자식이 없으면 빈 부모 삭제
+                clusteringResultRepository.delete(parent);
+                log.warn("[MERGE-BATCH] mergeFinalize: 자식 없음, 부모 #{} 삭제", mergedClusterNumber);
+                throw new BusinessException("NO_CHILDREN", "편입된 하위 클러스터가 없습니다.");
+            }
 
-        for (ClusteringResult child : allChildren) {
-            allKeywords.addAll(child.getKeywords());
-            totalCount += child.getCount();
-            totalAmount += child.getTotalAmount();
+            Set<String> allKeywords = new LinkedHashSet<>();
+            int totalCount = 0;
+            double totalAmount = 0;
 
-            if (!truncated && child.getDataIndices() != null) {
-                long chunkBytes = child.getDataIndices().size() * 40L;
-                if (estimatedBytes + chunkBytes > 12_000_000L) {
-                    truncated = true;
-                    log.warn("[MERGE-BATCH] dataIndices 크기 제한 도달 (~{}MB)", estimatedBytes / 1_000_000);
-                } else {
-                    allDataIndices.addAll(child.getDataIndices());
-                    estimatedBytes += chunkBytes;
+            for (ClusteringResult child : allChildren) {
+                allKeywords.addAll(child.getKeywords());
+                totalCount += child.getCount();
+                totalAmount += child.getTotalAmount();
+            }
+
+            // ★ Pass 2: dataIndices만 배치 조회 (12MB 도달 시 즉시 중단)
+            List<String> allDataIndices = new ArrayList<>();
+            long estimatedBytes = 0;
+            boolean truncated = false;
+
+            List<Integer> childNumbers = allChildren.stream()
+                    .map(ClusteringResult::getClusterNumber).collect(Collectors.toList());
+
+            for (List<Integer> diChunkNums : partition(childNumbers, 500)) {
+                if (truncated) break;
+
+                Query diQuery = new Query(Criteria.where("session_id").is(sessionId)
+                        .and("cluster_number").in(diChunkNums));
+                diQuery.fields().include("cluster_number").include("data_indices");
+
+                List<ClusteringResult> diChunk = mongoTemplate.find(diQuery, ClusteringResult.class);
+                for (ClusteringResult c : diChunk) {
+                    if (truncated) break;
+                    if (c.getDataIndices() != null) {
+                        long chunkBytes = c.getDataIndices().size() * 40L;
+                        if (estimatedBytes + chunkBytes > 12_000_000L) {
+                            truncated = true;
+                            log.warn("[MERGE-BATCH] dataIndices 크기 제한 도달 (~{}MB)", estimatedBytes / 1_000_000);
+                        } else {
+                            allDataIndices.addAll(c.getDataIndices());
+                            estimatedBytes += chunkBytes;
+                        }
+                    }
                 }
             }
+
+            String mergedName = String.join("_", allKeywords);
+            if (mergedName.length() > 100) mergedName = mergedName.substring(0, 100) + "...";
+
+            parent.setKeywords(new ArrayList<>(allKeywords));
+            parent.setClusterName(mergedName);
+            parent.setCount(totalCount);
+            parent.setTotalAmount(totalAmount);
+            parent.setDataIndices(allDataIndices);
+            clusteringResultRepository.save(parent);
+
+            log.info("[MERGE-BATCH] mergeFinalize 완료: #{}, {}개 자식, count={}, amount={}{}",
+                    mergedClusterNumber, allChildren.size(), totalCount, totalAmount,
+                    truncated ? " (dataIndices 일부 생략)" : "");
+
+            Map<String, Object> result = new HashMap<>();
+            result.put("mergedClusterNumber", mergedClusterNumber);
+            result.put("mergedClusterName", mergedName);
+            result.put("mergedCount", allChildren.size());
+            result.put("totalCount", totalCount);
+            result.put("totalAmount", totalAmount);
+            return result;
+        } finally {
+            // ★ B3: 항상 잠금 해제
+            sessionBatchMergeMap.remove(sessionId);
         }
+    }
 
-        String mergedName = String.join("_", allKeywords);
-        if (mergedName.length() > 100) mergedName = mergedName.substring(0, 100) + "...";
+    // ============================================================
+    // 7-2. 고아 부모 정리 (B4)
+    // ============================================================
 
-        parent.setKeywords(new ArrayList<>(allKeywords));
-        parent.setClusterName(mergedName);
-        parent.setCount(totalCount);
-        parent.setTotalAmount(totalAmount);
-        parent.setDataIndices(allDataIndices);
-        clusteringResultRepository.save(parent);
+    /**
+     * 10분 이상 된 "(병합 진행 중)" 상태의 고아 부모를 정리한다.
+     * 프론트엔드 크래시/네트워크 끊김 시 남은 잔여물을 제거.
+     */
+    private void cleanupOrphanedBatchParents(String sessionId) {
+        LocalDateTime threshold = LocalDateTime.now().minusMinutes(10);
+        Query orphanQuery = new Query(Criteria.where("session_id").is(sessionId)
+                .and("cluster_name").is("(병합 진행 중)")
+                .and("created_at").lt(threshold));
 
-        log.info("[MERGE-BATCH] mergeFinalize 완료: #{}, {}개 자식, count={}, amount={}{}",
-                mergedClusterNumber, allChildren.size(), totalCount, totalAmount,
-                truncated ? " (dataIndices 일부 생략)" : "");
-
-        Map<String, Object> result = new HashMap<>();
-        result.put("mergedClusterNumber", mergedClusterNumber);
-        result.put("mergedClusterName", mergedName);
-        result.put("mergedCount", allChildren.size());
-        result.put("totalCount", totalCount);
-        result.put("totalAmount", totalAmount);
-        return result;
+        List<ClusteringResult> orphans = mongoTemplate.find(orphanQuery, ClusteringResult.class);
+        for (ClusteringResult orphan : orphans) {
+            log.warn("[MERGE-CLEANUP] 고아 부모 정리: #{}, created={}", orphan.getClusterNumber(), orphan.getCreatedAt());
+            // 편입된 자식들의 cluster_id를 원복
+            mongoTemplate.updateMulti(
+                    new Query(Criteria.where("session_id").is(sessionId)
+                            .and("cluster_id").is(orphan.getClusterNumber())
+                            .and("cluster_number").ne(orphan.getClusterNumber())),
+                    new Update().set("cluster_id", -1),
+                    "clustering_results");
+            clusteringResultRepository.delete(orphan);
+            log.info("[MERGE-CLEANUP] 고아 부모 #{} 삭제, 자식 cluster_id 원복 완료", orphan.getClusterNumber());
+        }
+        // 잠금도 해제
+        if (!orphans.isEmpty()) {
+            sessionBatchMergeMap.remove(sessionId);
+        }
     }
 
     // ============================================================
