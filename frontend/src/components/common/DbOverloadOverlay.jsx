@@ -11,6 +11,10 @@ import { Loader2, AlertTriangle } from 'lucide-react';
 function DbOverloadOverlay() {
     const { isOverloaded, message, pingMs } = useDbHealth();
 
+    // 관리자 페이지에서는 오버레이를 표시하지 않음 (관리 작업 보장)
+    const isAdminPage = window.location.pathname.startsWith('/admin');
+    if (isAdminPage) return null;
+
     if (!isOverloaded) return null;
 
     return (

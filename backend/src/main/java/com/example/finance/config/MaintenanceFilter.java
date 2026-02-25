@@ -24,10 +24,10 @@ import java.util.Map;
  *
  * 유지보수 모드 활성 시 일반 API 요청을 503으로 차단.
  * 아래 경로는 유지보수 중에도 허용:
- *   - GET /api/system/maintenance-status  (상태 조회)
- *   - GET /api/system/upload-progress     (진행률 조회)
+ *   - /api/system/**                      (시스템 상태 조회)
+ *   - /api/admin/**                       (관리자 페이지 전체)
  *   - /api/auth/**                        (인증)
- *   - POST /api/admin/maintenance-mode    (관리자 제어)
+ *   - /api/health/**                      (DB 헬스체크)
  *   - /actuator/health                    (헬스체크)
  */
 @Slf4j
@@ -43,10 +43,10 @@ public class MaintenanceFilter extends OncePerRequestFilter {
      * 유지보수 모드 중에도 허용되는 경로 목록
      */
     private static final List<String> ALLOWED_PATHS = Arrays.asList(
-            "/api/system/maintenance-status",
-            "/api/system/upload-progress",
-            "/api/admin/maintenance-mode",
+            "/api/system/",
+            "/api/admin/",
             "/api/auth/",
+            "/api/health",
             "/actuator/health"
     );
 
