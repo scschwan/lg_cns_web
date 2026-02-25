@@ -159,7 +159,7 @@ public class ExportController {
     }
 
     /**
-     * 세션 완료 처리
+     * 세션 완료 처리 (비동기 → taskId 반환)
      */
     @PostMapping("/complete")
     public ResponseEntity<Map<String, Object>> completeSession(
@@ -167,13 +167,34 @@ public class ExportController {
             @PathVariable String sessionId,
             @RequestBody(required = false) Map<String, Object> request) {
         boolean forceExport = request != null && Boolean.TRUE.equals(request.get("forceExport"));
-        log.info("세션 완료: sessionId={}, forceExport={}", sessionId, forceExport);
+        log.info("세션 완료 (비동기): sessionId={}, forceExport={}", sessionId, forceExport);
         try {
-            Map<String, Object> result = exportService.completeSessionWithExport(sessionId, projectId, forceExport);
+            Map<String, Object> result = exportService.completeSessionAsync(sessionId, projectId, forceExport);
             return ResponseEntity.ok(result);
         } catch (Exception e) {
-            log.error("세션 완료 실패", e);
+            log.error("세션 완료 시작 실패", e);
             return ResponseEntity.internalServerError().body(Map.of("error", e.getMessage()));
         }
+    }
+
+    /**
+     * 세션 완료 진행률 조회
+     */
+    @GetMapping("/complete/progress/{taskId}")
+    public ResponseEntity<Map<String, Object>> getCompleteProgress(
+            @PathVariable String projectId,
+            @PathVariable String sessionId,
+            @PathVariable String taskId) {
+        return ResponseEntity.ok(exportService.getCompleteProgress(taskId));
+    }
+
+    /**
+     * 세션 완료 활성 여부 확인
+     */
+    @GetMapping("/complete/active")
+    public ResponseEntity<Map<String, Object>> isCompleteActive(
+            @PathVariable String projectId,
+            @PathVariable String sessionId) {
+        return ResponseEntity.ok(exportService.isCompleteActive(sessionId));
     }
 }

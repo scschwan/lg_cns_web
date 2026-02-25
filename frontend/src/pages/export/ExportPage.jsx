@@ -4,7 +4,7 @@ import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom';
 import {
   ChevronRight, ChevronDown, Home, Download, Trash2, Eye, RefreshCw,
-  CheckSquare, Square, Edit3, Save, X, ExternalLink, AlertTriangle, Lock
+  CheckSquare, Square, Edit3, Save, X, ExternalLink, AlertTriangle, Lock, Loader2
 } from 'lucide-react';
 import { useSessionEditorLock } from '../../hooks/useSessionEditorLock';
 
@@ -18,6 +18,7 @@ import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
+import { Progress } from '@/components/ui/progress';
 
 // Services
 import exportService from '@/services/exportService';
@@ -495,23 +496,74 @@ function ExportPage() {
     }
   };
 
+  // ★ 세션 완료 프로그레스 상태
+  const [completeProgress, setCompleteProgress] = useState(0);
+  const [completeMessage, setCompleteMessage] = useState('');
+  const [completeOverlay, setCompleteOverlay] = useState(false);
+
+  const pollCompleteProgress = async (taskId) => {
+    const POLL_INTERVAL = 1500;
+    const MAX_POLLS = 400; // 최대 10분
+    for (let i = 0; i < MAX_POLLS; i++) {
+      await new Promise(r => setTimeout(r, POLL_INTERVAL));
+      try {
+        const p = await exportService.getCompleteProgress(projectId, sessionId, taskId);
+        setCompleteProgress(p.progress || 0);
+        setCompleteMessage(p.message || '처리 중...');
+
+        if (p.status === 'COMPLETED') {
+          return p.result || {};
+        }
+        if (p.status === 'FAILED') {
+          throw new Error(p.message || '세션 완료 실패');
+        }
+        if (p.status === 'NOT_FOUND') {
+          throw new Error('작업을 찾을 수 없습니다.');
+        }
+      } catch (e) {
+        if (e.message && !e.message.includes('Network')) throw e;
+        // 네트워크 오류는 재시도
+      }
+    }
+    throw new Error('시간 초과: 세션 완료 처리 시간이 초과되었습니다.');
+  };
+
   const handleConfirmComplete = async (resetDashboard = false) => {
     setCompleteDialog(prev => ({ ...prev, open: false }));
     setExporting(true);
+    setCompleteOverlay(true);
+    setCompleteProgress(0);
+    setCompleteMessage('세션 완료 요청 중...');
 
     try {
       // 대시보드 초기화가 필요한 경우
       if (resetDashboard) {
+        setCompleteMessage('대시보드 초기화 중...');
         await costReductionService.resetDashboard(projectId);
       }
 
-      // 세션 완료 처리
-      const result = await exportService.completeSession(
+      // 세션 완료 처리 (비동기)
+      setCompleteProgress(5);
+      setCompleteMessage('세션 완료 처리 시작...');
+      const startResult = await exportService.completeSession(
         projectId, sessionId, !completeDialog.hasExport
       );
 
-      if (result.exported && result.exportResult?.downloadUrl) {
-        exportService.downloadExcel(result.exportResult.downloadUrl, `final_${sessionId}.xlsx`);
+      let finalResult;
+      if (startResult.async && startResult.taskId) {
+        // 비동기 → 폴링
+        finalResult = await pollCompleteProgress(startResult.taskId);
+      } else {
+        // 동기 응답 (하위 호환)
+        finalResult = startResult;
+      }
+
+      setCompleteProgress(100);
+      setCompleteMessage('완료!');
+      await new Promise(r => setTimeout(r, 500));
+
+      if (finalResult.exported && finalResult.exportResult?.downloadUrl) {
+        exportService.downloadExcel(finalResult.exportResult.downloadUrl, `final_${sessionId}.xlsx`);
       }
 
       alert('세션이 완료되었습니다.');
@@ -520,6 +572,9 @@ function ExportPage() {
       alert('세션 완료 실패: ' + (e.response?.data?.message || e.message));
     } finally {
       setExporting(false);
+      setCompleteOverlay(false);
+      setCompleteProgress(0);
+      setCompleteMessage('');
     }
   };
 
@@ -969,6 +1024,26 @@ function ExportPage() {
           </div>
         </div>
       </div>
+
+      {/* ★ 세션 완료 프로그레스 오버레이 */}
+      {completeOverlay && (
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 backdrop-blur-sm">
+          <div className="bg-white rounded-xl shadow-2xl p-8 w-[480px] flex flex-col items-center gap-5">
+            <Loader2 className="h-10 w-10 animate-spin text-green-500" />
+            <div className="text-lg font-semibold text-gray-800">세션 완료 처리 중</div>
+            <div className="w-full">
+              <Progress value={completeProgress} className="h-4" />
+            </div>
+            <div className="flex items-center justify-between w-full text-sm">
+              <span className="text-muted-foreground">{completeMessage}</span>
+              <span className="font-mono font-bold text-green-600">{completeProgress}%</span>
+            </div>
+            <p className="text-xs text-muted-foreground text-center">
+              Excel 생성 및 통계 처리가 완료될 때까지 페이지를 닫지 마세요.
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* 세션 완료 다이얼로그 */}
       <Dialog open={completeDialog.open} onOpenChange={(open) => !open && setCompleteDialog(prev => ({ ...prev, open: false }))}>

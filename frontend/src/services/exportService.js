@@ -136,13 +136,35 @@ const exportService = {
     // ============================================
 
     /**
-     * 세션 완료 처리
+     * 세션 완료 처리 (비동기 → taskId 반환)
      * POST /api/projects/{projectId}/sessions/{sessionId}/export/complete
      */
     completeSession: async (projectId, sessionId, forceExport = false) => {
         const response = await api.post(
             `/api/projects/${projectId}/sessions/${sessionId}/export/complete`,
             { forceExport }
+        );
+        return response.data;
+    },
+
+    /**
+     * 세션 완료 진행률 조회
+     * GET /api/projects/{projectId}/sessions/{sessionId}/export/complete/progress/{taskId}
+     */
+    getCompleteProgress: async (projectId, sessionId, taskId) => {
+        const response = await api.get(
+            `/api/projects/${projectId}/sessions/${sessionId}/export/complete/progress/${taskId}`
+        );
+        return response.data;
+    },
+
+    /**
+     * 세션 완료 활성 여부 확인
+     * GET /api/projects/{projectId}/sessions/{sessionId}/export/complete/active
+     */
+    isCompleteActive: async (projectId, sessionId) => {
+        const response = await api.get(
+            `/api/projects/${projectId}/sessions/${sessionId}/export/complete/active`
         );
         return response.data;
     },
