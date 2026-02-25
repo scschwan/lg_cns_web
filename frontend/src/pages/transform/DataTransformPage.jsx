@@ -435,6 +435,7 @@ function DataTransformPage() {
 
   // ===== 키워드 변환 실행 =====
   const handleReplaceKeywords = async () => {
+    if (isViewer) return;
     if (mergeCheckedSet.size === 0) {
       alert('변환할 키워드를 선택해주세요.');
       return;
@@ -487,6 +488,7 @@ function DataTransformPage() {
   const [completing, setCompleting] = useState(false);
 
   const handleComplete = async () => {
+    if (isViewer) return;
     setCompleting(true);
     try {
       // 1. step_history 업데이트

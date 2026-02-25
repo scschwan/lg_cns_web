@@ -247,6 +247,7 @@ function ExportPage() {
   };
 
   const handleSaveClusterName = async (clusterNumber) => {
+    if (isViewer) return;
     try {
       await exportService.updateClusterName(projectId, sessionId, clusterNumber, editingName);
       setClusterData(prev => prev.map(c =>
@@ -271,6 +272,7 @@ function ExportPage() {
   };
 
   const handleSaveSubClusterName = async (clusterNumber) => {
+    if (isViewer) return;
     try {
       await exportService.updateClusterName(projectId, sessionId, clusterNumber, editingSubName);
       setClusterData(prev => prev.map(c =>
@@ -382,6 +384,7 @@ function ExportPage() {
   const [exportingType, setExportingType] = useState(null); // 'selected' | 'all'
 
   const handleExportSelected = async () => {
+    if (isViewer) return;
     if (clusterCheckedSet.size === 0) {
       alert('Export할 클러스터를 선택해주세요.');
       return;
@@ -410,6 +413,7 @@ function ExportPage() {
   };
 
   const handleExportAll = async () => {
+    if (isViewer) return;
     if (!window.confirm('전체 클러스터를 Excel로 내보내시겠습니까?')) return;
     setExporting(true);
     setExportingType('all');
@@ -441,6 +445,7 @@ function ExportPage() {
   });
 
   const handleCompleteSession = async () => {
+    if (isViewer) return;
     try {
       // 1. 대시보드 잠금 상태 확인
       const lockStatus = await costReductionService.checkDashboardLockStatus(projectId);
