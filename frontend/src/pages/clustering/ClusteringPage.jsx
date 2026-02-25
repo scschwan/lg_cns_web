@@ -68,6 +68,47 @@ function MergeProgressOverlay({ visible, progressRef, messageRef }) {
 }
 
 /* ============================================================
+   병합 결과 행 (React.memo — 자신의 props만 변경 시 리렌더)
+   ============================================================ */
+const MergedClusterRow = React.memo(function MergedClusterRow({
+  cluster, isSelected, isMerging, isUnmerging, isViewer,
+  onSelect, onDetail, onRename, onUnmerge, formatAmount, amountUnit,
+}) {
+  const isBusy = isMerging || isUnmerging;
+  return (
+    <div
+      className={`grid grid-cols-[28px_1fr_60px_90px_60px] gap-1 items-center px-2 py-1.5 border-b transition-colors
+        ${isMerging ? 'bg-yellow-50 opacity-70' : isUnmerging ? 'bg-red-50 opacity-70' : isSelected ? 'bg-blue-50' : 'hover:bg-muted/50'}`}>
+      <Checkbox
+        checked={isSelected}
+        disabled={isBusy || isViewer}
+        onCheckedChange={ch => onSelect(cluster.clusterNumber, ch)} />
+      <div className="min-w-0">
+        <div className="flex items-center gap-1">
+          <Badge variant="outline" className="text-[9px] font-mono flex-shrink-0">#{cluster.clusterNumber}</Badge>
+          <span className="truncate" title={cluster.clusterName}>
+            {isMerging ? <span className="text-yellow-600 font-semibold">병합중...</span>
+              : isUnmerging ? <span className="text-red-600 font-semibold">해제중...</span>
+              : truncateName(cluster.clusterName)}
+          </span>
+        </div>
+        <div className="flex flex-wrap gap-0.5 mt-0.5">
+          {(cluster.keywords || []).slice(0, 4).map((k, i) => <Badge key={i} variant="secondary" className="text-[8px]">{k}</Badge>)}
+          {(cluster.keywords || []).length > 4 && <Badge variant="secondary" className="text-[8px]">+{cluster.keywords.length - 4}</Badge>}
+        </div>
+      </div>
+      <div className="text-right tabular-nums">{(cluster.count||0).toLocaleString()}</div>
+      <div className="text-right tabular-nums">{formatAmount(cluster.totalAmount||0)}</div>
+      <div className="flex items-center justify-center gap-0.5">
+        <Button size="sm" variant="ghost" className="h-6 w-6 p-0" onClick={() => onDetail(cluster)} title="상세" disabled={isBusy}><Eye className="h-3 w-3" /></Button>
+        <Button size="sm" variant="ghost" className="h-6 w-6 p-0" onClick={() => onRename(cluster)} title="이름변경" disabled={isBusy || isViewer}><Edit2 className="h-3 w-3" /></Button>
+        <Button size="sm" variant="ghost" className="h-6 w-6 p-0 text-red-500" onClick={() => onUnmerge(cluster.clusterNumber)} title="병합해제" disabled={isBusy || isViewer}><Trash2 className="h-3 w-3" /></Button>
+      </div>
+    </div>
+  );
+});
+
+/* ============================================================
    페이징 컴포넌트
    ============================================================ */
 function Pagination({ currentPage, totalPages, totalCount, pageSize, onPageChange, onPageSizeChange }) {
@@ -1243,6 +1284,11 @@ function ClusteringPage() {
 
   /* 이름 변경 */
   const handleOpenRename = (c) => { setRenameDialog({ open: true, cluster: c }); setNewClusterName(c.clusterName); };
+
+  // ★ F4: MergedClusterRow용 안정 콜백 (참조 동일성 유지)
+  const handleMergedRowSelect = useCallback((clusterNumber, checked) => {
+    setSelectedMerged(prev => { const n = new Set(prev); checked ? n.add(clusterNumber) : n.delete(clusterNumber); return n; });
+  }, []);
   const handleRename = async () => {
     if (isViewer) return;
     if (!newClusterName.trim()) return;
@@ -1909,42 +1955,22 @@ function ClusteringPage() {
                       </div>
                       {mergedClusters
                         .slice(mergedPage * MERGED_PAGE_SIZE, (mergedPage + 1) * MERGED_PAGE_SIZE)
-                        .map(c => {
-                        const isMergingThis = mergingClusters.has(c.clusterNumber);
-                        const isUnmergingThis = unmergingClusters.has(c.clusterNumber);
-                        const isBusy = isMergingThis || isUnmergingThis;
-                        return (
-                          <div key={c.clusterNumber}
-                            className={`grid grid-cols-[28px_1fr_60px_90px_60px] gap-1 items-center px-2 py-1.5 border-b transition-colors
-                              ${isMergingThis ? 'bg-yellow-50 opacity-70' : isUnmergingThis ? 'bg-red-50 opacity-70' : selectedMerged.has(c.clusterNumber) ? 'bg-blue-50' : 'hover:bg-muted/50'}`}>
-                            <Checkbox
-                              checked={selectedMerged.has(c.clusterNumber)}
-                              disabled={isBusy || isViewer}
-                              onCheckedChange={ch => setSelectedMerged(prev => { const n = new Set(prev); ch ? n.add(c.clusterNumber) : n.delete(c.clusterNumber); return n; })} />
-                            <div className="min-w-0">
-                              <div className="flex items-center gap-1">
-                                <Badge variant="outline" className="text-[9px] font-mono flex-shrink-0">#{c.clusterNumber}</Badge>
-                                <span className="truncate" title={c.clusterName}>
-                                  {isMergingThis ? <span className="text-yellow-600 font-semibold">병합중...</span>
-                                    : isUnmergingThis ? <span className="text-red-600 font-semibold">해제중...</span>
-                                    : truncateName(c.clusterName)}
-                                </span>
-                              </div>
-                              <div className="flex flex-wrap gap-0.5 mt-0.5">
-                                {(c.keywords || []).slice(0, 4).map((k, i) => <Badge key={i} variant="secondary" className="text-[8px]">{k}</Badge>)}
-                                {(c.keywords || []).length > 4 && <Badge variant="secondary" className="text-[8px]">+{c.keywords.length - 4}</Badge>}
-                              </div>
-                            </div>
-                            <div className="text-right tabular-nums">{(c.count||0).toLocaleString()}</div>
-                            <div className="text-right tabular-nums">{formatAmount(c.totalAmount||0)}</div>
-                            <div className="flex items-center justify-center gap-0.5">
-                              <Button size="sm" variant="ghost" className="h-6 w-6 p-0" onClick={() => handleOpenDetail(c)} title="상세" disabled={isBusy}><Eye className="h-3 w-3" /></Button>
-                              <Button size="sm" variant="ghost" className="h-6 w-6 p-0" onClick={() => handleOpenRename(c)} title="이름변경" disabled={isBusy || isViewer}><Edit2 className="h-3 w-3" /></Button>
-                              <Button size="sm" variant="ghost" className="h-6 w-6 p-0 text-red-500" onClick={() => handleUnmerge(c.clusterNumber)} title="병합해제" disabled={isBusy || isViewer}><Trash2 className="h-3 w-3" /></Button>
-                            </div>
-                          </div>
-                        );
-                      })}
+                        .map(c => (
+                          <MergedClusterRow
+                            key={c.clusterNumber}
+                            cluster={c}
+                            isSelected={selectedMerged.has(c.clusterNumber)}
+                            isMerging={mergingClusters.has(c.clusterNumber)}
+                            isUnmerging={unmergingClusters.has(c.clusterNumber)}
+                            isViewer={isViewer}
+                            onSelect={handleMergedRowSelect}
+                            onDetail={handleOpenDetail}
+                            onRename={handleOpenRename}
+                            onUnmerge={handleUnmerge}
+                            formatAmount={formatAmount}
+                            amountUnit={amountUnit}
+                          />
+                        ))}
                       {/* 병합 결과 페이지네이션 */}
                       {mergedClusters.length > MERGED_PAGE_SIZE && (
                         <div className="flex items-center justify-between px-2 py-2 border-t text-xs sticky bottom-0 bg-white">
