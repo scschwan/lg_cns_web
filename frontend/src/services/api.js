@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { isTokenExpired, isRefreshTokenExpired } from '../utils/tokenUtils';
 
 const API_URL = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8080';
 
@@ -30,6 +31,9 @@ const processQueue = (error, token = null) => {
 
 // 세션 만료 처리 (localStorage 정리 + 로그인 페이지 이동)
 const handleSessionExpired = () => {
+  // 이미 로그인 페이지에 있으면 중복 리다이렉트 방지
+  if (window.location.pathname === '/login') return;
+
   localStorage.removeItem('authToken');
   localStorage.removeItem('refreshToken');
   localStorage.removeItem('user');
@@ -37,13 +41,35 @@ const handleSessionExpired = () => {
   window.location.href = '/login';
 };
 
-// 요청 인터셉터 (JWT 토큰 자동 추가)
+// 요청 인터셉터 (JWT 토큰 자동 추가 + ★ 만료 토큰 사전 차단)
 api.interceptors.request.use(
   (config) => {
+    // 인증이 필요없는 요청은 통과
+    const isAuthRequest = config.url?.includes('/api/auth/login') ||
+                          config.url?.includes('/api/auth/register') ||
+                          config.url?.includes('/api/auth/refresh');
+    if (isAuthRequest) return config;
+
     const token = localStorage.getItem('authToken');
-    if (token && token !== 'undefined' && token !== 'null') {
-      config.headers.Authorization = `Bearer ${token}`;
+
+    // ★ 토큰이 없으면 즉시 세션 만료 처리
+    if (!token || token === 'undefined' || token === 'null') {
+      handleSessionExpired();
+      return Promise.reject(new axios.Cancel('세션이 만료되었습니다.'));
     }
+
+    // ★ Access token이 만료된 경우 사전 체크
+    if (isTokenExpired(token)) {
+      const refreshToken = localStorage.getItem('refreshToken');
+
+      // Refresh token도 만료 → 서버에 요청할 필요 없이 즉시 로그아웃
+      if (!refreshToken || refreshToken === 'undefined' || refreshToken === 'null' || isRefreshTokenExpired()) {
+        handleSessionExpired();
+        return Promise.reject(new axios.Cancel('세션이 만료되었습니다.'));
+      }
+    }
+
+    config.headers.Authorization = `Bearer ${token}`;
     return config;
   },
   (error) => {
@@ -59,6 +85,11 @@ api.interceptors.response.use(
     return response;
   },
   async (error) => {
+    // Cancel된 요청 (사전 차단된 만료 토큰)은 그대로 reject
+    if (axios.isCancel(error)) {
+      return Promise.reject(error);
+    }
+
     const originalRequest = error.config;
 
     // 401 에러이고, 아직 재시도하지 않은 요청인 경우
@@ -89,6 +120,14 @@ api.interceptors.response.use(
 
       if (!refreshToken || refreshToken === 'undefined' || refreshToken === 'null') {
         isRefreshing = false;
+        handleSessionExpired();
+        return Promise.reject(error);
+      }
+
+      // ★ Refresh token도 만료되었으면 서버에 요청하지 않고 즉시 로그아웃
+      if (isRefreshTokenExpired()) {
+        isRefreshing = false;
+        processQueue(error, null);
         handleSessionExpired();
         return Promise.reject(error);
       }
