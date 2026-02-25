@@ -81,8 +81,9 @@ public class SecurityConfig {
                         // 나머지 /api/auth/** 경로는 누구나 접근 가능
                         .requestMatchers("/api/auth/**").permitAll()
 
-                        // /actuator/health 경로는 누구나 접근 가능 (헬스 체크)
+                        // /actuator/health, /api/health/** 경로는 누구나 접근 가능 (헬스 체크)
                         .requestMatchers("/actuator/health").permitAll()
+                        .requestMatchers("/api/health/**").permitAll()
 
                         // 나머지는 인증 필요
                         .anyRequest().authenticated()

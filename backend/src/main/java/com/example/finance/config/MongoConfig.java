@@ -41,10 +41,11 @@ public class MongoConfig extends AbstractMongoClientConfiguration {
         MongoClientSettings settings = MongoClientSettings.builder()
                 .applyConnectionString(connectionString)
                 .applyToConnectionPoolSettings(builder ->
-                        builder.maxSize(50)
+                        builder.maxSize(30)                              // 50→30: DocumentDB 과부하 방지
                                 .minSize(5)
-                                .maxWaitTime(30, TimeUnit.SECONDS)
+                                .maxWaitTime(15, TimeUnit.SECONDS)       // 30→15초: 빠른 실패 유도
                                 .maxConnectionIdleTime(60, TimeUnit.SECONDS)
+                                .maxConnectionLifeTime(10, TimeUnit.MINUTES) // 커넥션 수명 제한
                 )
                 .applyToSocketSettings(builder ->
                         builder.connectTimeout(10, TimeUnit.SECONDS)
