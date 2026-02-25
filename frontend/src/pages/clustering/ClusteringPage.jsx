@@ -872,6 +872,7 @@ function ClusteringPage() {
   };
 
   const handleAddToMerged = async (targetMergedNumber) => {
+    if (isViewer) return;
     if (selectedCount === 0) return;
     setMerging(true); setMergingProgress(0); setMergingClusters(new Set([targetMergedNumber]));
     setMergeOverlay(true); setMergingMessage('추가 병합 요청 중...');
@@ -998,6 +999,7 @@ function ClusteringPage() {
   };
 
   const handleAutoMergeByKeywords = async () => {
+    if (isViewer) return;
     if (kwCheckedSet.size === 0) { alert('키워드를 선택해주세요.'); return; }
     if (!window.confirm(`선택한 ${kwCheckedSet.size}개 키워드의 클러스터를 자동 병합합니다.`)) return;
     setMerging(true); setMergeOverlay(true); setMergingProgress(0);
@@ -1019,6 +1021,7 @@ function ClusteringPage() {
   };
 
   const handleAutoMergeBySuppliers = async () => {
+    if (isViewer) return;
     if (supCheckedSet.size === 0) { alert('공급업체를 선택해주세요.'); return; }
     if (!window.confirm(`선택한 ${supCheckedSet.size}개 공급업체의 클러스터를 자동 병합합니다.`)) return;
     setMerging(true); setMergeOverlay(true); setMergingProgress(0);
@@ -1202,6 +1205,7 @@ function ClusteringPage() {
   /* 이름 변경 */
   const handleOpenRename = (c) => { setRenameDialog({ open: true, cluster: c }); setNewClusterName(c.clusterName); };
   const handleRename = async () => {
+    if (isViewer) return;
     if (!newClusterName.trim()) return;
     try {
       const cn = renameDialog.cluster.clusterNumber;
