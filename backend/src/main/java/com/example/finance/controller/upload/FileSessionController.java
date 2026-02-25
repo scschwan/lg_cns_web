@@ -497,6 +497,19 @@ public class FileSessionController {
         return ResponseEntity.ok(sessionDataService.updateColumnVisibility(sessionId, columnName, isVisible));
     }
 
+    @Operation(summary = "대시보드 컬럼 매핑 저장", description = "세션의 대계정/금액/공급업체/코스트센터 컬럼 매핑을 저장합니다.")
+    @PutMapping("/{sessionId}/dashboard-columns")
+    public ResponseEntity<?> updateDashboardColumnMappings(
+            @PathVariable String projectId,
+            @PathVariable String sessionId,
+            @RequestBody Map<String, String> mappings,
+            @CurrentUser UserPrincipal userPrincipal) {
+
+        projectService.getProject(projectId, userPrincipal.getId());
+        fileSessionService.updateDashboardColumnMappings(sessionId, mappings);
+        return ResponseEntity.ok(Map.of("success", true));
+    }
+
     @Operation(summary = "컬럼 매핑 일괄 업데이트")
     @PutMapping("/{sessionId}/column-mappings/batch")
     public ResponseEntity<?> updateColumnMappingsBatch(

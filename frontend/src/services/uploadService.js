@@ -290,6 +290,18 @@ const uploadService = {
     },
 
     /**
+     * 대시보드 컬럼 매핑 저장
+     * PUT /api/projects/{projectId}/upload/sessions/{sessionId}/dashboard-columns
+     */
+    updateDashboardColumns: async (projectId, sessionId, mappings) => {
+        const response = await api.put(
+            `/api/projects/${projectId}/upload/sessions/${sessionId}/dashboard-columns`,
+            mappings
+        );
+        return response.data;
+    },
+
+    /**
      * 세션 시작 (Step 2 진입)
      * POST /api/projects/{projectId}/upload/sessions/{sessionId}/start
      */

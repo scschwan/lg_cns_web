@@ -239,7 +239,7 @@ function DashboardUploadPage() {
         };
     }, [sessions.map(s => s.sessionId + (getSessionColumns(s).length || 0)).join(',')]);
 
-    // 세션 로드 시 자동 매핑
+    // 세션 로드 시 컬럼 매핑 초기화: 백엔드 저장값 → 자동 감지 fallback
     useEffect(() => {
         if (sessions.length === 0) return;
         setColumnMappings(prev => {
@@ -247,8 +247,19 @@ function DashboardUploadPage() {
             for (const session of sessions) {
                 if (updated[session.sessionId]) continue;
                 const cols = getSessionColumns(session);
-                if (cols.length === 0) continue;
-                updated[session.sessionId] = autoDetectColumns(cols);
+                // ★ 백엔드에 저장된 컬럼 매핑이 있으면 우선 사용
+                const saved = {
+                    accountColumn: session.categoryColumn || '',
+                    amountColumn: session.amountColumn || '',
+                    supplierColumn: session.supplierColumn || '',
+                    costCenterColumn: session.costCenterColumn || '',
+                };
+                const hasSaved = saved.accountColumn || saved.amountColumn;
+                if (hasSaved) {
+                    updated[session.sessionId] = saved;
+                } else if (cols.length > 0) {
+                    updated[session.sessionId] = autoDetectColumns(cols);
+                }
             }
             return updated;
         });
@@ -312,15 +323,19 @@ function DashboardUploadPage() {
         event.target.value = '';
     };
 
-    // ===== 컬럼 매핑 변경 =====
+    // ===== 컬럼 매핑 변경 (state 업데이트 + 백엔드 저장) =====
     const handleColumnMapping = (sessionId, field, value) => {
+        const newMapping = {
+            ...columnMappings[sessionId],
+            [field]: value,
+        };
         setColumnMappings(prev => ({
             ...prev,
-            [sessionId]: {
-                ...prev[sessionId],
-                [field]: value,
-            },
+            [sessionId]: newMapping,
         }));
+        // ★ 백엔드에 즉시 저장 (비동기, fire-and-forget)
+        uploadService.updateDashboardColumns(projectId, sessionId, newMapping)
+            .catch(err => console.error('컬럼 매핑 저장 실패:', err));
     };
 
     // ===== 세션 삭제 =====

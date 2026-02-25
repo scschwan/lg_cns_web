@@ -346,7 +346,7 @@ public class DashboardGenerationService {
         session.setCurrentStep(ProcessStep.EXPORT);
         session.setAccountNames(List.of(accountName));
         session.setTotalRowCount((long) rows.size());
-        session.setCategoryColumn(config.clusterColumn);
+        session.setCategoryColumn(config.accountColumn);
         session.setCostCenterColumn(config.costCenterColumn);
         session.setSupplierColumn(config.supplierColumn);
         session.setAmountColumn(config.amountColumn);
