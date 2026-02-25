@@ -1043,7 +1043,7 @@ public class ClusteringService {
 
         try {
             ClusteringResult parent = clusteringResultRepository
-                    .findBySessionIdAndClusterNumber(sessionId, mergedClusterNumber)
+                    .findFirstBySessionIdAndClusterNumber(sessionId, mergedClusterNumber)
                     .orElseThrow(() -> new BusinessException("CLUSTER_NOT_FOUND",
                             "병합 클러스터를 찾을 수 없습니다: #" + mergedClusterNumber));
 
@@ -1174,7 +1174,7 @@ public class ClusteringService {
         clusterStatisticsService.cancelSessionCompletionIfNeeded(sessionId);
 
         ClusteringResult merged = clusteringResultRepository
-                .findBySessionIdAndClusterNumber(sessionId, mergedClusterNumber)
+                .findFirstBySessionIdAndClusterNumber(sessionId, mergedClusterNumber)
                 .orElseThrow(() -> new BusinessException("CLUSTER_NOT_FOUND",
                         "병합 클러스터를 찾을 수 없습니다: #" + mergedClusterNumber));
 
@@ -1218,7 +1218,7 @@ public class ClusteringService {
         clusterStatisticsService.cancelSessionCompletionIfNeeded(sessionId);
 
         ClusteringResult merged = clusteringResultRepository
-                .findBySessionIdAndClusterNumber(sessionId, mergedClusterNumber)
+                .findFirstBySessionIdAndClusterNumber(sessionId, mergedClusterNumber)
                 .orElseThrow(() -> new BusinessException("CLUSTER_NOT_FOUND",
                         "병합 클러스터를 찾을 수 없습니다: #" + mergedClusterNumber));
 
@@ -1381,12 +1381,12 @@ public class ClusteringService {
         clusterStatisticsService.cancelSessionCompletionIfNeeded(sessionId);
 
         ClusteringResult parent = clusteringResultRepository
-                .findBySessionIdAndClusterNumber(sessionId, targetMergedClusterNumber)
+                .findFirstBySessionIdAndClusterNumber(sessionId, targetMergedClusterNumber)
                 .orElseThrow(() -> new BusinessException("CLUSTER_NOT_FOUND",
                         "대상 병합 클러스터를 찾을 수 없습니다: #" + targetMergedClusterNumber));
 
         List<ClusteringResult> targets = clusteringResultRepository
-                .findBySessionIdAndClusterNumberIn(sessionId, clusterNumbers);
+                .findFirstBySessionIdAndClusterNumberIn(sessionId, clusterNumbers);
 
         if (targets.isEmpty()) {
             throw new BusinessException("CLUSTER_NOT_FOUND", "추가할 클러스터를 찾을 수 없습니다.");
@@ -1439,12 +1439,16 @@ public class ClusteringService {
 
     public void updateClusterName(String sessionId, Integer clusterNumber, String newName) {
         clusterStatisticsService.cancelSessionCompletionIfNeeded(sessionId);
-        ClusteringResult cluster = clusteringResultRepository
-                .findBySessionIdAndClusterNumber(sessionId, clusterNumber)
-                .orElseThrow(() -> new BusinessException("CLUSTER_NOT_FOUND",
-                        "클러스터를 찾을 수 없습니다: #" + clusterNumber));
-        cluster.setClusterName(newName);
-        clusteringResultRepository.save(cluster);
+        // ★ updateMulti: 동일 session_id + cluster_number 중복 문서가 있어도 모두 업데이트
+        var result = mongoTemplate.updateMulti(
+                new Query(Criteria.where("session_id").is(sessionId)
+                        .and("cluster_number").is(clusterNumber)),
+                new Update().set("cluster_name", newName),
+                "clustering_results");
+        if (result.getMatchedCount() == 0) {
+            throw new BusinessException("CLUSTER_NOT_FOUND",
+                    "클러스터를 찾을 수 없습니다: #" + clusterNumber);
+        }
     }
 
     // ============================================================

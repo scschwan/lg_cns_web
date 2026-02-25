@@ -631,7 +631,7 @@ public class ShortListService {
         List<String> dataIndices = new ArrayList<>();
 
         if (stats.getLevel() == 3) {
-            clusteringResultRepository.findBySessionIdAndClusterNumber(sessionId, clusterNumber)
+            clusteringResultRepository.findFirstBySessionIdAndClusterNumber(sessionId, clusterNumber)
                     .ifPresent(cr -> dataIndices.addAll(cr.getDataIndices()));
         } else if (stats.getLevel() == 2) {
             List<ClusteringResult> children = clusteringResultRepository
@@ -643,7 +643,7 @@ public class ShortListService {
                     }
                 }
             } else {
-                clusteringResultRepository.findBySessionIdAndClusterNumber(sessionId, clusterNumber)
+                clusteringResultRepository.findFirstBySessionIdAndClusterNumber(sessionId, clusterNumber)
                         .ifPresent(cr -> {
                             if (cr.getDataIndices() != null) {
                                 dataIndices.addAll(cr.getDataIndices());

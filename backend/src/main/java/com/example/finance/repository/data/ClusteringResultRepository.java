@@ -31,9 +31,9 @@ public interface ClusteringResultRepository extends MongoRepository<ClusteringRe
     Page<ClusteringResult> findBySessionIdAndClusterId(String sessionId, Integer clusterId, Pageable pageable);
 
     /**
-     * 세션 + cluster_number로 단일 조회
+     * 세션 + cluster_number로 단일 조회 (중복 방어: 첫 번째만 반환)
      */
-    Optional<ClusteringResult> findBySessionIdAndClusterNumber(String sessionId, Integer clusterNumber);
+    Optional<ClusteringResult> findFirstBySessionIdAndClusterNumber(String sessionId, Integer clusterNumber);
 
     /**
      * 세션의 cluster_number 목록에 해당하는 클러스터 조회
