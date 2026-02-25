@@ -149,6 +149,43 @@ const uploadService = {
     },
 
     // ============================================
+    // 🔒 업로드 페이지 편집자 잠금 API (프로젝트 단위)
+    // ============================================
+
+    /**
+     * 업로드 페이지 편집자 잠금 획득
+     * POST /api/projects/{projectId}/upload/page-lock/acquire
+     */
+    acquireUploadPageLock: async (projectId) => {
+        const response = await api.post(
+            `/api/projects/${projectId}/upload/page-lock/acquire`
+        );
+        return response.data;
+    },
+
+    /**
+     * 업로드 페이지 하트비트
+     * POST /api/projects/{projectId}/upload/page-lock/heartbeat
+     */
+    uploadPageHeartbeat: async (projectId) => {
+        const response = await api.post(
+            `/api/projects/${projectId}/upload/page-lock/heartbeat`
+        );
+        return response.data;
+    },
+
+    /**
+     * 업로드 페이지 잠금 해제
+     * POST /api/projects/{projectId}/upload/page-lock/release
+     */
+    releaseUploadPageLock: async (projectId) => {
+        const response = await api.post(
+            `/api/projects/${projectId}/upload/page-lock/release`
+        );
+        return response.data;
+    },
+
+    // ============================================
     // 🔒 세션 편집자 잠금 API
     // ============================================
 

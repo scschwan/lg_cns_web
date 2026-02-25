@@ -62,6 +62,7 @@ import projectService from '../../services/projectService';
 import uploadService from '../../services/uploadService';
 import adminService from '../../services/adminService';
 import costReductionService from '../../services/costReductionService';
+import { useUploadPageLock } from '../../hooks/useUploadPageLock';
 import PartitionDialog from '../../components/upload/PartitionDialog';
 import ProgressDialog from '../../components/common/ProgressDialog';
 import { Progress } from '@/components/ui/progress';
@@ -84,6 +85,9 @@ function ScrollSyncTable({ children, minWidth = '1200px', maxHeight = '500px' })
 function MultiFileUploadPage() {
     const { projectId } = useParams();
     const navigate = useNavigate();
+
+    // 편집자 잠금: 다른 편집자가 사용 중이면 진입 차단
+    const { isEditor: isPageEditor, editorInfo, loading: lockLoading } = useUploadPageLock(projectId);
 
     // 상태 관리
     const [project, setProject] = useState(null);
@@ -838,6 +842,53 @@ function MultiFileUploadPage() {
             showError('재분석 실패', getErrorMsg(error, '엑셀 데이터 재분석 중 오류가 발생했습니다.'));
         }
     };
+
+    // 잠금 로딩 중 표시
+    if (lockLoading) {
+        return (
+            <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+                <div className="text-center">
+                    <Loader2 className="h-8 w-8 animate-spin mx-auto mb-4 text-muted-foreground" />
+                    <p className="text-muted-foreground">접속 확인 중...</p>
+                </div>
+            </div>
+        );
+    }
+
+    // 다른 편집자가 사용 중 → 진입 차단
+    if (!isPageEditor) {
+        return (
+            <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+                <Card className="w-full max-w-md">
+                    <CardHeader className="text-center">
+                        <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-amber-100">
+                            <Lock className="h-8 w-8 text-amber-600" />
+                        </div>
+                        <CardTitle className="text-xl">편집 중인 사용자가 있습니다</CardTitle>
+                    </CardHeader>
+                    <CardContent className="text-center space-y-4">
+                        <p className="text-muted-foreground">
+                            현재 <span className="font-semibold text-foreground">{editorInfo?.editorUserName || '다른 사용자'}</span>님이
+                            이 프로젝트의 업로드 페이지를 편집 중입니다.
+                        </p>
+                        <p className="text-sm text-muted-foreground">
+                            동시 편집으로 인한 데이터 충돌을 방지하기 위해 접근이 제한됩니다.
+                            편집자의 작업이 완료되면 자동으로 접근 가능합니다.
+                        </p>
+                        <div className="pt-4">
+                            <Button onClick={() => navigate('/projects')} variant="outline" className="mr-2">
+                                프로젝트 목록으로
+                            </Button>
+                            <Button onClick={() => window.location.reload()}>
+                                <RefreshCw className="h-4 w-4 mr-2" />
+                                다시 확인
+                            </Button>
+                        </div>
+                    </CardContent>
+                </Card>
+            </div>
+        );
+    }
 
     return (
         <div className="min-h-screen bg-gray-50">

@@ -12,6 +12,7 @@ import com.example.finance.service.common.S3Service;
 import com.example.finance.service.project.ProjectService;
 import com.example.finance.service.upload.FileAnalysisService;
 import com.example.finance.service.upload.FileSessionService;
+import com.example.finance.security.CurrentUser;
 import com.example.finance.service.upload.UploadService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -45,6 +46,42 @@ public class UploadController {
     private final FileAnalysisService fileAnalysisService;
     private final FileSessionService fileSessionService;
     private final ProjectService projectService;
+
+    // ========== 업로드 페이지 편집자 잠금 API ==========
+
+    @Operation(summary = "업로드 페이지 잠금 획득", description = "업로드 페이지 편집자 잠금을 획득합니다")
+    @PostMapping("/page-lock/acquire")
+    public ResponseEntity<Map<String, Object>> acquireUploadPageLock(
+            @PathVariable String projectId,
+            @CurrentUser UserPrincipal userPrincipal) {
+        String userId = userPrincipal.getId();
+        projectService.getProject(projectId, userId);
+        Map<String, Object> result = fileSessionService.acquireUploadPageLock(
+                projectId, userId, userPrincipal.getUsername());
+        return ResponseEntity.ok(result);
+    }
+
+    @Operation(summary = "업로드 페이지 잠금 하트비트", description = "편집자 잠금 TTL을 갱신합니다")
+    @PostMapping("/page-lock/heartbeat")
+    public ResponseEntity<Map<String, Boolean>> uploadPageHeartbeat(
+            @PathVariable String projectId,
+            @CurrentUser UserPrincipal userPrincipal) {
+        String userId = userPrincipal.getId();
+        projectService.getProject(projectId, userId);
+        fileSessionService.uploadPageHeartbeat(projectId, userId);
+        return ResponseEntity.ok(Map.of("success", true));
+    }
+
+    @Operation(summary = "업로드 페이지 잠금 해제", description = "편집자 잠금을 해제합니다")
+    @PostMapping("/page-lock/release")
+    public ResponseEntity<Map<String, Boolean>> releaseUploadPageLock(
+            @PathVariable String projectId,
+            @CurrentUser UserPrincipal userPrincipal) {
+        String userId = userPrincipal.getId();
+        projectService.getProject(projectId, userId);
+        fileSessionService.releaseUploadPageLock(projectId, userId);
+        return ResponseEntity.ok(Map.of("success", true));
+    }
 
     /**
      * Presigned URL 생성

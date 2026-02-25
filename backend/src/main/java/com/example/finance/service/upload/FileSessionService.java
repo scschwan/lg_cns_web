@@ -80,6 +80,7 @@ public class FileSessionService {
     private final AbleTaskRepository ableTaskRepository;
     private final TaskDocumentRepository taskDocumentRepository;
     private final CostReductionDashboardRepository costReductionDashboardRepository;
+    private final com.example.finance.repository.auth.UserRepository userRepository;
     private final S3Service s3Service;
     private final RedisService redisService;
 
@@ -98,6 +99,10 @@ public class FileSessionService {
     // ===== 세션 편집자 잠금 설정 =====
     private static final String SESSION_LOCK_KEY_PREFIX = "session:lock:";
     private static final Duration SESSION_LOCK_TTL = Duration.ofSeconds(60);
+
+    // ===== 업로드 페이지 편집자 잠금 설정 =====
+    private static final String UPLOAD_PAGE_LOCK_KEY_PREFIX = "project:upload:lock:";
+    private static final Duration UPLOAD_PAGE_LOCK_TTL = Duration.ofSeconds(60);
 
     @Value("${aws.sqs.excel-queue-url}")
     private String sqsQueueUrl;
@@ -220,6 +225,90 @@ public class FileSessionService {
                 (session != null ? session.getEditorUserId() : null));
         result.put("editorUserName", isLocked && session != null ? session.getEditorUserName() : null);
         return result;
+    }
+
+    // ========================================================================
+    // ===== 업로드 페이지 편집자 잠금 (프로젝트 단위) =====
+    // ========================================================================
+
+    /**
+     * 업로드 페이지 편집자 잠금 획득.
+     * 다른 편집자가 이미 사용 중이면 isEditor=false를 반환한다.
+     */
+    public Map<String, Object> acquireUploadPageLock(String projectId, String userId, String userName) {
+        String lockKey = UPLOAD_PAGE_LOCK_KEY_PREFIX + projectId;
+
+        Boolean acquired = redisService.setIfAbsent(lockKey, userId, UPLOAD_PAGE_LOCK_TTL);
+
+        if (Boolean.TRUE.equals(acquired)) {
+            log.info("[UPLOAD-PAGE-LOCK] 잠금 획득: projectId={}, userId={}", projectId, userId);
+            Map<String, Object> result = new HashMap<>();
+            result.put("isEditor", true);
+            result.put("editorUserId", userId);
+            result.put("editorUserName", userName);
+            return result;
+        }
+
+        // 이미 잠금 → 본인인지 확인
+        Object currentEditor = redisService.get(lockKey);
+        if (userId.equals(currentEditor)) {
+            redisService.expire(lockKey, UPLOAD_PAGE_LOCK_TTL);
+            log.debug("[UPLOAD-PAGE-LOCK] TTL 갱신 (본인): projectId={}, userId={}", projectId, userId);
+            Map<String, Object> result = new HashMap<>();
+            result.put("isEditor", true);
+            result.put("editorUserId", userId);
+            result.put("editorUserName", userName);
+            return result;
+        }
+
+        // 다른 편집자
+        log.info("[UPLOAD-PAGE-LOCK] 잠금 거부: projectId={}, requestor={}, currentEditor={}",
+                projectId, userId, currentEditor);
+        Map<String, Object> result = new HashMap<>();
+        result.put("isEditor", false);
+        result.put("editorUserId", String.valueOf(currentEditor));
+        result.put("editorUserName", resolveUserName(String.valueOf(currentEditor)));
+        return result;
+    }
+
+    /**
+     * 업로드 페이지 하트비트 (TTL 갱신)
+     */
+    public void uploadPageHeartbeat(String projectId, String userId) {
+        String lockKey = UPLOAD_PAGE_LOCK_KEY_PREFIX + projectId;
+        Object currentEditor = redisService.get(lockKey);
+
+        if (userId.equals(currentEditor)) {
+            redisService.expire(lockKey, UPLOAD_PAGE_LOCK_TTL);
+        } else {
+            log.warn("[UPLOAD-PAGE-LOCK] 비편집자 하트비트: projectId={}, userId={}", projectId, userId);
+        }
+    }
+
+    /**
+     * 업로드 페이지 잠금 해제
+     */
+    public void releaseUploadPageLock(String projectId, String userId) {
+        String lockKey = UPLOAD_PAGE_LOCK_KEY_PREFIX + projectId;
+        Object currentEditor = redisService.get(lockKey);
+
+        if (userId.equals(currentEditor)) {
+            redisService.delete(lockKey);
+            log.info("[UPLOAD-PAGE-LOCK] 잠금 해제: projectId={}, userId={}", projectId, userId);
+        }
+    }
+
+    /**
+     * userId로 사용자 이름 조회 (잠금 정보 표시용)
+     */
+    private String resolveUserName(String userId) {
+        try {
+            return userRepository.findById(userId)
+                    .map(user -> user.getName())
+                    .orElse(null);
+        } catch (Exception e) {
+            return null;
+        }
     }
 
     /**
