@@ -445,6 +445,23 @@ function MultiFileUploadPage() {
             return;
         }
 
+        // ★ 계정명 컬럼 / 금액 컬럼 미선택 검증
+        const missingAccount = selectedFiles.filter(f => !f.accountColumnName);
+        const missingAmount  = selectedFiles.filter(f => !f.amountColumnName);
+        if (missingAccount.length > 0 || missingAmount.length > 0) {
+            const msgs = [];
+            if (missingAccount.length > 0) {
+                const names = missingAccount.map(f => f.originalFileName || f.fileName).join(', ');
+                msgs.push(`[계정명 컬럼] 미선택 파일: ${names}`);
+            }
+            if (missingAmount.length > 0) {
+                const names = missingAmount.map(f => f.originalFileName || f.fileName).join(', ');
+                msgs.push(`[금액 컬럼] 미선택 파일: ${names}`);
+            }
+            showError('컬럼 선택 필요', `선택한 파일의 필수 컬럼 값을 지정해주세요.\n\n${msgs.join('\n')}`);
+            return;
+        }
+
         try {
             setIsProcessing(true);
 
