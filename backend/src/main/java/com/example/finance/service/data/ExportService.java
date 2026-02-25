@@ -596,11 +596,111 @@ public class ExportService {
     // 7. 세션 완료 처리
     // ============================================================
 
+    // ★ 비동기 세션 완료 진행률 추적
+    public static class CompleteProgress {
+        public volatile String status; // RUNNING, COMPLETED, FAILED
+        public volatile int progress;  // 0-100
+        public volatile String message;
+        public volatile Map<String, Object> result;
+        public volatile long completedAt;
+
+        CompleteProgress() { this.status = "RUNNING"; this.progress = 0; this.message = "시작 중..."; }
+    }
+
+    private final ConcurrentHashMap<String, CompleteProgress> completeProgressMap = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, String> sessionCompleteMap = new ConcurrentHashMap<>();
+    private static final long COMPLETE_PROGRESS_RETAIN_MS = 30_000;
+
     /**
-     * 세션 완료 처리 (Export 포함)
+     * 비동기 세션 완료 시작 → taskId 반환
      */
-    public Map<String, Object> completeSessionWithExport(String sessionId, String projectId, boolean forceExport) throws IOException {
-        // 기존 Export 경로 확인
+    public Map<String, Object> completeSessionAsync(String sessionId, String projectId, boolean forceExport) {
+        // 중복 실행 방지
+        if (sessionCompleteMap.containsKey(sessionId)) {
+            String existingTaskId = sessionCompleteMap.get(sessionId);
+            CompleteProgress existing = completeProgressMap.get(existingTaskId);
+            if (existing != null && "RUNNING".equals(existing.status)) {
+                return Map.of("async", true, "taskId", existingTaskId, "alreadyRunning", true);
+            }
+        }
+
+        String taskId = UUID.randomUUID().toString();
+        CompleteProgress progress = new CompleteProgress();
+        completeProgressMap.put(taskId, progress);
+        sessionCompleteMap.put(sessionId, taskId);
+
+        log.info("[COMPLETE-ASYNC] 시작: sessionId={}, taskId={}, forceExport={}", sessionId, taskId, forceExport);
+
+        EXECUTOR.submit(() -> {
+            try {
+                Map<String, Object> result = doCompleteSessionWithExport(sessionId, projectId, forceExport, progress);
+                progress.result = result;
+                progress.progress = 100;
+                progress.message = "완료";
+                progress.status = "COMPLETED";
+                progress.completedAt = System.currentTimeMillis();
+                sessionCompleteMap.remove(sessionId);
+                log.info("[COMPLETE-ASYNC] 완료: taskId={}", taskId);
+            } catch (Exception e) {
+                log.error("[COMPLETE-ASYNC] 실패: taskId={}, sessionId={}", taskId, sessionId, e);
+                progress.message = e.getMessage();
+                progress.status = "FAILED";
+                progress.completedAt = System.currentTimeMillis();
+                sessionCompleteMap.remove(sessionId);
+            }
+        });
+
+        return Map.of("async", true, "taskId", taskId);
+    }
+
+    /**
+     * 세션 완료 진행률 조회
+     */
+    public Map<String, Object> getCompleteProgress(String taskId) {
+        CompleteProgress cp = completeProgressMap.get(taskId);
+        if (cp == null) return Map.of("status", "NOT_FOUND");
+        Map<String, Object> r = new LinkedHashMap<>();
+        r.put("status", cp.status);
+        r.put("progress", cp.progress);
+        r.put("message", cp.message);
+        if (cp.result != null) r.put("result", cp.result);
+        if ("COMPLETED".equals(cp.status) || "FAILED".equals(cp.status)) {
+            if (cp.completedAt == 0) {
+                cp.completedAt = System.currentTimeMillis();
+            } else if (System.currentTimeMillis() - cp.completedAt > COMPLETE_PROGRESS_RETAIN_MS) {
+                completeProgressMap.remove(taskId);
+            }
+        }
+        return r;
+    }
+
+    /**
+     * 세션 완료 활성 여부 확인
+     */
+    public Map<String, Object> isCompleteActive(String sessionId) {
+        String taskId = sessionCompleteMap.get(sessionId);
+        if (taskId == null) return Map.of("active", false);
+        CompleteProgress cp = completeProgressMap.get(taskId);
+        if (cp == null || "COMPLETED".equals(cp.status) || "FAILED".equals(cp.status)) {
+            sessionCompleteMap.remove(sessionId);
+            return Map.of("active", false);
+        }
+        Map<String, Object> r = new LinkedHashMap<>();
+        r.put("active", true);
+        r.put("taskId", taskId);
+        r.put("progress", cp.progress);
+        r.put("message", cp.message);
+        return r;
+    }
+
+    /**
+     * 세션 완료 처리 (Export 포함) — 내부 실행 (진행률 업데이트 포함)
+     */
+    private Map<String, Object> doCompleteSessionWithExport(String sessionId, String projectId,
+                                                             boolean forceExport, CompleteProgress progress) throws IOException {
+        progress.progress = 5;
+        progress.message = "세션 정보 확인 중...";
+
         Query query = new Query(Criteria.where("session_id").is(sessionId));
         FileSession session = mongoTemplate.findOne(query, FileSession.class);
 
@@ -610,25 +710,41 @@ public class ExportService {
         Map<String, Object> result = new HashMap<>();
 
         if (needsExport) {
-            // 전체 Export 실행
+            progress.progress = 10;
+            progress.message = "Excel 생성 중...";
             ExportResult exportResult = exportAllClusters(sessionId, projectId);
             exportPath = exportResult.getS3Key();
             result.put("exported", true);
             result.put("exportResult", exportResult);
+            progress.progress = 60;
+            progress.message = "Excel 생성 완료. 통계 생성 중...";
         } else {
             result.put("exported", false);
             result.put("existingExportPath", exportPath);
+            progress.progress = 60;
+            progress.message = "통계 생성 중...";
         }
 
         // 클러스터 통계 생성
         clusterStatisticsService.generateStatistics(sessionId, projectId);
+        progress.progress = 90;
+        progress.message = "세션 완료 처리 중...";
 
         // 세션 완료 처리
         completeSession(sessionId, exportPath);
+        progress.progress = 95;
+        progress.message = "마무리 중...";
 
         result.put("completed", true);
         result.put("sessionId", sessionId);
         return result;
+    }
+
+    /**
+     * 세션 완료 처리 (동기 — 기존 호환)
+     */
+    public Map<String, Object> completeSessionWithExport(String sessionId, String projectId, boolean forceExport) throws IOException {
+        return doCompleteSessionWithExport(sessionId, projectId, forceExport, new CompleteProgress());
     }
 
     /**
