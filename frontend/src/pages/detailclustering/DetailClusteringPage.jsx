@@ -6,6 +6,7 @@ import {
   X, Folder, FolderOpen, Tag, Lock,
 } from 'lucide-react';
 import { useSessionEditorLock } from '../../hooks/useSessionEditorLock';
+import useViewerMode from '../../hooks/useViewerMode';
 import {
   Breadcrumb, BreadcrumbItem, BreadcrumbLink, BreadcrumbList,
   BreadcrumbPage, BreadcrumbSeparator,
@@ -140,7 +141,8 @@ function StatsListView({
 function DetailClusteringPage() {
   const { projectId, sessionId } = useParams();
   const { isEditor, editorInfo } = useSessionEditorLock(projectId, sessionId);
-  const isViewer = !isEditor;
+  const { isViewer: isProjectViewer } = useViewerMode(projectId);
+  const isViewer = !isEditor || isProjectViewer;
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const clusterId = parseInt(searchParams.get('clusterId'), 10);

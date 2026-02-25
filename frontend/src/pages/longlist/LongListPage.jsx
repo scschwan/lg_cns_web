@@ -26,6 +26,7 @@ import costReductionService from '../../services/costReductionService';
 import { useEditorLock } from '../../hooks/useEditorLock';
 import { useDashboardStatus } from '../../hooks/useDashboardStatus';
 import RawDataModal from '../../components/costreduction/RawDataModal';
+import useViewerMode from '../../hooks/useViewerMode';
 
 /* ============================================================
    색상 팔레트
@@ -312,6 +313,7 @@ export default function LongListPage() {
   const navigate = useNavigate();
   const { isEditor } = useEditorLock(projectId);
   const { dashboardStatus } = useDashboardStatus(projectId);
+  const { isViewer } = useViewerMode(projectId);
 
   const [treeData, setTreeData] = useState([]);
   const [stats, setStats] = useState(null);
@@ -337,7 +339,7 @@ export default function LongListPage() {
   const [isDragging, setIsDragging] = useState(false);
   const dragStartRef = useRef(null);
 
-  const isReadOnly = !isEditor || dashboardStatus?.isListLocked;
+  const isReadOnly = isViewer || !isEditor || dashboardStatus?.isListLocked;
 
   // 트리를 flat list로 변환 (현재 확장된 상태 기반)
   const flatNodeIds = useMemo(() => {
@@ -593,7 +595,7 @@ export default function LongListPage() {
             </div>
             <p className="text-sm text-muted-foreground mt-1">
               비용 유형별 분류 및 분석 결과를 확인합니다
-              {!isEditor && <Badge variant="outline" className="ml-2 text-orange-600 border-orange-300">뷰어 모드</Badge>}
+              {(isViewer || !isEditor) && <Badge variant="outline" className="ml-2 text-orange-600 border-orange-300">뷰어 모드</Badge>}
             </p>
           </div>
           <div className="flex items-center gap-2">
