@@ -4,10 +4,12 @@ import React from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider } from './context/AuthContext';
 import { useAuth } from './context/AuthContext';
+import { DbHealthProvider } from './context/DbHealthContext';
 import Navbar from './components/layout/Navbar';
 import DashboardLayout from './components/layout/DashboardLayout';
 import PrivateRoute from './components/PrivateRoute';
 import ErrorBoundary from './components/ErrorBoundary';
+import DbOverloadOverlay from './components/common/DbOverloadOverlay';
 
 // Auth Pages
 import LoginPage from './pages/auth/LoginPage';
@@ -70,7 +72,9 @@ function LayoutWrapper({ children, showNavbar = true }) {
 function App() {
   return (
     <ErrorBoundary>
+    <DbHealthProvider>
     <AuthProvider>
+      <DbOverloadOverlay />
       <Router>
         <Routes>
           {/* 🔓 Public Routes (No Navbar) */}
@@ -264,6 +268,7 @@ function App() {
         </Routes>
       </Router>
     </AuthProvider>
+    </DbHealthProvider>
     </ErrorBoundary>
   );
 }

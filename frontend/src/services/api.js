@@ -13,6 +13,10 @@ const api = axios.create({
 let isRefreshing = false;
 let failedQueue = [];
 
+// ★ 연속 서버 에러/타임아웃 감지 (DB 과부하 보조 탐지)
+let consecutiveServerErrors = 0;
+const SERVER_ERROR_THRESHOLD = 5; // 연속 5회 서버 에러 시 경고
+
 const processQueue = (error, token = null) => {
   failedQueue.forEach(prom => {
     if (error) {
@@ -49,7 +53,11 @@ api.interceptors.request.use(
 
 // 응답 인터셉터 (401 시 refreshToken으로 재시도 → 실패 시 로그인 이동)
 api.interceptors.response.use(
-  (response) => response,
+  (response) => {
+    // ★ 정상 응답 시 연속 에러 카운터 리셋
+    consecutiveServerErrors = 0;
+    return response;
+  },
   async (error) => {
     const originalRequest = error.config;
 
@@ -112,6 +120,15 @@ api.interceptors.response.use(
     // 403 Forbidden도 세션 만료로 처리
     if (error.response?.status === 403) {
       handleSessionExpired();
+    }
+
+    // ★ 서버 에러(500+) 또는 타임아웃 감지 → DB 과부하 보조 경고
+    const status = error.response?.status;
+    if (status >= 500 || error.code === 'ECONNABORTED' || error.code === 'ERR_NETWORK') {
+      consecutiveServerErrors++;
+      if (consecutiveServerErrors >= SERVER_ERROR_THRESHOLD) {
+        console.warn(`[api] 연속 서버 에러 ${consecutiveServerErrors}회 감지 - DB 과부하 가능성`);
+      }
     }
 
     return Promise.reject(error);
