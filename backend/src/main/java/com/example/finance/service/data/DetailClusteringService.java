@@ -190,62 +190,105 @@ public class DetailClusteringService {
     // ============================================================
 
     public List<Map<String, Object>> getMergedClusters(String sessionId, int clusterId) {
-        List<ClusteringResult> all = getAllClustersInScope(sessionId, clusterId);
+        long start = System.currentTimeMillis();
 
-        // ★ null-safety: clusterSubId가 null일 수 있음
-        Set<Integer> subMergedClusterNumbers = all.stream()
-                .filter(c -> c.getClusterSubId() != null && c.getClusterSubId() > 0)
-                .map(ClusteringResult::getClusterSubId)
+        // ★ 경량 조회: data_indices 제외 (메타데이터만)
+        Query metaQuery = new Query(Criteria.where("session_id").is(sessionId)
+                .and("cluster_id").is(clusterId)
+                .and("cluster_number").ne(clusterId)
+                .and("cluster_sub_id").ne(-1).and("cluster_sub_id").ne(null))
+                .with(Sort.by("cluster_number"));
+        metaQuery.fields()
+                .include("cluster_number").include("cluster_sub_id")
+                .include("cluster_name").include("keywords")
+                .include("count").include("total_amount")
+                .include("supplier").include("department");
+        List<ClusteringResult> merged = mongoTemplate.find(metaQuery, ClusteringResult.class);
+
+        if (merged.isEmpty()) {
+            log.info("[getMergedClusters-detail] 세부 병합 데이터 없음, {}ms", System.currentTimeMillis() - start);
+            return Collections.emptyList();
+        }
+
+        // 부모/자식 분류
+        Set<Integer> parentNumbers = merged.stream()
+                .filter(c -> c.getClusterSubId() != null && c.getClusterSubId().equals(c.getClusterNumber()))
+                .map(ClusteringResult::getClusterNumber)
                 .collect(Collectors.toSet());
-
-        Set<String> allFirstRawIds = new LinkedHashSet<>();
-        for (ClusteringResult c : all) {
-            if (c.getDataIndices() != null && !c.getDataIndices().isEmpty()) {
-                allFirstRawIds.add(c.getDataIndices().get(0));
+        Map<Integer, ClusteringResult> parentMap = new HashMap<>();
+        Map<Integer, List<ClusteringResult>> childrenByParent = new HashMap<>();
+        for (ClusteringResult c : merged) {
+            if (parentNumbers.contains(c.getClusterNumber())) {
+                parentMap.put(c.getClusterNumber(), c);
+            } else if (c.getClusterSubId() != null && parentNumbers.contains(c.getClusterSubId())) {
+                childrenByParent.computeIfAbsent(c.getClusterSubId(), k -> new ArrayList<>()).add(c);
             }
         }
-        Map<String, Map<String, Object>> rawIdToData = batchFetchSessionData(sessionId, allFirstRawIds);
+
+        // 대표 데이터용 data_indices[0]만 별도 조회 (경량 projection)
+        Set<Integer> allChildNumbers = merged.stream()
+                .filter(c -> !parentNumbers.contains(c.getClusterNumber()))
+                .map(ClusteringResult::getClusterNumber)
+                .collect(Collectors.toSet());
+        Map<Integer, String> childFirstRawId = new HashMap<>();
+        if (!allChildNumbers.isEmpty()) {
+            Query diQuery = new Query(Criteria.where("session_id").is(sessionId)
+                    .and("cluster_number").in(allChildNumbers));
+            diQuery.fields().include("cluster_number").include("data_indices");
+            // $slice로 첫 번째 항목만 가져오기
+            diQuery.fields().slice("data_indices", 1);
+            List<ClusteringResult> diResults = mongoTemplate.find(diQuery, ClusteringResult.class);
+            for (ClusteringResult c : diResults) {
+                if (c.getDataIndices() != null && !c.getDataIndices().isEmpty()) {
+                    childFirstRawId.put(c.getClusterNumber(), c.getDataIndices().get(0));
+                }
+            }
+        }
+
+        Set<String> rawIds = new LinkedHashSet<>(childFirstRawId.values());
+        Map<String, Map<String, Object>> rawIdToData = batchFetchSessionData(sessionId, rawIds);
         List<String> visibleColumns = getVisibleColumns(sessionId);
 
         List<Map<String, Object>> result = new ArrayList<>();
-        for (ClusteringResult cluster : all) {
-            if (subMergedClusterNumbers.contains(cluster.getClusterNumber())) {
-                List<ClusteringResult> children = all.stream()
-                        .filter(c -> c.getClusterSubId() != null
-                                && c.getClusterSubId().equals(cluster.getClusterNumber())
-                                && !c.getClusterNumber().equals(cluster.getClusterNumber()))
-                        .collect(Collectors.toList());
+        for (Integer pn : parentNumbers) {
+            ClusteringResult parent = parentMap.get(pn);
+            if (parent == null) continue;
+            List<ClusteringResult> children = childrenByParent.getOrDefault(pn, Collections.emptyList());
 
-                Map<String, Object> merged = new LinkedHashMap<>();
-                merged.put("clusterNumber", cluster.getClusterNumber());
-                merged.put("clusterName", cluster.getClusterName());
-                merged.put("keywords", cluster.getKeywords());
-                merged.put("count", cluster.getCount());
-                merged.put("totalAmount", cluster.getTotalAmount());
-                merged.put("childCount", children.size());
-                merged.put("columns", visibleColumns);
+            Map<String, Object> mergedRow = new LinkedHashMap<>();
+            mergedRow.put("clusterNumber", parent.getClusterNumber());
+            mergedRow.put("clusterName", parent.getClusterName());
+            mergedRow.put("keywords", parent.getKeywords());
+            mergedRow.put("count", parent.getCount());
+            mergedRow.put("totalAmount", parent.getTotalAmount());
+            mergedRow.put("childCount", children.size());
+            mergedRow.put("columns", visibleColumns);
 
-                List<Map<String, Object>> childList = children.stream()
-                        .map(c -> {
-                            Map<String, Object> child = new LinkedHashMap<>();
-                            child.put("clusterNumber", c.getClusterNumber());
-                            child.put("clusterName", c.getClusterName());
-                            child.put("keywords", c.getKeywords());
-                            child.put("count", c.getCount());
-                            child.put("totalAmount", c.getTotalAmount());
-                            child.put("supplier", c.getSupplier());
-                            child.put("department", c.getDepartment());
-                            if (c.getDataIndices() != null && !c.getDataIndices().isEmpty()) {
-                                Map<String, Object> repData = rawIdToData.get(c.getDataIndices().get(0));
-                                if (repData != null) child.put("representativeData", repData);
-                            }
-                            return child;
-                        })
-                        .collect(Collectors.toList());
-                merged.put("children", childList);
-                result.add(merged);
-            }
+            List<Map<String, Object>> childList = children.stream()
+                    .map(c -> {
+                        Map<String, Object> child = new LinkedHashMap<>();
+                        child.put("clusterNumber", c.getClusterNumber());
+                        child.put("clusterName", c.getClusterName());
+                        child.put("keywords", c.getKeywords());
+                        child.put("count", c.getCount());
+                        child.put("totalAmount", c.getTotalAmount());
+                        child.put("supplier", c.getSupplier());
+                        child.put("department", c.getDepartment());
+                        String firstRawId = childFirstRawId.get(c.getClusterNumber());
+                        if (firstRawId != null) {
+                            Map<String, Object> repData = rawIdToData.get(firstRawId);
+                            if (repData != null) child.put("representativeData", repData);
+                        }
+                        return child;
+                    })
+                    .collect(Collectors.toList());
+            mergedRow.put("children", childList);
+            result.add(mergedRow);
         }
+
+        log.info("[getMergedClusters-detail] 완료: {}ms, parents={}, totalChildren={}",
+                System.currentTimeMillis() - start, parentNumbers.size(),
+                childrenByParent.values().stream().mapToInt(List::size).sum());
         return result;
     }
 

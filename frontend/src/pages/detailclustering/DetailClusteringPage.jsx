@@ -283,6 +283,8 @@ function DetailClusteringPage() {
   }, [loadStatistics, loadUnmerged, clusterPageSize, loadKwStats, loadSupStats, loadMerged, loadSearchableColumns, loadKeywordHierarchy]);
 
   const refreshAll = useCallback(async () => {
+    // ★ 병합 후 페이지를 0으로 리셋하여 병합된 항목이 사라진 최신 데이터 표시
+    setClusterPage(0);
     // Phase 1: 핵심 데이터 (검색 활성 시 advancedSearch 사용)
     const reloadUnmerged = async () => {
       if (appliedSearchParams) {
@@ -290,7 +292,7 @@ function DetailClusteringPage() {
         try {
           const params = {
             clusterId,
-            page: clusterPage,
+            page: 0,
             size: clusterPageSize,
             searchColumn: appliedSearchParams.searchColumn,
             searchValue: appliedSearchParams.searchValue,
@@ -306,13 +308,13 @@ function DetailClusteringPage() {
           setClusterTotalPages(r.totalPages || 0);
         } catch (e) { console.error(e); } finally { setLoading(false); }
       } else {
-        await loadUnmerged(clusterPage, clusterPageSize, null);
+        await loadUnmerged(0, clusterPageSize, null);
       }
     };
     await Promise.all([loadStatistics(), reloadUnmerged()]);
-    // Phase 2: 보조 데이터
+    // Phase 2: 보조 데이터 (병합 결과 포함 전부 await)
     await Promise.all([loadKwStats(), loadSupStats(), loadMerged()]);
-  }, [loadStatistics, loadUnmerged, clusterPage, clusterPageSize, appliedSearchParams, previousResultIds, projectId, sessionId, clusterId, loadKwStats, loadSupStats, loadMerged]);
+  }, [loadStatistics, loadUnmerged, clusterPageSize, appliedSearchParams, previousResultIds, projectId, sessionId, clusterId, loadKwStats, loadSupStats, loadMerged]);
 
   /* ★ 서버 병합 진행 중 차단: 마운트 시 + 병합 후 체크 */
   const checkAndWaitMergeActive = useCallback(async () => {
