@@ -160,6 +160,10 @@ public class ExportController {
 
     /**
      * 세션 완료 처리 (비동기 → taskId 반환)
+     *
+     * mode 파라미터:
+     * - "default" 또는 미지정: 기존 방식 (전체 비동기, 프로그레스 폴링)
+     * - "excel_first": 엑셀 먼저 생성 후 downloadUrl 즉시 반환, 통계/DB는 비동기
      */
     @PostMapping("/complete")
     public ResponseEntity<Map<String, Object>> completeSession(
@@ -167,9 +171,18 @@ public class ExportController {
             @PathVariable String sessionId,
             @RequestBody(required = false) Map<String, Object> request) {
         boolean forceExport = request != null && Boolean.TRUE.equals(request.get("forceExport"));
-        log.info("세션 완료 (비동기): sessionId={}, forceExport={}", sessionId, forceExport);
+        String mode = request != null ? String.valueOf(request.getOrDefault("mode", "default")) : "default";
+
+        log.info("세션 완료: sessionId={}, forceExport={}, mode={}", sessionId, forceExport, mode);
         try {
-            Map<String, Object> result = exportService.completeSessionAsync(sessionId, projectId, forceExport);
+            Map<String, Object> result;
+            if ("excel_first".equals(mode)) {
+                // ★ Phase 3: 엑셀 우선 반환 모드
+                result = exportService.completeSessionExcelFirst(sessionId, projectId, forceExport);
+            } else {
+                // 기존 방식: 전체 비동기
+                result = exportService.completeSessionAsync(sessionId, projectId, forceExport);
+            }
             return ResponseEntity.ok(result);
         } catch (Exception e) {
             log.error("세션 완료 시작 실패", e);

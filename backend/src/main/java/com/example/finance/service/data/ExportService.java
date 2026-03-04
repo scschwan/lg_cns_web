@@ -748,6 +748,7 @@ public class ExportService {
 
     /**
      * 세션 완료 처리 (Export 포함) — 내부 실행 (Redis 진행률 업데이트)
+     * ★ Phase 2: 엑셀 생성과 통계 데이터 로드를 병렬 실행
      */
     private Map<String, Object> doCompleteSessionWithExport(String sessionId, String projectId,
                                                              boolean forceExport, String taskId) throws IOException {
@@ -762,6 +763,18 @@ public class ExportService {
         boolean needsExport = forceExport || exportPath == null || exportPath.isBlank();
 
         Map<String, Object> result = new HashMap<>();
+
+        // ★ Phase 2: 엑셀 생성과 통계 데이터(process_view_data) 로드를 병렬 실행
+        // 통계 데이터 사전 로드 (병렬)
+        CompletableFuture<Map<String, ClusterStatisticsService.DocData>> pvdFuture =
+                CompletableFuture.supplyAsync(() -> {
+                    long t = System.currentTimeMillis();
+                    Map<String, ClusterStatisticsService.DocData> data =
+                            clusterStatisticsService.loadProcessViewData(sessionId);
+                    log.info("[COMPLETE-PARALLEL] loadProcessViewData 완료: {}건, {}ms",
+                            data.size(), System.currentTimeMillis() - t);
+                    return data;
+                }, EXECUTOR);
 
         if (needsExport) {
             updateRedisProgress(taskId, sessionId, 10, "Excel 생성 중...");
@@ -779,9 +792,18 @@ public class ExportService {
             updateRedisProgress(taskId, sessionId, 60, "통계 생성 중...");
         }
 
-        // 클러스터 통계 생성
+        // ★ 사전 로드된 통계 데이터로 통계 생성 (병렬 로드 결과 활용)
         long t1 = System.currentTimeMillis();
-        clusterStatisticsService.generateStatistics(sessionId, projectId);
+        try {
+            Map<String, ClusterStatisticsService.DocData> pvdData = pvdFuture.get(120, TimeUnit.SECONDS);
+            clusterStatisticsService.generateStatisticsWithData(sessionId, projectId, pvdData);
+        } catch (TimeoutException e) {
+            log.warn("[COMPLETE-PARALLEL] pvd 로드 타임아웃, 동기 방식으로 fallback");
+            clusterStatisticsService.generateStatistics(sessionId, projectId);
+        } catch (Exception e) {
+            log.warn("[COMPLETE-PARALLEL] pvd 병렬 로드 실패, 동기 방식으로 fallback: {}", e.getMessage());
+            clusterStatisticsService.generateStatistics(sessionId, projectId);
+        }
         log.info("[COMPLETE-TIMING] generateStatistics: {}ms", System.currentTimeMillis() - t1);
 
         updateRedisProgress(taskId, sessionId, 90, "세션 완료 처리 중...");
@@ -807,6 +829,102 @@ public class ExportService {
             return doCompleteSessionWithExport(sessionId, projectId, forceExport, tempTaskId);
         } finally {
             redisService.delete("complete:progress:" + tempTaskId);
+        }
+    }
+
+    // ============================================================
+    // 8. Phase 3: 엑셀 우선 반환 + 통계/DB 비동기
+    // ============================================================
+
+    /**
+     * ★ Phase 3: 엑셀을 먼저 생성하여 downloadUrl을 즉시 반환하고,
+     * 통계 생성 + 세션 완료는 비동기로 처리한다.
+     *
+     * @return { downloadUrl, taskId, exported, async }
+     */
+    public Map<String, Object> completeSessionExcelFirst(String sessionId, String projectId, boolean forceExport) {
+        log.info("[EXCEL-FIRST] 시작: sessionId={}, forceExport={}", sessionId, forceExport);
+        long t0 = System.currentTimeMillis();
+
+        Map<String, Object> response = new LinkedHashMap<>();
+        String taskId = UUID.randomUUID().toString();
+
+        // 세션 잠금 (중복 실행 방지)
+        Boolean locked = redisService.lockSessionComplete(sessionId, taskId);
+        if (!Boolean.TRUE.equals(locked)) {
+            Object existingTaskId = redisService.getSessionCompleteTaskId(sessionId);
+            if (existingTaskId != null) {
+                return Map.of("async", true, "taskId", existingTaskId.toString(), "alreadyRunning", true);
+            }
+        }
+
+        try {
+            // 1. 세션 정보 확인
+            Query query = new Query(Criteria.where("session_id").is(sessionId));
+            FileSession session = mongoTemplate.findOne(query, FileSession.class);
+            String exportPath = session != null ? session.getExportPath() : null;
+            boolean needsExport = forceExport || exportPath == null || exportPath.isBlank();
+
+            // 2. 엑셀 생성 (동기)
+            String downloadUrl = null;
+            if (needsExport) {
+                long excelStart = System.currentTimeMillis();
+                ExportResult exportResult = exportAllClusters(sessionId, projectId);
+                exportPath = exportResult.getS3Key();
+                downloadUrl = exportResult.getDownloadUrl();
+                response.put("exported", true);
+                response.put("downloadUrl", downloadUrl);
+                response.put("fileSize", exportResult.getFileSize());
+                log.info("[EXCEL-FIRST] 엑셀 생성 완료: {}ms, s3Key={}", System.currentTimeMillis() - excelStart, exportPath);
+            } else {
+                // 기존 Export가 있으면 URL 재생성
+                response.put("exported", false);
+                Map<String, Object> urlResult = getExportDownloadUrl(sessionId);
+                if (urlResult.containsKey("downloadUrl")) {
+                    downloadUrl = urlResult.get("downloadUrl").toString();
+                    response.put("downloadUrl", downloadUrl);
+                }
+            }
+
+            // 3. 통계 생성 + 세션 완료는 비동기로 실행
+            final String finalExportPath = exportPath;
+            redisService.saveCompleteProgress(taskId, "RUNNING", 60, "통계 생성 중...", sessionId);
+
+            EXECUTOR.submit(() -> {
+                long asyncStart = System.currentTimeMillis();
+                try {
+                    // 통계 생성
+                    clusterStatisticsService.generateStatistics(sessionId, projectId);
+                    redisService.saveCompleteProgress(taskId, "RUNNING", 90, "세션 완료 처리 중...", sessionId);
+
+                    // 세션 완료 DB 업데이트
+                    completeSession(sessionId, finalExportPath);
+
+                    // 완료
+                    String resultJson = "{\"completed\":true,\"sessionId\":\"" + escapeJson(sessionId) + "\"}";
+                    redisService.saveCompleteResult(taskId, "COMPLETED", 100, "완료", resultJson);
+                    redisService.unlockSessionComplete(sessionId);
+                    log.info("[EXCEL-FIRST-ASYNC] 통계+완료 처리 완료: sessionId={}, {}ms",
+                            sessionId, System.currentTimeMillis() - asyncStart);
+                } catch (Throwable e) {
+                    log.error("[EXCEL-FIRST-ASYNC] 통계+완료 처리 실패: sessionId={}", sessionId, e);
+                    redisService.saveCompleteResult(taskId, "FAILED", 0, e.getMessage(), null);
+                    redisService.unlockSessionComplete(sessionId);
+                }
+            });
+
+            response.put("async", true);
+            response.put("taskId", taskId);
+            response.put("mode", "excel_first");
+
+            log.info("[EXCEL-FIRST] 엑셀 반환 완료, 통계 비동기 시작: sessionId={}, 총 {}ms",
+                    sessionId, System.currentTimeMillis() - t0);
+            return response;
+
+        } catch (Exception e) {
+            log.error("[EXCEL-FIRST] 실패: sessionId={}", sessionId, e);
+            redisService.unlockSessionComplete(sessionId);
+            throw new RuntimeException("엑셀 우선 완료 실패: " + e.getMessage(), e);
         }
     }
 
