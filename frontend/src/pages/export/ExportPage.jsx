@@ -446,13 +446,26 @@ function ExportPage() {
   });
 
   const handleCompleteSession = async () => {
-    if (isViewer) return;
+    console.log('[세션완료] handleCompleteSession 호출', { isViewer, exporting, isEditor });
+    if (isViewer) {
+      console.warn('[세션완료] isViewer=true → 차단됨');
+      return;
+    }
     try {
-      // 1. 대시보드 잠금 상태 확인
-      const lockStatus = await costReductionService.checkDashboardLockStatus(projectId);
+      // 1. 대시보드 잠금 상태 확인 (5초 타임아웃)
+      let lockStatus = { dashboardExists: false };
+      try {
+        const lockPromise = costReductionService.checkDashboardLockStatus(projectId);
+        const timeoutPromise = new Promise((_, reject) =>
+          setTimeout(() => reject(new Error('dashboard lock check timeout')), 5000)
+        );
+        lockStatus = await Promise.race([lockPromise, timeoutPromise]);
+      } catch (lockErr) {
+        console.warn('[세션완료] 대시보드 잠금 확인 실패/타임아웃, 건너뜀:', lockErr.message);
+      }
 
       // 2. Export 존재 여부 확인
-      const urlResult = await exportService.getExportDownloadUrl(projectId, sessionId);
+      const urlResult = await exportService.getExportDownloadUrl(projectId, sessionId).catch(() => ({ hasExport: false }));
       const hasExport = urlResult.hasExport;
 
       if (lockStatus.dashboardExists) {
@@ -478,6 +491,7 @@ function ExportPage() {
       }
 
       // 대시보드가 없는 경우 → 일반 세션 완료 확인
+      console.log('[세션완료] 다이얼로그 오픈: confirm_normal');
       setCompleteDialog({
         open: true,
         type: 'confirm_normal',
@@ -485,13 +499,13 @@ function ExportPage() {
         hasExport,
       });
     } catch (e) {
-      // 대시보드 API 에러 시 일반 세션 완료 플로우로 fallback
-      const urlResult = await exportService.getExportDownloadUrl(projectId, sessionId).catch(() => ({ hasExport: false }));
+      console.error('[세션완료] handleCompleteSession 에러:', e);
+      // 에러 시에도 일반 세션 완료 플로우로 fallback
       setCompleteDialog({
         open: true,
         type: 'confirm_normal',
         editorUserName: null,
-        hasExport: urlResult.hasExport || false,
+        hasExport: false,
       });
     }
   };
@@ -540,6 +554,7 @@ function ExportPage() {
   };
 
   const handleConfirmComplete = async (resetDashboard = false) => {
+    console.log('[세션완료] handleConfirmComplete 호출, resetDashboard=', resetDashboard);
     setCompleteDialog(prev => ({ ...prev, open: false }));
     setExporting(true);
     setCompleteOverlay(true);
@@ -556,9 +571,11 @@ function ExportPage() {
       // 세션 완료 처리 (비동기)
       setCompleteProgress(5);
       setCompleteMessage('세션 완료 처리 시작...');
+      console.log('[세션완료] completeSession POST 전송 중...');
       const startResult = await exportService.completeSession(
         projectId, sessionId, !completeDialog.hasExport
       );
+      console.log('[세션완료] completeSession 응답:', startResult);
 
       let finalResult;
       if (startResult.async && startResult.taskId) {
@@ -646,10 +663,10 @@ function ExportPage() {
       <div className="container mx-auto px-4 py-4 h-full flex flex-col min-h-0 max-w-[98vw]">
 
         {!isEditor && (
-            <div className="mb-4 px-4 py-3 rounded-lg bg-amber-50 border border-amber-200 flex items-center gap-2">
-                <Lock className="h-4 w-4 text-amber-600" />
-                <span className="text-sm font-medium text-amber-700">
-                    뷰어 모드 - {editorInfo?.editorUserName || '다른 사용자'}님이 편집 중입니다
+            <div className="mb-4 px-4 py-3 rounded-lg bg-blue-50 border border-blue-200 flex items-center gap-2">
+                <Lock className="h-4 w-4 text-blue-600" />
+                <span className="text-sm font-medium text-blue-700">
+                    {editorInfo?.editorUserName || '다른 사용자'}님이 편집 중입니다 (세션 완료는 가능합니다)
                 </span>
             </div>
         )}
