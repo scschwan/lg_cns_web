@@ -554,7 +554,15 @@ function ExportPage() {
   };
 
   const handleConfirmComplete = async (resetDashboard = false) => {
-    console.log('[세션완료] handleConfirmComplete 호출, resetDashboard=', resetDashboard);
+    const forceExport = !completeDialog.hasExport;
+    console.log('[세션완료] handleConfirmComplete 시작', {
+      resetDashboard,
+      hasExport: completeDialog.hasExport,
+      forceExport,
+      projectId,
+      sessionId
+    });
+
     setCompleteDialog(prev => ({ ...prev, open: false }));
     setExporting(true);
     setCompleteOverlay(true);
@@ -564,39 +572,49 @@ function ExportPage() {
     try {
       // 대시보드 초기화가 필요한 경우
       if (resetDashboard) {
+        console.log('[세션완료] resetDashboard 시작');
         setCompleteMessage('대시보드 초기화 중...');
         await costReductionService.resetDashboard(projectId);
+        console.log('[세션완료] resetDashboard 완료');
       }
 
-      // 세션 완료 처리 (비동기)
+      // ★ Phase 3: excel_first 모드로 호출
+      // 엑셀을 먼저 생성/반환 → 통계+DB는 백그라운드 처리
       setCompleteProgress(5);
-      setCompleteMessage('세션 완료 처리 시작...');
-      console.log('[세션완료] completeSession POST 전송 중...');
+      setCompleteMessage('Excel 파일 생성 중...');
+      console.log('[세션완료] completeSession POST 전송 (excel_first 모드), forceExport=', forceExport);
       const startResult = await exportService.completeSession(
-        projectId, sessionId, !completeDialog.hasExport
+        projectId, sessionId, forceExport, 'excel_first'
       );
       console.log('[세션완료] completeSession 응답:', startResult);
 
-      let finalResult;
+      // 엑셀 다운로드 즉시 실행 (응답에 downloadUrl 포함)
+      if (startResult.downloadUrl) {
+        console.log('[세션완료] 엑셀 즉시 다운로드:', startResult.downloadUrl);
+        setCompleteProgress(60);
+        setCompleteMessage('Excel 다운로드 완료! 통계 처리 중...');
+        exportService.downloadExcel(startResult.downloadUrl, `final_${sessionId}.xlsx`);
+      }
+
+      // 나머지 비동기 작업(통계+세션완료) 폴링
       if (startResult.async && startResult.taskId) {
-        // 비동기 → 폴링
-        finalResult = await pollCompleteProgress(startResult.taskId);
-      } else {
-        // 동기 응답 (하위 호환)
-        finalResult = startResult;
+        console.log('[세션완료] 통계 비동기 폴링 시작, taskId=', startResult.taskId);
+        await pollCompleteProgress(startResult.taskId);
+        console.log('[세션완료] 통계 폴링 완료');
       }
 
       setCompleteProgress(100);
       setCompleteMessage('완료!');
       await new Promise(r => setTimeout(r, 500));
 
-      if (finalResult.exported && finalResult.exportResult?.downloadUrl) {
-        exportService.downloadExcel(finalResult.exportResult.downloadUrl, `final_${sessionId}.xlsx`);
-      }
-
       alert('세션이 완료되었습니다.');
       navigate(`/projects/${projectId}/upload`);
     } catch (e) {
+      console.error('[세션완료] 에러 상세:', {
+        message: e.message,
+        status: e.response?.status,
+        data: e.response?.data,
+      });
       alert('세션 완료 실패: ' + (e.response?.data?.message || e.message));
     } finally {
       setExporting(false);

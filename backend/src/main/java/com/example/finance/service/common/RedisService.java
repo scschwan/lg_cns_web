@@ -168,4 +168,70 @@ public class RedisService {
             log.debug("Session cache invalidated: {} ({} keys deleted)", sessionId, deleted);
         }
     }
+
+    // ===== 세션 완료 진행률 추적 (Redis 기반) =====
+
+    private static final String COMPLETE_PROGRESS_PREFIX = "complete:progress:";
+    private static final String COMPLETE_LOCK_PREFIX = "complete:lock:";
+
+    /**
+     * 세션 완료 진행률 저장
+     */
+    public void saveCompleteProgress(String taskId, String status, int progress,
+                                       String message, String sessionId) {
+        String key = COMPLETE_PROGRESS_PREFIX + taskId;
+        hSet(key, "status", status);
+        hSet(key, "progress", String.valueOf(progress));
+        hSet(key, "message", message);
+        hSet(key, "sessionId", sessionId);
+        hSet(key, "updatedAt", String.valueOf(System.currentTimeMillis()));
+        expire(key, Duration.ofHours(1));
+    }
+
+    /**
+     * 세션 완료 결과 저장 (완료/실패 시)
+     */
+    public void saveCompleteResult(String taskId, String status, int progress,
+                                     String message, String resultJson) {
+        String key = COMPLETE_PROGRESS_PREFIX + taskId;
+        hSet(key, "status", status);
+        hSet(key, "progress", String.valueOf(progress));
+        hSet(key, "message", message);
+        if (resultJson != null) {
+            hSet(key, "result", resultJson);
+        }
+        hSet(key, "completedAt", String.valueOf(System.currentTimeMillis()));
+        expire(key, Duration.ofHours(1));
+    }
+
+    /**
+     * 세션 완료 진행률 조회
+     */
+    public Map<Object, Object> getCompleteProgress(String taskId) {
+        String key = COMPLETE_PROGRESS_PREFIX + taskId;
+        return hGetAll(key);
+    }
+
+    /**
+     * 세션 완료 잠금 (중복 실행 방지, 10분 TTL)
+     * @return true if lock acquired, false if already locked
+     */
+    public Boolean lockSessionComplete(String sessionId, String taskId) {
+        String key = COMPLETE_LOCK_PREFIX + sessionId;
+        return setIfAbsent(key, taskId, Duration.ofMinutes(10));
+    }
+
+    /**
+     * 세션 완료 잠금 해제
+     */
+    public void unlockSessionComplete(String sessionId) {
+        delete(COMPLETE_LOCK_PREFIX + sessionId);
+    }
+
+    /**
+     * 현재 세션의 완료 taskId 조회
+     */
+    public Object getSessionCompleteTaskId(String sessionId) {
+        return get(COMPLETE_LOCK_PREFIX + sessionId);
+    }
 }

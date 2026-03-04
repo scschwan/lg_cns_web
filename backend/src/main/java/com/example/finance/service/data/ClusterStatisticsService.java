@@ -5,6 +5,7 @@ import com.example.finance.model.data.ClusterStatistics.BreakdownItem;
 import com.example.finance.model.data.ClusteringResult;
 import com.example.finance.model.session.FileSession;
 import com.example.finance.repository.data.ClusterStatisticsRepository;
+import com.example.finance.service.common.RedisService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.bson.Document;
@@ -31,6 +32,7 @@ public class ClusterStatisticsService {
 
     private final MongoTemplate mongoTemplate;
     private final ClusterStatisticsRepository clusterStatisticsRepository;
+    private final RedisService redisService;
 
     /**
      * 세션의 클러스터 통계 생성
@@ -79,6 +81,15 @@ public class ClusterStatisticsService {
         Map<String, DocData> processViewDataMap = loadProcessViewData(sessionId);
         log.info("process_view_data 로드 완료: {} rows", processViewDataMap.size());
 
+        buildAndSaveStatistics(sessionId, resolvedProjectId, accountName, allClusters, processViewDataMap);
+    }
+
+    /**
+     * 클러스터 통계 생성 공통 로직 (process_view_data Map을 받아서 처리)
+     */
+    private void buildAndSaveStatistics(String sessionId, String resolvedProjectId,
+                                          String accountName, List<ClusteringResult> allClusters,
+                                          Map<String, DocData> processViewDataMap) {
         // 최상위 클러스터 분류: 독립(-1) + 병합 부모(clusterId==clusterNumber)
         List<ClusteringResult> topLevelClusters = allClusters.stream()
                 .filter(c -> {
@@ -132,7 +143,6 @@ public class ClusterStatisticsService {
             List<String> dataIndices = subParent.getDataIndices();
             if (dataIndices == null || dataIndices.isEmpty()) continue;
 
-            // 상위 클러스터 번호 찾기 (clusterId가 상위 병합 클러스터 번호)
             Integer parentNumber = subParent.getClusterId();
 
             AggregationResult aggResult = aggregateFromMap(processViewDataMap, dataIndices);
@@ -165,12 +175,10 @@ public class ClusterStatisticsService {
             Integer parentClusterNum = topCluster.getClusterNumber();
             if (parentClusterNum == null) continue;
 
-            // 이 최상위 클러스터에 세부클러스터링이 존재하는지 확인
             if (!clusterIdsWithSubClustering.contains(parentClusterNum)) {
                 continue;
             }
 
-            // 미세부클러스터링 항목: cluster_id == parentClusterNum, 부모 자신 제외, cluster_sub_id == -1 or null
             List<ClusteringResult> unSubClustered = allClusters.stream()
                     .filter(c -> c.getClusterId() != null && c.getClusterId().equals(parentClusterNum)
                             && !c.getClusterNumber().equals(parentClusterNum)
@@ -256,9 +264,27 @@ public class ClusterStatisticsService {
     }
 
     /**
-     * 세션의 process_view_data를 1회 조회하여 raw_data_id → DocData Map으로 반환
+     * 세션의 process_view_data를 조회하여 raw_data_id → DocData Map으로 반환
+     * Redis 캐시를 우선 확인하고, 없으면 MongoDB에서 조회 후 캐싱한다.
      */
-    private Map<String, DocData> loadProcessViewData(String sessionId) {
+    public Map<String, DocData> loadProcessViewData(String sessionId) {
+        // ★ Redis 캐시 확인
+        String cacheKey = "session:" + sessionId + ":pvd_map";
+        try {
+            Object cached = redisService.get(cacheKey);
+            if (cached != null) {
+                Map<String, DocData> result = deserializePvdMap(cached.toString());
+                if (result != null && !result.isEmpty()) {
+                    log.info("[PVD-CACHE] Redis 캐시 히트: sessionId={}, rows={}", sessionId, result.size());
+                    return result;
+                }
+            }
+        } catch (Exception e) {
+            log.warn("[PVD-CACHE] Redis 캐시 조회 실패 (MongoDB fallback): {}", e.getMessage());
+        }
+
+        // MongoDB에서 조회
+        long t0 = System.currentTimeMillis();
         List<Document> docs = mongoTemplate.getCollection("process_view_data")
                 .find(new Document("session_id", sessionId))
                 .projection(new Document("raw_data_id", 1).append("department", 1)
@@ -275,7 +301,53 @@ public class ClusterStatisticsService {
                 map.put(rawDataId, new DocData(dept, sup, money));
             }
         }
+        log.info("[PVD-LOAD] MongoDB 조회 완료: sessionId={}, rows={}, {}ms",
+                sessionId, map.size(), System.currentTimeMillis() - t0);
+
+        // ★ Redis에 캐싱 (2시간 TTL, 10만건 이하만 캐싱)
+        if (map.size() <= 100_000) {
+            try {
+                String serialized = serializePvdMap(map);
+                redisService.set(cacheKey, serialized, java.time.Duration.ofHours(2));
+                log.info("[PVD-CACHE] Redis 캐시 저장: sessionId={}, rows={}, size={}KB",
+                        sessionId, map.size(), serialized.length() / 1024);
+            } catch (Exception e) {
+                log.warn("[PVD-CACHE] Redis 캐시 저장 실패 (무시): {}", e.getMessage());
+            }
+        }
+
         return map;
+    }
+
+    /**
+     * 사전 로드된 process_view_data를 사용하여 통계 생성 (병렬 처리용)
+     */
+    public void generateStatisticsWithData(String sessionId, String projectId,
+                                             Map<String, DocData> preloadedProcessViewData) {
+        log.info("클러스터 통계 생성 시작 (사전 로드 데이터 사용): sessionId={}, pvdSize={}",
+                sessionId, preloadedProcessViewData.size());
+
+        clusterStatisticsRepository.deleteBySessionId(sessionId);
+
+        FileSession session = mongoTemplate.findOne(
+                new Query(Criteria.where("session_id").is(sessionId)),
+                FileSession.class);
+        if (session == null) {
+            log.warn("세션을 찾을 수 없음: sessionId={}", sessionId);
+            return;
+        }
+
+        String resolvedProjectId = (projectId != null && !projectId.isBlank())
+                ? projectId : session.getProjectId();
+        String accountName = (session.getAccountNames() != null && !session.getAccountNames().isEmpty())
+                ? String.join(", ", session.getAccountNames()) : "-";
+
+        List<ClusteringResult> allClusters = mongoTemplate.find(
+                new Query(Criteria.where("session_id").is(sessionId)),
+                ClusteringResult.class);
+        if (allClusters.isEmpty()) return;
+
+        buildAndSaveStatistics(sessionId, resolvedProjectId, accountName, allClusters, preloadedProcessViewData);
     }
 
     /**
@@ -362,15 +434,67 @@ public class ClusterStatisticsService {
         List<BreakdownItem> suppliers = new ArrayList<>();
     }
 
-    private static class DocData {
-        final String department;
-        final String supplier;
-        final double money;
+    public static class DocData {
+        public final String department;
+        public final String supplier;
+        public final double money;
 
-        DocData(String department, String supplier, double money) {
+        public DocData(String department, String supplier, double money) {
             this.department = department;
             this.supplier = supplier;
             this.money = money;
+        }
+    }
+
+    // ===== Redis 직렬화/역직렬화 (process_view_data Map) =====
+
+    /**
+     * DocData Map → 콤팩트 문자열 직렬화
+     * 포맷: rawDataId\tdept\tsupplier\tmoney\n (탭 구분, 줄바꿈 구분)
+     */
+    private String serializePvdMap(Map<String, DocData> map) {
+        StringBuilder sb = new StringBuilder(map.size() * 80);
+        for (Map.Entry<String, DocData> entry : map.entrySet()) {
+            DocData d = entry.getValue();
+            sb.append(entry.getKey()).append('\t')
+              .append(d.department != null ? d.department.replace('\t', ' ').replace('\n', ' ') : "").append('\t')
+              .append(d.supplier != null ? d.supplier.replace('\t', ' ').replace('\n', ' ') : "").append('\t')
+              .append(d.money).append('\n');
+        }
+        return sb.toString();
+    }
+
+    /**
+     * 콤팩트 문자열 → DocData Map 역직렬화
+     */
+    private Map<String, DocData> deserializePvdMap(String data) {
+        if (data == null || data.isEmpty()) return null;
+        String[] lines = data.split("\n");
+        Map<String, DocData> map = new HashMap<>(lines.length);
+        for (String line : lines) {
+            if (line.isEmpty()) continue;
+            String[] parts = line.split("\t", -1);
+            if (parts.length >= 4) {
+                String rawDataId = parts[0];
+                String dept = parts[1].isEmpty() ? null : parts[1];
+                String sup = parts[2].isEmpty() ? null : parts[2];
+                double money = 0.0;
+                try { money = Double.parseDouble(parts[3]); } catch (NumberFormatException ignored) {}
+                map.put(rawDataId, new DocData(dept, sup, money));
+            }
+        }
+        return map;
+    }
+
+    /**
+     * 세션의 process_view_data 캐시 무효화
+     */
+    public void invalidatePvdCache(String sessionId) {
+        try {
+            redisService.delete("session:" + sessionId + ":pvd_map");
+            log.debug("[PVD-CACHE] 캐시 무효화: sessionId={}", sessionId);
+        } catch (Exception e) {
+            log.warn("[PVD-CACHE] 캐시 무효화 실패 (무시): {}", e.getMessage());
         }
     }
 }

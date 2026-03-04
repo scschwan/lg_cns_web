@@ -138,11 +138,13 @@ const exportService = {
     /**
      * 세션 완료 처리 (비동기 → taskId 반환)
      * POST /api/projects/{projectId}/sessions/{sessionId}/export/complete
+     *
+     * @param {string} mode - "default" (전체 비동기) 또는 "excel_first" (엑셀 우선 반환)
      */
-    completeSession: async (projectId, sessionId, forceExport = false) => {
+    completeSession: async (projectId, sessionId, forceExport = false, mode = 'default') => {
         const response = await api.post(
             `/api/projects/${projectId}/sessions/${sessionId}/export/complete`,
-            { forceExport }
+            { forceExport, mode }
         );
         return response.data;
     },
