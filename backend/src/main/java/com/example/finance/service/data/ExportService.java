@@ -3,6 +3,7 @@ package com.example.finance.service.data;
 import com.example.finance.model.data.ClusteringResult;
 import com.example.finance.model.data.ColumnMappingDocument;
 import com.example.finance.model.session.FileSession;
+import com.example.finance.service.common.RedisService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.poi.ss.usermodel.*;
@@ -47,6 +48,7 @@ public class ExportService {
     private final S3Client s3Client;
     private final S3Presigner s3Presigner;
     private final ClusterStatisticsService clusterStatisticsService;
+    private final RedisService redisService;
 
     // 병렬 처리용 스레드 풀
     private static final ExecutorService EXECUTOR = Executors.newFixedThreadPool(
@@ -552,18 +554,41 @@ public class ExportService {
             cell.setCellStyle(headerStyle);
         }
 
-        // 클러스터별로 raw_data 수집 및 작성
+        // ★ 배치 쿼리: 전체 raw_data_id를 수집 → 10,000건씩 일괄 조회 → Map으로 O(1) 조회
+        long t0 = System.currentTimeMillis();
+        Set<String> allRawDataIds = new LinkedHashSet<>();
+        for (ClusteringResult c : clusters) {
+            if (c.getDataIndices() != null) allRawDataIds.addAll(c.getDataIndices());
+        }
+        log.info("[EXPORT-BATCH] 전체 raw_data_id 수집: {}건, 클러스터 수: {}", allRawDataIds.size(), clusters.size());
+
+        Map<String, Document> dataMap = new HashMap<>(allRawDataIds.size());
+        List<String> idList = new ArrayList<>(allRawDataIds);
+        int BATCH_SIZE = 10_000;
+        int batchCount = 0;
+        for (int i = 0; i < idList.size(); i += BATCH_SIZE) {
+            List<String> batch = idList.subList(i, Math.min(i + BATCH_SIZE, idList.size()));
+            Query batchQuery = new Query(Criteria.where("session_id").is(sessionId)
+                    .and("raw_data_id").in(batch));
+            List<Document> batchResult = mongoTemplate.find(batchQuery, Document.class, "session_data");
+            for (Document doc : batchResult) {
+                dataMap.put(doc.getString("raw_data_id"), doc);
+            }
+            batchCount++;
+        }
+        log.info("[EXPORT-BATCH] 배치 쿼리 완료: {}회 쿼리, {}건 로드, {}ms",
+                batchCount, dataMap.size(), System.currentTimeMillis() - t0);
+
+        // 클러스터별로 Map에서 조회하여 Excel 행 작성
         int rowNum = 1;
         for (ClusteringResult cluster : clusters) {
             List<String> rawDataIds = cluster.getDataIndices();
             if (rawDataIds == null || rawDataIds.isEmpty()) continue;
 
-            // session_data에서 데이터 조회
-            Query query = new Query(Criteria.where("session_id").is(sessionId)
-                    .and("raw_data_id").in(rawDataIds));
-            List<Document> dataList = mongoTemplate.find(query, Document.class, "session_data");
+            for (String rawDataId : rawDataIds) {
+                Document doc = dataMap.get(rawDataId);
+                if (doc == null) continue;
 
-            for (Document doc : dataList) {
                 if (rowNum > MAX_ROWS_PER_SHEET) {
                     log.warn("Max rows exceeded");
                     break;
@@ -589,65 +614,63 @@ public class ExportService {
             }
         }
 
-        log.info("raw_data 시트 생성 완료: {} rows", rowNum - 1);
+        log.info("[EXPORT-BATCH] raw_data 시트 생성 완료: {} rows, 총 {}ms", rowNum - 1, System.currentTimeMillis() - t0);
     }
 
     // ============================================================
-    // 7. 세션 완료 처리
+    // 7. 세션 완료 처리 (Redis 기반 진행률 추적)
     // ============================================================
-
-    // ★ 비동기 세션 완료 진행률 추적
-    public static class CompleteProgress {
-        public volatile String status; // RUNNING, COMPLETED, FAILED
-        public volatile int progress;  // 0-100
-        public volatile String message;
-        public volatile Map<String, Object> result;
-        public volatile long completedAt;
-
-        CompleteProgress() { this.status = "RUNNING"; this.progress = 0; this.message = "시작 중..."; }
-    }
-
-    private final ConcurrentHashMap<String, CompleteProgress> completeProgressMap = new ConcurrentHashMap<>();
-    private final ConcurrentHashMap<String, String> sessionCompleteMap = new ConcurrentHashMap<>();
-    private static final long COMPLETE_PROGRESS_RETAIN_MS = 30_000;
 
     /**
      * 비동기 세션 완료 시작 → taskId 반환
+     * 진행률은 Redis Hash에 저장하여 서버 재시작에도 안전
      */
     public Map<String, Object> completeSessionAsync(String sessionId, String projectId, boolean forceExport) {
-        // 중복 실행 방지
-        if (sessionCompleteMap.containsKey(sessionId)) {
-            String existingTaskId = sessionCompleteMap.get(sessionId);
-            CompleteProgress existing = completeProgressMap.get(existingTaskId);
-            if (existing != null && "RUNNING".equals(existing.status)) {
-                return Map.of("async", true, "taskId", existingTaskId, "alreadyRunning", true);
+        // 중복 실행 방지 (Redis 기반)
+        Object existingTaskId = redisService.getSessionCompleteTaskId(sessionId);
+        if (existingTaskId != null) {
+            String tid = existingTaskId.toString();
+            Map<Object, Object> existing = redisService.getCompleteProgress(tid);
+            if (!existing.isEmpty() && "RUNNING".equals(existing.get("status"))) {
+                log.info("[COMPLETE-ASYNC] 이미 실행 중: sessionId={}, taskId={}", sessionId, tid);
+                return Map.of("async", true, "taskId", tid, "alreadyRunning", true);
             }
         }
 
         String taskId = UUID.randomUUID().toString();
-        CompleteProgress progress = new CompleteProgress();
-        completeProgressMap.put(taskId, progress);
-        sessionCompleteMap.put(sessionId, taskId);
+
+        // Redis에 세션→taskId 매핑 잠금 (10분 TTL)
+        Boolean locked = redisService.lockSessionComplete(sessionId, taskId);
+        if (!Boolean.TRUE.equals(locked)) {
+            // 동시 요청으로 다른 스레드가 먼저 잠금 획득
+            Object otherTaskId = redisService.getSessionCompleteTaskId(sessionId);
+            if (otherTaskId != null) {
+                return Map.of("async", true, "taskId", otherTaskId.toString(), "alreadyRunning", true);
+            }
+        }
+
+        // Redis에 초기 진행률 저장
+        redisService.saveCompleteProgress(taskId, "RUNNING", 0, "시작 중...", sessionId);
 
         log.info("[COMPLETE-ASYNC] 시작: sessionId={}, taskId={}, forceExport={}", sessionId, taskId, forceExport);
 
         EXECUTOR.submit(() -> {
+            long startTime = System.currentTimeMillis();
             try {
-                Map<String, Object> result = doCompleteSessionWithExport(sessionId, projectId, forceExport, progress);
-                progress.result = result;
-                progress.progress = 100;
-                progress.message = "완료";
-                progress.status = "COMPLETED";
-                progress.completedAt = System.currentTimeMillis();
-                sessionCompleteMap.remove(sessionId);
-                log.info("[COMPLETE-ASYNC] 완료: taskId={}", taskId);
+                Map<String, Object> result = doCompleteSessionWithExport(sessionId, projectId, forceExport, taskId);
+
+                // 결과를 JSON 문자열로 변환하여 Redis에 저장
+                String resultJson = serializeResultToJson(result);
+                redisService.saveCompleteResult(taskId, "COMPLETED", 100, "완료", resultJson);
+                redisService.unlockSessionComplete(sessionId);
+
+                log.info("[COMPLETE-ASYNC] 완료: taskId={}, sessionId={}, 소요시간={}ms",
+                        taskId, sessionId, System.currentTimeMillis() - startTime);
             } catch (Throwable e) {
-                log.error("[COMPLETE-ASYNC] 실패: taskId={}, sessionId={}, errorType={}",
-                        taskId, sessionId, e.getClass().getName(), e);
-                progress.message = e.getMessage();
-                progress.status = "FAILED";
-                progress.completedAt = System.currentTimeMillis();
-                sessionCompleteMap.remove(sessionId);
+                log.error("[COMPLETE-ASYNC] 실패: taskId={}, sessionId={}, errorType={}, 소요시간={}ms",
+                        taskId, sessionId, e.getClass().getName(), System.currentTimeMillis() - startTime, e);
+                redisService.saveCompleteResult(taskId, "FAILED", 0, e.getMessage(), null);
+                redisService.unlockSessionComplete(sessionId);
             }
         });
 
@@ -655,68 +678,82 @@ public class ExportService {
     }
 
     /**
-     * 세션 완료 진행률 조회
-     * sessionId를 받아 NOT_FOUND 시 DB에서 세션 완료 상태를 확인 (서버 재배포 대응)
+     * 세션 완료 진행률 조회 (Redis 기반)
      */
     public Map<String, Object> getCompleteProgress(String taskId, String sessionId) {
-        CompleteProgress cp = completeProgressMap.get(taskId);
-        if (cp == null) {
-            // ★ 서버 재배포 등으로 인메모리 맵이 초기화된 경우 DB에서 세션 완료 상태 확인
+        Map<Object, Object> redisData = redisService.getCompleteProgress(taskId);
+
+        if (redisData == null || redisData.isEmpty()) {
+            // Redis에 없으면 DB에서 세션 완료 상태 확인 (fallback)
             if (sessionId != null) {
                 Query q = new Query(Criteria.where("session_id").is(sessionId));
                 q.fields().include("is_completed");
                 FileSession session = mongoTemplate.findOne(q, FileSession.class);
                 if (session != null && Boolean.TRUE.equals(session.getIsCompleted())) {
-                    log.info("[COMPLETE-PROGRESS] NOT_FOUND but session already completed: taskId={}, sessionId={}", taskId, sessionId);
+                    log.info("[COMPLETE-PROGRESS] Redis 미발견, DB 완료 확인: taskId={}, sessionId={}", taskId, sessionId);
                     return Map.of("status", "COMPLETED", "progress", 100, "message", "완료",
                             "result", Map.of("completed", true, "sessionId", sessionId));
                 }
             }
-            log.warn("[COMPLETE-PROGRESS] NOT_FOUND: taskId={}, sessionId={}, mapSize={}",
-                    taskId, sessionId, completeProgressMap.size());
+            log.warn("[COMPLETE-PROGRESS] NOT_FOUND: taskId={}, sessionId={}", taskId, sessionId);
             return Map.of("status", "NOT_FOUND");
         }
+
         Map<String, Object> r = new LinkedHashMap<>();
-        r.put("status", cp.status);
-        r.put("progress", cp.progress);
-        r.put("message", cp.message);
-        if (cp.result != null) r.put("result", cp.result);
-        if ("COMPLETED".equals(cp.status) || "FAILED".equals(cp.status)) {
-            if (cp.completedAt == 0) {
-                cp.completedAt = System.currentTimeMillis();
-            } else if (System.currentTimeMillis() - cp.completedAt > COMPLETE_PROGRESS_RETAIN_MS) {
-                completeProgressMap.remove(taskId);
+        r.put("status", String.valueOf(redisData.getOrDefault("status", "RUNNING")));
+        r.put("progress", parseIntSafe(redisData.get("progress"), 0));
+        r.put("message", String.valueOf(redisData.getOrDefault("message", "처리 중...")));
+
+        // 완료 시 결과 역직렬화
+        Object resultJson = redisData.get("result");
+        if (resultJson != null) {
+            try {
+                r.put("result", deserializeJsonToResult(resultJson.toString()));
+            } catch (Exception e) {
+                log.warn("[COMPLETE-PROGRESS] result 역직렬화 실패: {}", e.getMessage());
+                r.put("result", Map.of("completed", true, "sessionId", String.valueOf(redisData.getOrDefault("sessionId", ""))));
             }
         }
+
         return r;
     }
 
     /**
-     * 세션 완료 활성 여부 확인
+     * 세션 완료 활성 여부 확인 (Redis 기반)
      */
     public Map<String, Object> isCompleteActive(String sessionId) {
-        String taskId = sessionCompleteMap.get(sessionId);
-        if (taskId == null) return Map.of("active", false);
-        CompleteProgress cp = completeProgressMap.get(taskId);
-        if (cp == null || "COMPLETED".equals(cp.status) || "FAILED".equals(cp.status)) {
-            sessionCompleteMap.remove(sessionId);
+        Object taskIdObj = redisService.getSessionCompleteTaskId(sessionId);
+        if (taskIdObj == null) return Map.of("active", false);
+
+        String taskId = taskIdObj.toString();
+        Map<Object, Object> cp = redisService.getCompleteProgress(taskId);
+        if (cp.isEmpty()) {
+            redisService.unlockSessionComplete(sessionId);
             return Map.of("active", false);
         }
+
+        String status = String.valueOf(cp.getOrDefault("status", ""));
+        if ("COMPLETED".equals(status) || "FAILED".equals(status)) {
+            redisService.unlockSessionComplete(sessionId);
+            return Map.of("active", false);
+        }
+
         Map<String, Object> r = new LinkedHashMap<>();
         r.put("active", true);
         r.put("taskId", taskId);
-        r.put("progress", cp.progress);
-        r.put("message", cp.message);
+        r.put("progress", parseIntSafe(cp.get("progress"), 0));
+        r.put("message", String.valueOf(cp.getOrDefault("message", "")));
         return r;
     }
 
     /**
-     * 세션 완료 처리 (Export 포함) — 내부 실행 (진행률 업데이트 포함)
+     * 세션 완료 처리 (Export 포함) — 내부 실행 (Redis 진행률 업데이트)
      */
     private Map<String, Object> doCompleteSessionWithExport(String sessionId, String projectId,
-                                                             boolean forceExport, CompleteProgress progress) throws IOException {
-        progress.progress = 5;
-        progress.message = "세션 정보 확인 중...";
+                                                             boolean forceExport, String taskId) throws IOException {
+        long totalStart = System.currentTimeMillis();
+
+        updateRedisProgress(taskId, sessionId, 5, "세션 정보 확인 중...");
 
         Query query = new Query(Criteria.where("session_id").is(sessionId));
         FileSession session = mongoTemplate.findOne(query, FileSession.class);
@@ -727,33 +764,36 @@ public class ExportService {
         Map<String, Object> result = new HashMap<>();
 
         if (needsExport) {
-            progress.progress = 10;
-            progress.message = "Excel 생성 중...";
+            updateRedisProgress(taskId, sessionId, 10, "Excel 생성 중...");
+            long t0 = System.currentTimeMillis();
             ExportResult exportResult = exportAllClusters(sessionId, projectId);
+            log.info("[COMPLETE-TIMING] exportAllClusters: {}ms", System.currentTimeMillis() - t0);
+
             exportPath = exportResult.getS3Key();
             result.put("exported", true);
             result.put("exportResult", exportResult);
-            progress.progress = 60;
-            progress.message = "Excel 생성 완료. 통계 생성 중...";
+            updateRedisProgress(taskId, sessionId, 60, "Excel 생성 완료. 통계 생성 중...");
         } else {
             result.put("exported", false);
             result.put("existingExportPath", exportPath);
-            progress.progress = 60;
-            progress.message = "통계 생성 중...";
+            updateRedisProgress(taskId, sessionId, 60, "통계 생성 중...");
         }
 
         // 클러스터 통계 생성
+        long t1 = System.currentTimeMillis();
         clusterStatisticsService.generateStatistics(sessionId, projectId);
-        progress.progress = 90;
-        progress.message = "세션 완료 처리 중...";
+        log.info("[COMPLETE-TIMING] generateStatistics: {}ms", System.currentTimeMillis() - t1);
+
+        updateRedisProgress(taskId, sessionId, 90, "세션 완료 처리 중...");
 
         // 세션 완료 처리
         completeSession(sessionId, exportPath);
-        progress.progress = 95;
-        progress.message = "마무리 중...";
+        updateRedisProgress(taskId, sessionId, 95, "마무리 중...");
 
         result.put("completed", true);
         result.put("sessionId", sessionId);
+
+        log.info("[COMPLETE-TIMING] 전체 완료: {}ms", System.currentTimeMillis() - totalStart);
         return result;
     }
 
@@ -761,7 +801,94 @@ public class ExportService {
      * 세션 완료 처리 (동기 — 기존 호환)
      */
     public Map<String, Object> completeSessionWithExport(String sessionId, String projectId, boolean forceExport) throws IOException {
-        return doCompleteSessionWithExport(sessionId, projectId, forceExport, new CompleteProgress());
+        String tempTaskId = "sync-" + UUID.randomUUID();
+        redisService.saveCompleteProgress(tempTaskId, "RUNNING", 0, "동기 처리 시작...", sessionId);
+        try {
+            return doCompleteSessionWithExport(sessionId, projectId, forceExport, tempTaskId);
+        } finally {
+            redisService.delete("complete:progress:" + tempTaskId);
+        }
+    }
+
+    // ★ Redis 진행률 업데이트 헬퍼
+    private void updateRedisProgress(String taskId, String sessionId, int progress, String message) {
+        try {
+            redisService.saveCompleteProgress(taskId, "RUNNING", progress, message, sessionId);
+        } catch (Exception e) {
+            log.warn("[COMPLETE-REDIS] 진행률 업데이트 실패 (무시): taskId={}, error={}", taskId, e.getMessage());
+        }
+    }
+
+    // ★ 결과 직렬화/역직렬화 (간단한 JSON)
+    private String serializeResultToJson(Map<String, Object> result) {
+        StringBuilder sb = new StringBuilder("{");
+        boolean first = true;
+        for (Map.Entry<String, Object> entry : result.entrySet()) {
+            if (!first) sb.append(",");
+            first = false;
+            sb.append("\"").append(entry.getKey()).append("\":");
+            Object val = entry.getValue();
+            if (val == null) {
+                sb.append("null");
+            } else if (val instanceof Boolean || val instanceof Number) {
+                sb.append(val);
+            } else if (val instanceof ExportResult) {
+                ExportResult er = (ExportResult) val;
+                sb.append("{\"s3Key\":\"").append(escapeJson(er.getS3Key()))
+                  .append("\",\"downloadUrl\":\"").append(escapeJson(er.getDownloadUrl()))
+                  .append("\",\"fileSize\":").append(er.getFileSize())
+                  .append("}");
+            } else {
+                sb.append("\"").append(escapeJson(String.valueOf(val))).append("\"");
+            }
+        }
+        sb.append("}");
+        return sb.toString();
+    }
+
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> deserializeJsonToResult(String json) {
+        // 간단한 파싱 — completed, sessionId, exported, exportResult 필드 추출
+        Map<String, Object> result = new LinkedHashMap<>();
+        if (json.contains("\"completed\":true")) result.put("completed", true);
+        if (json.contains("\"exported\":true")) result.put("exported", true);
+        if (json.contains("\"exported\":false")) result.put("exported", false);
+
+        // sessionId 추출
+        int sidIdx = json.indexOf("\"sessionId\":\"");
+        if (sidIdx >= 0) {
+            int start = sidIdx + 14;
+            int end = json.indexOf("\"", start);
+            if (end > start) result.put("sessionId", json.substring(start, end));
+        }
+
+        // downloadUrl 추출
+        int dlIdx = json.indexOf("\"downloadUrl\":\"");
+        if (dlIdx >= 0) {
+            int start = dlIdx + 15;
+            int end = json.indexOf("\"", start);
+            if (end > start) {
+                Map<String, Object> exportResult = new LinkedHashMap<>();
+                exportResult.put("downloadUrl", json.substring(start, end));
+                result.put("exportResult", exportResult);
+            }
+        }
+
+        return result;
+    }
+
+    private String escapeJson(String str) {
+        if (str == null) return "";
+        return str.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", "\\n");
+    }
+
+    private int parseIntSafe(Object value, int defaultValue) {
+        if (value == null) return defaultValue;
+        try {
+            return Integer.parseInt(String.valueOf(value));
+        } catch (NumberFormatException e) {
+            return defaultValue;
+        }
     }
 
     /**
@@ -887,8 +1014,29 @@ public class ExportService {
                 .key(s3Key)
                 .contentType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
                 .build();
-        s3Client.putObject(putRequest, RequestBody.fromBytes(data));
-        log.info("S3 업로드 완료: s3://{}/{}", S3_BUCKET, s3Key);
+
+        int maxRetries = 3;
+        for (int attempt = 1; attempt <= maxRetries; attempt++) {
+            try {
+                long t0 = System.currentTimeMillis();
+                s3Client.putObject(putRequest, RequestBody.fromBytes(data));
+                log.info("[S3-UPLOAD] 완료: s3://{}/{}, size={}bytes, {}ms (시도 {}/{})",
+                        S3_BUCKET, s3Key, data.length, System.currentTimeMillis() - t0, attempt, maxRetries);
+                return;
+            } catch (Exception e) {
+                log.error("[S3-UPLOAD] 실패 (시도 {}/{}): s3Key={}, error={}",
+                        attempt, maxRetries, s3Key, e.getMessage());
+                if (attempt == maxRetries) {
+                    throw new RuntimeException("S3 업로드 최종 실패: " + s3Key, e);
+                }
+                try {
+                    Thread.sleep(2000L * attempt);
+                } catch (InterruptedException ie) {
+                    Thread.currentThread().interrupt();
+                    throw new RuntimeException("S3 업로드 중단됨", ie);
+                }
+            }
+        }
     }
 
     private String generatePresignedUrl(String s3Key) {

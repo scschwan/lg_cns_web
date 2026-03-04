@@ -554,7 +554,15 @@ function ExportPage() {
   };
 
   const handleConfirmComplete = async (resetDashboard = false) => {
-    console.log('[세션완료] handleConfirmComplete 호출, resetDashboard=', resetDashboard);
+    const forceExport = !completeDialog.hasExport;
+    console.log('[세션완료] handleConfirmComplete 시작', {
+      resetDashboard,
+      hasExport: completeDialog.hasExport,
+      forceExport,
+      projectId,
+      sessionId
+    });
+
     setCompleteDialog(prev => ({ ...prev, open: false }));
     setExporting(true);
     setCompleteOverlay(true);
@@ -564,23 +572,27 @@ function ExportPage() {
     try {
       // 대시보드 초기화가 필요한 경우
       if (resetDashboard) {
+        console.log('[세션완료] resetDashboard 시작');
         setCompleteMessage('대시보드 초기화 중...');
         await costReductionService.resetDashboard(projectId);
+        console.log('[세션완료] resetDashboard 완료');
       }
 
       // 세션 완료 처리 (비동기)
       setCompleteProgress(5);
       setCompleteMessage('세션 완료 처리 시작...');
-      console.log('[세션완료] completeSession POST 전송 중...');
+      console.log('[세션완료] completeSession POST 전송 중... forceExport=', forceExport);
       const startResult = await exportService.completeSession(
-        projectId, sessionId, !completeDialog.hasExport
+        projectId, sessionId, forceExport
       );
       console.log('[세션완료] completeSession 응답:', startResult);
 
       let finalResult;
       if (startResult.async && startResult.taskId) {
         // 비동기 → 폴링
+        console.log('[세션완료] 비동기 폴링 시작, taskId=', startResult.taskId);
         finalResult = await pollCompleteProgress(startResult.taskId);
+        console.log('[세션완료] 폴링 완료, finalResult=', finalResult);
       } else {
         // 동기 응답 (하위 호환)
         finalResult = startResult;
@@ -591,12 +603,18 @@ function ExportPage() {
       await new Promise(r => setTimeout(r, 500));
 
       if (finalResult.exported && finalResult.exportResult?.downloadUrl) {
+        console.log('[세션완료] 엑셀 다운로드:', finalResult.exportResult.downloadUrl);
         exportService.downloadExcel(finalResult.exportResult.downloadUrl, `final_${sessionId}.xlsx`);
       }
 
       alert('세션이 완료되었습니다.');
       navigate(`/projects/${projectId}/upload`);
     } catch (e) {
+      console.error('[세션완료] 에러 상세:', {
+        message: e.message,
+        status: e.response?.status,
+        data: e.response?.data,
+      });
       alert('세션 완료 실패: ' + (e.response?.data?.message || e.message));
     } finally {
       setExporting(false);
