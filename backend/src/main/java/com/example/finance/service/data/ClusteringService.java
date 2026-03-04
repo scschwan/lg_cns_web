@@ -37,13 +37,6 @@ public class ClusteringService {
     private static final ExecutorService EXECUTOR = Executors.newFixedThreadPool(
             Math.max(2, Runtime.getRuntime().availableProcessors()));
 
-    // 경량 쿼리(count, getVisibleColumns)용 별도 스레드풀 — 병합 작업과 격리하여 ThreadPool 고갈 방지
-    private static final ExecutorService LIGHT_EXECUTOR = Executors.newCachedThreadPool(r -> {
-        Thread t = new Thread(r, "clustering-light");
-        t.setDaemon(true);
-        return t;
-    });
-
     // ============================================================
     // 1. 미병합 클러스터 생성 (병렬 처리)
     // ============================================================
@@ -223,12 +216,9 @@ public class ClusteringService {
             criteria = criteria.and("keywords").is(keyword);
         }
 
-        // 병렬 조회: count와 데이터를 동시에 가져오기 (LIGHT_EXECUTOR 사용 — 병합 작업과 격리)
-        Criteria finalCriteria = criteria;
-        CompletableFuture<Long> countFuture = CompletableFuture.supplyAsync(
-                () -> mongoTemplate.count(new Query(finalCriteria), ClusteringResult.class), LIGHT_EXECUTOR);
-        CompletableFuture<List<String>> colFuture = CompletableFuture.supplyAsync(
-                () -> getVisibleColumns(sessionId), LIGHT_EXECUTOR);
+        // count, visibleColumns, 클러스터 데이터를 순차 조회 (비동기 ThreadPool 고갈 문제 제거)
+        long totalCount = mongoTemplate.count(new Query(criteria), ClusteringResult.class);
+        List<String> visibleColumns = getVisibleColumns(sessionId);
 
         Query query = new Query(criteria)
                 .with(Sort.by("cluster_number"))
@@ -245,17 +235,6 @@ public class ClusteringService {
         }
 
         Map<String, Map<String, Object>> rawIdToData = batchFetchSessionData(sessionId, firstRawIds);
-
-        long totalCount;
-        List<String> visibleColumns;
-        try {
-            totalCount = countFuture.get(5, TimeUnit.SECONDS);
-            visibleColumns = colFuture.get(5, TimeUnit.SECONDS);
-        } catch (Exception e) {
-            log.warn("병렬 조회 실패, 동기 조회로 fallback", e);
-            totalCount = mongoTemplate.count(new Query(finalCriteria), ClusteringResult.class);
-            visibleColumns = getVisibleColumns(sessionId);
-        }
 
         List<Map<String, Object>> dataWithRepresentative = new ArrayList<>();
         for (ClusteringResult c : clusters) {
@@ -1605,12 +1584,9 @@ public class ClusteringService {
             criteria = new Criteria().andOperator(additionalCriteria.toArray(new Criteria[0]));
         }
 
-        // 병렬 조회: count와 visibleColumns (LIGHT_EXECUTOR 사용 — 병합 작업과 격리)
-        Criteria finalCriteria = criteria;
-        CompletableFuture<Long> countFuture = CompletableFuture.supplyAsync(
-                () -> mongoTemplate.count(new Query(finalCriteria), ClusteringResult.class), LIGHT_EXECUTOR);
-        CompletableFuture<List<String>> colFuture = CompletableFuture.supplyAsync(
-                () -> getVisibleColumns(sessionId), LIGHT_EXECUTOR);
+        // count, visibleColumns, 클러스터 데이터를 순차 조회 (비동기 ThreadPool 고갈 문제 제거)
+        long totalCount = mongoTemplate.count(new Query(criteria), ClusteringResult.class);
+        List<String> visibleColumns = getVisibleColumns(sessionId);
 
         // 페이징 조회
         Query query = new Query(criteria)
@@ -1627,17 +1603,6 @@ public class ClusteringService {
             }
         }
         Map<String, Map<String, Object>> rawIdToData = batchFetchSessionData(sessionId, firstRawIds);
-
-        long totalCount;
-        List<String> visibleColumns;
-        try {
-            totalCount = countFuture.get(5, TimeUnit.SECONDS);
-            visibleColumns = colFuture.get(5, TimeUnit.SECONDS);
-        } catch (Exception e) {
-            log.warn("병렬 조회 실패, 동기 조회로 fallback", e);
-            totalCount = mongoTemplate.count(new Query(finalCriteria), ClusteringResult.class);
-            visibleColumns = getVisibleColumns(sessionId);
-        }
 
         // 결과 데이터 구성
         List<Map<String, Object>> dataWithRepresentative = new ArrayList<>();
