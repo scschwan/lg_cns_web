@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo, useRef, startTransition } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
   ChevronRight, ChevronDown, Home, GitMerge, Eye, Edit2, Trash2, Plus,
@@ -436,13 +436,15 @@ function ClusteringPage() {
   }, [loadStatistics, loadUnmerged, clusterPageSize, loadKwStats, loadSupStats, loadMerged, loadSearchableColumns, loadKeywordHierarchy]);
 
   const refreshAll = useCallback(async () => {
+    // ★ 병합 후 페이지를 0으로 리셋하여 병합된 항목이 사라진 최신 데이터 표시
+    setClusterPage(0);
     // Phase 1: 핵심 데이터 (검색 활성 시 advancedSearch 사용)
     const reloadUnmerged = async () => {
       if (appliedSearchParams) {
         setLoading(true);
         try {
           const params = {
-            page: clusterPage,
+            page: 0,
             size: clusterPageSize,
             searchColumn: appliedSearchParams.searchColumn,
             searchValue: appliedSearchParams.searchValue,
@@ -458,17 +460,13 @@ function ClusteringPage() {
           setClusterTotalPages(r.totalPages || 0);
         } catch (e) { console.error(e); } finally { setLoading(false); }
       } else {
-        await loadUnmerged(clusterPage, clusterPageSize, null);
+        await loadUnmerged(0, clusterPageSize, null);
       }
     };
     await Promise.all([loadStatistics(), reloadUnmerged()]);
-    // Phase 2: 보조 데이터 (비긴급 → UI 블로킹 방지)
-    startTransition(() => {
-      loadKwStats();
-      loadSupStats();
-      loadMerged();
-    });
-  }, [loadStatistics, loadUnmerged, clusterPage, clusterPageSize, appliedSearchParams, previousResultIds, projectId, sessionId, loadKwStats, loadSupStats, loadMerged]);
+    // Phase 2: 보조 데이터 (병합 결과 포함 전부 await)
+    await Promise.all([loadKwStats(), loadSupStats(), loadMerged()]);
+  }, [loadStatistics, loadUnmerged, clusterPageSize, appliedSearchParams, previousResultIds, projectId, sessionId, loadKwStats, loadSupStats, loadMerged]);
 
   /* ★ loadAll ref로 항상 최신 함수 호출 보장 */
   const loadAllRef = useRef(loadAll);
