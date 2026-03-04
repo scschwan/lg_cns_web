@@ -41,6 +41,13 @@ public class DetailClusteringService {
     private static final ExecutorService EXECUTOR = Executors.newFixedThreadPool(
             Math.max(2, Runtime.getRuntime().availableProcessors()));
 
+    // 경량 쿼리(count, getVisibleColumns)용 별도 스레드풀 — 병합 작업과 격리하여 ThreadPool 고갈 방지
+    private static final ExecutorService LIGHT_EXECUTOR = Executors.newCachedThreadPool(r -> {
+        Thread t = new Thread(r, "detail-clustering-light");
+        t.setDaemon(true);
+        return t;
+    });
+
     // ============================================================
     // 1. 미세부병합 클러스터 조회 (페이징 + 대표 데이터)
     // ============================================================
@@ -59,9 +66,9 @@ public class DetailClusteringService {
 
         Criteria finalCriteria = criteria;
         CompletableFuture<Long> countFuture = CompletableFuture.supplyAsync(
-                () -> mongoTemplate.count(new Query(finalCriteria), ClusteringResult.class), EXECUTOR);
+                () -> mongoTemplate.count(new Query(finalCriteria), ClusteringResult.class), LIGHT_EXECUTOR);
         CompletableFuture<List<String>> colFuture = CompletableFuture.supplyAsync(
-                () -> getVisibleColumns(sessionId), EXECUTOR);
+                () -> getVisibleColumns(sessionId), LIGHT_EXECUTOR);
 
         Query query = new Query(criteria)
                 .with(Sort.by("cluster_number"))
@@ -80,8 +87,8 @@ public class DetailClusteringService {
         long totalCount;
         List<String> visibleColumns;
         try {
-            totalCount = countFuture.get(10, TimeUnit.SECONDS);
-            visibleColumns = colFuture.get(10, TimeUnit.SECONDS);
+            totalCount = countFuture.get(5, TimeUnit.SECONDS);
+            visibleColumns = colFuture.get(5, TimeUnit.SECONDS);
         } catch (Exception e) {
             log.warn("병렬 조회 실패, 동기 조회로 fallback", e);
             totalCount = mongoTemplate.count(new Query(finalCriteria), ClusteringResult.class);
@@ -724,9 +731,9 @@ public class DetailClusteringService {
 
         Criteria finalCriteria = criteria;
         CompletableFuture<Long> countFuture = CompletableFuture.supplyAsync(
-                () -> mongoTemplate.count(new Query(finalCriteria), ClusteringResult.class), EXECUTOR);
+                () -> mongoTemplate.count(new Query(finalCriteria), ClusteringResult.class), LIGHT_EXECUTOR);
         CompletableFuture<List<String>> colFuture = CompletableFuture.supplyAsync(
-                () -> getVisibleColumns(sessionId), EXECUTOR);
+                () -> getVisibleColumns(sessionId), LIGHT_EXECUTOR);
 
         Query query = new Query(criteria)
                 .with(Sort.by("cluster_number"))
@@ -745,8 +752,8 @@ public class DetailClusteringService {
         long totalCount;
         List<String> visibleColumns;
         try {
-            totalCount = countFuture.get(10, TimeUnit.SECONDS);
-            visibleColumns = colFuture.get(10, TimeUnit.SECONDS);
+            totalCount = countFuture.get(5, TimeUnit.SECONDS);
+            visibleColumns = colFuture.get(5, TimeUnit.SECONDS);
         } catch (Exception e) {
             log.warn("병렬 조회 실패, 동기 조회로 fallback", e);
             totalCount = mongoTemplate.count(new Query(finalCriteria), ClusteringResult.class);
