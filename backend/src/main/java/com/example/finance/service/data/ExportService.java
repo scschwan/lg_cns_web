@@ -656,12 +656,24 @@ public class ExportService {
 
     /**
      * 세션 완료 진행률 조회
+     * sessionId를 받아 NOT_FOUND 시 DB에서 세션 완료 상태를 확인 (서버 재배포 대응)
      */
-    public Map<String, Object> getCompleteProgress(String taskId) {
+    public Map<String, Object> getCompleteProgress(String taskId, String sessionId) {
         CompleteProgress cp = completeProgressMap.get(taskId);
         if (cp == null) {
-            log.warn("[COMPLETE-PROGRESS] NOT_FOUND: taskId={}, mapSize={}, mapKeys={}",
-                    taskId, completeProgressMap.size(), completeProgressMap.keySet());
+            // ★ 서버 재배포 등으로 인메모리 맵이 초기화된 경우 DB에서 세션 완료 상태 확인
+            if (sessionId != null) {
+                Query q = new Query(Criteria.where("session_id").is(sessionId));
+                q.fields().include("is_completed");
+                FileSession session = mongoTemplate.findOne(q, FileSession.class);
+                if (session != null && Boolean.TRUE.equals(session.getIsCompleted())) {
+                    log.info("[COMPLETE-PROGRESS] NOT_FOUND but session already completed: taskId={}, sessionId={}", taskId, sessionId);
+                    return Map.of("status", "COMPLETED", "progress", 100, "message", "완료",
+                            "result", Map.of("completed", true, "sessionId", sessionId));
+                }
+            }
+            log.warn("[COMPLETE-PROGRESS] NOT_FOUND: taskId={}, sessionId={}, mapSize={}",
+                    taskId, sessionId, completeProgressMap.size());
             return Map.of("status", "NOT_FOUND");
         }
         Map<String, Object> r = new LinkedHashMap<>();

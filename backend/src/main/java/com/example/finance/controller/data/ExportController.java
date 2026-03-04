@@ -185,7 +185,7 @@ public class ExportController {
             @PathVariable String projectId,
             @PathVariable String sessionId,
             @PathVariable String taskId) {
-        return ResponseEntity.ok(exportService.getCompleteProgress(taskId));
+        return ResponseEntity.ok(exportService.getCompleteProgress(taskId, sessionId));
     }
 
     /**
