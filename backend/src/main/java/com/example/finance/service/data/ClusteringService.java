@@ -1633,7 +1633,7 @@ public class ClusteringService {
         // 전체 결과 clusterNumber (재검색 시 필요)
         List<Integer> allResultClusterNumbers = null;
         if (totalCount <= 10000) {
-            Query allIdsQuery = new Query(finalCriteria);
+            Query allIdsQuery = new Query(criteria);
             allIdsQuery.fields().include("cluster_number");
             allResultClusterNumbers = mongoTemplate.find(allIdsQuery, ClusteringResult.class).stream()
                     .map(ClusteringResult::getClusterNumber)

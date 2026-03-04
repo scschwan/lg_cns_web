@@ -746,7 +746,7 @@ public class DetailClusteringService {
 
         List<Integer> allResultClusterNumbers = null;
         if (totalCount <= 10000) {
-            Query allIdsQuery = new Query(finalCriteria);
+            Query allIdsQuery = new Query(criteria);
             allIdsQuery.fields().include("cluster_number");
             allResultClusterNumbers = mongoTemplate.find(allIdsQuery, ClusteringResult.class).stream()
                     .map(ClusteringResult::getClusterNumber)
