@@ -815,34 +815,22 @@ function ClusteringPage() {
     if (!window.confirm(`선택한 ${selectedCount}개 클러스터를 병합하시겠습니까?`)) return;
     setMerging(true);
     mergingProgressRef.current = 0;
-    mergingMessageRef.current = '병합 요청 중...';
+    mergingMessageRef.current = '병합 처리 중...';
     setMergeOverlay(true);
     try {
-      let mergedClusterNumber = null;
-
       if (selectAllMode) {
-        // ★ Branch 1: selectAll 필터 방식 (body ~50B → CloudFront 통과)
-        const res = await clusteringService.mergeClustersWithFilter(projectId, sessionId, {
+        // ★ Branch 1: selectAll 필터 방식 — 동기 처리 (CloudFront 360초 타임아웃)
+        await clusteringService.mergeClustersWithFilter(projectId, sessionId, {
           exceptions: Array.from(exceptions),
           keyword: appliedSearchParams?.searchColumn === 'keyword' ? appliedSearchParams.searchValue : null,
           supplier: appliedSearchParams?.searchColumn === 'supplier' ? appliedSearchParams.searchValue : null,
         });
-        if (res.async && res.taskId) {
-          loadMerged();
-          const completedResult = await pollMergeProgress(res.taskId);
-          mergedClusterNumber = completedResult?.mergedClusterNumber;
-        }
       } else {
         const nums = Array.from(exceptions);
 
         if (nums.length <= BATCH_MERGE_THRESHOLD) {
-          // ★ Branch 2: 개별 선택 (항상 비동기 — 서버에서 taskId 반환)
-          const res = await clusteringService.mergeClusters(projectId, sessionId, nums);
-          if (res.async && res.taskId) {
-            loadMerged();
-            const completedResult = await pollMergeProgress(res.taskId);
-            mergedClusterNumber = completedResult?.mergedClusterNumber;
-          }
+          // ★ Branch 2: 개별 선택 — 동기 처리 (완료된 결과 직접 반환)
+          await clusteringService.mergeClusters(projectId, sessionId, nums);
         } else {
           // ★ Branch 3: 대량 개별 선택 → 3-Phase 배치 병합
 
@@ -850,7 +838,7 @@ function ClusteringPage() {
           mergingProgressRef.current = 3;
           mergingMessageRef.current = '병합 클러스터 생성 중...';
           const startRes = await clusteringService.mergeStart(projectId, sessionId);
-          mergedClusterNumber = startRes.mergedClusterNumber;
+          const mergedClusterNumber = startRes.mergedClusterNumber;
           mergingProgressRef.current = 5;
 
           // Phase 2: 배치 분할 + 병렬 전송
@@ -877,19 +865,11 @@ function ClusteringPage() {
           mergingProgressRef.current = 92;
           mergingMessageRef.current = '병합 마무리 중...';
           await clusteringService.mergeFinalize(projectId, sessionId, mergedClusterNumber);
-          mergingProgressRef.current = 100;
-          mergingMessageRef.current = '병합 완료';
-          await new Promise(r => setTimeout(r, 500));
         }
       }
 
-      // ★ 병합 완료 후: DB에서 해당 클러스터의 merge_status가 COMPLETED가 될 때까지 대기
-      if (mergedClusterNumber) {
-        mergingProgressRef.current = 98;
-        mergingMessageRef.current = '병합 결과 확인 중...';
-        await waitForMergeCompleted(mergedClusterNumber);
-      }
-
+      mergingProgressRef.current = 100;
+      mergingMessageRef.current = '병합 완료';
       setSelectAllMode(false); setExceptions(new Set());
       await refreshAll();
     } catch (e) { alert('병합 실패: ' + (e.response?.data?.message || e.message)); } finally {
@@ -898,85 +878,6 @@ function ClusteringPage() {
       mergingMessageRef.current = '';
       setMergeOverlay(false);
     }
-  };
-
-  /**
-   * ★ DB에서 병합 클러스터의 merge_status가 COMPLETED가 될 때까지 폴링
-   * — 팝업이 닫히는 시점을 실제 DB 반영 완료 시점과 일치시킴
-   */
-  const waitForMergeCompleted = async (clusterNumber) => {
-    const MAX_RETRIES = 20; // 최대 20회 (30초)
-    const INTERVAL = 1500;
-    for (let i = 0; i < MAX_RETRIES; i++) {
-      try {
-        const data = await clusteringService.getMergedClusters(projectId, sessionId);
-        const target = (data || []).find(c => c.clusterNumber === clusterNumber);
-        if (target && target.mergeStatus === 'COMPLETED') {
-          setMergedClusters(data || []);
-          return;
-        }
-        // PROCESSING 상태면 계속 대기
-      } catch (e) {
-        console.warn('[waitForMergeCompleted] 조회 에러:', e.message);
-      }
-      await new Promise(r => setTimeout(r, INTERVAL));
-    }
-    // 타임아웃 — 그래도 refreshAll에서 갱신 시도
-    console.warn('[waitForMergeCompleted] 타임아웃: 클러스터 #', clusterNumber);
-  };
-
-  const pollMergeProgress = async (taskId) => {
-    const POLL_INTERVAL = 1500; // 1.5초 간격
-    const MAX_POLLS = 600;      // 최대 15분
-    let sawRunning = false;     // ★ RUNNING 상태를 한 번이라도 받았는지 추적
-    let notFoundRetries = 0;    // ★ NOT_FOUND 연속 횟수
-    const MAX_NOT_FOUND_RETRIES = 3;
-
-    for (let i = 0; i < MAX_POLLS; i++) {
-      await new Promise(r => setTimeout(r, POLL_INTERVAL));
-      try {
-        const p = await clusteringService.getMergeProgress(projectId, sessionId, taskId);
-        mergingProgressRef.current = p.progress || 0;
-        mergingMessageRef.current = p.message || '처리 중...';
-
-        if (p.status === 'COMPLETED') {
-          mergingProgressRef.current = 100;
-          mergingMessageRef.current = '병합 완료';
-          await new Promise(r => setTimeout(r, 500));
-          return p.result || null; // ★ mergedClusterNumber 포함된 result 반환
-        }
-        if (p.status === 'FAILED') {
-          throw new Error(p.message || '서버에서 병합 실패');
-        }
-        if (p.status === 'RUNNING') {
-          sawRunning = true;
-          notFoundRetries = 0;
-        }
-        if (p.status === 'NOT_FOUND') {
-          notFoundRetries++;
-          // ★ 이전에 RUNNING을 받았다면 서버에서 이미 완료 후 정리된 것으로 간주
-          if (sawRunning) {
-            console.warn('[pollMergeProgress] NOT_FOUND but previously RUNNING → treating as completed');
-            mergingProgressRef.current = 100;
-            mergingMessageRef.current = '병합 완료';
-            await new Promise(r => setTimeout(r, 500));
-            return null; // result 없음 — waitForMergeCompleted에서 DB로 확인
-          }
-          // ★ RUNNING을 한번도 못 받은 경우 몇 차례 재시도 후 실패 처리
-          if (notFoundRetries >= MAX_NOT_FOUND_RETRIES) {
-            throw new Error('병합 작업을 찾을 수 없습니다.');
-          }
-          console.warn(`[pollMergeProgress] NOT_FOUND (${notFoundRetries}/${MAX_NOT_FOUND_RETRIES}), retrying...`);
-        }
-      } catch (pollErr) {
-        // 서버 에러(명시적 실패)만 즉시 중단, 네트워크 에러는 무시하고 계속 폴링
-        if (pollErr.message?.includes('서버에서') || pollErr.message?.includes('찾을 수 없습니다')) {
-          throw pollErr;
-        }
-        console.warn('[pollMergeProgress] 폴링 에러 (재시도):', pollErr.message);
-      }
-    }
-    throw new Error('병합 시간이 초과되었습니다.');
   };
 
   const handleAddToMerged = async (targetMergedNumber) => {

@@ -673,7 +673,7 @@ public class ClusteringService {
     }
 
     /**
-     * 병합: 항상 비동기(taskId 반환) — 껍데기 부모를 먼저 보여주기 위해
+     * 병합: 동기 처리 (CloudFront Response completion timeout 360초 활용)
      */
     public Map<String, Object> mergeClusters(String sessionId, List<Integer> clusterNumbers) {
         log.info("[MERGE] 시작: sessionId={}, count={}", sessionId,
@@ -684,29 +684,9 @@ public class ClusteringService {
             throw new BusinessException("MERGE_MIN_COUNT", "병합하려면 1개 이상의 클러스터를 선택해야 합니다.");
         }
 
-        // ★ 항상 비동기 처리 (PROCESSING 상태 부모를 먼저 표시하기 위해)
-        String taskId = UUID.randomUUID().toString();
-        MergeProgress progress = new MergeProgress();
-        mergeProgressMap.put(taskId, progress);
-        sessionMergeMap.put(sessionId, taskId);
-        log.info("[MERGE] 비동기 시작: taskId={}, count={}", taskId, clusterNumbers.size());
-        EXECUTOR.submit(() -> {
-            try {
-                Map<String, Object> result = doMergeClusters(sessionId, clusterNumbers, progress);
-                progress.result = result;
-                progress.progress = 100;
-                progress.message = "병합 완료";
-                progress.status = "COMPLETED";
-                sessionMergeMap.remove(sessionId);
-                log.info("[MERGE] 비동기 완료: taskId={}, result={}", taskId, result);
-            } catch (Exception e) {
-                log.error("[MERGE] 비동기 실패: taskId={}, sessionId={}", taskId, sessionId, e);
-                progress.message = e.getMessage();
-                progress.status = "FAILED";
-                sessionMergeMap.remove(sessionId);
-            }
-        });
-        return Map.of("async", true, "taskId", taskId, "totalCount", clusterNumbers.size());
+        // ★ 동기 처리 — 완료된 결과를 직접 반환
+        log.info("[MERGE] 동기 처리: count={}", clusterNumbers.size());
+        return doMergeClusters(sessionId, clusterNumbers, null);
     }
 
     private Map<String, Object> doMergeClusters(String sessionId, List<Integer> clusterNumbers,
