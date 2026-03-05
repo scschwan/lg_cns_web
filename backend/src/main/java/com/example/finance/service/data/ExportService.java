@@ -994,6 +994,10 @@ public class ExportService {
                 log.info("[FIRE-AND-FORGET] 이미 실행 중: sessionId={}", sessionId);
                 return Map.of("async", true, "sessionId", sessionId, "alreadyRunning", true);
             }
+            // 이전 작업이 RUNNING이 아닌 경우 (COMPLETED/FAILED) → 잠금 해제 후 재시도
+            log.info("[FIRE-AND-FORGET] 이전 작업 완료/실패 상태, 잠금 해제: sessionId={}, status={}",
+                    sessionId, existing.get("status"));
+            redisService.unlockSessionComplete(sessionId);
         }
 
         String taskId = UUID.randomUUID().toString();
@@ -1001,9 +1005,13 @@ public class ExportService {
         // Redis 세션 잠금
         Boolean locked = redisService.lockSessionComplete(sessionId, taskId);
         if (!Boolean.TRUE.equals(locked)) {
-            Object otherTaskId = redisService.getSessionCompleteTaskId(sessionId);
-            if (otherTaskId != null) {
-                return Map.of("async", true, "sessionId", sessionId, "alreadyRunning", true);
+            // 잠금 실패 — 다른 작업이 방금 시작되었을 수 있음
+            log.warn("[FIRE-AND-FORGET] 잠금 실패: sessionId={}, 강제로 기존 잠금 해제 후 재시도", sessionId);
+            redisService.unlockSessionComplete(sessionId);
+            locked = redisService.lockSessionComplete(sessionId, taskId);
+            if (!Boolean.TRUE.equals(locked)) {
+                log.error("[FIRE-AND-FORGET] 재시도 후에도 잠금 실패: sessionId={}", sessionId);
+                return Map.of("async", false, "error", "세션 잠금에 실패했습니다. 잠시 후 다시 시도해주세요.");
             }
         }
 
@@ -1015,6 +1023,8 @@ public class ExportService {
 
         // 비동기 작업 제출
         EXECUTOR.submit(() -> {
+            log.info("[FIRE-AND-FORGET] 백그라운드 스레드 시작: sessionId={}, taskId={}, thread={}",
+                    sessionId, taskId, Thread.currentThread().getName());
             long startTime = System.currentTimeMillis();
             try {
                 doCompleteSessionWithMongoProgress(sessionId, projectId, forceExport, taskId);
@@ -1062,17 +1072,21 @@ public class ExportService {
     private void doCompleteSessionWithMongoProgress(String sessionId, String projectId,
                                                       boolean forceExport, String taskId) throws IOException {
         long totalStart = System.currentTimeMillis();
+        log.info("[FIRE-AND-FORGET] doCompleteSessionWithMongoProgress 진입: sessionId={}, forceExport={}", sessionId, forceExport);
 
         updateExportStatus(sessionId, "EXPORTING", 5, "세션 정보 확인 중...");
         updateRedisProgress(taskId, sessionId, 5, "세션 정보 확인 중...");
 
         Query query = new Query(Criteria.where("session_id").is(sessionId));
         FileSession session = mongoTemplate.findOne(query, FileSession.class);
+        log.info("[FIRE-AND-FORGET] 세션 조회: sessionId={}, found={}, exportPath={}",
+                sessionId, session != null, session != null ? session.getExportPath() : "null");
 
         String exportPath = session != null ? session.getExportPath() : null;
         boolean needsExport = forceExport || exportPath == null || exportPath.isBlank();
+        log.info("[FIRE-AND-FORGET] needsExport={}", needsExport);
 
-        // 통계 데이터 사전 로드 (병렬)
+        // 통계 데이터 사전 로드 (별도 스레드 — EXECUTOR 데드락 방지를 위해 commonPool 사용)
         CompletableFuture<Map<String, ClusterStatisticsService.DocData>> pvdFuture =
                 CompletableFuture.supplyAsync(() -> {
                     long t = System.currentTimeMillis();
@@ -1081,15 +1095,16 @@ public class ExportService {
                     log.info("[FIRE-AND-FORGET] loadProcessViewData 완료: {}건, {}ms",
                             data.size(), System.currentTimeMillis() - t);
                     return data;
-                }, EXECUTOR);
+                });
 
         if (needsExport) {
+            log.info("[FIRE-AND-FORGET] Excel 생성 시작: sessionId={}", sessionId);
             updateExportStatus(sessionId, "EXPORTING", 10, "Excel 파일 생성 중...");
             updateRedisProgress(taskId, sessionId, 10, "Excel 파일 생성 중...");
 
             long t0 = System.currentTimeMillis();
             ExportResult exportResult = exportAllClusters(sessionId, projectId);
-            log.info("[FIRE-AND-FORGET] exportAllClusters: {}ms", System.currentTimeMillis() - t0);
+            log.info("[FIRE-AND-FORGET] exportAllClusters 완료: {}ms, s3Key={}", System.currentTimeMillis() - t0, exportResult.getS3Key());
 
             exportPath = exportResult.getS3Key();
 
@@ -1118,7 +1133,9 @@ public class ExportService {
         updateRedisProgress(taskId, sessionId, 90, "세션 완료 처리 중...");
 
         // 세션 완료 처리 (isCompleted=true, exportPath 설정)
+        log.info("[FIRE-AND-FORGET] completeSession 호출: sessionId={}, exportPath={}", sessionId, exportPath);
         completeSession(sessionId, exportPath);
+        log.info("[FIRE-AND-FORGET] completeSession 완료: sessionId={}", sessionId);
 
         // export 상태 정리 (isCompleted=true이므로 analysisStatus는 "완료"로 표시됨)
         Query clearQuery = new Query(Criteria.where("session_id").is(sessionId));

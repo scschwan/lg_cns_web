@@ -57,6 +57,9 @@ const detailClusteringService = {
             `/api/projects/${projectId}/sessions/${sessionId}/detail-clustering/merge`,
             { clusterId, clusterNumbers }
         );
+        if (typeof response.data === 'string' && response.data.includes('<!DOCTYPE')) {
+            throw new Error('서버 응답 시간이 초과되었습니다. 잠시 후 새로고침해주세요.');
+        }
         return response.data;
     },
 
@@ -65,6 +68,9 @@ const detailClusteringService = {
             `/api/projects/${projectId}/sessions/${sessionId}/detail-clustering/unmerge`,
             { clusterId, mergedClusterNumber }
         );
+        if (typeof response.data === 'string' && response.data.includes('<!DOCTYPE')) {
+            throw new Error('서버 응답 시간이 초과되었습니다. 잠시 후 새로고침해주세요.');
+        }
         return response.data;
     },
 
@@ -73,6 +79,9 @@ const detailClusteringService = {
             `/api/projects/${projectId}/sessions/${sessionId}/detail-clustering/unmerge-partial`,
             { clusterId, mergedClusterNumber, childClusterNumbers }
         );
+        if (typeof response.data === 'string' && response.data.includes('<!DOCTYPE')) {
+            throw new Error('서버 응답 시간이 초과되었습니다. 잠시 후 새로고침해주세요.');
+        }
         return response.data;
     },
 
@@ -81,6 +90,9 @@ const detailClusteringService = {
             `/api/projects/${projectId}/sessions/${sessionId}/detail-clustering/merge-merged`,
             { clusterId, mergedClusterNumbers }
         );
+        if (typeof response.data === 'string' && response.data.includes('<!DOCTYPE')) {
+            throw new Error('서버 응답 시간이 초과되었습니다. 잠시 후 새로고침해주세요.');
+        }
         return response.data;
     },
 
@@ -89,6 +101,9 @@ const detailClusteringService = {
             `/api/projects/${projectId}/sessions/${sessionId}/detail-clustering/add-to-merged`,
             { clusterId, targetMergedClusterNumber, clusterNumbers }
         );
+        if (typeof response.data === 'string' && response.data.includes('<!DOCTYPE')) {
+            throw new Error('서버 응답 시간이 초과되었습니다. 잠시 후 새로고침해주세요.');
+        }
         return response.data;
     },
 
