@@ -404,8 +404,8 @@ public class DetailClusteringService {
     public Map<String, Object> mergeClusters(String sessionId, int clusterId, List<Integer> clusterNumbers) {
         log.info("세부 클러스터 병합: sessionId={}, clusterId={}, clusterNumbers={}", sessionId, clusterId, clusterNumbers);
 
-        if (clusterNumbers == null || clusterNumbers.size() < 2) {
-            throw new BusinessException("MERGE_MIN_COUNT", "세부 병합하려면 2개 이상의 클러스터를 선택해야 합니다.");
+        if (clusterNumbers == null || clusterNumbers.isEmpty()) {
+            throw new BusinessException("MERGE_MIN_COUNT", "세부 병합하려면 1개 이상의 클러스터를 선택해야 합니다.");
         }
 
         List<ClusteringResult> targets = clusteringResultRepository
@@ -606,8 +606,8 @@ public class DetailClusteringService {
     public Map<String, Object> mergeMergedClusters(String sessionId, int clusterId, List<Integer> mergedClusterNumbers) {
         log.info("세부 병합 클러스터 merge: sessionId={}, clusterId={}, targets={}", sessionId, clusterId, mergedClusterNumbers);
 
-        if (mergedClusterNumbers == null || mergedClusterNumbers.size() < 2) {
-            throw new BusinessException("MERGE_MIN_COUNT", "2개 이상의 세부 병합 클러스터를 선택해야 합니다.");
+        if (mergedClusterNumbers == null || mergedClusterNumbers.isEmpty()) {
+            throw new BusinessException("MERGE_MIN_COUNT", "1개 이상의 세부 병합 클러스터를 선택해야 합니다.");
         }
 
         List<ClusteringResult> all = getAllClustersInScope(sessionId, clusterId);

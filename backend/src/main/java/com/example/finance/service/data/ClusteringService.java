@@ -685,10 +685,9 @@ public class ClusteringService {
         log.info("[MERGE] 시작: sessionId={}, count={}", sessionId,
                 clusterNumbers == null ? 0 : clusterNumbers.size());
 
-        if (clusterNumbers == null || clusterNumbers.size() < 2) {
-            log.warn("[MERGE] 실패: 클러스터 수 부족 (count={})",
-                    clusterNumbers == null ? 0 : clusterNumbers.size());
-            throw new BusinessException("MERGE_MIN_COUNT", "병합하려면 2개 이상의 클러스터를 선택해야 합니다.");
+        if (clusterNumbers == null || clusterNumbers.isEmpty()) {
+            log.warn("[MERGE] 실패: 클러스터 미선택");
+            throw new BusinessException("MERGE_MIN_COUNT", "병합하려면 1개 이상의 클러스터를 선택해야 합니다.");
         }
 
         // 대량 → 비동기 처리
@@ -1276,8 +1275,8 @@ public class ClusteringService {
         log.info("병합 클러스터 merge: sessionId={}, targets={}", sessionId, mergedClusterNumbers);
         clusterStatisticsService.cancelSessionCompletionIfNeeded(sessionId);
 
-        if (mergedClusterNumbers == null || mergedClusterNumbers.size() < 2) {
-            throw new BusinessException("MERGE_MIN_COUNT", "2개 이상의 병합 클러스터를 선택해야 합니다.");
+        if (mergedClusterNumbers == null || mergedClusterNumbers.isEmpty()) {
+            throw new BusinessException("MERGE_MIN_COUNT", "1개 이상의 병합 클러스터를 선택해야 합니다.");
         }
 
         List<ClusteringResult> all = clusteringResultRepository

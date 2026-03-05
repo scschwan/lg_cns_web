@@ -1086,7 +1086,7 @@ function ClusteringPage() {
       for (const keyword of kwCheckedSet) {
         mergingMessageRef.current = `키워드 병합 중... (${done + 1}/${total}): ${keyword}`;
         const ids = await clusteringService.getAllUnmergedClusterNumbers(projectId, sessionId, keyword);
-        if (ids.length >= 2) await clusteringService.mergeClusters(projectId, sessionId, ids);
+        if (ids.length >= 1) await clusteringService.mergeClusters(projectId, sessionId, ids);
         done++;
         mergingProgressRef.current = Math.round((done / total * 80));
       }
@@ -1108,7 +1108,7 @@ function ClusteringPage() {
       for (const supplier of supCheckedSet) {
         mergingMessageRef.current = `공급업체 병합 중... (${done + 1}/${total}): ${supplier}`;
         const ids = await clusteringService.getAllUnmergedClusterNumbers(projectId, sessionId, null, supplier);
-        if (ids.length >= 2) await clusteringService.mergeClusters(projectId, sessionId, ids);
+        if (ids.length >= 1) await clusteringService.mergeClusters(projectId, sessionId, ids);
         done++;
         mergingProgressRef.current = Math.round((done / total * 80));
       }
@@ -1181,7 +1181,7 @@ function ClusteringPage() {
 
   const handleMergeMerged = async () => {
     if (isViewer) return;
-    if (selectedMerged.size < 2) { alert('2개 이상의 병합 클러스터를 선택하세요.'); return; }
+    if (selectedMerged.size < 1) { alert('병합 클러스터를 선택하세요.'); return; }
     if (!window.confirm(`${selectedMerged.size}개 병합 클러스터를 하나로 합치시겠습니까?`)) return;
     setMerging(true); setMergingClusters(new Set(selectedMerged)); mergingProgressRef.current = 0;
     setMergeOverlay(true); mergingMessageRef.current = '병합 클러스터 합치는 중...';
@@ -1898,7 +1898,7 @@ function ClusteringPage() {
                       {/* 병합 merge 버튼 with 프로그레스바 */}
                       <div className="relative">
                         <Button size="sm" variant="outline" className="h-7 px-2 text-xs min-w-[120px] relative overflow-hidden"
-                          onClick={handleMergeMerged} disabled={selectedMerged.size < 2 || merging || isViewer}>
+                          onClick={handleMergeMerged} disabled={selectedMerged.size < 1 || merging || isViewer}>
                           <span className="relative z-10 flex items-center">
                             {merging && mergingClusters.size > 0 ? (
                               <><Loader2 className="h-3 w-3 mr-1 animate-spin" />병합 중...</>
