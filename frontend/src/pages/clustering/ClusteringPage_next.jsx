@@ -174,8 +174,8 @@ function ClusteringPage() {
   };
 
   const handleMergeClusters = async () => {
-    if (selectedClusters.length < 2) {
-      alert('병합할 클러스터를 2개 이상 선택해주세요.');
+    if (selectedClusters.length < 1) {
+      alert('병합할 클러스터를 선택해주세요.');
       return;
     }
 
@@ -312,7 +312,7 @@ function ClusteringPage() {
                         size="sm"
                         className="bg-purple-600 hover:bg-purple-700"
                         onClick={handleMergeClusters}
-                        disabled={selectedClusters.length < 2}
+                        disabled={selectedClusters.length < 1}
                       >
                         선택 병합 ({selectedClusters.length})
                       </Button>
