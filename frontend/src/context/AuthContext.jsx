@@ -81,17 +81,16 @@ export const AuthProvider = ({ children }) => {
 
       const status = error.response?.status;
 
-      // 401, 403: 세션 만료 → 로그아웃
+      // 401, 403: 세션 만료 → 즉시 로그인 페이지로 하드 리다이렉트
       if (status === 401 || status === 403) {
-        authService.logout();
-        setUser(null);
-        setLoading(false);
+        console.warn('[Auth] 세션 검증 401/403 → 즉시 로그아웃');
+        forceLogout();
         return false;
       }
 
       // ★ 네트워크/서버 에러인 경우에도 토큰이 만료되었으면 로그아웃
-      if (isAuthTokenExpired() && isRefreshTokenExpired()) {
-        console.warn('[Auth] 네트워크 에러 + 토큰 만료 → 로그아웃');
+      if (isAuthTokenExpired()) {
+        console.warn('[Auth] 서버 에러 + access token 만료 → 로그아웃');
         forceLogout();
         return false;
       }
@@ -108,16 +107,27 @@ export const AuthProvider = ({ children }) => {
     validateSession();
   }, [validateSession]);
 
-  // ── 주기적 세션 검증 (5분마다) ──
+  // ── 주기적 세션 검증 (1분마다) ──
   useEffect(() => {
     if (!user) return;
 
     const interval = setInterval(() => {
       validateSession();
-    }, 5 * 60 * 1000);
+    }, 1 * 60 * 1000);
 
     return () => clearInterval(interval);
   }, [user, validateSession]);
+
+  // ── ★ 글로벌 세션 만료 이벤트 리스닝 (api.js interceptor에서 발생) ──
+  useEffect(() => {
+    const handleExpired = () => {
+      console.warn('[Auth] session-expired 이벤트 수신 → React state 정리');
+      setUser(null);
+      setLoading(false);
+    };
+    window.addEventListener('session-expired', handleExpired);
+    return () => window.removeEventListener('session-expired', handleExpired);
+  }, []);
 
   // ── ★ 탭 복귀 / 창 포커스 시 즉시 세션 검증 ──
   useEffect(() => {
