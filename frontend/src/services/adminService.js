@@ -50,6 +50,8 @@ const adminService = {
     // ========== 유지보수 모드 ==========
     setMaintenanceMode: (enabled, reason) =>
         api.post('/api/admin/maintenance-mode', { enabled, reason }),
+    resetLambdaStatus: () =>
+        api.post('/api/admin/reset-lambda-status'),
 };
 
 export default adminService;

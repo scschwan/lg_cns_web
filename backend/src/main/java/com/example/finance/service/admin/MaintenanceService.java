@@ -177,6 +177,30 @@ public class MaintenanceService {
         log.warn("[MAINTENANCE] Lambda 작업 실패로 유지보수 모드 해제: uploadId={}", uploadId);
     }
 
+    /**
+     * Lambda 상태 강제 초기화 (관리자 수동)
+     * is_lambda_running → false, current_upload_id → null 등 초기화
+     */
+    public Map<String, Object> resetLambdaStatus(String adminId) {
+        MaintenanceStatus status = getOrCreate();
+
+        boolean wasRunning = Boolean.TRUE.equals(status.getIsLambdaRunning());
+        String prevUploadId = status.getCurrentUploadId();
+
+        status.setIsLambdaRunning(false);
+        status.setCurrentUploadId(null);
+        status.setLambdaProgress(0);
+        status.setLambdaCompletedAt(LocalDateTime.now());
+        status.setUpdatedBy(adminId);
+        status.setUpdatedAt(LocalDateTime.now());
+
+        maintenanceRepository.save(status);
+        log.info("[MAINTENANCE] Lambda 상태 수동 초기화: adminId={}, wasRunning={}, prevUploadId={}",
+                adminId, wasRunning, prevUploadId);
+
+        return toResponseMap(status);
+    }
+
     // ===== 내부 헬퍼 =====
 
     private boolean isLambdaTimedOut(MaintenanceStatus status) {

@@ -990,18 +990,7 @@ function MultiFileUploadPage() {
                                     <FolderOpen className="h-4 w-4 mr-2" />
                                     세션 생성
                                 </Button>
-                                <Button
-                                    onClick={handleReanalyzeExcelData}
-                                    variant="outline"
-                                    disabled={isViewer || isReanalyzing || !files.some(f => f.checked)}
-                                >
-                                    {isReanalyzing ? (
-                                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                                    ) : (
-                                        <RefreshCw className="h-4 w-4 mr-2" />
-                                    )}
-                                    엑셀 데이터 재분석
-                                </Button>
+{/* 엑셀 데이터 재분석 버튼 비활성화 - system_maintenance 상태 미연동으로 서비스 장애 유발 */}
                             </div>
                             {isViewer && (
                                 <span className="text-xs text-muted-foreground self-center ml-2">뷰어 권한: 조회만 가능</span>
