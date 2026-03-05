@@ -97,6 +97,14 @@ const costReductionService = {
     return response.data;
   },
 
+  // ★ 경량 저장: statisticsId 목록만 전송 (WAF body size 제한 우회)
+  saveLongListSelectionsByIds: async (projectId, statisticsIds) => {
+    const response = await api.post(`/api/projects/${projectId}/longlist/save-by-ids`, { statisticsIds }, {
+      timeout: 300000,
+    });
+    return response.data;
+  },
+
   getLongListSelections: async (projectId) => {
     const response = await api.get(`/api/projects/${projectId}/longlist/selections`);
     return response.data;

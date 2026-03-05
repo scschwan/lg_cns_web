@@ -349,6 +349,49 @@ public class LongListService {
     }
 
     /**
+     * statisticsId 목록만으로 Long List 저장 (DB에서 전체 데이터 조회)
+     * - 프론트엔드에서 ID 목록만 보내므로 요청 body가 작음 (WAF 제한 우회)
+     */
+    public int saveSelectionsByIds(String projectId, List<String> statisticsIds) {
+        if (statisticsIds == null || statisticsIds.isEmpty()) {
+            return 0;
+        }
+
+        // DB에서 ClusterStatistics 일괄 조회
+        List<ClusterStatistics> statsList = clusterStatisticsRepository.findAllById(statisticsIds);
+
+        List<LongShortList.ListItem> items = statsList.stream()
+                .map(stats -> LongShortList.ListItem.builder()
+                        .statisticsId(stats.getId())
+                        .sessionId(stats.getSessionId())
+                        .accountName(stats.getAccountName())
+                        .clusterNumber(stats.getClusterNumber())
+                        .clusterName(stats.getClusterName())
+                        .level(stats.getLevel())
+                        .parentClusterNumber(stats.getParentClusterNumber())
+                        .totalAmount(stats.getTotalAmount())
+                        .totalCount(stats.getTotalCount())
+                        .build())
+                .toList();
+
+        LongShortList list = longShortListRepository.findFirstByProjectId(projectId)
+                .orElseGet(() -> LongShortList.builder()
+                        .projectId(projectId)
+                        .createdAt(LocalDateTime.now())
+                        .build());
+
+        list.setLongListItems(items);
+        list.setShortListItems(new ArrayList<>());
+        list.setUpdatedAt(LocalDateTime.now());
+        longShortListRepository.save(list);
+
+        redisService.delete("shortlist:tree:" + projectId);
+
+        log.info("Saved {} long list items by IDs for project {}", items.size(), projectId);
+        return items.size();
+    }
+
+    /**
      * 저장된 선택 항목 조회
      */
     public List<SaveListRequest.ListItemDto> getSelections(String projectId) {
