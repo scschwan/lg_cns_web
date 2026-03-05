@@ -442,10 +442,8 @@ export default function AbleTaskRegisterPage() {
         }
       }
 
-      setTaskName(''); setDepartment(''); setManager(''); setConsultant('');
-      setBaseAmount(''); setExpectedSavingRate(''); setExpectedSavingAmount('');
-      setCheckedIds(new Set()); setPendingLinks([]); setPendingFiles([]);
       alert('과제가 등록되었습니다.');
+      navigate(`/projects/${projectId}/able-manage`);
     } catch (error) {
       console.error('Failed to create task:', error);
       alert('과제 등록에 실패했습니다.');
