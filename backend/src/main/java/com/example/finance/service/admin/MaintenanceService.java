@@ -6,6 +6,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -25,6 +26,9 @@ public class MaintenanceService {
     private final MaintenanceRepository maintenanceRepository;
 
     private static final String SINGLETON_ID = "singleton";
+
+    /** Lambda 작업 타임아웃 시간 (2시간) - 이 시간 초과 시 자동 복구 */
+    private static final Duration LAMBDA_TIMEOUT = Duration.ofHours(2);
 
     /**
      * 현재 유지보수/Lambda 상태 조회
@@ -122,9 +126,20 @@ public class MaintenanceService {
     /**
      * 현재 유지보수 모드 활성 여부 확인
      * (미들웨어에서 사용)
+     *
+     * Lambda 작업이 LAMBDA_TIMEOUT 이상 지속되면 비정상 종료로 판단하고 자동 복구
      */
     public boolean isMaintenanceActive() {
         MaintenanceStatus status = getOrCreate();
+
+        // Lambda 타임아웃 자동 복구
+        if (Boolean.TRUE.equals(status.getIsLambdaRunning()) && isLambdaTimedOut(status)) {
+            log.warn("[MAINTENANCE] Lambda 작업 타임아웃 감지 ({}시간 초과), 자동 복구: uploadId={}",
+                    LAMBDA_TIMEOUT.toHours(), status.getCurrentUploadId());
+            autoRecoverLambdaState(status);
+            return Boolean.TRUE.equals(status.getIsMaintenance());
+        }
+
         return Boolean.TRUE.equals(status.getIsMaintenance())
                 || Boolean.TRUE.equals(status.getIsLambdaRunning());
     }
@@ -144,7 +159,42 @@ public class MaintenanceService {
         return result;
     }
 
+    /**
+     * Lambda 실패 시 유지보수 모드 자동 비활성화
+     */
+    public void onLambdaFailed(String uploadId) {
+        MaintenanceStatus status = getOrCreate();
+
+        status.setIsLambdaRunning(false);
+        status.setLambdaCompletedAt(LocalDateTime.now());
+        status.setUpdatedAt(LocalDateTime.now());
+
+        if (uploadId != null && uploadId.equals(status.getCurrentUploadId())) {
+            status.setCurrentUploadId(null);
+        }
+
+        maintenanceRepository.save(status);
+        log.warn("[MAINTENANCE] Lambda 작업 실패로 유지보수 모드 해제: uploadId={}", uploadId);
+    }
+
     // ===== 내부 헬퍼 =====
+
+    private boolean isLambdaTimedOut(MaintenanceStatus status) {
+        LocalDateTime startedAt = status.getLambdaStartedAt();
+        if (startedAt == null) {
+            return true;
+        }
+        return Duration.between(startedAt, LocalDateTime.now()).compareTo(LAMBDA_TIMEOUT) > 0;
+    }
+
+    private void autoRecoverLambdaState(MaintenanceStatus status) {
+        status.setIsLambdaRunning(false);
+        status.setLambdaCompletedAt(LocalDateTime.now());
+        status.setCurrentUploadId(null);
+        status.setUpdatedAt(LocalDateTime.now());
+        maintenanceRepository.save(status);
+        log.info("[MAINTENANCE] Lambda 상태 자동 복구 완료");
+    }
 
     private MaintenanceStatus getOrCreate() {
         return maintenanceRepository.findById(SINGLETON_ID)
