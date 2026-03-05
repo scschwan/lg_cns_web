@@ -224,7 +224,7 @@ public class UploadService {
                 status.put("error", rawData.get("error"));
             }
 
-            // ★ COMPLETED 감지 시 file_sessions.row_count 업데이트 및 Lambda 완료 처리
+            // ★ COMPLETED/FAILED 감지 시 Lambda 완료 처리
             String currentStatus = rawData.getOrDefault("status", "UNKNOWN");
             if ("COMPLETED".equals(currentStatus)) {
                 String sessionId = rawData.get("sessionId");
@@ -240,6 +240,13 @@ public class UploadService {
                     maintenanceService.onLambdaComplete(uploadId);
                 } catch (Exception e) {
                     log.warn("[MAINTENANCE] Lambda 완료 상태 업데이트 실패: {}", e.getMessage());
+                }
+            } else if ("FAILED".equals(currentStatus) || "ERROR".equals(currentStatus)) {
+                // Lambda 실패 시에도 유지보수 모드 해제
+                try {
+                    maintenanceService.onLambdaFailed(uploadId);
+                } catch (Exception e) {
+                    log.warn("[MAINTENANCE] Lambda 실패 상태 업데이트 실패: {}", e.getMessage());
                 }
             }
 

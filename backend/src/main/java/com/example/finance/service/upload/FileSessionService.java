@@ -497,9 +497,23 @@ public class FileSessionService {
             String sessionId,
             UploadedFileInfo fileInfo) {
 
+        String lambdaUploadId = null;
+        boolean lambdaStarted = false;
         try {
             log.info("⭐ Lambda raw_data Insert 트리거: file={}, account={}",
                     fileInfo.getFileName(), fileInfo.getAccountColumnName());
+
+            lambdaUploadId = extractUploadIdFromFileS3Key(fileInfo.getS3Key());
+
+            // Lambda 작업 시작 - 유지보수 모드 자동 활성화 (SQS 발행 전 설정)
+            try {
+                if (lambdaUploadId != null) {
+                    maintenanceService.onLambdaStart(lambdaUploadId);
+                    lambdaStarted = true;
+                }
+            } catch (Exception e) {
+                log.warn("[MAINTENANCE] Lambda 시작 상태 업데이트 실패: {}", e.getMessage());
+            }
 
             // SQS 메시지 생성
             Map<String, Object> message = new HashMap<>();
@@ -523,16 +537,6 @@ public class FileSessionService {
 
             sqsClient.sendMessage(request);
 
-            // Lambda 작업 시작 - 유지보수 모드 자동 활성화
-            try {
-                String lambdaUploadId = extractUploadIdFromFileS3Key(fileInfo.getS3Key());
-                if (lambdaUploadId != null) {
-                    maintenanceService.onLambdaStart(lambdaUploadId);
-                }
-            } catch (Exception e) {
-                log.warn("[MAINTENANCE] Lambda 시작 상태 업데이트 실패: {}", e.getMessage());
-            }
-
             log.info("SQS 메시지 발행 완료: file={}", fileInfo.getFileName());
 
             // 예상 행 수 반환
@@ -541,6 +545,14 @@ public class FileSessionService {
         } catch (Exception e) {
             log.error("Lambda 트리거 실패: file={}, error={}",
                     fileInfo.getFileName(), e.getMessage(), e);
+            // Lambda 시작 후 SQS 발행 실패 시 유지보수 모드 해제
+            if (lambdaStarted && lambdaUploadId != null) {
+                try {
+                    maintenanceService.onLambdaFailed(lambdaUploadId);
+                } catch (Exception ex) {
+                    log.warn("[MAINTENANCE] Lambda 실패 상태 복구 실패: {}", ex.getMessage());
+                }
+            }
             throw new BusinessException(
                     "LAMBDA_TRIGGER_FAILED", "Lambda 트리거 실패");
         }
@@ -2065,8 +2077,10 @@ public class FileSessionService {
             }
 
             for (UploadedFileInfo fileInfo : filesToProcess) {
+                String uploadId = null;
+                boolean lambdaStarted = false;
                 try {
-                    String uploadId = extractUploadIdFromFileS3Key(fileInfo.getS3Key());
+                    uploadId = extractUploadIdFromFileS3Key(fileInfo.getS3Key());
                     if (uploadId == null) {
                         log.warn("uploadId 추출 실패 (재분석 스킵): s3Key={}", fileInfo.getS3Key());
                         continue;
@@ -2106,6 +2120,14 @@ public class FileSessionService {
                     log.info("⭐ 재분석 청크 분할: file={}, estimatedRows={}, chunks={}",
                             fileInfo.getFileName(), estimatedRows, totalChunks);
 
+                    // Lambda 재분석 시작 - 유지보수 모드 자동 활성화 (SQS 발행 전 설정)
+                    try {
+                        maintenanceService.onLambdaStart(uploadId);
+                        lambdaStarted = true;
+                    } catch (Exception ex) {
+                        log.warn("[MAINTENANCE] 재분석 Lambda 시작 상태 업데이트 실패: {}", ex.getMessage());
+                    }
+
                     // 6. SQS 메시지 발행 (Lambda Worker 트리거)
                     for (int i = 0; i < totalChunks; i++) {
                         int startRow = i * CHUNK_SIZE + 2;
@@ -2135,18 +2157,19 @@ public class FileSessionService {
                         totalChunksPublished++;
                     }
 
-                    // Lambda 재분석 시작 - 유지보수 모드 자동 활성화
-                    try {
-                        maintenanceService.onLambdaStart(uploadId);
-                    } catch (Exception ex) {
-                        log.warn("[MAINTENANCE] 재분석 Lambda 시작 상태 업데이트 실패: {}", ex.getMessage());
-                    }
-
                     totalFilesProcessed++;
                     log.info("재분석 SQS 발행 완료: file={}, chunks={}", fileInfo.getFileName(), totalChunks);
 
                 } catch (Exception e) {
                     log.error("재분석 실패 (파일): file={}, error={}", fileInfo.getFileName(), e.getMessage(), e);
+                    // Lambda 시작 후 예외 발생 시 유지보수 모드 해제
+                    if (lambdaStarted && uploadId != null) {
+                        try {
+                            maintenanceService.onLambdaFailed(uploadId);
+                        } catch (Exception ex) {
+                            log.warn("[MAINTENANCE] Lambda 실패 상태 복구 실패: {}", ex.getMessage());
+                        }
+                    }
                 }
             }
 
