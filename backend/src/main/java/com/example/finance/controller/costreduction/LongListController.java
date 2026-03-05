@@ -84,6 +84,19 @@ public class LongListController {
         return ResponseEntity.ok(Map.of("savedCount", savedCount));
     }
 
+    /**
+     * statisticsId 목록만으로 Long List 저장 (경량 요청 - WAF body size 제한 우회)
+     */
+    @PostMapping("/save-by-ids")
+    public ResponseEntity<Map<String, Integer>> saveSelectionsByIds(
+            @PathVariable String projectId,
+            @RequestBody Map<String, List<String>> request,
+            @CurrentUser UserPrincipal userPrincipal) {
+        List<String> statisticsIds = request.getOrDefault("statisticsIds", List.of());
+        int savedCount = longListService.saveSelectionsByIds(projectId, statisticsIds);
+        return ResponseEntity.ok(Map.of("savedCount", savedCount));
+    }
+
     @GetMapping("/selections")
     public ResponseEntity<Map<String, List<SaveListRequest.ListItemDto>>> getSelections(
             @PathVariable String projectId,

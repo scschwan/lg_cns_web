@@ -535,11 +535,26 @@ export default function LongListPage() {
     if (!projectId || checkedIds.size === 0) return;
     setSaving(true);
     try {
-      const items = buildListItemsFromChecked(treeData, checkedIds);
-      await costReductionService.saveLongListSelections(projectId, items);
+      // ★ ID 목록만 전송 (WAF body size 제한 우회)
+      // checkedIds에는 leaf 노드의 statisticsId만 들어있으므로
+      // 부모 클러스터(Level 2)의 ID도 함께 수집해서 전송
+      const allIds = collectAllStatisticsIds(treeData, checkedIds);
+      await costReductionService.saveLongListSelectionsByIds(projectId, allIds);
       navigate(`/projects/${projectId}/shortlist`);
     } catch (err) {
       console.error('Failed to save selections:', err);
+      if (err?.__CANCEL__ || err?.message === '세션이 만료되었습니다.') return;
+      const isTimeout = err?.code === 'ECONNABORTED';
+      const isInfra = err?.response?.status === 403 && !(err?.response?.data?.error);
+      let msg;
+      if (isTimeout) {
+        msg = '서버 처리 시간이 초과되었습니다. 잠시 후 다시 시도해주세요.';
+      } else if (isInfra) {
+        msg = '네트워크 또는 서버 연결에 문제가 발생했습니다. 잠시 후 다시 시도해주세요.';
+      } else {
+        msg = err?.response?.data?.message || err?.message || '알 수 없는 오류';
+      }
+      alert(`Long List 저장 중 오류가 발생했습니다: ${msg}`);
     } finally {
       setSaving(false);
     }
@@ -903,7 +918,38 @@ function ChartPieWithLegend({ data }) {
 }
 
 /* ============================================================
-   헬퍼: 체크된 항목에서 저장용 리스트 구성
+   헬퍼: 체크된 항목에서 statisticsId 목록만 추출 (경량 저장용)
+   - 부모 클러스터(Level 2)도 포함하여 ShortList 트리 구조 유지
+   ============================================================ */
+function collectAllStatisticsIds(treeData, checkedIds) {
+  const ids = [];
+  treeData.forEach(accountNode => {
+    if (!accountNode.children) return;
+    accountNode.children.forEach(cluster => {
+      const clusterHasCheckedLeaf = cluster.children?.length
+        ? cluster.children.some(sub => checkedIds.has(getNodeId(sub)))
+        : checkedIds.has(getNodeId(cluster));
+
+      if (!clusterHasCheckedLeaf) return;
+
+      // Level 2 부모 클러스터 ID 포함
+      if (cluster.statisticsId) ids.push(cluster.statisticsId);
+
+      // Level 3 세부클러스터 ID 포함
+      if (cluster.children?.length) {
+        cluster.children.forEach(sub => {
+          if (checkedIds.has(getNodeId(sub)) && sub.statisticsId) {
+            ids.push(sub.statisticsId);
+          }
+        });
+      }
+    });
+  });
+  return ids;
+}
+
+/* ============================================================
+   헬퍼: 체크된 항목에서 저장용 리스트 구성 (기존 호환용)
    ============================================================ */
 function buildListItemsFromChecked(treeData, checkedIds) {
   const items = [];
