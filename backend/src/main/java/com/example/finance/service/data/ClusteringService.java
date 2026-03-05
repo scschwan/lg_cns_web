@@ -425,7 +425,10 @@ public class ClusteringService {
             Map<String, Object> merged = new LinkedHashMap<>();
             merged.put("clusterNumber", p.getClusterNumber());
             merged.put("clusterName", p.getClusterName());
-            merged.put("keywords", p.getKeywords());
+            // ★ keywords: 최대 5개까지만 전달 + 전체 개수
+            List<String> allKw = p.getKeywords() != null ? p.getKeywords() : Collections.emptyList();
+            merged.put("keywords", allKw.size() <= 5 ? allKw : allKw.subList(0, 5));
+            merged.put("keywordTotalCount", allKw.size());
             merged.put("count", p.getCount());
             merged.put("totalAmount", p.getTotalAmount());
             merged.put("childCount", children.size());
