@@ -122,6 +122,15 @@ public class ClusteringResult {
     private String department;
 
     /**
+     * 병합 처리 상태 (부모 클러스터 전용):
+     * null = 일반 클러스터 (미병합/자식)
+     * "PROCESSING" = 병합 진행 중 (자식 업데이트 미완료)
+     * "COMPLETED" = 병합 완료
+     */
+    @Field("merge_status")
+    private String mergeStatus;
+
+    /**
      * 생성 시간
      */
     @Field("created_at")

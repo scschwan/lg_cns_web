@@ -86,6 +86,14 @@ api.interceptors.response.use(
   (response) => {
     // ★ 정상 응답 시 연속 에러 카운터 리셋
     consecutiveServerErrors = 0;
+
+    // ★ CloudFront 프록시 타임아웃 감지: JSON 요청인데 HTML 응답이 온 경우
+    const contentType = response.headers?.['content-type'] || '';
+    if (contentType.includes('text/html') && !response.config?.expectHtml) {
+      console.error('[api] CloudFront HTML 응답 감지 (프록시 타임아웃 가능성):', response.config?.url);
+      return Promise.reject(new Error('서버 응답 시간이 초과되었습니다. 잠시 후 다시 시도해주세요.'));
+    }
+
     return response;
   },
   async (error) => {

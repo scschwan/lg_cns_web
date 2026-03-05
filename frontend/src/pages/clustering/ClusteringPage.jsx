@@ -74,11 +74,12 @@ const MergedClusterRow = React.memo(function MergedClusterRow({
   cluster, isSelected, isMerging, isUnmerging, isViewer,
   onSelect, onDetail, onRename, onUnmerge, formatAmount, amountUnit,
 }) {
-  const isBusy = isMerging || isUnmerging;
+  const isProcessing = cluster.mergeStatus === 'PROCESSING';
+  const isBusy = isMerging || isUnmerging || isProcessing;
   return (
     <div
       className={`grid grid-cols-[28px_1fr_60px_90px_60px] gap-1 items-center px-2 py-1.5 border-b transition-colors
-        ${isMerging ? 'bg-yellow-50 opacity-70' : isUnmerging ? 'bg-red-50 opacity-70' : isSelected ? 'bg-blue-50' : 'hover:bg-muted/50'}`}>
+        ${isProcessing ? 'bg-amber-50 opacity-80' : isMerging ? 'bg-yellow-50 opacity-70' : isUnmerging ? 'bg-red-50 opacity-70' : isSelected ? 'bg-blue-50' : 'hover:bg-muted/50'}`}>
       <Checkbox
         checked={isSelected}
         disabled={isBusy || isViewer}
@@ -87,7 +88,8 @@ const MergedClusterRow = React.memo(function MergedClusterRow({
         <div className="flex items-center gap-1">
           <Badge variant="outline" className="text-[9px] font-mono flex-shrink-0">#{cluster.clusterNumber}</Badge>
           <span className="truncate" title={cluster.clusterName}>
-            {isMerging ? <span className="text-yellow-600 font-semibold">병합중...</span>
+            {isProcessing ? <span className="text-amber-600 font-semibold flex items-center gap-1"><Loader2 className="h-3 w-3 animate-spin inline" />처리중...</span>
+              : isMerging ? <span className="text-yellow-600 font-semibold">병합중...</span>
               : isUnmerging ? <span className="text-red-600 font-semibold">해제중...</span>
               : truncateName(cluster.clusterName)}
           </span>
@@ -814,40 +816,34 @@ function ClusteringPage() {
     setMerging(true);
     mergingProgressRef.current = 0;
     mergingMessageRef.current = '병합 요청 중...';
+    setMergeOverlay(true);
     try {
       if (selectAllMode) {
         // ★ Branch 1: selectAll 필터 방식 (body ~50B → CloudFront 통과)
-        setMergeOverlay(true);
         const res = await clusteringService.mergeClustersWithFilter(projectId, sessionId, {
           exceptions: Array.from(exceptions),
           keyword: appliedSearchParams?.searchColumn === 'keyword' ? appliedSearchParams.searchValue : null,
           supplier: appliedSearchParams?.searchColumn === 'supplier' ? appliedSearchParams.searchValue : null,
         });
+        // ★ 항상 비동기 — PROCESSING 상태 부모가 DB에 생성됨
         if (res.async && res.taskId) {
+          // 폴링 시작 직후 merged 목록 갱신하여 PROCESSING 껍데기 표시
+          loadMerged();
           await pollMergeProgress(res.taskId);
-        } else {
-          mergingProgressRef.current = 100;
-          mergingMessageRef.current = '병합 완료';
-          await new Promise(r => setTimeout(r, 300));
         }
       } else {
         const nums = Array.from(exceptions);
 
         if (nums.length <= BATCH_MERGE_THRESHOLD) {
-          // ★ Branch 2: 소량 개별 선택 (body ~5KB → CloudFront 통과)
-          if (nums.length >= 100) setMergeOverlay(true);
+          // ★ Branch 2: 개별 선택 (항상 비동기 — 서버에서 taskId 반환)
           const res = await clusteringService.mergeClusters(projectId, sessionId, nums);
           if (res.async && res.taskId) {
-            if (!mergeOverlay) setMergeOverlay(true);
+            // 폴링 시작 직후 merged 목록 갱신하여 PROCESSING 껍데기 표시
+            loadMerged();
             await pollMergeProgress(res.taskId);
-          } else {
-            mergingProgressRef.current = 100;
-            mergingMessageRef.current = '병합 완료';
-            await new Promise(r => setTimeout(r, 300));
           }
         } else {
           // ★ Branch 3: 대량 개별 선택 → 3-Phase 배치 병합
-          setMergeOverlay(true);
 
           // Phase 1: 빈 부모 생성
           mergingProgressRef.current = 3;
@@ -908,6 +904,11 @@ function ClusteringPage() {
         const p = await clusteringService.getMergeProgress(projectId, sessionId, taskId);
         mergingProgressRef.current = p.progress || 0;
         mergingMessageRef.current = p.message || '처리 중...';
+
+        // ★ 폴링 중 주기적으로 merged 목록 갱신 (PROCESSING → COMPLETED 전환 반영)
+        if (i > 0 && i % 3 === 0) {
+          loadMerged().catch(() => {});
+        }
 
         if (p.status === 'COMPLETED') {
           mergingProgressRef.current = 100;
@@ -1211,6 +1212,10 @@ function ClusteringPage() {
     } catch (e) {
       console.error('[loadDetailChildren] 에러:', e);
       setDetailChildren([]);
+      const msg = e.message || '';
+      if (msg.includes('타임아웃') || msg.includes('시간이 초과')) {
+        alert('데이터 조회 시간이 초과되었습니다. 잠시 후 다시 시도해주세요.');
+      }
     } finally {
       setDetailLoading(false);
     }

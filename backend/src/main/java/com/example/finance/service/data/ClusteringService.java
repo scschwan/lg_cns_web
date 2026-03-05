@@ -17,6 +17,7 @@ import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.data.mongodb.core.query.Update;
 import org.springframework.stereotype.Service;
 
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.*;
 import java.util.concurrent.*;
@@ -368,7 +369,8 @@ public class ClusteringService {
                 .include("count")
                 .include("total_amount")
                 .include("supplier")
-                .include("department");
+                .include("department")
+                .include("merge_status");
         List<ClusteringResult> members = mongoTemplate.find(mergedQuery, ClusteringResult.class);
 
         if (members.isEmpty()) {
@@ -396,8 +398,10 @@ public class ClusteringService {
         List<Integer> orphanParents = new ArrayList<>();
         for (Integer pn : parentNumbers) {
             ClusteringResult p = parentMap.get(pn);
-            if (p != null && childrenByParent.getOrDefault(pn, Collections.emptyList()).isEmpty()) {
+            if (p != null && childrenByParent.getOrDefault(pn, Collections.emptyList()).isEmpty()
+                    && !"PROCESSING".equals(p.getMergeStatus())) {
                 // 자식이 없는 부모 = 고아 (3-Phase 중단 또는 병합 해제 후 잔여)
+                // PROCESSING 상태는 아직 자식 업데이트 진행 중이므로 삭제하지 않음
                 orphanParents.add(pn);
                 log.warn("[getMergedClusters] 고아 부모 발견 → 자동 삭제: #{} ({})", pn, p.getClusterName());
             }
@@ -425,21 +429,7 @@ public class ClusteringService {
             merged.put("count", p.getCount());
             merged.put("totalAmount", p.getTotalAmount());
             merged.put("childCount", children.size());
-            // 자식 메타데이터만 (representativeData 없음 → 상세페이지에서 페이징 조회)
-            List<Map<String, Object>> childList = children.stream()
-                    .map(c -> {
-                        Map<String, Object> child = new LinkedHashMap<>();
-                        child.put("clusterNumber", c.getClusterNumber());
-                        child.put("clusterName", c.getClusterName());
-                        child.put("keywords", c.getKeywords());
-                        child.put("count", c.getCount());
-                        child.put("totalAmount", c.getTotalAmount());
-                        child.put("supplier", c.getSupplier());
-                        child.put("department", c.getDepartment());
-                        return child;
-                    })
-                    .collect(Collectors.toList());
-            merged.put("children", childList);
+            merged.put("mergeStatus", p.getMergeStatus());
             result.add(merged);
         }
 
@@ -463,11 +453,13 @@ public class ClusteringService {
 
         try {
         // 1. 해당 부모의 자식만 조회 (cluster_id = parentClusterNumber, cluster_number != parentClusterNumber)
+        //    maxTime: CloudFront 타임아웃(30s) 전에 완료되도록 25초 제한
         Query query = new Query(
                 Criteria.where("session_id").is(sessionId)
                         .and("cluster_id").is(parentClusterNumber)
                         .and("cluster_number").ne(parentClusterNumber))
-                .with(Sort.by("cluster_number"));
+                .with(Sort.by("cluster_number"))
+                .maxTimeMsec(25_000);
         query.fields()
                 .include("cluster_number")
                 .include("cluster_name")
@@ -485,25 +477,24 @@ public class ClusteringService {
         query.skip((long) page * size).limit(size);
         List<ClusteringResult> children = mongoTemplate.find(query, ClusteringResult.class);
 
-        // 2. 이 페이지 자식들의 대표데이터 raw_id만 aggregation으로 조회
+        // 2. 이 페이지 자식들의 대표데이터 raw_id만 $slice projection으로 조회 (aggregation 대체 → 경량)
         Set<Integer> childNumbers = children.stream()
                 .map(ClusteringResult::getClusterNumber)
                 .collect(Collectors.toSet());
 
         Map<Integer, String> childFirstRawId = new HashMap<>();
         if (!childNumbers.isEmpty()) {
-            List<Document> firstIdDocs = mongoTemplate.getCollection("clustering_results")
-                    .aggregate(Arrays.asList(
-                            new Document("$match", new Document("session_id", sessionId)
-                                    .append("cluster_id", parentClusterNumber)
-                                    .append("cluster_number", new Document("$in", new ArrayList<>(childNumbers)))),
-                            new Document("$project", new Document("cluster_number", 1)
-                                    .append("first_data_index", new Document("$arrayElemAt", Arrays.asList("$data_indices", 0))))
-                    )).into(new ArrayList<>());
-            for (Document doc : firstIdDocs) {
-                Integer cn = doc.getInteger("cluster_number");
-                String firstId = doc.getString("first_data_index");
-                if (cn != null && firstId != null) childFirstRawId.put(cn, firstId);
+            Query firstIdQuery = new Query(
+                    Criteria.where("session_id").is(sessionId)
+                            .and("cluster_number").in(new ArrayList<>(childNumbers)));
+            firstIdQuery.fields()
+                    .include("cluster_number")
+                    .slice("data_indices", 1);
+            List<ClusteringResult> firstIdDocs = mongoTemplate.find(firstIdQuery, ClusteringResult.class);
+            for (ClusteringResult doc : firstIdDocs) {
+                if (doc.getClusterNumber() != null && doc.getDataIndices() != null && !doc.getDataIndices().isEmpty()) {
+                    childFirstRawId.put(doc.getClusterNumber(), doc.getDataIndices().get(0));
+                }
             }
         }
 
@@ -679,7 +670,7 @@ public class ClusteringService {
     }
 
     /**
-     * 병합: 소량이면 동기, 대량이면 비동기(taskId 반환)
+     * 병합: 항상 비동기(taskId 반환) — 껍데기 부모를 먼저 보여주기 위해
      */
     public Map<String, Object> mergeClusters(String sessionId, List<Integer> clusterNumbers) {
         log.info("[MERGE] 시작: sessionId={}, count={}", sessionId,
@@ -690,35 +681,29 @@ public class ClusteringService {
             throw new BusinessException("MERGE_MIN_COUNT", "병합하려면 1개 이상의 클러스터를 선택해야 합니다.");
         }
 
-        // 대량 → 비동기 처리
-        if (clusterNumbers.size() >= ASYNC_MERGE_THRESHOLD) {
-            String taskId = UUID.randomUUID().toString();
-            MergeProgress progress = new MergeProgress();
-            mergeProgressMap.put(taskId, progress);
-            sessionMergeMap.put(sessionId, taskId); // ★ 세션별 활성 병합 추적
-            log.info("[MERGE] 비동기 시작: taskId={}, count={}", taskId, clusterNumbers.size());
-            EXECUTOR.submit(() -> {
-                try {
-                    Map<String, Object> result = doMergeClusters(sessionId, clusterNumbers, progress);
-                    progress.result = result;
-                    progress.progress = 100;
-                    progress.message = "병합 완료";
-                    progress.status = "COMPLETED";
-                    sessionMergeMap.remove(sessionId); // ★ 완료 시 세션 추적 해제
-                    log.info("[MERGE] 비동기 완료: taskId={}, result={}", taskId, result);
-                } catch (Exception e) {
-                    log.error("[MERGE] 비동기 실패: taskId={}, sessionId={}", taskId, sessionId, e);
-                    progress.message = e.getMessage();
-                    progress.status = "FAILED";
-                    sessionMergeMap.remove(sessionId); // ★ 실패 시에도 세션 추적 해제
-                }
-            });
-            return Map.of("async", true, "taskId", taskId, "totalCount", clusterNumbers.size());
-        }
-
-        // 소량 → 동기 처리
-        log.info("[MERGE] 동기 처리: count={}", clusterNumbers.size());
-        return doMergeClusters(sessionId, clusterNumbers, null);
+        // ★ 항상 비동기 처리 (PROCESSING 상태 부모를 먼저 표시하기 위해)
+        String taskId = UUID.randomUUID().toString();
+        MergeProgress progress = new MergeProgress();
+        mergeProgressMap.put(taskId, progress);
+        sessionMergeMap.put(sessionId, taskId);
+        log.info("[MERGE] 비동기 시작: taskId={}, count={}", taskId, clusterNumbers.size());
+        EXECUTOR.submit(() -> {
+            try {
+                Map<String, Object> result = doMergeClusters(sessionId, clusterNumbers, progress);
+                progress.result = result;
+                progress.progress = 100;
+                progress.message = "병합 완료";
+                progress.status = "COMPLETED";
+                sessionMergeMap.remove(sessionId);
+                log.info("[MERGE] 비동기 완료: taskId={}, result={}", taskId, result);
+            } catch (Exception e) {
+                log.error("[MERGE] 비동기 실패: taskId={}, sessionId={}", taskId, sessionId, e);
+                progress.message = e.getMessage();
+                progress.status = "FAILED";
+                sessionMergeMap.remove(sessionId);
+            }
+        });
+        return Map.of("async", true, "taskId", taskId, "totalCount", clusterNumbers.size());
     }
 
     private Map<String, Object> doMergeClusters(String sessionId, List<Integer> clusterNumbers,
@@ -845,11 +830,12 @@ public class ClusteringService {
                 .count(totalCount)
                 .totalAmount(totalAmount)
                 .dataIndices(allDataIndices)
+                .mergeStatus("PROCESSING")
                 .createdAt(LocalDateTime.now())
                 .build();
 
         clusteringResultRepository.save(merged);
-        log.info("[MERGE-EXEC] Phase3 완료: #{} 저장됨 ({}ms)", newClusterNumber, System.currentTimeMillis() - startTime);
+        log.info("[MERGE-EXEC] Phase3 완료: #{} 저장됨 (status=PROCESSING, {}ms)", newClusterNumber, System.currentTimeMillis() - startTime);
         updateProgress(progress, 65, "자식 클러스터 업데이트 중...");
 
         // ★ Phase 4: 병렬 배치 업데이트 (65% → 95%)
@@ -894,6 +880,14 @@ public class ClusteringService {
             throw new BusinessException("MERGE_FAILED",
                     "자식 클러스터 업데이트 중 오류가 발생했습니다. 롤백되었습니다.");
         }
+
+        // ★ Phase 4 완료 → merge_status를 COMPLETED로 변경
+        mongoTemplate.updateFirst(
+                new Query(Criteria.where("session_id").is(sessionId)
+                        .and("cluster_number").is(newClusterNumber)),
+                new Update().set("merge_status", "COMPLETED"),
+                "clustering_results");
+        log.info("[MERGE-EXEC] Phase4 완료: #{} merge_status → COMPLETED", newClusterNumber);
 
         updateProgress(progress, 95, "마무리 중...");
 
@@ -960,6 +954,7 @@ public class ClusteringService {
                 .count(0)
                 .totalAmount(0.0)
                 .dataIndices(new ArrayList<>())
+                .mergeStatus("PROCESSING")
                 .createdAt(LocalDateTime.now())
                 .build();
 
@@ -1098,9 +1093,10 @@ public class ClusteringService {
             parent.setCount(totalCount);
             parent.setTotalAmount(totalAmount);
             parent.setDataIndices(allDataIndices);
+            parent.setMergeStatus("COMPLETED");
             clusteringResultRepository.save(parent);
 
-            log.info("[MERGE-BATCH] mergeFinalize 완료: #{}, {}개 자식, count={}, amount={}{}",
+            log.info("[MERGE-BATCH] mergeFinalize 완료: #{}, {}개 자식, count={}, amount={}, status=COMPLETED{}",
                     mergedClusterNumber, allChildren.size(), totalCount, totalAmount,
                     truncated ? " (dataIndices 일부 생략)" : "");
 
@@ -1325,6 +1321,7 @@ public class ClusteringService {
                 .count(totalCount)
                 .totalAmount(totalAmount)
                 .dataIndices(allDataIndices)
+                .mergeStatus("COMPLETED")
                 .createdAt(LocalDateTime.now())
                 .build();
 
@@ -1409,6 +1406,7 @@ public class ClusteringService {
         parent.setCount(totalCount);
         parent.setTotalAmount(totalAmount);
         parent.setDataIndices(allDataIndices);
+        parent.setMergeStatus("COMPLETED");
         clusteringResultRepository.save(parent);
 
         Map<String, Object> result = new HashMap<>();
