@@ -3,7 +3,7 @@ import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Users, FolderKanban, Monitor, Clock, ShieldAlert, ShieldCheck, Loader2, RefreshCw } from 'lucide-react';
+import { Users, FolderKanban, Monitor, Clock, ShieldAlert, ShieldCheck, Loader2, RefreshCw, RotateCcw } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import adminService from '@/services/adminService';
 import systemService from '@/services/systemService';
@@ -18,6 +18,7 @@ export default function AdminDashboard() {
     const [maintenanceLoading, setMaintenanceLoading] = useState(false);
     const [maintenanceReason, setMaintenanceReason] = useState('');
     const [statusLoading, setStatusLoading] = useState(true);
+    const [resetLambdaLoading, setResetLambdaLoading] = useState(false);
 
     useEffect(() => {
         loadData();
@@ -183,7 +184,34 @@ export default function AdminDashboard() {
                             {isMaintenance ? '서비스 차단 해제' : '서비스 차단 활성화'}
                         </Button>
                         {isLambdaRunning && (
-                            <p className="text-xs text-amber-600">Lambda 처리 중에는 수동 제어가 불가합니다.</p>
+                            <>
+                                <p className="text-xs text-amber-600">Lambda 처리 중에는 수동 제어가 불가합니다.</p>
+                                <Button
+                                    onClick={async () => {
+                                        if (!confirm('Lambda 상태를 강제 초기화하시겠습니까?\n\n실제 Lambda 작업이 진행 중인 경우 데이터 정합성 문제가 발생할 수 있습니다.')) return;
+                                        setResetLambdaLoading(true);
+                                        try {
+                                            await adminService.resetLambdaStatus();
+                                            await loadMaintenanceStatus();
+                                            alert('Lambda 상태가 초기화되었습니다.');
+                                        } catch (e) {
+                                            alert('Lambda 상태 초기화 실패: ' + (e?.response?.data?.message || e.message));
+                                        } finally {
+                                            setResetLambdaLoading(false);
+                                        }
+                                    }}
+                                    disabled={resetLambdaLoading}
+                                    variant="outline"
+                                    className="border-red-400 text-red-600 hover:bg-red-50"
+                                >
+                                    {resetLambdaLoading ? (
+                                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                                    ) : (
+                                        <RotateCcw className="h-4 w-4 mr-2" />
+                                    )}
+                                    Lambda 상태 강제 초기화
+                                </Button>
+                            </>
                         )}
                     </div>
                 </CardContent>

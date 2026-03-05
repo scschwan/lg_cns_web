@@ -268,4 +268,18 @@ public class AdminController {
         Map<String, Object> result = maintenanceService.setMaintenanceMode(enabled, reason, principal.getId());
         return ResponseEntity.ok(result);
     }
+
+    /**
+     * Lambda 상태 강제 초기화 (관리자 전용)
+     *
+     * POST /api/admin/reset-lambda-status
+     * is_lambda_running=false, current_upload_id=null 등으로 초기화
+     */
+    @PostMapping("/reset-lambda-status")
+    public ResponseEntity<Map<String, Object>> resetLambdaStatus(
+            @AuthenticationPrincipal UserPrincipal principal) {
+        checkAdmin(principal);
+        Map<String, Object> result = maintenanceService.resetLambdaStatus(principal.getId());
+        return ResponseEntity.ok(result);
+    }
 }
