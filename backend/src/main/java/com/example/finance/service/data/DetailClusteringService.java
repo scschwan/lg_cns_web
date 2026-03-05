@@ -193,10 +193,13 @@ public class DetailClusteringService {
         long start = System.currentTimeMillis();
 
         // ★ 경량 조회: data_indices 제외 (메타데이터만)
-        Query metaQuery = new Query(Criteria.where("session_id").is(sessionId)
-                .and("cluster_id").is(clusterId)
-                .and("cluster_number").ne(clusterId)
-                .and("cluster_sub_id").ne(-1).and("cluster_sub_id").ne(null))
+        // cluster_sub_id가 -1도 아니고 null도 아닌 것 (= 세부 병합된 것)
+        Query metaQuery = new Query(new Criteria().andOperator(
+                        Criteria.where("session_id").is(sessionId),
+                        Criteria.where("cluster_id").is(clusterId),
+                        Criteria.where("cluster_number").ne(clusterId),
+                        Criteria.where("cluster_sub_id").ne(-1),
+                        Criteria.where("cluster_sub_id").ne(null)))
                 .with(Sort.by("cluster_number"));
         metaQuery.fields()
                 .include("cluster_number").include("cluster_sub_id")
