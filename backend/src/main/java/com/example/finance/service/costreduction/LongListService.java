@@ -353,19 +353,23 @@ public class LongListService {
      */
     public List<SaveListRequest.ListItemDto> getSelections(String projectId) {
         return longShortListRepository.findFirstByProjectId(projectId)
-                .map(list -> list.getLongListItems().stream()
-                        .map(item -> SaveListRequest.ListItemDto.builder()
-                                .statisticsId(item.getStatisticsId())
-                                .sessionId(item.getSessionId())
-                                .accountName(item.getAccountName())
-                                .clusterNumber(item.getClusterNumber())
-                                .clusterName(item.getClusterName())
-                                .level(item.getLevel())
-                                .parentClusterNumber(item.getParentClusterNumber())
-                                .totalAmount(item.getTotalAmount())
-                                .totalCount(item.getTotalCount())
-                                .build())
-                        .toList())
+                .map(list -> {
+                    List<LongShortList.ListItem> items = list.getLongListItems();
+                    if (items == null) return Collections.<SaveListRequest.ListItemDto>emptyList();
+                    return items.stream()
+                            .map(item -> SaveListRequest.ListItemDto.builder()
+                                    .statisticsId(item.getStatisticsId())
+                                    .sessionId(item.getSessionId())
+                                    .accountName(item.getAccountName())
+                                    .clusterNumber(item.getClusterNumber())
+                                    .clusterName(item.getClusterName())
+                                    .level(item.getLevel())
+                                    .parentClusterNumber(item.getParentClusterNumber())
+                                    .totalAmount(item.getTotalAmount())
+                                    .totalCount(item.getTotalCount())
+                                    .build())
+                            .toList();
+                })
                 .orElse(Collections.emptyList());
     }
 

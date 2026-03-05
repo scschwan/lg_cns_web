@@ -56,7 +56,12 @@ public class ShortListService {
         }
 
         LongShortList list = longShortListRepository.findFirstByProjectId(projectId)
-                .orElseThrow(() -> new RuntimeException("Long List 데이터를 찾을 수 없습니다: " + projectId));
+                .orElse(null);
+
+        if (list == null) {
+            log.debug("[ShortList] LongShortList 미존재, 빈 트리 반환: projectId={}", projectId);
+            return new LongListTreeResponse(Collections.emptyList());
+        }
 
         List<LongShortList.ListItem> longListItems = list.getLongListItems();
         if (longListItems == null || longListItems.isEmpty()) {
@@ -263,15 +268,16 @@ public class ShortListService {
      */
     public ChartDataResponse getAccountChartData(String projectId, String accountName, Integer top) {
         LongShortList list = longShortListRepository.findFirstByProjectId(projectId)
-                .orElseThrow(() -> new RuntimeException("Long List 데이터를 찾을 수 없습니다: " + projectId));
+                .orElse(null);
 
-        List<LongShortList.ListItem> longListItems = list.getLongListItems();
-        if (longListItems == null) {
+        if (list == null || list.getLongListItems() == null) {
             return ChartDataResponse.builder()
                     .supplierBreakdown(Collections.emptyList())
                     .costCenterBreakdown(Collections.emptyList())
                     .build();
         }
+
+        List<LongShortList.ListItem> longListItems = list.getLongListItems();
 
         // 해당 계정명의 Level 2 항목들의 statisticsId 수집
         Set<String> statsIds = longListItems.stream()
@@ -338,12 +344,13 @@ public class ShortListService {
      */
     public ItemStatsResponse getAccountItemStats(String projectId, String accountName) {
         LongShortList list = longShortListRepository.findFirstByProjectId(projectId)
-                .orElseThrow(() -> new RuntimeException("Long List 데이터를 찾을 수 없습니다: " + projectId));
+                .orElse(null);
 
-        List<LongShortList.ListItem> longListItems = list.getLongListItems();
-        if (longListItems == null) {
+        if (list == null || list.getLongListItems() == null) {
             return ItemStatsResponse.builder().build();
         }
+
+        List<LongShortList.ListItem> longListItems = list.getLongListItems();
 
         // 해당 계정명의 Level 2 항목들
         Set<String> statsIds = longListItems.stream()
@@ -381,7 +388,11 @@ public class ShortListService {
      */
     public LongListTreeResponse getShortListSelectionTree(String projectId) {
         LongShortList list = longShortListRepository.findFirstByProjectId(projectId)
-                .orElseThrow(() -> new RuntimeException("Long List 데이터를 찾을 수 없습니다: " + projectId));
+                .orElse(null);
+
+        if (list == null) {
+            return new LongListTreeResponse(Collections.emptyList());
+        }
 
         List<LongShortList.ListItem> shortListItems = list.getShortListItems();
         if (shortListItems == null || shortListItems.isEmpty()) {
@@ -593,9 +604,9 @@ public class ShortListService {
      */
     public RawDataPageResponse getAccountRawData(String projectId, String accountName, int page, int size) {
         LongShortList list = longShortListRepository.findFirstByProjectId(projectId)
-                .orElseThrow(() -> new RuntimeException("Long List 데이터를 찾을 수 없습니다: " + projectId));
+                .orElse(null);
 
-        List<LongShortList.ListItem> longListItems = list.getLongListItems();
+        List<LongShortList.ListItem> longListItems = list != null ? list.getLongListItems() : null;
         if (longListItems == null) {
             return RawDataPageResponse.builder()
                     .columns(Collections.emptyList())
