@@ -463,11 +463,11 @@ function DetailClusteringPage() {
   }, [isDraggingRow, selectAllMode, clusterData]);
 
   /* === 세부 병합 === */
-  const DETAIL_BATCH_THRESHOLD = 100;
-  const DETAIL_BATCH_CHUNK_SIZE = 100;
+  const DETAIL_BATCH_THRESHOLD = 30;
+  const DETAIL_BATCH_CHUNK_SIZE = 30;
 
   const handleMerge = async () => {
-    if (selectedCount < 2) { alert('2개 이상의 클러스터를 선택하세요.'); return; }
+    if (selectedCount < 1) { alert('클러스터를 선택하세요.'); return; }
     if (!window.confirm(`선택한 ${selectedCount}개 클러스터를 세부 병합하시겠습니까?`)) return;
     setMerging(true); setMergingProgress(0); setMergeActiveBlocking(true); setMergingMessage('병합 요청 중...');
     try {
