@@ -536,16 +536,10 @@ export default function LongListPage() {
     setSaving(true);
     try {
       const items = buildListItemsFromChecked(treeData, checkedIds);
-      const result = await costReductionService.saveLongListSelections(projectId, items);
-      if (result && result.savedCount != null) {
-        navigate(`/projects/${projectId}/shortlist`);
-      } else {
-        alert('Long List 저장에 실패했습니다. 응답이 올바르지 않습니다.');
-      }
+      await costReductionService.saveLongListSelections(projectId, items);
+      navigate(`/projects/${projectId}/shortlist`);
     } catch (err) {
       console.error('Failed to save selections:', err);
-      const msg = err?.message || '알 수 없는 오류';
-      alert(`Long List 저장 중 오류가 발생했습니다: ${msg}`);
     } finally {
       setSaving(false);
     }
