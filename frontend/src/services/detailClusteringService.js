@@ -44,6 +44,14 @@ const detailClusteringService = {
         return response.data;
     },
 
+    getMergedClusterChildren: async (projectId, sessionId, clusterNumber, clusterId, page = 0, size = 50) => {
+        const response = await api.get(
+            `/api/projects/${projectId}/sessions/${sessionId}/detail-clustering/merged/${clusterNumber}/children`,
+            { params: { clusterId, page, size } }
+        );
+        return response.data;
+    },
+
     getStatistics: async (projectId, sessionId, clusterId) => {
         const response = await api.get(
             `/api/projects/${projectId}/sessions/${sessionId}/detail-clustering/statistics`,

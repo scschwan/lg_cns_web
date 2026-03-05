@@ -215,6 +215,13 @@ function DetailClusteringPage() {
   const [selectedMerged, setSelectedMerged] = useState(new Set());
 
   const [detailDialog, setDetailDialog] = useState({ open: false, cluster: null });
+  const [detailChildren, setDetailChildren] = useState([]);
+  const [detailVisibleCols, setDetailVisibleCols] = useState([]);
+  const [detailPage, setDetailPage] = useState(0);
+  const [detailPageSize] = useState(50);
+  const [detailTotalCount, setDetailTotalCount] = useState(0);
+  const [detailTotalPages, setDetailTotalPages] = useState(0);
+  const [detailLoading, setDetailLoading] = useState(false);
   const [detailChecked, setDetailChecked] = useState(new Set());
   const [detailDragging, setDetailDragging] = useState(false);
   const detailDragStart = useRef(null);
@@ -669,7 +676,24 @@ function DetailClusteringPage() {
   };
 
   /* === 상세 다이얼로그 === */
-  const handleOpenDetail = (cluster) => { setDetailDialog({ open: true, cluster }); setDetailChecked(new Set()); setDetailDragging(false); detailDragStart.current = null; detailDragAction.current = null; };
+  const loadDetailChildren = useCallback(async (clusterNumber, page) => {
+    setDetailLoading(true);
+    try {
+      const data = await detailClusteringService.getMergedClusterChildren(projectId, sessionId, clusterNumber, clusterId, page, detailPageSize);
+      setDetailChildren(data.children || []);
+      setDetailVisibleCols(data.columns || []);
+      setDetailTotalCount(data.totalCount || 0);
+      setDetailTotalPages(data.totalPages || 0);
+      setDetailPage(page);
+    } catch (e) { console.error('[loadDetailChildren] 에러:', e); setDetailChildren([]); }
+    finally { setDetailLoading(false); }
+  }, [projectId, sessionId, clusterId, detailPageSize]);
+
+  const handleOpenDetail = (cluster) => {
+    setDetailDialog({ open: true, cluster }); setDetailChecked(new Set()); setDetailDragging(false);
+    detailDragStart.current = null; detailDragAction.current = null;
+    loadDetailChildren(cluster.clusterNumber, 0);
+  };
   const handleDetailRowMouseDown = useCallback((row, idx, e) => {
     if (e.button !== 0) return; if (e.target.closest('[role="checkbox"]')) return; e.preventDefault();
     const cn = row.clusterNumber;
@@ -679,9 +703,9 @@ function DetailClusteringPage() {
   }, [detailChecked]);
   const handleDetailRowMouseEnter = useCallback((row, idx) => {
     if (!detailDragging || detailDragStart.current === null) return;
-    const children = detailDialog.cluster?.children || []; const lo = Math.min(detailDragStart.current, idx), hi = Math.max(detailDragStart.current, idx); const action = detailDragAction.current;
-    setDetailChecked(prev => { const next = new Set(prev); for (let i = lo; i <= hi; i++) { const cn = children[i]?.clusterNumber; if (cn == null) continue; action === 'check' ? next.add(cn) : next.delete(cn); } return next; });
-  }, [detailDragging, detailDialog.cluster]);
+    const lo = Math.min(detailDragStart.current, idx), hi = Math.max(detailDragStart.current, idx); const action = detailDragAction.current;
+    setDetailChecked(prev => { const next = new Set(prev); for (let i = lo; i <= hi; i++) { const cn = detailChildren[i]?.clusterNumber; if (cn == null) continue; action === 'check' ? next.add(cn) : next.delete(cn); } return next; });
+  }, [detailDragging, detailChildren]);
   const handlePartialUnmerge = async () => {
     if (detailChecked.size === 0) { alert('해제할 항목을 선택하세요.'); return; }
     if (!window.confirm(`선택한 ${detailChecked.size}개 클러스터를 세부 병합 해제하시겠습니까?`)) return;
@@ -689,7 +713,7 @@ function DetailClusteringPage() {
     try {
       await detailClusteringService.unmergePartialClusters(projectId, sessionId, clusterId, detailDialog.cluster.clusterNumber, Array.from(detailChecked));
       setMergingProgress(70); setMergingMessage('데이터 갱신 중...');
-      setDetailDialog({ open: false, cluster: null }); setDetailChecked(new Set()); await refreshAll();
+      setDetailDialog({ open: false, cluster: null }); setDetailChecked(new Set()); setDetailChildren([]); await refreshAll();
       setMergingProgress(100); setMergingMessage('부분 해제 완료');
       await new Promise(r => setTimeout(r, 500));
     }
@@ -735,12 +759,12 @@ function DetailClusteringPage() {
   }, [isHeaderChecked, isHeaderIndeterminate, selectAllMode, exceptions, visibleColumns, amountUnit, formatAmount]);
 
   const detailColumns = useMemo(() => {
-    const all = detailDialog.cluster?.children?.length || 0;
+    const all = detailChildren.length;
     const isAllChecked = detailChecked.size === all && all > 0;
     const isIndeterminate = detailChecked.size > 0 && detailChecked.size < all;
     const cols = [
       { key: '_cb', label: '', pinned: true, sortable: false, resizable: false, width: 40,
-        headerRender: () => <Checkbox checked={isAllChecked} ref={el => { if (el) el.indeterminate = isIndeterminate; }} onCheckedChange={c => { if (c) setDetailChecked(new Set((detailDialog.cluster?.children || []).map(ch => ch.clusterNumber))); else setDetailChecked(new Set()); }} disabled={isViewer} />,
+        headerRender: () => <Checkbox checked={isAllChecked} ref={el => { if (el) el.indeterminate = isIndeterminate; }} onCheckedChange={c => { if (c) setDetailChecked(new Set(detailChildren.map(ch => ch.clusterNumber))); else setDetailChecked(new Set()); }} disabled={isViewer} />,
         render: r => <Checkbox checked={detailChecked.has(r.clusterNumber)} onCheckedChange={c => setDetailChecked(prev => { const n = new Set(prev); c ? n.add(r.clusterNumber) : n.delete(r.clusterNumber); return n; })} disabled={isViewer} />,
       },
       { key: 'clusterNumber', label: '#', pinned: true, sortable: false, width: 70, render: r => <Badge variant="outline" className="text-[10px] font-mono">#{r.clusterNumber}</Badge> },
@@ -749,10 +773,9 @@ function DetailClusteringPage() {
       { key: 'count', label: 'Count', sortable: false, width: 70, cellClassName: 'text-right', render: r => <span className="block text-right text-xs">{(r.count||0).toLocaleString()}</span> },
       { key: 'totalAmount', label: `금액(${amountUnit})`, sortable: false, width: 100, cellClassName: 'text-right', render: r => <span className="block text-right text-xs">{formatAmount(r.totalAmount||0)}</span> },
     ];
-    const visCols = detailDialog.cluster?.columns || [];
-    for (const colName of visCols) { cols.push({ key: `rep_${colName}`, label: colName, sortable: false, minWidth: 80, render: r => { const v = r.representativeData?.[colName]; return <span className="text-xs whitespace-nowrap">{v != null ? String(v) : ''}</span>; } }); }
+    for (const colName of detailVisibleCols) { cols.push({ key: `rep_${colName}`, label: colName, sortable: false, minWidth: 80, render: r => { const v = r.representativeData?.[colName]; return <span className="text-xs whitespace-nowrap">{v != null ? String(v) : ''}</span>; } }); }
     return cols;
-  }, [detailDialog.cluster, detailChecked, amountUnit, formatAmount]);
+  }, [detailChildren, detailVisibleCols, detailChecked, amountUnit, formatAmount, isViewer]);
 
   /* === 렌더 === */
   if (isNaN(clusterId)) {
@@ -1051,7 +1074,7 @@ function DetailClusteringPage() {
       </DialogContent></Dialog>
 
       {/* 상세 다이얼로그 */}
-      <Dialog open={detailDialog.open} onOpenChange={o => { setDetailDialog({ ...detailDialog, open: o }); if (!o) { setDetailChecked(new Set()); setDetailDragging(false); } }}>
+      <Dialog open={detailDialog.open} onOpenChange={o => { setDetailDialog({ ...detailDialog, open: o }); if (!o) { setDetailChecked(new Set()); setDetailDragging(false); setDetailChildren([]); } }}>
         <DialogContent className="max-w-[900px] max-h-[80vh] flex flex-col">
           <DialogHeader><DialogTitle>세부 병합 상세: #{detailDialog.cluster?.clusterNumber} {truncateName(detailDialog.cluster?.clusterName)}</DialogTitle><DialogDescription>드래그 또는 Ctrl+클릭으로 복수 선택 가능</DialogDescription></DialogHeader>
           <div className="flex items-center gap-4 p-3 bg-gray-50 rounded-md border mb-2 text-sm">
@@ -1063,9 +1086,25 @@ function DetailClusteringPage() {
             <Button size="sm" variant="destructive" onClick={handlePartialUnmerge} disabled={detailChecked.size === 0 || isViewer}><Trash2 className="h-3 w-3 mr-1" />선택 항목 세부 병합 해제 ({detailChecked.size})</Button>
             <span className="text-xs text-muted-foreground ml-2">{detailChecked.size > 0 && `${detailChecked.size}개 선택됨`}</span>
           </div>
-          <div className="border rounded-md" style={{ height: 'calc(80vh - 220px)', minHeight: '200px' }}>
-            <AdvancedTable columns={detailColumns} data={detailDialog.cluster?.children || []} rowKey={r => r.clusterNumber} emptyMessage="하위 클러스터가 없습니다." rowClassName={r => detailChecked.has(r.clusterNumber) ? 'bg-blue-50' : ''} onRowMouseDown={handleDetailRowMouseDown} onRowMouseEnter={handleDetailRowMouseEnter} maxHeight="100%" />
+          <div className="border rounded-md" style={{ height: 'calc(80vh - 260px)', minHeight: '200px' }}>
+            {detailLoading ? (
+              <div className="flex items-center justify-center h-full gap-2">
+                <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+                <span className="text-xs text-muted-foreground">하위 클러스터 조회중...</span>
+              </div>
+            ) : (
+              <AdvancedTable columns={detailColumns} data={detailChildren} rowKey={r => r.clusterNumber} emptyMessage="하위 클러스터가 없습니다." rowClassName={r => detailChecked.has(r.clusterNumber) ? 'bg-blue-50' : ''} onRowMouseDown={handleDetailRowMouseDown} onRowMouseEnter={handleDetailRowMouseEnter} maxHeight="100%" />
+            )}
           </div>
+          {detailTotalPages > 1 && (
+            <div className="flex items-center justify-between pt-2 border-t">
+              <span className="text-xs text-muted-foreground">총 {detailTotalCount}건 (페이지 {detailPage + 1}/{detailTotalPages})</span>
+              <div className="flex items-center gap-1">
+                <Button size="sm" variant="outline" className="h-7 px-2 text-xs" disabled={detailPage === 0 || detailLoading} onClick={() => loadDetailChildren(detailDialog.cluster?.clusterNumber, detailPage - 1)}>이전</Button>
+                <Button size="sm" variant="outline" className="h-7 px-2 text-xs" disabled={detailPage >= detailTotalPages - 1 || detailLoading} onClick={() => loadDetailChildren(detailDialog.cluster?.clusterNumber, detailPage + 1)}>다음</Button>
+              </div>
+            </div>
+          )}
         </DialogContent>
       </Dialog>
 
