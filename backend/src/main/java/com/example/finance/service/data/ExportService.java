@@ -17,6 +17,7 @@ import org.springframework.data.mongodb.core.query.Update;
 import org.springframework.stereotype.Service;
 import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.services.s3.S3Client;
+import software.amazon.awssdk.services.s3.model.DeleteObjectRequest;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 import software.amazon.awssdk.services.s3.presigner.S3Presigner;
 import software.amazon.awssdk.services.s3.presigner.model.GetObjectPresignRequest;
@@ -165,6 +166,119 @@ public class ExportService {
         }
 
         return map;
+    }
+
+    /**
+     * 사전 로드된 allClusters에서 rawId→ClusterInfo Map 구성 (DB 조회 없음)
+     */
+    private Map<String, ClusterInfo> buildRawIdToClusterMapFromList(List<ClusteringResult> allClusters) {
+        Map<String, ClusterInfo> map = new HashMap<>();
+
+        Map<Integer, ClusteringResult> topLevelByNumber = new HashMap<>();
+        for (ClusteringResult c : allClusters) {
+            boolean isIndependent = c.getClusterId() == null || c.getClusterId() == -1;
+            boolean isMergeParent = c.getClusterId() != null && c.getClusterId() > 0 && c.getClusterId().equals(c.getClusterNumber());
+            if (isIndependent || isMergeParent) {
+                topLevelByNumber.put(c.getClusterNumber(), c);
+                if (c.getDataIndices() != null) {
+                    for (String rawDataId : c.getDataIndices()) {
+                        map.put(rawDataId, new ClusterInfo(c.getClusterName(), null, c.getClusterNumber()));
+                    }
+                }
+            }
+        }
+
+        for (ClusteringResult c : allClusters) {
+            boolean isSubMergeParent = c.getClusterSubId() != null && c.getClusterSubId() > 0 && c.getClusterSubId().equals(c.getClusterNumber());
+            if (isSubMergeParent && c.getDataIndices() != null) {
+                ClusteringResult parent = topLevelByNumber.get(c.getClusterId());
+                String parentName = parent != null ? parent.getClusterName() : "Unknown";
+                for (String rawDataId : c.getDataIndices()) {
+                    map.put(rawDataId, new ClusterInfo(parentName, c.getClusterName(), c.getClusterNumber()));
+                }
+            }
+        }
+
+        return map;
+    }
+
+    /**
+     * 최적화된 raw_data 시트 생성 — clusterInfoMap을 파라미터로 받아 중복 DB 조회 제거
+     * session_data 배치 쿼리에 projection 적용
+     */
+    private void createRawDataSheetOptimized(SXSSFWorkbook workbook, String sessionId,
+                                               List<ClusteringResult> clusters, List<String> columns,
+                                               Map<String, ClusterInfo> clusterInfoMap) {
+        Sheet sheet = workbook.createSheet("raw_data");
+        CellStyle headerStyle = createHeaderStyle(workbook);
+
+        Row headerRow = sheet.createRow(0);
+        for (int i = 0; i < columns.size(); i++) {
+            Cell cell = headerRow.createCell(i);
+            cell.setCellValue(columns.get(i));
+            cell.setCellStyle(headerStyle);
+        }
+
+        // 배치 쿼리: 전체 raw_data_id를 수집
+        long t0 = System.currentTimeMillis();
+        Set<String> allRawDataIds = new LinkedHashSet<>();
+        for (ClusteringResult c : clusters) {
+            if (c.getDataIndices() != null) allRawDataIds.addAll(c.getDataIndices());
+        }
+        log.info("[EXPORT-OPT-BATCH] 전체 raw_data_id 수집: {}건, 클러스터 수: {}", allRawDataIds.size(), clusters.size());
+
+        Map<String, Document> dataMap = new HashMap<>(allRawDataIds.size());
+        List<String> idList = new ArrayList<>(allRawDataIds);
+        int BATCH_SIZE = 10_000;
+        int batchCount = 0;
+        for (int i = 0; i < idList.size(); i += BATCH_SIZE) {
+            List<String> batch = idList.subList(i, Math.min(i + BATCH_SIZE, idList.size()));
+            Query batchQuery = new Query(Criteria.where("session_id").is(sessionId)
+                    .and("raw_data_id").in(batch));
+            // ★ projection 추가: 필요한 필드만 조회 (raw_data_id + data)
+            batchQuery.fields().include("raw_data_id").include("data");
+            List<Document> batchResult = mongoTemplate.find(batchQuery, Document.class, "session_data");
+            for (Document doc : batchResult) {
+                dataMap.put(doc.getString("raw_data_id"), doc);
+            }
+            batchCount++;
+        }
+        log.info("[EXPORT-OPT-BATCH] 배치 쿼리 완료: {}회 쿼리, {}건 로드, {}ms",
+                batchCount, dataMap.size(), System.currentTimeMillis() - t0);
+
+        int rowNum = 1;
+        for (ClusteringResult cluster : clusters) {
+            List<String> rawDataIds = cluster.getDataIndices();
+            if (rawDataIds == null || rawDataIds.isEmpty()) continue;
+
+            for (String rawDataId : rawDataIds) {
+                Document doc = dataMap.get(rawDataId);
+                if (doc == null) continue;
+                if (rowNum > MAX_ROWS_PER_SHEET) {
+                    log.warn("Max rows exceeded");
+                    break;
+                }
+
+                Row row = sheet.createRow(rowNum++);
+                ClusterInfo info = clusterInfoMap.getOrDefault(rawDataId, ClusterInfo.NONE);
+                String clusterName = info.clusterName != null ? info.clusterName : cluster.getClusterName();
+                String subClusterName = info.subClusterName != null ? info.subClusterName : "-";
+                row.createCell(0).setCellValue(truncateText(clusterName));
+                row.createCell(1).setCellValue(truncateText(subClusterName));
+
+                @SuppressWarnings("unchecked")
+                Map<String, Object> data = (Map<String, Object>) doc.get("data");
+                if (data != null) {
+                    for (int i = 2; i < columns.size(); i++) {
+                        Cell cell = row.createCell(i);
+                        Object value = data.get(columns.get(i));
+                        setCellValue(cell, value);
+                    }
+                }
+            }
+        }
+
+        log.info("[EXPORT-OPT-BATCH] raw_data 시트 생성 완료: {} rows, 총 {}ms", rowNum - 1, System.currentTimeMillis() - t0);
     }
 
     // ============================================================
@@ -461,6 +575,22 @@ public class ExportService {
     }
 
     /**
+     * 최적화된 전체 클러스터 Excel 내보내기 — 사전 로드된 allClusters 재사용
+     */
+    private ExportResult exportAllClustersOptimized(String sessionId, String projectId,
+                                                      List<ClusteringResult> topClusters,
+                                                      List<ClusteringResult> allClusters) throws IOException {
+        log.info("[EXPORT-OPT] 시작: sessionId={}, topClusters={}, allClusters={}", sessionId, topClusters.size(), allClusters.size());
+
+        ExportResult result = generateExcelOptimized(sessionId, projectId, topClusters, allClusters);
+
+        // S3 경로를 file_sessions에 저장
+        updateSessionExportPath(sessionId, result.getS3Key());
+
+        return result;
+    }
+
+    /**
      * Excel 파일 생성 (병렬 처리)
      */
     private ExportResult generateExcel(String sessionId, String projectId,
@@ -511,6 +641,65 @@ public class ExportService {
 
         } finally {
             workbook.dispose(); // 임시 파일 정리
+        }
+    }
+
+    /**
+     * 최적화된 Excel 생성 — allClusters를 파라미터로 받아 중복 MongoDB 조회 제거
+     */
+    private ExportResult generateExcelOptimized(String sessionId, String projectId,
+                                                  List<ClusteringResult> topClusters,
+                                                  List<ClusteringResult> allClusters) throws IOException {
+        log.info("[EXPORT-OPT] Excel 생성 시작: sessionId={}, topClusters={}", sessionId, topClusters.size());
+        long t0 = System.currentTimeMillis();
+
+        SXSSFWorkbook workbook = new SXSSFWorkbook(100);
+        try {
+            List<String> visibleColumns = getVisibleColumnNames(sessionId);
+            List<String> allColumns = new ArrayList<>();
+            allColumns.add("클러스터명");
+            allColumns.add("세부클러스터명");
+            allColumns.addAll(visibleColumns);
+
+            // 1. 요약 시트 (allClusters 재사용 — 중복 로드 제거)
+            long t1 = System.currentTimeMillis();
+            createSummarySheet(workbook, topClusters, allClusters);
+            log.info("[EXPORT-OPT][TIMING] 요약시트: {}ms", System.currentTimeMillis() - t1);
+
+            // 2. raw_data 시트 (allClusters에서 clusterInfoMap 직접 구성 — 중복 로드 제거)
+            t1 = System.currentTimeMillis();
+            Map<String, ClusterInfo> clusterInfoMap = buildRawIdToClusterMapFromList(allClusters);
+            log.info("[EXPORT-OPT][TIMING] clusterInfoMap구성: {}ms ({}건)", System.currentTimeMillis() - t1, clusterInfoMap.size());
+
+            t1 = System.currentTimeMillis();
+            createRawDataSheetOptimized(workbook, sessionId, topClusters, allColumns, clusterInfoMap);
+            log.info("[EXPORT-OPT][TIMING] raw_data시트: {}ms", System.currentTimeMillis() - t1);
+
+            // 3. Excel → byte[]
+            t1 = System.currentTimeMillis();
+            ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
+            workbook.write(outputStream);
+            byte[] excelBytes = outputStream.toByteArray();
+            log.info("[EXPORT-OPT][TIMING] Excel직렬화: {}ms ({}bytes)", System.currentTimeMillis() - t1, excelBytes.length);
+
+            // 4. S3 업로드
+            t1 = System.currentTimeMillis();
+            String s3Key = generateS3Key(sessionId);
+            uploadToS3(s3Key, excelBytes);
+            log.info("[EXPORT-OPT][TIMING] S3업로드: {}ms", System.currentTimeMillis() - t1);
+
+            // 5. Presigned URL 생성
+            String downloadUrl = generatePresignedUrl(s3Key);
+
+            log.info("[EXPORT-OPT] Excel 생성 전체 완료: {}ms", System.currentTimeMillis() - t0);
+            return ExportResult.builder()
+                    .s3Key(s3Key)
+                    .downloadUrl(downloadUrl)
+                    .fileSize(excelBytes.length)
+                    .exportedAt(LocalDateTime.now())
+                    .build();
+        } finally {
+            workbook.dispose();
         }
     }
 
@@ -1072,54 +1261,112 @@ public class ExportService {
     private void doCompleteSessionWithMongoProgress(String sessionId, String projectId,
                                                       boolean forceExport, String taskId) throws IOException {
         long totalStart = System.currentTimeMillis();
+        long stepStart;
         log.info("[FIRE-AND-FORGET] doCompleteSessionWithMongoProgress 진입: sessionId={}, forceExport={}", sessionId, forceExport);
 
+        // ── 1단계: 세션 정보 확인 ──
         updateExportStatus(sessionId, "EXPORTING", 5, "세션 정보 확인 중...");
         updateRedisProgress(taskId, sessionId, 5, "세션 정보 확인 중...");
 
+        stepStart = System.currentTimeMillis();
         Query query = new Query(Criteria.where("session_id").is(sessionId));
         FileSession session = mongoTemplate.findOne(query, FileSession.class);
-        log.info("[FIRE-AND-FORGET] 세션 조회: sessionId={}, found={}, exportPath={}",
-                sessionId, session != null, session != null ? session.getExportPath() : "null");
+        String oldExportPath = session != null ? session.getExportPath() : null;
+        boolean isReCompletion = session != null && Boolean.TRUE.equals(session.getIsCompleted());
+        log.info("[TIMING] 1.세션조회: {}ms (isReCompletion={}, oldExportPath={})",
+                System.currentTimeMillis() - stepStart, isReCompletion, oldExportPath);
 
-        String exportPath = session != null ? session.getExportPath() : null;
-        boolean needsExport = forceExport || exportPath == null || exportPath.isBlank();
-        log.info("[FIRE-AND-FORGET] needsExport={}", needsExport);
+        // ── 2단계: 기존 데이터 정리 (항상 수행 — 기존 export 파일/통계가 있으면 삭제 후 재생성) ──
+        stepStart = System.currentTimeMillis();
+        boolean hasExistingExport = oldExportPath != null && !oldExportPath.isBlank();
+        boolean hasExistingData = hasExistingExport || isReCompletion;
 
-        // 통계 데이터 사전 로드 (별도 스레드 — EXECUTOR 데드락 방지를 위해 commonPool 사용)
+        if (hasExistingData) {
+            log.info("[FIRE-AND-FORGET] 기존 데이터 정리 시작: sessionId={}, hasExistingExport={}, isReCompletion={}",
+                    sessionId, hasExistingExport, isReCompletion);
+            updateExportStatus(sessionId, "EXPORTING", 7, "기존 데이터 정리 중...");
+
+            // 기존 S3 파일 삭제
+            if (hasExistingExport) {
+                deleteS3Object(oldExportPath);
+                log.info("[FIRE-AND-FORGET] 기존 S3 파일 삭제 완료: {}", oldExportPath);
+            }
+        }
+
+        // 기존 cluster_statistics 항상 삭제 (있으면 삭제, 없으면 no-op)
+        clusterStatisticsService.deleteBySessionId(sessionId);
+
+        if (hasExistingData) {
+            // 세션 상태 초기화 (is_completed, export_path 제거)
+            Update resetUpdate = new Update()
+                    .set("is_completed", false)
+                    .set("export_path", null)
+                    .set("completed_at", null);
+            mongoTemplate.updateFirst(query, resetUpdate, FileSession.class);
+        }
+
+        // PVD 캐시 무효화 (항상 수행 — 캐시 일관성 보장)
+        try {
+            redisService.delete("session:" + sessionId + ":pvd_map");
+        } catch (Exception e) {
+            log.warn("[FIRE-AND-FORGET] PVD 캐시 삭제 실패 (무시): {}", e.getMessage());
+        }
+
+        log.info("[TIMING] 2.기존데이터정리: {}ms", System.currentTimeMillis() - stepStart);
+
+        // 항상 export 재생성 (기존 데이터를 정리했으므로)
+        boolean needsExport = true;
+        log.info("[FIRE-AND-FORGET] needsExport={} (항상 재생성)", needsExport);
+
+        // ── 3단계: 클러스터 데이터 1회 로드 (전체 흐름에서 재사용) ──
+        stepStart = System.currentTimeMillis();
+        List<ClusteringResult> allClusters = mongoTemplate.find(
+                new Query(Criteria.where("session_id").is(sessionId))
+                        .with(Sort.by("cluster_number")),
+                ClusteringResult.class);
+        log.info("[TIMING] 3.클러스터로드: {}ms ({}건)", System.currentTimeMillis() - stepStart, allClusters.size());
+
+        // 최상위 클러스터 필터링 (독립 + 병합부모)
+        List<ClusteringResult> topClusters = allClusters.stream()
+                .filter(c -> c.getClusterId() == null || c.getClusterId() == -1 ||
+                        (c.getClusterId() > 0 && c.getClusterId().equals(c.getClusterNumber())))
+                .collect(Collectors.toList());
+
+        // ── 4단계: 통계 데이터 병렬 사전 로드 (ForkJoinPool) ──
         CompletableFuture<Map<String, ClusterStatisticsService.DocData>> pvdFuture =
                 CompletableFuture.supplyAsync(() -> {
                     long t = System.currentTimeMillis();
                     Map<String, ClusterStatisticsService.DocData> data =
                             clusterStatisticsService.loadProcessViewData(sessionId);
-                    log.info("[FIRE-AND-FORGET] loadProcessViewData 완료: {}건, {}ms",
-                            data.size(), System.currentTimeMillis() - t);
+                    log.info("[TIMING] 4.PVD로드(병렬): {}ms ({}건)", System.currentTimeMillis() - t, data.size());
                     return data;
                 });
 
+        // ── 5단계: Excel 생성 + S3 업로드 ──
+        String exportPath;
         if (needsExport) {
-            log.info("[FIRE-AND-FORGET] Excel 생성 시작: sessionId={}", sessionId);
             updateExportStatus(sessionId, "EXPORTING", 10, "Excel 파일 생성 중...");
             updateRedisProgress(taskId, sessionId, 10, "Excel 파일 생성 중...");
 
-            long t0 = System.currentTimeMillis();
-            ExportResult exportResult = exportAllClusters(sessionId, projectId);
-            log.info("[FIRE-AND-FORGET] exportAllClusters 완료: {}ms, s3Key={}", System.currentTimeMillis() - t0, exportResult.getS3Key());
-
+            stepStart = System.currentTimeMillis();
+            ExportResult exportResult = exportAllClustersOptimized(sessionId, projectId, topClusters, allClusters);
             exportPath = exportResult.getS3Key();
+            log.info("[TIMING] 5.Excel생성+S3업로드: {}ms (s3Key={}, size={}bytes)",
+                    System.currentTimeMillis() - stepStart, exportPath, exportResult.getFileSize());
 
             updateExportStatus(sessionId, "EXPORTING", 60, "Excel 생성 완료. 통계 생성 중...");
             updateRedisProgress(taskId, sessionId, 60, "Excel 생성 완료. 통계 생성 중...");
         } else {
+            exportPath = oldExportPath;
             updateExportStatus(sessionId, "EXPORTING", 60, "통계 생성 중...");
             updateRedisProgress(taskId, sessionId, 60, "통계 생성 중...");
         }
 
-        // 통계 생성 (병렬 로드 결과 활용)
-        long t1 = System.currentTimeMillis();
+        // ── 6단계: 통계 생성 ──
+        stepStart = System.currentTimeMillis();
         try {
             Map<String, ClusterStatisticsService.DocData> pvdData = pvdFuture.get(120, TimeUnit.SECONDS);
-            clusterStatisticsService.generateStatisticsWithData(sessionId, projectId, pvdData);
+            clusterStatisticsService.generateStatisticsWithData(sessionId, projectId, pvdData, allClusters);
         } catch (TimeoutException e) {
             log.warn("[FIRE-AND-FORGET] pvd 로드 타임아웃, 동기 방식으로 fallback");
             clusterStatisticsService.generateStatistics(sessionId, projectId);
@@ -1127,15 +1374,15 @@ public class ExportService {
             log.warn("[FIRE-AND-FORGET] pvd 병렬 로드 실패, 동기 방식으로 fallback: {}", e.getMessage());
             clusterStatisticsService.generateStatistics(sessionId, projectId);
         }
-        log.info("[FIRE-AND-FORGET] generateStatistics: {}ms", System.currentTimeMillis() - t1);
+        log.info("[TIMING] 6.통계생성: {}ms", System.currentTimeMillis() - stepStart);
 
+        // ── 7단계: 세션 완료 처리 ──
         updateExportStatus(sessionId, "EXPORTING", 90, "세션 완료 처리 중...");
         updateRedisProgress(taskId, sessionId, 90, "세션 완료 처리 중...");
 
-        // 세션 완료 처리 (isCompleted=true, exportPath 설정)
-        log.info("[FIRE-AND-FORGET] completeSession 호출: sessionId={}, exportPath={}", sessionId, exportPath);
+        stepStart = System.currentTimeMillis();
         completeSession(sessionId, exportPath);
-        log.info("[FIRE-AND-FORGET] completeSession 완료: sessionId={}", sessionId);
+        log.info("[TIMING] 7.세션완료처리: {}ms", System.currentTimeMillis() - stepStart);
 
         // export 상태 정리 (isCompleted=true이므로 analysisStatus는 "완료"로 표시됨)
         Query clearQuery = new Query(Criteria.where("session_id").is(sessionId));
@@ -1145,7 +1392,7 @@ public class ExportService {
                 .set("progress_percentage", 100);
         mongoTemplate.updateFirst(clearQuery, clearUpdate, FileSession.class);
 
-        log.info("[FIRE-AND-FORGET] 전체 완료: sessionId={}, {}ms", sessionId, System.currentTimeMillis() - totalStart);
+        log.info("[TIMING] 전체완료: {}ms (sessionId={})", System.currentTimeMillis() - totalStart, sessionId);
     }
 
     // ★ Redis 진행률 업데이트 헬퍼
@@ -1374,6 +1621,16 @@ public class ExportService {
                     throw new RuntimeException("S3 업로드 중단됨", ie);
                 }
             }
+        }
+    }
+
+    private void deleteS3Object(String s3Key) {
+        try {
+            s3Client.deleteObject(DeleteObjectRequest.builder()
+                    .bucket(S3_BUCKET).key(s3Key).build());
+            log.info("[S3-DELETE] 삭제 완료: s3://{}/{}", S3_BUCKET, s3Key);
+        } catch (Exception e) {
+            log.warn("[S3-DELETE] 삭제 실패 (무시): s3Key={}, error={}", s3Key, e.getMessage());
         }
     }
 

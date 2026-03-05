@@ -35,6 +35,14 @@ public class ClusterStatisticsService {
     private final RedisService redisService;
 
     /**
+     * 세션의 클러스터 통계 삭제 (재완료 시 기존 데이터 정리용)
+     */
+    public void deleteBySessionId(String sessionId) {
+        clusterStatisticsRepository.deleteBySessionId(sessionId);
+        log.info("[CLUSTER-STATS] 기존 통계 삭제: sessionId={}", sessionId);
+    }
+
+    /**
      * 세션의 클러스터 통계 생성
      *
      * 기존 통계를 삭제하고 새로 생성한다.
@@ -324,8 +332,17 @@ public class ClusterStatisticsService {
      */
     public void generateStatisticsWithData(String sessionId, String projectId,
                                              Map<String, DocData> preloadedProcessViewData) {
-        log.info("클러스터 통계 생성 시작 (사전 로드 데이터 사용): sessionId={}, pvdSize={}",
-                sessionId, preloadedProcessViewData.size());
+        generateStatisticsWithData(sessionId, projectId, preloadedProcessViewData, null);
+    }
+
+    /**
+     * 사전 로드된 process_view_data + allClusters를 사용하여 통계 생성 (최적화 — DB 중복 조회 제거)
+     */
+    public void generateStatisticsWithData(String sessionId, String projectId,
+                                             Map<String, DocData> preloadedProcessViewData,
+                                             List<ClusteringResult> preloadedClusters) {
+        log.info("클러스터 통계 생성 시작 (사전 로드 데이터 사용): sessionId={}, pvdSize={}, preloadedClusters={}",
+                sessionId, preloadedProcessViewData.size(), preloadedClusters != null ? preloadedClusters.size() : "null");
 
         clusterStatisticsRepository.deleteBySessionId(sessionId);
 
@@ -342,9 +359,15 @@ public class ClusterStatisticsService {
         String accountName = (session.getAccountNames() != null && !session.getAccountNames().isEmpty())
                 ? String.join(", ", session.getAccountNames()) : "-";
 
-        List<ClusteringResult> allClusters = mongoTemplate.find(
-                new Query(Criteria.where("session_id").is(sessionId)),
-                ClusteringResult.class);
+        List<ClusteringResult> allClusters;
+        if (preloadedClusters != null && !preloadedClusters.isEmpty()) {
+            allClusters = preloadedClusters;
+            log.info("[CLUSTER-STATS] 사전 로드된 클러스터 사용: {}건 (DB 조회 생략)", allClusters.size());
+        } else {
+            allClusters = mongoTemplate.find(
+                    new Query(Criteria.where("session_id").is(sessionId)),
+                    ClusteringResult.class);
+        }
         if (allClusters.isEmpty()) return;
 
         buildAndSaveStatistics(sessionId, resolvedProjectId, accountName, allClusters, preloadedProcessViewData);
