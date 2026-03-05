@@ -816,6 +816,8 @@ public class FileSessionService {
                     // 분석 상태 계산
                     if (Boolean.TRUE.equals(s.getIsCompleted())) {
                         response.setAnalysisStatus("완료");
+                    } else if ("EXPORTING".equals(s.getExportStatus())) {
+                        response.setAnalysisStatus("완료처리중");
                     } else {
                         long sessionDataCount = sessionDataRepository.countBySessionId(s.getSessionId());
                         response.setAnalysisStatus(sessionDataCount > 0 ? "진행중" : "시작전");
@@ -1290,6 +1292,8 @@ public class FileSessionService {
                 .progressPercentage(session.getProgressPercentage())
                 .isCompleted(session.getIsCompleted())
                 .exportPath(session.getExportPath())
+                .exportStatus(session.getExportStatus())
+                .exportMessage(session.getExportMessage())
                 .accountNames(session.getAccountNames())
                 .createdAt(session.getCreatedAt())
                 .updatedAt(session.getUpdatedAt())
@@ -1321,6 +1325,8 @@ public class FileSessionService {
                 .progressPercentage(session.getProgressPercentage())
                 .isCompleted(session.getIsCompleted())
                 .exportPath(session.getExportPath())
+                .exportStatus(session.getExportStatus())
+                .exportMessage(session.getExportMessage())
                 .accountNames(session.getAccountNames())
                 .createdAt(session.getCreatedAt())
                 .updatedAt(session.getUpdatedAt())

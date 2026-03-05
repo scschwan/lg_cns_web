@@ -56,6 +56,16 @@ public class FileSessionResponse {
     private String exportPath;
 
     /**
+     * Export 처리 상태: null | "EXPORTING" | "FAILED"
+     */
+    private String exportStatus;
+
+    /**
+     * Export 처리 메시지
+     */
+    private String exportMessage;
+
+    /**
      * 계정명 목록
      */
     private List<String> accountNames;

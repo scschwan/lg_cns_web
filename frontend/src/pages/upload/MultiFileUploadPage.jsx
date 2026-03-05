@@ -1,6 +1,6 @@
 // frontend/src/pages/upload/MultiFileUploadPage.jsx
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
     Upload,
@@ -266,6 +266,23 @@ function MultiFileUploadPage() {
             }
         };
     }, [files.map(f => f.fileId + (f.uploadStatus || '') + (f.detectedColumns?.length || 0)).join(',')]);
+
+    /**
+     * Export 진행 중인 세션 폴링
+     * - analysisStatus가 "완료처리중"인 세션이 있으면 3초 간격으로 세션 목록 갱신
+     */
+    const hasExportingSessions = useMemo(
+        () => sessions.some(s => s.analysisStatus === '완료처리중'),
+        [sessions]
+    );
+
+    useEffect(() => {
+        if (!hasExportingSessions) return;
+        const interval = setInterval(() => {
+            loadSessions();
+        }, 3000);
+        return () => clearInterval(interval);
+    }, [hasExportingSessions]);
 
    const handleFileUpload = async (event) => {
        if (!event.target.files || event.target.files.length === 0) {
@@ -1327,9 +1344,11 @@ function MultiFileUploadPage() {
                                                                 ? 'bg-gray-100 opacity-60'
                                                                 : session.analysisStatus === '완료'
                                                                     ? 'bg-sky-50'
-                                                                    : session.analysisStatus === '진행중'
-                                                                        ? 'bg-yellow-50'
-                                                                        : ''
+                                                                    : session.analysisStatus === '완료처리중'
+                                                                        ? 'bg-orange-50'
+                                                                        : session.analysisStatus === '진행중'
+                                                                            ? 'bg-yellow-50'
+                                                                            : ''
                                                         }
                                                     >
                                                         <TableCell>
@@ -1448,6 +1467,17 @@ function MultiFileUploadPage() {
                                                         <TableCell className="text-center">
                                                             {session.analysisStatus === '완료' ? (
                                                                 <Badge className="bg-sky-500">완료</Badge>
+                                                            ) : session.analysisStatus === '완료처리중' ? (
+                                                                <div className="flex flex-col items-center gap-1">
+                                                                    <Badge variant="outline" className="border-orange-500 text-orange-700 gap-1">
+                                                                        <Loader2 className="h-3 w-3 animate-spin" />
+                                                                        완료처리중
+                                                                    </Badge>
+                                                                    <Progress value={session.progressPercentage || 0} className="h-1.5 w-16" />
+                                                                    <span className="text-[10px] text-muted-foreground truncate max-w-[100px]">
+                                                                        {session.exportMessage || '처리 중...'}
+                                                                    </span>
+                                                                </div>
                                                             ) : session.analysisStatus === '진행중' ? (
                                                                 <Badge variant="outline" className="border-yellow-500 text-yellow-700">진행중</Badge>
                                                             ) : (
