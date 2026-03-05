@@ -536,30 +536,10 @@ export default function LongListPage() {
     setSaving(true);
     try {
       const items = buildListItemsFromChecked(treeData, checkedIds);
-      const result = await costReductionService.saveLongListSelections(projectId, items);
-      if (result && result.savedCount != null) {
-        navigate(`/projects/${projectId}/shortlist`);
-      } else {
-        alert('Long List 저장에 실패했습니다. 응답이 올바르지 않습니다.');
-      }
+      await costReductionService.saveLongListSelections(projectId, items);
+      navigate(`/projects/${projectId}/shortlist`);
     } catch (err) {
       console.error('Failed to save selections:', err);
-      // ★ Cancel된 요청(세션 만료)은 alert 없이 종료 (이미 로그인 페이지로 이동됨)
-      if (err?.__CANCEL__ || err?.message === '세션이 만료되었습니다.') {
-        return;
-      }
-      const status = err?.response?.status;
-      const isTimeout = err?.code === 'ECONNABORTED';
-      const isInfra = status === 403 && !(err?.response?.data?.error);
-      let msg;
-      if (isTimeout) {
-        msg = '서버 처리 시간이 초과되었습니다. 데이터가 많은 경우 일부 항목을 줄여서 다시 시도해주세요.';
-      } else if (isInfra) {
-        msg = '네트워크 또는 서버 연결에 문제가 발생했습니다. 잠시 후 다시 시도해주세요.';
-      } else {
-        msg = err?.response?.data?.message || err?.message || '알 수 없는 오류';
-      }
-      alert(`Long List 저장 중 오류가 발생했습니다: ${msg}`);
     } finally {
       setSaving(false);
     }
