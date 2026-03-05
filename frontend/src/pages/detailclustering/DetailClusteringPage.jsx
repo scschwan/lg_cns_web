@@ -467,7 +467,7 @@ function DetailClusteringPage() {
   const DETAIL_BATCH_CHUNK_SIZE = 100;
 
   const handleMerge = async () => {
-    if (selectedCount < 2) { alert('2개 이상의 클러스터를 선택하세요.'); return; }
+    if (selectedCount < 1) { alert('1개 이상의 클러스터를 선택하세요.'); return; }
     if (!window.confirm(`선택한 ${selectedCount}개 클러스터를 세부 병합하시겠습니까?`)) return;
     setMerging(true); setMergingProgress(0); setMergeActiveBlocking(true); setMergingMessage('병합 요청 중...');
     try {
@@ -933,7 +933,7 @@ function DetailClusteringPage() {
             <Card className="flex-shrink-0 shadow-sm"><CardContent className="py-3 px-4">
               <div className="flex items-center gap-2 flex-wrap">
                 <div className="relative">
-                  <Button size="sm" className="h-8 min-w-[120px] relative overflow-hidden" onClick={handleMerge} disabled={selectedCount < 2 || merging || unmerging || isViewer}>
+                  <Button size="sm" className="h-8 min-w-[120px] relative overflow-hidden" onClick={handleMerge} disabled={selectedCount < 1 || merging || unmerging || isViewer}>
                     {merging && mergingClusters.size === 0 && <div className="absolute inset-0 bg-blue-300/50 transition-all" style={{ width: `${mergingProgress}%` }} />}
                     <span className="relative z-10 flex items-center">{merging && mergingClusters.size === 0 ? <><Loader2 className="h-3 w-3 mr-1 animate-spin" />{mergingProgress}%</> : <><GitMerge className="h-3 w-3 mr-1" />세부 병합 ({selectedCount})</>}</span>
                   </Button>

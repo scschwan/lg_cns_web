@@ -95,8 +95,8 @@ const MergedClusterRow = React.memo(function MergedClusterRow({
           </span>
         </div>
         <div className="flex flex-wrap gap-0.5 mt-0.5">
-          {(cluster.keywords || []).slice(0, 4).map((k, i) => <Badge key={i} variant="secondary" className="text-[8px]">{k}</Badge>)}
-          {(cluster.keywords || []).length > 4 && <Badge variant="secondary" className="text-[8px]">+{cluster.keywords.length - 4}</Badge>}
+          {(cluster.keywords || []).slice(0, 5).map((k, i) => <Badge key={i} variant="secondary" className="text-[8px]">{k}</Badge>)}
+          {(cluster.keywordTotalCount || 0) > 5 && <Badge variant="secondary" className="text-[8px]">+{cluster.keywordTotalCount - 5}</Badge>}
         </div>
       </div>
       <div className="text-right tabular-nums">{(cluster.count||0).toLocaleString()}</div>
@@ -811,13 +811,15 @@ function ClusteringPage() {
 
   const handleMerge = async () => {
     if (isViewer) return;
-    if (selectedCount < 2) { alert('2개 이상의 클러스터를 선택하세요.'); return; }
+    if (selectedCount < 1) { alert('1개 이상의 클러스터를 선택하세요.'); return; }
     if (!window.confirm(`선택한 ${selectedCount}개 클러스터를 병합하시겠습니까?`)) return;
     setMerging(true);
     mergingProgressRef.current = 0;
     mergingMessageRef.current = '병합 요청 중...';
     setMergeOverlay(true);
     try {
+      let mergedClusterNumber = null;
+
       if (selectAllMode) {
         // ★ Branch 1: selectAll 필터 방식 (body ~50B → CloudFront 통과)
         const res = await clusteringService.mergeClustersWithFilter(projectId, sessionId, {
@@ -825,11 +827,10 @@ function ClusteringPage() {
           keyword: appliedSearchParams?.searchColumn === 'keyword' ? appliedSearchParams.searchValue : null,
           supplier: appliedSearchParams?.searchColumn === 'supplier' ? appliedSearchParams.searchValue : null,
         });
-        // ★ 항상 비동기 — PROCESSING 상태 부모가 DB에 생성됨
         if (res.async && res.taskId) {
-          // 폴링 시작 직후 merged 목록 갱신하여 PROCESSING 껍데기 표시
           loadMerged();
-          await pollMergeProgress(res.taskId);
+          const completedResult = await pollMergeProgress(res.taskId);
+          mergedClusterNumber = completedResult?.mergedClusterNumber;
         }
       } else {
         const nums = Array.from(exceptions);
@@ -838,9 +839,9 @@ function ClusteringPage() {
           // ★ Branch 2: 개별 선택 (항상 비동기 — 서버에서 taskId 반환)
           const res = await clusteringService.mergeClusters(projectId, sessionId, nums);
           if (res.async && res.taskId) {
-            // 폴링 시작 직후 merged 목록 갱신하여 PROCESSING 껍데기 표시
             loadMerged();
-            await pollMergeProgress(res.taskId);
+            const completedResult = await pollMergeProgress(res.taskId);
+            mergedClusterNumber = completedResult?.mergedClusterNumber;
           }
         } else {
           // ★ Branch 3: 대량 개별 선택 → 3-Phase 배치 병합
@@ -849,7 +850,7 @@ function ClusteringPage() {
           mergingProgressRef.current = 3;
           mergingMessageRef.current = '병합 클러스터 생성 중...';
           const startRes = await clusteringService.mergeStart(projectId, sessionId);
-          const mergedClusterNumber = startRes.mergedClusterNumber;
+          mergedClusterNumber = startRes.mergedClusterNumber;
           mergingProgressRef.current = 5;
 
           // Phase 2: 배치 분할 + 병렬 전송
@@ -881,6 +882,14 @@ function ClusteringPage() {
           await new Promise(r => setTimeout(r, 500));
         }
       }
+
+      // ★ 병합 완료 후: DB에서 해당 클러스터의 merge_status가 COMPLETED가 될 때까지 대기
+      if (mergedClusterNumber) {
+        mergingProgressRef.current = 98;
+        mergingMessageRef.current = '병합 결과 확인 중...';
+        await waitForMergeCompleted(mergedClusterNumber);
+      }
+
       setSelectAllMode(false); setExceptions(new Set());
       await refreshAll();
     } catch (e) { alert('병합 실패: ' + (e.response?.data?.message || e.message)); } finally {
@@ -889,6 +898,31 @@ function ClusteringPage() {
       mergingMessageRef.current = '';
       setMergeOverlay(false);
     }
+  };
+
+  /**
+   * ★ DB에서 병합 클러스터의 merge_status가 COMPLETED가 될 때까지 폴링
+   * — 팝업이 닫히는 시점을 실제 DB 반영 완료 시점과 일치시킴
+   */
+  const waitForMergeCompleted = async (clusterNumber) => {
+    const MAX_RETRIES = 20; // 최대 20회 (30초)
+    const INTERVAL = 1500;
+    for (let i = 0; i < MAX_RETRIES; i++) {
+      try {
+        const data = await clusteringService.getMergedClusters(projectId, sessionId);
+        const target = (data || []).find(c => c.clusterNumber === clusterNumber);
+        if (target && target.mergeStatus === 'COMPLETED') {
+          setMergedClusters(data || []);
+          return;
+        }
+        // PROCESSING 상태면 계속 대기
+      } catch (e) {
+        console.warn('[waitForMergeCompleted] 조회 에러:', e.message);
+      }
+      await new Promise(r => setTimeout(r, INTERVAL));
+    }
+    // 타임아웃 — 그래도 refreshAll에서 갱신 시도
+    console.warn('[waitForMergeCompleted] 타임아웃: 클러스터 #', clusterNumber);
   };
 
   const pollMergeProgress = async (taskId) => {
@@ -905,16 +939,11 @@ function ClusteringPage() {
         mergingProgressRef.current = p.progress || 0;
         mergingMessageRef.current = p.message || '처리 중...';
 
-        // ★ 폴링 중 주기적으로 merged 목록 갱신 (PROCESSING → COMPLETED 전환 반영)
-        if (i > 0 && i % 3 === 0) {
-          loadMerged().catch(() => {});
-        }
-
         if (p.status === 'COMPLETED') {
           mergingProgressRef.current = 100;
           mergingMessageRef.current = '병합 완료';
           await new Promise(r => setTimeout(r, 500));
-          return;
+          return p.result || null; // ★ mergedClusterNumber 포함된 result 반환
         }
         if (p.status === 'FAILED') {
           throw new Error(p.message || '서버에서 병합 실패');
@@ -931,7 +960,7 @@ function ClusteringPage() {
             mergingProgressRef.current = 100;
             mergingMessageRef.current = '병합 완료';
             await new Promise(r => setTimeout(r, 500));
-            return;
+            return null; // result 없음 — waitForMergeCompleted에서 DB로 확인
           }
           // ★ RUNNING을 한번도 못 받은 경우 몇 차례 재시도 후 실패 처리
           if (notFoundRetries >= MAX_NOT_FOUND_RETRIES) {
@@ -1771,7 +1800,7 @@ function ClusteringPage() {
                 <div className="flex items-center gap-2 flex-wrap">
                   {/* 병합 버튼 with 프로그레스바 */}
                   <div className="relative">
-                    <Button size="sm" className="h-8 min-w-[120px] relative overflow-hidden" onClick={handleMerge} disabled={selectedCount < 2 || merging || unmerging || isViewer}>
+                    <Button size="sm" className="h-8 min-w-[120px] relative overflow-hidden" onClick={handleMerge} disabled={selectedCount < 1 || merging || unmerging || isViewer}>
                       <span className="relative z-10 flex items-center">
                         {merging && mergingClusters.size === 0 ? (
                           <><Loader2 className="h-3 w-3 mr-1 animate-spin" />병합 중...</>
