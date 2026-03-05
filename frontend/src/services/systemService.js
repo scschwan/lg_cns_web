@@ -1,6 +1,6 @@
 import axios from 'axios';
 
-const API_URL = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8080';
+const API_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080';
 
 /**
  * 시스템 상태 조회 서비스
