@@ -803,72 +803,27 @@ function ClusteringPage() {
     return Promise.all(results);
   };
 
-  const BATCH_MERGE_THRESHOLD = 30;
-  const BATCH_CHUNK_SIZE = 30;
+  const BATCH_MERGE_THRESHOLD = 100;
+  const BATCH_CHUNK_SIZE = 100;
   const BATCH_PARALLEL_LIMIT = 3;
 
   const handleMerge = async () => {
     if (isViewer) return;
-    if (selectedCount < 1) { alert('클러스터를 선택하세요.'); return; }
+    if (selectedCount < 2) { alert('2개 이상의 클러스터를 선택하세요.'); return; }
     if (!window.confirm(`선택한 ${selectedCount}개 클러스터를 병합하시겠습니까?`)) return;
     setMerging(true);
     mergingProgressRef.current = 0;
     mergingMessageRef.current = '병합 요청 중...';
     try {
-      let nums;
       if (selectAllMode) {
-        if (appliedSearchParams) {
-          // ★ Branch 1a: selectAll + 고급검색 → 번호를 먼저 해석 후 배치 병합
-          mergingMessageRef.current = '검색 결과 클러스터 번호 조회 중...';
-          nums = await getSelectedClusterNumbers();
-        } else if (exceptions.size === 0) {
-          // ★ Branch 1b: selectAll + 검색 없음 + 예외 없음 → 필터 방식 (가장 효율적)
-          setMergeOverlay(true);
-          const res = await clusteringService.mergeClustersWithFilter(projectId, sessionId, {
-            exceptions: [],
-            keyword: null,
-            supplier: null,
-          });
-          if (res.async && res.taskId) {
-            await pollMergeProgress(res.taskId);
-          } else {
-            mergingProgressRef.current = 100;
-            mergingMessageRef.current = '병합 완료';
-            await new Promise(r => setTimeout(r, 300));
-          }
-          setSelectAllMode(false); setExceptions(new Set());
-          await refreshAll();
-          return;
-        } else {
-          // ★ Branch 1c: selectAll + 검색 없음 + 예외 있음 → 필터 방식
-          setMergeOverlay(true);
-          const res = await clusteringService.mergeClustersWithFilter(projectId, sessionId, {
-            exceptions: Array.from(exceptions),
-            keyword: null,
-            supplier: null,
-          });
-          if (res.async && res.taskId) {
-            await pollMergeProgress(res.taskId);
-          } else {
-            mergingProgressRef.current = 100;
-            mergingMessageRef.current = '병합 완료';
-            await new Promise(r => setTimeout(r, 300));
-          }
-          setSelectAllMode(false); setExceptions(new Set());
-          await refreshAll();
-          return;
-        }
-      } else {
-        nums = Array.from(exceptions);
-      }
-
-      // nums 기반 병합 처리 (Branch 1a, 개별 선택)
-      if (nums.length <= BATCH_MERGE_THRESHOLD) {
-        // ★ Branch 2: 소량 → 단일 요청
-        if (nums.length >= 50) setMergeOverlay(true);
-        const res = await clusteringService.mergeClusters(projectId, sessionId, nums);
+        // ★ Branch 1: selectAll 필터 방식 (body ~50B → CloudFront 통과)
+        setMergeOverlay(true);
+        const res = await clusteringService.mergeClustersWithFilter(projectId, sessionId, {
+          exceptions: Array.from(exceptions),
+          keyword: appliedSearchParams?.searchColumn === 'keyword' ? appliedSearchParams.searchValue : null,
+          supplier: appliedSearchParams?.searchColumn === 'supplier' ? appliedSearchParams.searchValue : null,
+        });
         if (res.async && res.taskId) {
-          if (!mergeOverlay) setMergeOverlay(true);
           await pollMergeProgress(res.taskId);
         } else {
           mergingProgressRef.current = 100;
@@ -876,43 +831,59 @@ function ClusteringPage() {
           await new Promise(r => setTimeout(r, 300));
         }
       } else {
-        // ★ Branch 3: 대량 → 3-Phase 배치 병합
-        setMergeOverlay(true);
+        const nums = Array.from(exceptions);
 
-        // Phase 1: 빈 부모 생성
-        mergingProgressRef.current = 3;
-        mergingMessageRef.current = '병합 클러스터 생성 중...';
-        const startRes = await clusteringService.mergeStart(projectId, sessionId);
-        const mergedClusterNumber = startRes.mergedClusterNumber;
-        mergingProgressRef.current = 5;
+        if (nums.length <= BATCH_MERGE_THRESHOLD) {
+          // ★ Branch 2: 소량 개별 선택 (body ~5KB → CloudFront 통과)
+          if (nums.length >= 100) setMergeOverlay(true);
+          const res = await clusteringService.mergeClusters(projectId, sessionId, nums);
+          if (res.async && res.taskId) {
+            if (!mergeOverlay) setMergeOverlay(true);
+            await pollMergeProgress(res.taskId);
+          } else {
+            mergingProgressRef.current = 100;
+            mergingMessageRef.current = '병합 완료';
+            await new Promise(r => setTimeout(r, 300));
+          }
+        } else {
+          // ★ Branch 3: 대량 개별 선택 → 3-Phase 배치 병합
+          setMergeOverlay(true);
 
-        // Phase 2: 배치 분할 + 병렬 전송
-        const chunks = [];
-        for (let i = 0; i < nums.length; i += BATCH_CHUNK_SIZE) {
-          chunks.push(nums.slice(i, i + BATCH_CHUNK_SIZE));
+          // Phase 1: 빈 부모 생성
+          mergingProgressRef.current = 3;
+          mergingMessageRef.current = '병합 클러스터 생성 중...';
+          const startRes = await clusteringService.mergeStart(projectId, sessionId);
+          const mergedClusterNumber = startRes.mergedClusterNumber;
+          mergingProgressRef.current = 5;
+
+          // Phase 2: 배치 분할 + 병렬 전송
+          const chunks = [];
+          for (let i = 0; i < nums.length; i += BATCH_CHUNK_SIZE) {
+            chunks.push(nums.slice(i, i + BATCH_CHUNK_SIZE));
+          }
+          mergingMessageRef.current = `배치 전송 중... (0/${chunks.length})`;
+
+          let completedBatches = 0;
+          const batchTasks = chunks.map((chunk, idx) => () =>
+            clusteringService.mergeBatch(projectId, sessionId, mergedClusterNumber, chunk)
+              .then(r => {
+                completedBatches++;
+                const pct = 5 + Math.round((completedBatches / chunks.length) * 85);
+                mergingProgressRef.current = pct;
+                mergingMessageRef.current = `배치 전송 중... (${completedBatches}/${chunks.length})`;
+                return r;
+              })
+          );
+          await parallelLimit(batchTasks, BATCH_PARALLEL_LIMIT);
+
+          // Phase 3: 부모 재계산
+          mergingProgressRef.current = 92;
+          mergingMessageRef.current = '병합 마무리 중...';
+          await clusteringService.mergeFinalize(projectId, sessionId, mergedClusterNumber);
+          mergingProgressRef.current = 100;
+          mergingMessageRef.current = '병합 완료';
+          await new Promise(r => setTimeout(r, 500));
         }
-        mergingMessageRef.current = `배치 전송 중... (0/${chunks.length})`;
-
-        let completedBatches = 0;
-        const batchTasks = chunks.map((chunk, idx) => () =>
-          clusteringService.mergeBatch(projectId, sessionId, mergedClusterNumber, chunk)
-            .then(r => {
-              completedBatches++;
-              const pct = 5 + Math.round((completedBatches / chunks.length) * 85);
-              mergingProgressRef.current = pct;
-              mergingMessageRef.current = `배치 전송 중... (${completedBatches}/${chunks.length})`;
-              return r;
-            })
-        );
-        await parallelLimit(batchTasks, BATCH_PARALLEL_LIMIT);
-
-        // Phase 3: 부모 재계산
-        mergingProgressRef.current = 92;
-        mergingMessageRef.current = '병합 마무리 중...';
-        await clusteringService.mergeFinalize(projectId, sessionId, mergedClusterNumber);
-        mergingProgressRef.current = 100;
-        mergingMessageRef.current = '병합 완료';
-        await new Promise(r => setTimeout(r, 500));
       }
       setSelectAllMode(false); setExceptions(new Set());
       await refreshAll();
