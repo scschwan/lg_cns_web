@@ -86,6 +86,20 @@ public class DetailClusteringController {
         return ResponseEntity.ok(detailClusteringService.getMergedClusters(sessionId, clusterId));
     }
 
+    @GetMapping("/merged/{clusterNumber}/children")
+    public ResponseEntity<Map<String, Object>> getMergedClusterChildren(
+            @PathVariable String projectId,
+            @PathVariable String sessionId,
+            @PathVariable int clusterNumber,
+            @RequestParam int clusterId,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "50") int size,
+            @CurrentUser UserPrincipal userPrincipal) {
+
+        projectService.getProject(projectId, userPrincipal.getId());
+        return ResponseEntity.ok(detailClusteringService.getMergedClusterChildren(sessionId, clusterId, clusterNumber, page, size));
+    }
+
     @GetMapping("/statistics")
     public ResponseEntity<Map<String, Object>> getStatistics(
             @PathVariable String projectId,

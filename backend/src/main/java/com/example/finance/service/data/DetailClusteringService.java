@@ -228,30 +228,6 @@ public class DetailClusteringService {
             }
         }
 
-        // 대표 데이터용 data_indices[0]만 별도 조회 (경량 projection)
-        Set<Integer> allChildNumbers = merged.stream()
-                .filter(c -> !parentNumbers.contains(c.getClusterNumber()))
-                .map(ClusteringResult::getClusterNumber)
-                .collect(Collectors.toSet());
-        Map<Integer, String> childFirstRawId = new HashMap<>();
-        if (!allChildNumbers.isEmpty()) {
-            Query diQuery = new Query(Criteria.where("session_id").is(sessionId)
-                    .and("cluster_number").in(allChildNumbers));
-            diQuery.fields().include("cluster_number").include("data_indices");
-            // $slice로 첫 번째 항목만 가져오기
-            diQuery.fields().slice("data_indices", 1);
-            List<ClusteringResult> diResults = mongoTemplate.find(diQuery, ClusteringResult.class);
-            for (ClusteringResult c : diResults) {
-                if (c.getDataIndices() != null && !c.getDataIndices().isEmpty()) {
-                    childFirstRawId.put(c.getClusterNumber(), c.getDataIndices().get(0));
-                }
-            }
-        }
-
-        Set<String> rawIds = new LinkedHashSet<>(childFirstRawId.values());
-        Map<String, Map<String, Object>> rawIdToData = batchFetchSessionData(sessionId, rawIds);
-        List<String> visibleColumns = getVisibleColumns(sessionId);
-
         List<Map<String, Object>> result = new ArrayList<>();
         for (Integer pn : parentNumbers) {
             ClusteringResult parent = parentMap.get(pn);
@@ -265,8 +241,7 @@ public class DetailClusteringService {
             mergedRow.put("count", parent.getCount());
             mergedRow.put("totalAmount", parent.getTotalAmount());
             mergedRow.put("childCount", children.size());
-            mergedRow.put("columns", visibleColumns);
-
+            // 자식 메타데이터만 (representativeData 없음 → 상세 다이얼로그에서 페이징 조회)
             List<Map<String, Object>> childList = children.stream()
                     .map(c -> {
                         Map<String, Object> child = new LinkedHashMap<>();
@@ -277,11 +252,6 @@ public class DetailClusteringService {
                         child.put("totalAmount", c.getTotalAmount());
                         child.put("supplier", c.getSupplier());
                         child.put("department", c.getDepartment());
-                        String firstRawId = childFirstRawId.get(c.getClusterNumber());
-                        if (firstRawId != null) {
-                            Map<String, Object> repData = rawIdToData.get(firstRawId);
-                            if (repData != null) child.put("representativeData", repData);
-                        }
                         return child;
                     })
                     .collect(Collectors.toList());
@@ -292,6 +262,105 @@ public class DetailClusteringService {
         log.info("[getMergedClusters-detail] 완료: {}ms, parents={}, totalChildren={}",
                 System.currentTimeMillis() - start, parentNumbers.size(),
                 childrenByParent.values().stream().mapToInt(List::size).sum());
+        return result;
+    }
+
+    /**
+     * 세부 병합 클러스터의 자식 목록 조회 (페이징 + representativeData 포함)
+     * 상세 다이얼로그에서 호출 — 해당 페이지 분량만 session_data 조회하여 경량화
+     */
+    public Map<String, Object> getMergedClusterChildren(
+            String sessionId, int clusterId, int parentClusterNumber, int page, int size) {
+        long start = System.currentTimeMillis();
+        log.info("[getMergedClusterChildren-detail] 시작: sessionId={}, clusterId={}, parent={}, page={}, size={}",
+                sessionId, clusterId, parentClusterNumber, page, size);
+
+        // 1. 해당 부모의 자식만 조회 (cluster_sub_id = parentClusterNumber, 자기 자신 제외)
+        Query query = new Query(new Criteria().andOperator(
+                        Criteria.where("session_id").is(sessionId),
+                        Criteria.where("cluster_id").is(clusterId),
+                        Criteria.where("cluster_sub_id").is(parentClusterNumber),
+                        Criteria.where("cluster_number").ne(parentClusterNumber)))
+                .with(Sort.by("cluster_number"));
+        query.fields()
+                .include("cluster_number")
+                .include("cluster_name")
+                .include("keywords")
+                .include("count")
+                .include("total_amount")
+                .include("supplier")
+                .include("department");
+
+        // 전체 건수
+        long totalCount = mongoTemplate.count(query, ClusteringResult.class);
+        int totalPages = (int) Math.ceil((double) totalCount / size);
+
+        // 페이징
+        query.skip((long) page * size).limit(size);
+        List<ClusteringResult> children = mongoTemplate.find(query, ClusteringResult.class);
+
+        // 2. 이 페이지 자식들의 대표데이터 raw_id만 조회
+        Set<Integer> childNumbers = children.stream()
+                .map(ClusteringResult::getClusterNumber)
+                .collect(Collectors.toSet());
+
+        Map<Integer, String> childFirstRawId = new HashMap<>();
+        if (!childNumbers.isEmpty()) {
+            List<Document> firstIdDocs = mongoTemplate.getCollection("clustering_results")
+                    .aggregate(Arrays.asList(
+                            new Document("$match", new Document("session_id", sessionId)
+                                    .append("cluster_id", clusterId)
+                                    .append("cluster_sub_id", parentClusterNumber)
+                                    .append("cluster_number", new Document("$in", new ArrayList<>(childNumbers)))),
+                            new Document("$project", new Document("cluster_number", 1)
+                                    .append("first_data_index", new Document("$arrayElemAt", Arrays.asList("$data_indices", 0))))
+                    )).into(new ArrayList<>());
+            for (Document doc : firstIdDocs) {
+                Integer cn = doc.getInteger("cluster_number");
+                String firstId = doc.getString("first_data_index");
+                if (cn != null && firstId != null) childFirstRawId.put(cn, firstId);
+            }
+        }
+
+        // 3. session_data에서 대표데이터 조회 (이 페이지 분량만)
+        Set<String> rawIds = new LinkedHashSet<>(childFirstRawId.values());
+        Map<String, Map<String, Object>> rawIdToData = rawIds.isEmpty()
+                ? Collections.emptyMap()
+                : batchFetchSessionData(sessionId, rawIds);
+
+        // 4. 컬럼 매핑
+        List<String> visibleColumns = getVisibleColumns(sessionId);
+
+        // 5. 결과 조립
+        List<Map<String, Object>> childList = children.stream()
+                .map(c -> {
+                    Map<String, Object> child = new LinkedHashMap<>();
+                    child.put("clusterNumber", c.getClusterNumber());
+                    child.put("clusterName", c.getClusterName());
+                    child.put("keywords", c.getKeywords());
+                    child.put("count", c.getCount());
+                    child.put("totalAmount", c.getTotalAmount());
+                    child.put("supplier", c.getSupplier());
+                    child.put("department", c.getDepartment());
+                    String firstRawId = childFirstRawId.get(c.getClusterNumber());
+                    if (firstRawId != null) {
+                        Map<String, Object> repData = rawIdToData.get(firstRawId);
+                        if (repData != null) child.put("representativeData", repData);
+                    }
+                    return child;
+                })
+                .collect(Collectors.toList());
+
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("children", childList);
+        result.put("columns", visibleColumns);
+        result.put("page", page);
+        result.put("size", size);
+        result.put("totalCount", totalCount);
+        result.put("totalPages", totalPages);
+
+        log.info("[getMergedClusterChildren-detail] 완료: {}ms, parent={}, page={}/{}, children={}/{}",
+                System.currentTimeMillis() - start, parentClusterNumber, page, totalPages, childList.size(), totalCount);
         return result;
     }
 
