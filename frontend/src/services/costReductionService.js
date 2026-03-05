@@ -91,7 +91,9 @@ const costReductionService = {
   },
 
   saveLongListSelections: async (projectId, items) => {
-    const response = await api.post(`/api/projects/${projectId}/longlist/save`, { items });
+    const response = await api.post(`/api/projects/${projectId}/longlist/save`, { items }, {
+      timeout: 300000, // 5분 타임아웃 (대량 데이터 저장용)
+    });
     return response.data;
   },
 
