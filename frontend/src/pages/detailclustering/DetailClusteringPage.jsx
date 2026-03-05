@@ -456,16 +456,36 @@ function DetailClusteringPage() {
   }, [isDraggingRow, selectAllMode, clusterData]);
 
   /* === 세부 병합 === */
+  const DETAIL_BATCH_THRESHOLD = 100;
+  const DETAIL_BATCH_CHUNK_SIZE = 100;
+
   const handleMerge = async () => {
     if (selectedCount < 2) { alert('2개 이상의 클러스터를 선택하세요.'); return; }
     if (!window.confirm(`선택한 ${selectedCount}개 클러스터를 세부 병합하시겠습니까?`)) return;
     setMerging(true); setMergingProgress(0); setMergeActiveBlocking(true); setMergingMessage('병합 요청 중...');
     try {
-      setMergingProgress(10); setMergingMessage('선택 클러스터 조회 중...');
+      setMergingProgress(5); setMergingMessage('선택 클러스터 조회 중...');
       const nums = await getSelectedClusterNumbers();
-      setMergingProgress(30); setMergingMessage(`${nums.length}개 클러스터 병합 중...`);
-      await detailClusteringService.mergeClusters(projectId, sessionId, clusterId, nums);
-      setMergingProgress(80); setMergingMessage('데이터 갱신 중...');
+
+      if (nums.length <= DETAIL_BATCH_THRESHOLD) {
+        setMergingProgress(30); setMergingMessage(`${nums.length}개 클러스터 병합 중...`);
+        await detailClusteringService.mergeClusters(projectId, sessionId, clusterId, nums);
+      } else {
+        const chunks = [];
+        for (let i = 0; i < nums.length; i += DETAIL_BATCH_CHUNK_SIZE) {
+          chunks.push(nums.slice(i, i + DETAIL_BATCH_CHUNK_SIZE));
+        }
+        setMergingProgress(10); setMergingMessage(`배치 전송 중... (1/${chunks.length})`);
+        const firstResult = await detailClusteringService.mergeClusters(projectId, sessionId, clusterId, chunks[0]);
+        const mergedClusterNumber = firstResult.mergedClusterNumber;
+        for (let i = 1; i < chunks.length; i++) {
+          const pct = 10 + Math.round((i / chunks.length) * 70);
+          setMergingProgress(pct); setMergingMessage(`배치 전송 중... (${i + 1}/${chunks.length})`);
+          await detailClusteringService.addToMergedCluster(projectId, sessionId, clusterId, mergedClusterNumber, chunks[i]);
+        }
+      }
+
+      setMergingProgress(85); setMergingMessage('데이터 갱신 중...');
       setSelectAllMode(false); setExceptions(new Set()); await refreshAll();
       setMergingProgress(100); setMergingMessage('병합 완료');
       await new Promise(r => setTimeout(r, 500));
@@ -479,9 +499,23 @@ function DetailClusteringPage() {
     try {
       setMergingProgress(10); setMergingMessage('선택 클러스터 조회 중...');
       const nums = await getSelectedClusterNumbers();
-      setMergingProgress(30); setMergingMessage(`${nums.length}개 클러스터 추가 병합 중...`);
-      await detailClusteringService.addToMergedCluster(projectId, sessionId, clusterId, targetMergedNumber, nums);
-      setMergingProgress(80); setMergingMessage('데이터 갱신 중...');
+
+      if (nums.length <= DETAIL_BATCH_THRESHOLD) {
+        setMergingProgress(30); setMergingMessage(`${nums.length}개 클러스터 추가 병합 중...`);
+        await detailClusteringService.addToMergedCluster(projectId, sessionId, clusterId, targetMergedNumber, nums);
+      } else {
+        const chunks = [];
+        for (let i = 0; i < nums.length; i += DETAIL_BATCH_CHUNK_SIZE) {
+          chunks.push(nums.slice(i, i + DETAIL_BATCH_CHUNK_SIZE));
+        }
+        for (let i = 0; i < chunks.length; i++) {
+          const pct = 10 + Math.round(((i + 1) / chunks.length) * 70);
+          setMergingProgress(pct); setMergingMessage(`배치 전송 중... (${i + 1}/${chunks.length})`);
+          await detailClusteringService.addToMergedCluster(projectId, sessionId, clusterId, targetMergedNumber, chunks[i]);
+        }
+      }
+
+      setMergingProgress(85); setMergingMessage('데이터 갱신 중...');
       setSelectAllMode(false); setExceptions(new Set()); setAddMergeDialog(false); await refreshAll();
       setMergingProgress(100); setMergingMessage('추가 병합 완료');
       await new Promise(r => setTimeout(r, 500));
@@ -524,7 +558,17 @@ function DetailClusteringPage() {
       for (const keyword of kwCheckedSet) {
         setMergingMessage(`키워드 병합 중... (${done + 1}/${total}): ${keyword}`);
         const ids = await detailClusteringService.getAllUnmergedClusterNumbers(projectId, sessionId, clusterId, keyword);
-        if (ids.length >= 2) await detailClusteringService.mergeClusters(projectId, sessionId, clusterId, ids);
+        if (ids.length >= 2) {
+          if (ids.length <= DETAIL_BATCH_THRESHOLD) {
+            await detailClusteringService.mergeClusters(projectId, sessionId, clusterId, ids);
+          } else {
+            const chunks = [];
+            for (let j = 0; j < ids.length; j += DETAIL_BATCH_CHUNK_SIZE) chunks.push(ids.slice(j, j + DETAIL_BATCH_CHUNK_SIZE));
+            const firstResult = await detailClusteringService.mergeClusters(projectId, sessionId, clusterId, chunks[0]);
+            const mn = firstResult.mergedClusterNumber;
+            for (let j = 1; j < chunks.length; j++) await detailClusteringService.addToMergedCluster(projectId, sessionId, clusterId, mn, chunks[j]);
+          }
+        }
         done++;
         setMergingProgress(Math.round((done / total) * 80));
       }
@@ -544,7 +588,17 @@ function DetailClusteringPage() {
       for (const supplier of supCheckedSet) {
         setMergingMessage(`공급업체 병합 중... (${done + 1}/${total}): ${supplier}`);
         const ids = await detailClusteringService.getAllUnmergedClusterNumbers(projectId, sessionId, clusterId, null, supplier);
-        if (ids.length >= 2) await detailClusteringService.mergeClusters(projectId, sessionId, clusterId, ids);
+        if (ids.length >= 2) {
+          if (ids.length <= DETAIL_BATCH_THRESHOLD) {
+            await detailClusteringService.mergeClusters(projectId, sessionId, clusterId, ids);
+          } else {
+            const chunks = [];
+            for (let j = 0; j < ids.length; j += DETAIL_BATCH_CHUNK_SIZE) chunks.push(ids.slice(j, j + DETAIL_BATCH_CHUNK_SIZE));
+            const firstResult = await detailClusteringService.mergeClusters(projectId, sessionId, clusterId, chunks[0]);
+            const mn = firstResult.mergedClusterNumber;
+            for (let j = 1; j < chunks.length; j++) await detailClusteringService.addToMergedCluster(projectId, sessionId, clusterId, mn, chunks[j]);
+          }
+        }
         done++;
         setMergingProgress(Math.round((done / total) * 80));
       }
