@@ -928,6 +928,164 @@ public class ExportService {
         }
     }
 
+    // ============================================================
+    // 9. Fire-and-Forget 모드: 즉시 반환 + MongoDB 진행률 추적
+    // ============================================================
+
+    /**
+     * ★ 완전 비동기 세션 완료 — 즉시 반환 (< 100ms)
+     * 모든 무거운 작업(Excel 생성, 통계, S3 업로드)은 백그라운드에서 실행.
+     * 진행률은 MongoDB FileSession의 exportStatus/exportMessage/progressPercentage에 저장.
+     * MultiFileUploadPage에서 세션 목록 폴링으로 진행률을 확인.
+     */
+    public Map<String, Object> completeSessionFullyAsync(String sessionId, String projectId, boolean forceExport) {
+        log.info("[FIRE-AND-FORGET] 시작: sessionId={}, forceExport={}", sessionId, forceExport);
+
+        // 중복 실행 방지 (Redis 기반)
+        Object existingTaskId = redisService.getSessionCompleteTaskId(sessionId);
+        if (existingTaskId != null) {
+            Map<Object, Object> existing = redisService.getCompleteProgress(existingTaskId.toString());
+            if (!existing.isEmpty() && "RUNNING".equals(existing.get("status"))) {
+                log.info("[FIRE-AND-FORGET] 이미 실행 중: sessionId={}", sessionId);
+                return Map.of("async", true, "sessionId", sessionId, "alreadyRunning", true);
+            }
+        }
+
+        String taskId = UUID.randomUUID().toString();
+
+        // Redis 세션 잠금
+        Boolean locked = redisService.lockSessionComplete(sessionId, taskId);
+        if (!Boolean.TRUE.equals(locked)) {
+            Object otherTaskId = redisService.getSessionCompleteTaskId(sessionId);
+            if (otherTaskId != null) {
+                return Map.of("async", true, "sessionId", sessionId, "alreadyRunning", true);
+            }
+        }
+
+        // MongoDB에 즉시 export 상태 설정
+        updateExportStatus(sessionId, "EXPORTING", 0, "시작 중...");
+
+        // Redis 초기 진행률 (기존 호환)
+        redisService.saveCompleteProgress(taskId, "RUNNING", 0, "시작 중...", sessionId);
+
+        // 비동기 작업 제출
+        EXECUTOR.submit(() -> {
+            long startTime = System.currentTimeMillis();
+            try {
+                doCompleteSessionWithMongoProgress(sessionId, projectId, forceExport, taskId);
+
+                // Redis 완료 (기존 호환)
+                redisService.saveCompleteResult(taskId, "COMPLETED", 100, "완료", null);
+                redisService.unlockSessionComplete(sessionId);
+
+                log.info("[FIRE-AND-FORGET] 완료: sessionId={}, 소요시간={}ms",
+                        sessionId, System.currentTimeMillis() - startTime);
+            } catch (Throwable e) {
+                log.error("[FIRE-AND-FORGET] 실패: sessionId={}, 소요시간={}ms",
+                        sessionId, System.currentTimeMillis() - startTime, e);
+                updateExportStatus(sessionId, "FAILED", 0, "완료 처리 실패: " + e.getMessage());
+                redisService.saveCompleteResult(taskId, "FAILED", 0, e.getMessage(), null);
+                redisService.unlockSessionComplete(sessionId);
+            }
+        });
+
+        log.info("[FIRE-AND-FORGET] 비동기 작업 제출 완료, 즉시 반환: sessionId={}, taskId={}", sessionId, taskId);
+        return Map.of("async", true, "sessionId", sessionId, "taskId", taskId);
+    }
+
+    /**
+     * MongoDB FileSession의 export 상태를 업데이트
+     */
+    private void updateExportStatus(String sessionId, String status, int progress, String message) {
+        try {
+            Query query = new Query(Criteria.where("session_id").is(sessionId));
+            Update update = new Update()
+                    .set("export_status", status)
+                    .set("progress_percentage", progress)
+                    .set("export_message", message)
+                    .set("updated_at", LocalDateTime.now());
+            mongoTemplate.updateFirst(query, update, FileSession.class);
+        } catch (Exception e) {
+            log.warn("[EXPORT-STATUS] MongoDB 상태 업데이트 실패 (무시): sessionId={}, error={}", sessionId, e.getMessage());
+        }
+    }
+
+    /**
+     * 세션 완료 처리 — MongoDB 진행률 업데이트 포함
+     * 기존 doCompleteSessionWithExport 로직을 재사용하되, 각 단계마다 MongoDB도 업데이트
+     */
+    private void doCompleteSessionWithMongoProgress(String sessionId, String projectId,
+                                                      boolean forceExport, String taskId) throws IOException {
+        long totalStart = System.currentTimeMillis();
+
+        updateExportStatus(sessionId, "EXPORTING", 5, "세션 정보 확인 중...");
+        updateRedisProgress(taskId, sessionId, 5, "세션 정보 확인 중...");
+
+        Query query = new Query(Criteria.where("session_id").is(sessionId));
+        FileSession session = mongoTemplate.findOne(query, FileSession.class);
+
+        String exportPath = session != null ? session.getExportPath() : null;
+        boolean needsExport = forceExport || exportPath == null || exportPath.isBlank();
+
+        // 통계 데이터 사전 로드 (병렬)
+        CompletableFuture<Map<String, ClusterStatisticsService.DocData>> pvdFuture =
+                CompletableFuture.supplyAsync(() -> {
+                    long t = System.currentTimeMillis();
+                    Map<String, ClusterStatisticsService.DocData> data =
+                            clusterStatisticsService.loadProcessViewData(sessionId);
+                    log.info("[FIRE-AND-FORGET] loadProcessViewData 완료: {}건, {}ms",
+                            data.size(), System.currentTimeMillis() - t);
+                    return data;
+                }, EXECUTOR);
+
+        if (needsExport) {
+            updateExportStatus(sessionId, "EXPORTING", 10, "Excel 파일 생성 중...");
+            updateRedisProgress(taskId, sessionId, 10, "Excel 파일 생성 중...");
+
+            long t0 = System.currentTimeMillis();
+            ExportResult exportResult = exportAllClusters(sessionId, projectId);
+            log.info("[FIRE-AND-FORGET] exportAllClusters: {}ms", System.currentTimeMillis() - t0);
+
+            exportPath = exportResult.getS3Key();
+
+            updateExportStatus(sessionId, "EXPORTING", 60, "Excel 생성 완료. 통계 생성 중...");
+            updateRedisProgress(taskId, sessionId, 60, "Excel 생성 완료. 통계 생성 중...");
+        } else {
+            updateExportStatus(sessionId, "EXPORTING", 60, "통계 생성 중...");
+            updateRedisProgress(taskId, sessionId, 60, "통계 생성 중...");
+        }
+
+        // 통계 생성 (병렬 로드 결과 활용)
+        long t1 = System.currentTimeMillis();
+        try {
+            Map<String, ClusterStatisticsService.DocData> pvdData = pvdFuture.get(120, TimeUnit.SECONDS);
+            clusterStatisticsService.generateStatisticsWithData(sessionId, projectId, pvdData);
+        } catch (TimeoutException e) {
+            log.warn("[FIRE-AND-FORGET] pvd 로드 타임아웃, 동기 방식으로 fallback");
+            clusterStatisticsService.generateStatistics(sessionId, projectId);
+        } catch (Exception e) {
+            log.warn("[FIRE-AND-FORGET] pvd 병렬 로드 실패, 동기 방식으로 fallback: {}", e.getMessage());
+            clusterStatisticsService.generateStatistics(sessionId, projectId);
+        }
+        log.info("[FIRE-AND-FORGET] generateStatistics: {}ms", System.currentTimeMillis() - t1);
+
+        updateExportStatus(sessionId, "EXPORTING", 90, "세션 완료 처리 중...");
+        updateRedisProgress(taskId, sessionId, 90, "세션 완료 처리 중...");
+
+        // 세션 완료 처리 (isCompleted=true, exportPath 설정)
+        completeSession(sessionId, exportPath);
+
+        // export 상태 정리 (isCompleted=true이므로 analysisStatus는 "완료"로 표시됨)
+        Query clearQuery = new Query(Criteria.where("session_id").is(sessionId));
+        Update clearUpdate = new Update()
+                .set("export_status", null)
+                .set("export_message", null)
+                .set("progress_percentage", 100);
+        mongoTemplate.updateFirst(clearQuery, clearUpdate, FileSession.class);
+
+        log.info("[FIRE-AND-FORGET] 전체 완료: sessionId={}, {}ms", sessionId, System.currentTimeMillis() - totalStart);
+    }
+
     // ★ Redis 진행률 업데이트 헬퍼
     private void updateRedisProgress(String taskId, String sessionId, int progress, String message) {
         try {

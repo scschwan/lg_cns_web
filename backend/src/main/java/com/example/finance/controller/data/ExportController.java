@@ -176,7 +176,10 @@ public class ExportController {
         log.info("세션 완료: sessionId={}, forceExport={}, mode={}", sessionId, forceExport, mode);
         try {
             Map<String, Object> result;
-            if ("excel_first".equals(mode)) {
+            if ("fire_and_forget".equals(mode)) {
+                // ★ 즉시 반환 모드: 모든 작업 비동기, MongoDB 진행률 추적
+                result = exportService.completeSessionFullyAsync(sessionId, projectId, forceExport);
+            } else if ("excel_first".equals(mode)) {
                 // ★ Phase 3: 엑셀 우선 반환 모드
                 result = exportService.completeSessionExcelFirst(sessionId, projectId, forceExport);
             } else {

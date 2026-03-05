@@ -156,6 +156,18 @@ public class FileSession {
     private String exportPath;
 
     /**
+     * Export 처리 상태: null | "EXPORTING" | "FAILED"
+     */
+    @Field("export_status")
+    private String exportStatus;
+
+    /**
+     * Export 처리 메시지 (진행 상황 표시용)
+     */
+    @Field("export_message")
+    private String exportMessage;
+
+    /**
      * 계정명 값 목록 (병합 시 여러 개)
      */
     @Field("account_names")
