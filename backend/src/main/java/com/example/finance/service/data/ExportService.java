@@ -478,8 +478,13 @@ public class ExportService {
             allColumns.add("세부클러스터명");
             allColumns.addAll(visibleColumns);
 
-            // 1. 요약 시트 생성
-            createSummarySheet(workbook, clusters);
+            // 세부클러스터 정보를 위해 전체 클러스터 로드
+            List<ClusteringResult> allSessionClusters = mongoTemplate.find(
+                    new Query(Criteria.where("session_id").is(sessionId)),
+                    ClusteringResult.class);
+
+            // 1. 요약 시트 생성 (세부클러스터 포함)
+            createSummarySheet(workbook, clusters, allSessionClusters);
 
             // 2. raw_data 시트 생성 (병렬로 데이터 수집)
             createRawDataSheet(workbook, sessionId, clusters, allColumns);
@@ -512,7 +517,8 @@ public class ExportService {
     /**
      * 요약 시트 생성
      */
-    private void createSummarySheet(SXSSFWorkbook workbook, List<ClusteringResult> clusters) {
+    private void createSummarySheet(SXSSFWorkbook workbook, List<ClusteringResult> clusters,
+                                      List<ClusteringResult> allSessionClusters) {
         Sheet sheet = workbook.createSheet("요약");
         CellStyle headerStyle = createHeaderStyle(workbook);
 
@@ -525,16 +531,50 @@ public class ExportService {
             cell.setCellStyle(headerStyle);
         }
 
-        // 데이터
+        // 세부클러스터 매핑: 상위 클러스터 번호 → 세부클러스터 목록
+        Map<Integer, List<ClusteringResult>> subClusterMap = new HashMap<>();
+        for (ClusteringResult c : allSessionClusters) {
+            if (c.getClusterSubId() != null && c.getClusterSubId() > 0
+                    && c.getClusterSubId().equals(c.getClusterNumber())) {
+                // 세부병합 부모 (cluster_sub_id == cluster_number)
+                subClusterMap.computeIfAbsent(c.getClusterId(), k -> new ArrayList<>()).add(c);
+            }
+        }
+
+        // 데이터: 상위 클러스터 + 세부클러스터 계층 표시
         int rowNum = 1;
         for (ClusteringResult cluster : clusters) {
-            Row row = sheet.createRow(rowNum++);
-            row.createCell(0).setCellValue(cluster.getClusterNumber());
-            row.createCell(1).setCellValue(truncateText(cluster.getClusterName()));
-            row.createCell(2).setCellValue("-"); // 세부클러스터명
-            row.createCell(3).setCellValue(truncateText(String.join(", ", cluster.getKeywords() != null ? cluster.getKeywords() : Collections.emptyList())));
-            row.createCell(4).setCellValue(cluster.getCount() != null ? cluster.getCount() : 0);
-            row.createCell(5).setCellValue(cluster.getTotalAmount() != null ? cluster.getTotalAmount() : 0.0);
+            List<ClusteringResult> subClusters = subClusterMap.get(cluster.getClusterNumber());
+
+            if (subClusters == null || subClusters.isEmpty()) {
+                // 세부클러스터 없음 — 기존 방식
+                Row row = sheet.createRow(rowNum++);
+                row.createCell(0).setCellValue(cluster.getClusterNumber());
+                row.createCell(1).setCellValue(truncateText(cluster.getClusterName()));
+                row.createCell(2).setCellValue("-");
+                row.createCell(3).setCellValue(truncateText(String.join(", ", cluster.getKeywords() != null ? cluster.getKeywords() : Collections.emptyList())));
+                row.createCell(4).setCellValue(cluster.getCount() != null ? cluster.getCount() : 0);
+                row.createCell(5).setCellValue(cluster.getTotalAmount() != null ? cluster.getTotalAmount() : 0.0);
+            } else {
+                // 세부클러스터 있음 — 상위 클러스터 행 + 세부클러스터 행들
+                Row parentRow = sheet.createRow(rowNum++);
+                parentRow.createCell(0).setCellValue(cluster.getClusterNumber());
+                parentRow.createCell(1).setCellValue(truncateText(cluster.getClusterName()));
+                parentRow.createCell(2).setCellValue("-");
+                parentRow.createCell(3).setCellValue(truncateText(String.join(", ", cluster.getKeywords() != null ? cluster.getKeywords() : Collections.emptyList())));
+                parentRow.createCell(4).setCellValue(cluster.getCount() != null ? cluster.getCount() : 0);
+                parentRow.createCell(5).setCellValue(cluster.getTotalAmount() != null ? cluster.getTotalAmount() : 0.0);
+
+                for (ClusteringResult sub : subClusters) {
+                    Row subRow = sheet.createRow(rowNum++);
+                    subRow.createCell(0).setCellValue(sub.getClusterNumber());
+                    subRow.createCell(1).setCellValue(truncateText(cluster.getClusterName()));
+                    subRow.createCell(2).setCellValue(truncateText(sub.getClusterName()));
+                    subRow.createCell(3).setCellValue(truncateText(String.join(", ", sub.getKeywords() != null ? sub.getKeywords() : Collections.emptyList())));
+                    subRow.createCell(4).setCellValue(sub.getCount() != null ? sub.getCount() : 0);
+                    subRow.createCell(5).setCellValue(sub.getTotalAmount() != null ? sub.getTotalAmount() : 0.0);
+                }
+            }
         }
     }
 
@@ -553,6 +593,9 @@ public class ExportService {
             cell.setCellValue(columns.get(i));
             cell.setCellStyle(headerStyle);
         }
+
+        // ★ raw_data_id → ClusterInfo 매핑 (세부클러스터명 포함)
+        Map<String, ClusterInfo> clusterInfoMap = buildRawIdToClusterMap(sessionId);
 
         // ★ 배치 쿼리: 전체 raw_data_id를 수집 → 10,000건씩 일괄 조회 → Map으로 O(1) 조회
         long t0 = System.currentTimeMillis();
@@ -596,10 +639,12 @@ public class ExportService {
 
                 Row row = sheet.createRow(rowNum++);
 
-                // 클러스터명
-                row.createCell(0).setCellValue(truncateText(cluster.getClusterName()));
-                // 세부클러스터명
-                row.createCell(1).setCellValue("-");
+                // 클러스터명 + 세부클러스터명 (ClusterInfo 매핑 활용)
+                ClusterInfo info = clusterInfoMap.getOrDefault(rawDataId, ClusterInfo.NONE);
+                String clusterName = info.clusterName != null ? info.clusterName : cluster.getClusterName();
+                String subClusterName = info.subClusterName != null ? info.subClusterName : "-";
+                row.createCell(0).setCellValue(truncateText(clusterName));
+                row.createCell(1).setCellValue(truncateText(subClusterName));
 
                 // 나머지 컬럼 데이터
                 @SuppressWarnings("unchecked")
