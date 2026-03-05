@@ -38,6 +38,10 @@ const handleSessionExpired = () => {
   localStorage.removeItem('refreshToken');
   localStorage.removeItem('user');
   sessionStorage.setItem('sessionExpired', 'true');
+
+  // AuthContext 등 리스너에게 즉시 알림 (React state 동기화)
+  window.dispatchEvent(new Event('session-expired'));
+
   window.location.href = '/login';
 };
 
@@ -92,11 +96,17 @@ api.interceptors.response.use(
 
     const originalRequest = error.config;
 
-    // 401 에러이고, 아직 재시도하지 않은 요청인 경우
-    if (error.response?.status === 401 && !originalRequest._retry) {
+    // 401 에러 처리
+    if (error.response?.status === 401) {
       // 로그인/리프레시 요청 자체가 401이면 바로 로그아웃
       if (originalRequest.url?.includes('/api/auth/login') ||
           originalRequest.url?.includes('/api/auth/refresh')) {
+        handleSessionExpired();
+        return Promise.reject(error);
+      }
+
+      // refresh 후 재시도에서도 401 → 세션 완전 만료
+      if (originalRequest._retry) {
         handleSessionExpired();
         return Promise.reject(error);
       }
