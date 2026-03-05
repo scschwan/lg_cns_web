@@ -127,8 +127,9 @@ function TreeRow({ item, level = 0, expandedIds, toggleExpand, checkedIds, onChe
 
   const handleCheck = () => {
     if (disabled || allLocked) return;
-    // 커서가 잡힌 상태에서 체크 토글 → 커서 전체에 적용
-    if (cursorIds && cursorIds.size > 0 && cursorIds.has(nodeId)) {
+    // 커서가 잡힌 상태에서 체크 토글 → leaf 노드만 커서 일괄 적용
+    // 부모 노드(hasChildren)는 항상 leafIds 기반 토글 (cursor 모드여도 하위 일괄 처리)
+    if (cursorIds && cursorIds.size > 0 && cursorIds.has(nodeId) && !hasChildren) {
       onCheck(prev => {
         const n = new Set(prev);
         const shouldCheck = !isChecked;
@@ -140,6 +141,7 @@ function TreeRow({ item, level = 0, expandedIds, toggleExpand, checkedIds, onChe
       });
       return;
     }
+    // 부모 노드 또는 일반 클릭: leafIds 기반 토글
     if (isChecked) {
       // 체크 해제 시 잠긴 항목은 유지
       onCheck(prev => {

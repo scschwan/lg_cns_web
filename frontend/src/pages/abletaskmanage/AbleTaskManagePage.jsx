@@ -99,6 +99,21 @@ function TaskEditModal({ open, onClose, task, onSave }) {
     });
   }, [task]);
 
+  // 절감율 변경 시 절감액 자동 계산
+  useEffect(() => {
+    const base = parseFloat(form.baseAmount) || 0;
+    const rate = parseFloat(form.expectedSavingRate) || 0;
+    if (base > 0 && rate > 0) {
+      const calculated = Math.round(base * rate / 100);
+      setForm(prev => {
+        if (prev.expectedSavingAmount !== calculated) {
+          return { ...prev, expectedSavingAmount: calculated };
+        }
+        return prev;
+      });
+    }
+  }, [form.baseAmount, form.expectedSavingRate]);
+
   if (!task) return null;
   const handleChange = (f, v) => setForm(prev => ({ ...prev, [f]: v }));
 
@@ -116,12 +131,23 @@ function TaskEditModal({ open, onClose, task, onSave }) {
             <div className="space-y-1.5"><Label>컨설턴트</Label><Input value={form.consultant || ''} onChange={e => handleChange('consultant', e.target.value)} className="h-9 text-sm" /></div>
           </div>
           <div className="grid grid-cols-3 gap-3">
-            <div className="space-y-1.5"><Label>모수금액</Label><Input type="number" value={form.baseAmount ?? ''} onChange={e => handleChange('baseAmount', +e.target.value)} className="h-9 text-sm" /></div>
-            <div className="space-y-1.5"><Label>절감율 (%)</Label><Input type="number" step="0.1" value={form.expectedSavingRate ?? ''} onChange={e => handleChange('expectedSavingRate', +e.target.value)} className="h-9 text-sm" /></div>
-            <div className="space-y-1.5"><Label>절감액</Label><Input type="number" value={form.expectedSavingAmount ?? ''} onChange={e => handleChange('expectedSavingAmount', +e.target.value)} className="h-9 text-sm" /></div>
+            <div className="space-y-1.5"><Label>모수금액</Label><Input type="number" step={1} value={form.baseAmount ?? ''} onChange={e => handleChange('baseAmount', e.target.value === '' ? '' : +e.target.value)} className="h-9 text-sm" /></div>
+            <div className="space-y-1.5"><Label>절감율 (%)</Label><Input type="number" step="0.1" value={form.expectedSavingRate ?? ''} onChange={e => handleChange('expectedSavingRate', e.target.value === '' ? '' : +e.target.value)} className="h-9 text-sm" /></div>
+            <div className="space-y-1.5"><Label>절감액 (자동계산)</Label><Input type="number" step={1} value={form.expectedSavingAmount ?? ''} readOnly className="h-9 text-sm bg-muted/50" /></div>
           </div>
           <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-1.5"><Label>진척율 (%)</Label><Input type="number" min={0} max={100} value={form.progress ?? ''} onChange={e => handleChange('progress', +e.target.value)} className="h-9 text-sm" /></div>
+            <div className="space-y-1.5"><Label>진척율 (%)</Label>
+              <Input
+                type="text" inputMode="numeric"
+                value={form.progress != null && form.progress !== '' ? String(Number(form.progress)) : ''}
+                onChange={e => {
+                  const raw = e.target.value.replace(/[^\d]/g, '');
+                  if (raw === '') handleChange('progress', '');
+                  else handleChange('progress', Math.min(100, Math.max(0, parseInt(raw, 10))));
+                }}
+                className="h-9 text-sm"
+              />
+            </div>
             <div className="space-y-1.5"><Label>상태</Label>
               <Select value={form.status || ''} onValueChange={v => handleChange('status', v)}>
                 <SelectTrigger className="h-9 text-sm"><SelectValue /></SelectTrigger>
@@ -131,7 +157,7 @@ function TaskEditModal({ open, onClose, task, onSave }) {
           </div>
           {form.status === '완료' && (
             <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1.5"><Label>실제 절감액</Label><Input type="number" value={form.actualSaving ?? ''} onChange={e => handleChange('actualSaving', +e.target.value)} className="h-9 text-sm" /></div>
+              <div className="space-y-1.5"><Label>실제 절감액</Label><Input type="number" step={1} value={form.actualSaving ?? ''} onChange={e => handleChange('actualSaving', e.target.value === '' ? '' : +e.target.value)} className="h-9 text-sm" /></div>
               <div className="space-y-1.5"><Label>등급</Label>
                 <Select value={form.rating || ''} onValueChange={v => handleChange('rating', v)}>
                   <SelectTrigger className="h-9 text-sm"><SelectValue placeholder="등급" /></SelectTrigger>
