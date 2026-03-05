@@ -803,9 +803,9 @@ function ClusteringPage() {
     return Promise.all(results);
   };
 
-  const BATCH_MERGE_THRESHOLD = 1000;
-  const BATCH_CHUNK_SIZE = 1000;
-  const BATCH_PARALLEL_LIMIT = 5;
+  const BATCH_MERGE_THRESHOLD = 100;
+  const BATCH_CHUNK_SIZE = 100;
+  const BATCH_PARALLEL_LIMIT = 3;
 
   const handleMerge = async () => {
     if (isViewer) return;

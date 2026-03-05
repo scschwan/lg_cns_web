@@ -69,6 +69,9 @@ const clusteringService = {
             `/api/projects/${projectId}/sessions/${sessionId}/clustering/merge`,
             { clusterNumbers }
         );
+        if (typeof response.data === 'string' && response.data.includes('<!DOCTYPE')) {
+            throw new Error('서버 응답 시간이 초과되었습니다. 잠시 후 새로고침해주세요.');
+        }
         return response.data;
     },
 
@@ -78,6 +81,9 @@ const clusteringService = {
             `/api/projects/${projectId}/sessions/${sessionId}/clustering/merge`,
             { selectAll: true, exceptions, keyword, supplier }
         );
+        if (typeof response.data === 'string' && response.data.includes('<!DOCTYPE')) {
+            throw new Error('서버 응답 시간이 초과되었습니다. 잠시 후 새로고침해주세요.');
+        }
         return response.data;
     },
 
@@ -86,6 +92,9 @@ const clusteringService = {
         const response = await api.post(
             `/api/projects/${projectId}/sessions/${sessionId}/clustering/merge/start`
         );
+        if (typeof response.data === 'string' && response.data.includes('<!DOCTYPE')) {
+            throw new Error('서버 응답 시간이 초과되었습니다. 잠시 후 새로고침해주세요.');
+        }
         return response.data;
     },
 
@@ -95,6 +104,9 @@ const clusteringService = {
             `/api/projects/${projectId}/sessions/${sessionId}/clustering/merge/batch`,
             { mergedClusterNumber, clusterNumbers }
         );
+        if (typeof response.data === 'string' && response.data.includes('<!DOCTYPE')) {
+            throw new Error('서버 응답 시간이 초과되었습니다. 잠시 후 새로고침해주세요.');
+        }
         return response.data;
     },
 
@@ -104,6 +116,9 @@ const clusteringService = {
             `/api/projects/${projectId}/sessions/${sessionId}/clustering/merge/finalize`,
             { mergedClusterNumber }
         );
+        if (typeof response.data === 'string' && response.data.includes('<!DOCTYPE')) {
+            throw new Error('서버 응답 시간이 초과되었습니다. 잠시 후 새로고침해주세요.');
+        }
         return response.data;
     },
 
