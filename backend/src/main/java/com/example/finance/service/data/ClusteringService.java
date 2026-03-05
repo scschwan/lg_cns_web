@@ -595,7 +595,7 @@ public class ClusteringService {
     // ============================================================
 
     private static final int BATCH_CHUNK_SIZE = 2000;
-    private static final int ASYNC_MERGE_THRESHOLD = 100;
+    private static final int ASYNC_MERGE_THRESHOLD = 30;
 
     // ★ 비동기 병합 진행률 추적
     private final ConcurrentHashMap<String, MergeProgress> mergeProgressMap = new ConcurrentHashMap<>();
