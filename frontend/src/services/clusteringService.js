@@ -76,10 +76,10 @@ const clusteringService = {
     },
 
     /** selectAll 필터 방식 병합: POST body 크기를 줄이기 위해 번호 대신 필터를 전송 */
-    mergeClustersWithFilter: async (projectId, sessionId, { exceptions = [], keyword = null, supplier = null } = {}) => {
+    mergeClustersWithFilter: async (projectId, sessionId, { exceptions = [], keyword = null, supplier = null, exactMatch = true } = {}) => {
         const response = await api.post(
             `/api/projects/${projectId}/sessions/${sessionId}/clustering/merge`,
-            { selectAll: true, exceptions, keyword, supplier }
+            { selectAll: true, exceptions, keyword, supplier, exactMatch }
         );
         if (typeof response.data === 'string' && response.data.includes('<!DOCTYPE')) {
             throw new Error('서버 응답 시간이 초과되었습니다. 잠시 후 새로고침해주세요.');

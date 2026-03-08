@@ -658,11 +658,11 @@ public class ClusteringService {
      * 백엔드에서 직접 클러스터 번호를 해석한다.
      */
     public Map<String, Object> mergeClustersWithFilter(String sessionId, List<Integer> exceptions,
-                                                        String keyword, String supplier) {
-        log.info("클러스터 병합(selectAll): sessionId={}, exceptions={}, keyword={}, supplier={}",
-                sessionId, exceptions != null ? exceptions.size() : 0, keyword, supplier);
+                                                        String keyword, String supplier, boolean exactMatch) {
+        log.info("클러스터 병합(selectAll): sessionId={}, exceptions={}, keyword={}, supplier={}, exactMatch={}",
+                sessionId, exceptions != null ? exceptions.size() : 0, keyword, supplier, exactMatch);
 
-        List<Integer> allNumbers = getAllUnmergedClusterNumbers(sessionId, keyword, supplier);
+        List<Integer> allNumbers = getAllUnmergedClusterNumbers(sessionId, keyword, supplier, exactMatch);
         if (exceptions != null && !exceptions.isEmpty()) {
             Set<Integer> excSet = new HashSet<>(exceptions);
             allNumbers = allNumbers.stream().filter(n -> !excSet.contains(n)).collect(Collectors.toList());
@@ -1422,11 +1422,20 @@ public class ClusteringService {
     // ============================================================
 
     public List<Integer> getAllUnmergedClusterNumbers(String sessionId, String keyword, String supplier) {
+        return getAllUnmergedClusterNumbers(sessionId, keyword, supplier, true);
+    }
+
+    public List<Integer> getAllUnmergedClusterNumbers(String sessionId, String keyword, String supplier, boolean exactMatch) {
         Criteria criteria = Criteria.where("session_id").is(sessionId)
                 .and("cluster_id").is(-1);
 
         if (keyword != null && !keyword.isBlank()) {
-            criteria = criteria.and("keywords").is(keyword);
+            if (exactMatch) {
+                criteria = criteria.and("keywords").is(keyword);
+            } else {
+                criteria = criteria.and("keywords").regex(java.util.regex.Pattern.compile(
+                        java.util.regex.Pattern.quote(keyword), java.util.regex.Pattern.CASE_INSENSITIVE));
+            }
         }
         if (supplier != null && !supplier.isBlank()) {
             criteria = criteria.and("supplier").is(supplier);
