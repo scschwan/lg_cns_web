@@ -134,8 +134,9 @@ public class ClusteringController {
             List<Integer> exceptions = (List<Integer>) body.get("exceptions");
             String keyword = (String) body.get("keyword");
             String supplier = (String) body.get("supplier");
+            boolean exactMatch = body.get("exactMatch") == null || Boolean.TRUE.equals(body.get("exactMatch"));
             return ResponseEntity.ok(
-                    clusteringService.mergeClustersWithFilter(sessionId, exceptions, keyword, supplier));
+                    clusteringService.mergeClustersWithFilter(sessionId, exceptions, keyword, supplier, exactMatch));
         }
 
         @SuppressWarnings("unchecked")
