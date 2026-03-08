@@ -18,4 +18,6 @@ public interface ClusterStatisticsRepository extends MongoRepository<ClusterStat
     List<ClusterStatistics> findByProjectId(String projectId);
 
     List<ClusterStatistics> findByProjectIdAndLevel(String projectId, Integer level);
+
+    List<ClusterStatistics> findBySessionIdIn(List<String> sessionIds);
 }

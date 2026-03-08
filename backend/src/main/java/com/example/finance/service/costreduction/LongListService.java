@@ -455,10 +455,7 @@ public class LongListService {
             return Collections.emptyList();
         }
 
-        List<ClusterStatistics> allStats = new ArrayList<>();
-        for (String sessionId : completedSessionIds) {
-            allStats.addAll(clusterStatisticsRepository.findBySessionId(sessionId));
-        }
+        List<ClusterStatistics> allStats = clusterStatisticsRepository.findBySessionIdIn(completedSessionIds);
 
         // project_id backfill
         if (!allStats.isEmpty()) {
@@ -549,6 +546,7 @@ public class LongListService {
 
     /**
      * 계정명(Account) 수준 Raw Data 페이징 조회
+     * - 배치 쿼리로 N+1 문제 해결: 세션당 최대 2회 쿼리로 축소
      */
     public RawDataPageResponse getAccountRawData(String projectId, String accountName, int page, int size) {
         List<ClusterStatistics> allStats = findStatsByProject(projectId);
@@ -556,16 +554,12 @@ public class LongListService {
                 .filter(s -> s.getLevel() == 2 && accountName.equals(s.getAccountName()))
                 .toList();
 
-        List<String> allDataIndices = new ArrayList<>();
-        for (ClusterStatistics stats : level2Stats) {
-            allDataIndices.addAll(collectDataIndices(stats));
-        }
-
+        List<String> allDataIndices = collectDataIndicesBatch(level2Stats);
         return fetchRawDataPage(allDataIndices, page, size);
     }
 
     /**
-     * ClusterStatistics에서 해당하는 ClusteringResult의 dataIndices를 수집
+     * 클러스터 통계 ID 기반 Raw Data - 단건 조회용
      */
     private List<String> collectDataIndices(ClusterStatistics stats) {
         String sessionId = stats.getSessionId();
@@ -578,12 +572,9 @@ public class LongListService {
         List<String> dataIndices = new ArrayList<>();
 
         if (stats.getLevel() == 3) {
-            // Level 3: 단일 클러스터의 dataIndices
             clusteringResultRepository.findFirstBySessionIdAndClusterNumber(sessionId, clusterNumber)
                     .ifPresent(cr -> dataIndices.addAll(cr.getDataIndices()));
         } else if (stats.getLevel() == 2) {
-            // Level 2: 병합된 하위 클러스터들 + 독립 클러스터
-            // 1) 하위 클러스터 (clusterId == clusterNumber)
             List<ClusteringResult> children = clusteringResultRepository
                     .findBySessionIdAndClusterIdOrderByClusterNumberAsc(sessionId, clusterNumber);
             if (!children.isEmpty()) {
@@ -593,7 +584,6 @@ public class LongListService {
                     }
                 }
             } else {
-                // 2) 독립 클러스터 (children이 없으면 자기 자신)
                 clusteringResultRepository.findFirstBySessionIdAndClusterNumber(sessionId, clusterNumber)
                         .ifPresent(cr -> {
                             if (cr.getDataIndices() != null) {
@@ -604,6 +594,66 @@ public class LongListService {
         }
 
         return dataIndices;
+    }
+
+    /**
+     * 여러 ClusterStatistics의 dataIndices를 배치로 수집 (N+1 쿼리 방지)
+     *
+     * 기존: 클러스터마다 개별 쿼리 (20개 클러스터 → 20~40회 DB 조회)
+     * 개선: 세션별로 그룹화하여 일괄 조회 (2개 세션 → 최대 4회 DB 조회)
+     */
+    private List<String> collectDataIndicesBatch(List<ClusterStatistics> statsList) {
+        if (statsList.isEmpty()) {
+            return Collections.emptyList();
+        }
+
+        // 세션별로 그룹화
+        Map<String, List<ClusterStatistics>> bySession = statsList.stream()
+                .filter(s -> s.getSessionId() != null && s.getClusterNumber() != null)
+                .collect(Collectors.groupingBy(ClusterStatistics::getSessionId));
+
+        List<String> allDataIndices = new ArrayList<>();
+
+        for (Map.Entry<String, List<ClusterStatistics>> entry : bySession.entrySet()) {
+            String sessionId = entry.getKey();
+            List<ClusterStatistics> stats = entry.getValue();
+            List<Integer> clusterNumbers = stats.stream()
+                    .map(ClusterStatistics::getClusterNumber)
+                    .toList();
+
+            // 1회 쿼리: 모든 클러스터 번호에 대한 하위 클러스터 일괄 조회
+            List<ClusteringResult> children = clusteringResultRepository
+                    .findBySessionIdAndClusterIdIn(sessionId, clusterNumbers);
+
+            // 하위 클러스터가 있는 부모 클러스터 번호 식별
+            Set<Integer> parentWithChildren = children.stream()
+                    .map(ClusteringResult::getClusterId)
+                    .collect(Collectors.toSet());
+
+            // 하위 클러스터의 dataIndices 수집
+            for (ClusteringResult child : children) {
+                if (child.getDataIndices() != null) {
+                    allDataIndices.addAll(child.getDataIndices());
+                }
+            }
+
+            // 하위 클러스터가 없는 독립 클러스터 일괄 조회 (1회 쿼리)
+            List<Integer> independentNumbers = clusterNumbers.stream()
+                    .filter(cn -> !parentWithChildren.contains(cn))
+                    .toList();
+
+            if (!independentNumbers.isEmpty()) {
+                List<ClusteringResult> independents = clusteringResultRepository
+                        .findBySessionIdAndClusterNumberIn(sessionId, independentNumbers);
+                for (ClusteringResult cr : independents) {
+                    if (cr.getDataIndices() != null) {
+                        allDataIndices.addAll(cr.getDataIndices());
+                    }
+                }
+            }
+        }
+
+        return allDataIndices;
     }
 
     /**
