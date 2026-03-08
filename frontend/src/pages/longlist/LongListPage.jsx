@@ -99,7 +99,7 @@ function StatCard({ icon: Icon, label, value, unit, color, onClick }) {
 /* ============================================================
    Tree Table Row (체크박스 포함 + 드래그/Ctrl 멀티셀렉트)
    ============================================================ */
-function TreeRow({ item, level = 0, expandedIds, toggleExpand, checkedIds, onCheck, isReadOnly, onItemClick, cursorIds, onMouseDownRow, onMouseEnterRow, flatIndex }) {
+function TreeRow({ item, level = 0, expandedIds, toggleExpand, checkedIds, onCheck, isReadOnly, onItemClick, onRawDataClick, cursorIds, onMouseDownRow, onMouseEnterRow, flatIndex }) {
   const hasChildren = item.children && item.children.length > 0;
   const nodeId = getNodeId(item);
   const isExpanded = expandedIds.has(nodeId);
@@ -201,9 +201,18 @@ function TreeRow({ item, level = 0, expandedIds, toggleExpand, checkedIds, onChe
         <TableCell className="text-right tabular-nums py-2.5">{(item.costCenterCount || 0).toLocaleString()}</TableCell>
         <TableCell className="text-right tabular-nums py-2.5">{(item.supplierCount || 0).toLocaleString()}</TableCell>
         <TableCell className="text-right tabular-nums py-2.5 font-medium">{formatAmount(item.totalAmount)}</TableCell>
+        <TableCell className="text-center py-2.5 w-[80px]" onClick={e => e.stopPropagation()}>
+          {(item.statisticsId || item.accountName) && (
+            <Button variant="ghost" size="sm" className="h-6 px-2 text-[11px] text-blue-600 hover:text-blue-800 hover:bg-blue-50"
+              onMouseDown={e => e.stopPropagation()}
+              onClick={() => onRawDataClick && onRawDataClick(item)}>
+              <Eye className="w-3 h-3 mr-1" />조회
+            </Button>
+          )}
+        </TableCell>
       </TableRow>
       {isExpanded && hasChildren && item.children.map(child => (
-        <TreeRow key={getNodeId(child)} item={child} level={level + 1} expandedIds={expandedIds} toggleExpand={toggleExpand} checkedIds={checkedIds} onCheck={onCheck} isReadOnly={isReadOnly} onItemClick={onItemClick} cursorIds={cursorIds} onMouseDownRow={onMouseDownRow} onMouseEnterRow={onMouseEnterRow} flatIndex={flatIndex} />
+        <TreeRow key={getNodeId(child)} item={child} level={level + 1} expandedIds={expandedIds} toggleExpand={toggleExpand} checkedIds={checkedIds} onCheck={onCheck} isReadOnly={isReadOnly} onItemClick={onItemClick} onRawDataClick={onRawDataClick} cursorIds={cursorIds} onMouseDownRow={onMouseDownRow} onMouseEnterRow={onMouseEnterRow} flatIndex={flatIndex} />
       ))}
     </>
   );
@@ -505,6 +514,21 @@ export default function LongListPage() {
     }
   }, [selectedItem, projectId]);
 
+  /* -- Raw Data 모달 열기 (트리 행에서 직접 호출) -- */
+  const handleRowRawDataClick = useCallback((item) => {
+    if (!projectId) return;
+    const itemName = getNodeName(item);
+    let fetchFn;
+    if (item.statisticsId) {
+      fetchFn = (page, size) => costReductionService.getLongListRawData(projectId, item.statisticsId, page, size);
+    } else if (item.accountName) {
+      fetchFn = (page, size) => costReductionService.getLongListAccountRawData(projectId, item.accountName, page, size);
+    }
+    if (fetchFn) {
+      setRawDataModal({ open: true, title: itemName, fetchFn });
+    }
+  }, [projectId]);
+
   /* -- 합계 -- */
   const totals = useMemo(() => treeData.reduce(
     (a, i) => ({
@@ -668,6 +692,7 @@ export default function LongListPage() {
                       <TableHead className="text-right w-[120px]">코스트센터 수</TableHead>
                       <TableHead className="text-right w-[120px]">공급업체 수</TableHead>
                       <TableHead className="text-right w-[140px]">합계 금액</TableHead>
+                      <TableHead className="text-center w-[80px]">Raw Data</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody onMouseUp={() => setIsDragging(false)}>
@@ -681,6 +706,7 @@ export default function LongListPage() {
                         onCheck={setCheckedIds}
                         isReadOnly={isReadOnly}
                         onItemClick={handleItemClick}
+                        onRawDataClick={handleRowRawDataClick}
                         cursorIds={cursorIds}
                         onMouseDownRow={handleRowMouseDown}
                         onMouseEnterRow={handleRowMouseEnter}
@@ -692,6 +718,7 @@ export default function LongListPage() {
                       <TableCell className="text-right tabular-nums py-3">{totals.costCenterCount.toLocaleString()}</TableCell>
                       <TableCell className="text-right tabular-nums py-3">{totals.supplierCount.toLocaleString()}</TableCell>
                       <TableCell className="text-right tabular-nums py-3 font-bold">{formatAmount(totals.totalAmount)}</TableCell>
+                      <TableCell />
                     </TableRow>
                   </TableBody>
                 </Table>

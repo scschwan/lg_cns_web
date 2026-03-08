@@ -101,7 +101,7 @@ function collectNodeData(nodes, checkedIds) {
 }
 
 /* ====== Tree Row (드래그/Ctrl 멀티셀렉트 지원) ====== */
-function TreeRow({ item, level = 0, expandedIds, toggleExpand, checkedIds, onCheck, disabled, onItemClick, lockedIds, cursorIds, onMouseDownRow, onMouseEnterRow }) {
+function TreeRow({ item, level = 0, expandedIds, toggleExpand, checkedIds, onCheck, disabled, onItemClick, onRawDataClick, lockedIds, cursorIds, onMouseDownRow, onMouseEnterRow }) {
   const hasChildren = item.children && item.children.length > 0;
   const nodeId = item.statisticsId || item.id;
   const isExpanded = expandedIds.has(item.id);
@@ -205,9 +205,18 @@ function TreeRow({ item, level = 0, expandedIds, toggleExpand, checkedIds, onChe
         <TableCell className="text-right tabular-nums py-2.5">{costCenterCount.toLocaleString()}</TableCell>
         <TableCell className="text-right tabular-nums py-2.5">{supplierCount.toLocaleString()}</TableCell>
         <TableCell className="text-right tabular-nums py-2.5 font-medium">{formatAmount(item.totalAmount)}</TableCell>
+        <TableCell className="text-center py-2.5 w-[80px]" onClick={e => e.stopPropagation()}>
+          {(item.statisticsId || item.accountName) && (
+            <Button variant="ghost" size="sm" className="h-6 px-2 text-[11px] text-blue-600 hover:text-blue-800 hover:bg-blue-50"
+              onMouseDown={e => e.stopPropagation()}
+              onClick={() => onRawDataClick && onRawDataClick(item)}>
+              <Eye className="w-3 h-3 mr-1" />조회
+            </Button>
+          )}
+        </TableCell>
       </TableRow>
       {isExpanded && hasChildren && item.children.map(child => (
-        <TreeRow key={child.id} item={child} level={level + 1} expandedIds={expandedIds} toggleExpand={toggleExpand} checkedIds={checkedIds} onCheck={onCheck} disabled={disabled} onItemClick={onItemClick} lockedIds={lockedIds} cursorIds={cursorIds} onMouseDownRow={onMouseDownRow} onMouseEnterRow={onMouseEnterRow} />
+        <TreeRow key={child.id} item={child} level={level + 1} expandedIds={expandedIds} toggleExpand={toggleExpand} checkedIds={checkedIds} onCheck={onCheck} disabled={disabled} onItemClick={onItemClick} onRawDataClick={onRawDataClick} lockedIds={lockedIds} cursorIds={cursorIds} onMouseDownRow={onMouseDownRow} onMouseEnterRow={onMouseEnterRow} />
       ))}
     </>
   );
@@ -635,6 +644,21 @@ export default function ShortListPage() {
     }
   }, [selectedNode, projectId]);
 
+  // Raw Data 모달 열기 (트리 행에서 직접 호출)
+  const handleRowRawDataClick = useCallback((item) => {
+    if (!projectId) return;
+    const itemName = item.clusterName || item.accountName || '';
+    let fetchFn;
+    if (item.statisticsId) {
+      fetchFn = (page, size) => costReductionService.getShortListRawData(projectId, item.statisticsId, page, size);
+    } else if (item.accountName) {
+      fetchFn = (page, size) => costReductionService.getShortListAccountRawData(projectId, item.accountName, page, size);
+    }
+    if (fetchFn) {
+      setRawDataModal({ open: true, title: itemName, fetchFn });
+    }
+  }, [projectId]);
+
   // Able 과제 등록 전환
   const handleTransitionToAble = async () => {
     try {
@@ -795,11 +819,12 @@ export default function ShortListPage() {
                       <TableHead className="text-right w-[120px]">코스트센터 수</TableHead>
                       <TableHead className="text-right w-[120px]">공급업체 수</TableHead>
                       <TableHead className="text-right w-[140px]">합계 금액</TableHead>
+                      <TableHead className="text-center w-[80px]">Raw Data</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody onMouseUp={() => setIsDragging(false)}>
                     {treeData.map(item => (
-                      <TreeRow key={item.id} item={item} expandedIds={expandedIds} toggleExpand={toggleExpand} checkedIds={checkedIds} onCheck={setCheckedIds} disabled={isDisabled} onItemClick={handleItemClick} lockedIds={lockedIds} cursorIds={cursorIds} onMouseDownRow={handleRowMouseDown} onMouseEnterRow={handleRowMouseEnter} />
+                      <TreeRow key={item.id} item={item} expandedIds={expandedIds} toggleExpand={toggleExpand} checkedIds={checkedIds} onCheck={setCheckedIds} disabled={isDisabled} onItemClick={handleItemClick} onRawDataClick={handleRowRawDataClick} lockedIds={lockedIds} cursorIds={cursorIds} onMouseDownRow={handleRowMouseDown} onMouseEnterRow={handleRowMouseEnter} />
                     ))}
                     {treeData.length > 0 && (
                       <TableRow className="bg-primary/5 font-bold border-t-2">
@@ -808,6 +833,7 @@ export default function ShortListPage() {
                         <TableCell className="text-right tabular-nums py-3">{totals.costCenterCount.toLocaleString()}</TableCell>
                         <TableCell className="text-right tabular-nums py-3">{totals.supplierCount.toLocaleString()}</TableCell>
                         <TableCell className="text-right tabular-nums py-3 font-bold">{formatAmount(totals.totalAmount)}</TableCell>
+                        <TableCell />
                       </TableRow>
                     )}
                     {treeData.length === 0 && (
