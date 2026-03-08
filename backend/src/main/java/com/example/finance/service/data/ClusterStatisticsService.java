@@ -3,6 +3,7 @@ package com.example.finance.service.data;
 import com.example.finance.model.data.ClusterStatistics;
 import com.example.finance.model.data.ClusterStatistics.BreakdownItem;
 import com.example.finance.model.data.ClusteringResult;
+import com.example.finance.model.data.SessionDataDocument;
 import com.example.finance.model.session.FileSession;
 import com.example.finance.repository.data.ClusterStatisticsRepository;
 import com.example.finance.service.common.RedisService;
@@ -98,6 +99,10 @@ public class ClusterStatisticsService {
     private void buildAndSaveStatistics(String sessionId, String resolvedProjectId,
                                           String accountName, List<ClusteringResult> allClusters,
                                           Map<String, DocData> processViewDataMap) {
+        // ★ 성능 최적화: raw_data_id → row_number 매핑 로드 (dataIndices 정렬용)
+        Map<String, Integer> rowNumberMap = loadRowNumberMap(sessionId);
+        log.info("row_number 매핑 로드 완료: {} rows", rowNumberMap.size());
+
         // 최상위 클러스터 분류: 독립(-1) + 병합 부모(clusterId==clusterNumber)
         List<ClusteringResult> topLevelClusters = allClusters.stream()
                 .filter(c -> {
@@ -128,6 +133,10 @@ public class ClusterStatisticsService {
 
             AggregationResult aggResult = aggregateFromMap(processViewDataMap, dataIndices);
 
+            // dataIndices를 row_number 기준 정렬하여 저장
+            List<String> sortedIndices = new ArrayList<>(dataIndices);
+            sortedIndices.sort(Comparator.comparingInt(id -> rowNumberMap.getOrDefault(id, Integer.MAX_VALUE)));
+
             statisticsList.add(ClusterStatistics.builder()
                     .projectId(resolvedProjectId)
                     .sessionId(sessionId)
@@ -142,6 +151,7 @@ public class ClusterStatisticsService {
                     .supplierCount(aggResult.suppliers.size())
                     .costCenterBreakdown(aggResult.costCenters)
                     .supplierBreakdown(aggResult.suppliers)
+                    .dataIndices(sortedIndices)
                     .createdAt(now)
                     .build());
         }
@@ -154,6 +164,10 @@ public class ClusterStatisticsService {
             Integer parentNumber = subParent.getClusterId();
 
             AggregationResult aggResult = aggregateFromMap(processViewDataMap, dataIndices);
+
+            // dataIndices를 row_number 기준 정렬하여 저장
+            List<String> sortedSubIndices = new ArrayList<>(dataIndices);
+            sortedSubIndices.sort(Comparator.comparingInt(id -> rowNumberMap.getOrDefault(id, Integer.MAX_VALUE)));
 
             statisticsList.add(ClusterStatistics.builder()
                     .projectId(resolvedProjectId)
@@ -169,6 +183,7 @@ public class ClusterStatisticsService {
                     .supplierCount(aggResult.suppliers.size())
                     .costCenterBreakdown(aggResult.costCenters)
                     .supplierBreakdown(aggResult.suppliers)
+                    .dataIndices(sortedSubIndices)
                     .createdAt(now)
                     .build());
         }
@@ -212,6 +227,10 @@ public class ClusterStatisticsService {
                     ? aggregateFromMap(processViewDataMap, etcDataIndices)
                     : new AggregationResult();
 
+            // etcDataIndices를 row_number 기준 정렬하여 저장
+            List<String> sortedEtcIndices = new ArrayList<>(etcDataIndices);
+            sortedEtcIndices.sort(Comparator.comparingInt(id -> rowNumberMap.getOrDefault(id, Integer.MAX_VALUE)));
+
             statisticsList.add(ClusterStatistics.builder()
                     .projectId(resolvedProjectId)
                     .sessionId(sessionId)
@@ -226,6 +245,7 @@ public class ClusterStatisticsService {
                     .supplierCount(aggResult.suppliers.size())
                     .costCenterBreakdown(aggResult.costCenters)
                     .supplierBreakdown(aggResult.suppliers)
+                    .dataIndices(sortedEtcIndices)
                     .createdAt(now)
                     .build());
         }
@@ -371,6 +391,23 @@ public class ClusterStatisticsService {
         if (allClusters.isEmpty()) return;
 
         buildAndSaveStatistics(sessionId, resolvedProjectId, accountName, allClusters, preloadedProcessViewData);
+    }
+
+    /**
+     * session_data에서 raw_data_id → row_number 매핑 로드 (projection 경량 조회)
+     * dataIndices를 row_number 기준 정렬하기 위해 사용
+     */
+    private Map<String, Integer> loadRowNumberMap(String sessionId) {
+        Query query = new Query(Criteria.where("session_id").is(sessionId));
+        query.fields().include("raw_data_id").include("row_number");
+        List<SessionDataDocument> docs = mongoTemplate.find(query, SessionDataDocument.class);
+        Map<String, Integer> map = new HashMap<>(docs.size());
+        for (SessionDataDocument doc : docs) {
+            if (doc.getRawDataId() != null && doc.getRowNumber() != null) {
+                map.put(doc.getRawDataId(), doc.getRowNumber());
+            }
+        }
+        return map;
     }
 
     /**

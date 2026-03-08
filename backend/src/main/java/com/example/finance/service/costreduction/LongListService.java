@@ -535,18 +535,27 @@ public class LongListService {
 
     /**
      * 클러스터 통계 ID 기반 Raw Data 페이징 조회
+     * - data_indices가 있으면 최적화된 페이지 슬라이싱 사용 (20개 ID만 $in)
+     * - 없으면 기존 방식 fallback
      */
     public RawDataPageResponse getRawData(String statisticsId, int page, int size) {
         ClusterStatistics stats = clusterStatisticsRepository.findById(statisticsId)
                 .orElseThrow(() -> new RuntimeException("통계 데이터를 찾을 수 없습니다: " + statisticsId));
 
-        List<String> dataIndices = collectDataIndices(stats);
-        return fetchRawDataPage(dataIndices, page, size);
+        List<String> dataIndices = stats.getDataIndices();
+        if (dataIndices != null && !dataIndices.isEmpty()) {
+            return fetchRawDataPageOptimized(dataIndices, page, size);
+        }
+
+        // fallback: data_indices 없는 구버전 데이터
+        List<String> collectedIndices = collectDataIndices(stats);
+        return fetchRawDataPage(collectedIndices, page, size);
     }
 
     /**
      * 계정명(Account) 수준 Raw Data 페이징 조회
-     * - 배치 쿼리로 N+1 문제 해결: 세션당 최대 2회 쿼리로 축소
+     * - data_indices가 있으면 최적화된 페이지 슬라이싱 사용
+     * - 없으면 배치 쿼리 fallback
      */
     public RawDataPageResponse getAccountRawData(String projectId, String accountName, int page, int size) {
         List<ClusterStatistics> allStats = findStatsByProject(projectId);
@@ -554,8 +563,23 @@ public class LongListService {
                 .filter(s -> s.getLevel() == 2 && accountName.equals(s.getAccountName()))
                 .toList();
 
-        List<String> allDataIndices = collectDataIndicesBatch(level2Stats);
-        return fetchRawDataPage(allDataIndices, page, size);
+        // data_indices가 있는 신규 데이터인지 확인
+        List<String> allDataIndices = new ArrayList<>();
+        boolean hasPreStored = false;
+        for (ClusterStatistics s : level2Stats) {
+            if (s.getDataIndices() != null && !s.getDataIndices().isEmpty()) {
+                allDataIndices.addAll(s.getDataIndices());
+                hasPreStored = true;
+            }
+        }
+
+        if (hasPreStored) {
+            return fetchRawDataPageOptimized(allDataIndices, page, size);
+        }
+
+        // fallback: 구버전 데이터
+        List<String> collectedIndices = collectDataIndicesBatch(level2Stats);
+        return fetchRawDataPage(collectedIndices, page, size);
     }
 
     /**
@@ -657,7 +681,53 @@ public class LongListService {
     }
 
     /**
-     * dataIndices(raw_data_id 목록)로 SessionDataDocument 페이징 조회
+     * ★ 최적화: 정렬된 dataIndices 배열에서 해당 페이지의 ID만 슬라이싱하여 $in 쿼리
+     * - 30,715개 전체 대신 20개(page size)만 $in에 전달
+     * - totalCount는 배열 size 사용 (count 쿼리 불필요)
+     */
+    private RawDataPageResponse fetchRawDataPageOptimized(List<String> sortedDataIndices, int page, int size) {
+        if (sortedDataIndices.isEmpty()) {
+            return RawDataPageResponse.builder()
+                    .columns(Collections.emptyList()).rows(Collections.emptyList())
+                    .page(page).size(size).totalCount(0).totalPages(0).build();
+        }
+
+        int totalCount = sortedDataIndices.size();
+        int totalPages = (int) Math.ceil((double) totalCount / size);
+        int fromIndex = page * size;
+        int toIndex = Math.min(fromIndex + size, totalCount);
+
+        if (fromIndex >= totalCount) {
+            return RawDataPageResponse.builder()
+                    .columns(Collections.emptyList()).rows(Collections.emptyList())
+                    .page(page).size(size).totalCount(totalCount).totalPages(totalPages).build();
+        }
+
+        // ★ 핵심: 30,715개 대신 20개 ID만 $in에 전달
+        List<String> pageIds = sortedDataIndices.subList(fromIndex, toIndex);
+        Pageable pageable = PageRequest.of(0, size, Sort.by("rowNumber").ascending());
+        Page<SessionDataDocument> dataPage = sessionDataRepository.findByRawDataIdIn(pageIds, pageable);
+
+        List<String> columns = new ArrayList<>();
+        List<Map<String, Object>> rows = new ArrayList<>();
+        for (SessionDataDocument doc : dataPage.getContent()) {
+            if (doc.getData() != null) {
+                if (columns.isEmpty()) columns.addAll(doc.getData().keySet());
+                Map<String, Object> row = new LinkedHashMap<>();
+                row.put("_rowNumber", doc.getRowNumber());
+                row.putAll(doc.getData());
+                rows.add(row);
+            }
+        }
+
+        return RawDataPageResponse.builder()
+                .columns(columns).rows(rows)
+                .page(page).size(size)
+                .totalCount(totalCount).totalPages(totalPages).build();
+    }
+
+    /**
+     * dataIndices(raw_data_id 목록)로 SessionDataDocument 페이징 조회 (fallback용)
      */
     private RawDataPageResponse fetchRawDataPage(List<String> dataIndices, int page, int size) {
         if (dataIndices.isEmpty()) {
