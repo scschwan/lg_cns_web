@@ -51,6 +51,11 @@ public interface ClusteringResultRepository extends MongoRepository<ClusteringRe
      */
 
     /**
+     * 여러 부모 클러스터의 하위 클러스터 일괄 조회 (N+1 방지)
+     */
+    List<ClusteringResult> findBySessionIdAndClusterIdIn(String sessionId, List<Integer> clusterIds);
+
+    /**
      * 세션의 모든 클러스터 삭제
      */
     void deleteBySessionId(String sessionId);

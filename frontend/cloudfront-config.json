@@ -37,10 +37,16 @@
     "MaxTTL": 31536000
   },
   "CustomErrorResponses": {
-    "Quantity": 1,
+    "Quantity": 2,
     "Items": [
       {
         "ErrorCode": 403,
+        "ResponsePagePath": "/index.html",
+        "ResponseCode": "200",
+        "ErrorCachingMinTTL": 0
+      },
+      {
+        "ErrorCode": 404,
         "ResponsePagePath": "/index.html",
         "ResponseCode": "200",
         "ErrorCachingMinTTL": 0
