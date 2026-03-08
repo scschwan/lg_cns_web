@@ -819,12 +819,51 @@ function ClusteringPage() {
     setMergeOverlay(true);
     try {
       if (selectAllMode) {
-        // ★ Branch 1: selectAll 필터 방식 — 동기 처리 (CloudFront 360초 타임아웃)
-        await clusteringService.mergeClustersWithFilter(projectId, sessionId, {
-          exceptions: Array.from(exceptions),
-          keyword: appliedSearchParams?.searchColumn === 'keyword' ? appliedSearchParams.searchValue : null,
-          supplier: appliedSearchParams?.searchColumn === 'supplier' ? appliedSearchParams.searchValue : null,
-        });
+        // ★ selectAll: 검색 조건에 맞는 전체 clusterNumber 조회 후 병합
+        mergingProgressRef.current = 5;
+        mergingMessageRef.current = '선택 클러스터 조회 중...';
+        const nums = await getSelectedClusterNumbers();
+
+        if (nums.length === 0) {
+          alert('병합할 클러스터가 없습니다.');
+          return;
+        }
+
+        if (nums.length <= BATCH_MERGE_THRESHOLD) {
+          mergingProgressRef.current = 10;
+          mergingMessageRef.current = `${nums.length}개 클러스터 병합 중...`;
+          await clusteringService.mergeClusters(projectId, sessionId, nums);
+        } else {
+          // 대량: 3-Phase 배치 병합
+          mergingProgressRef.current = 3;
+          mergingMessageRef.current = '병합 클러스터 생성 중...';
+          const startRes = await clusteringService.mergeStart(projectId, sessionId);
+          const mergedClusterNumber = startRes.mergedClusterNumber;
+          mergingProgressRef.current = 5;
+
+          const chunks = [];
+          for (let i = 0; i < nums.length; i += BATCH_CHUNK_SIZE) {
+            chunks.push(nums.slice(i, i + BATCH_CHUNK_SIZE));
+          }
+          mergingMessageRef.current = `배치 전송 중... (0/${chunks.length})`;
+
+          let completedBatches = 0;
+          const batchTasks = chunks.map((chunk) => () =>
+            clusteringService.mergeBatch(projectId, sessionId, mergedClusterNumber, chunk)
+              .then(r => {
+                completedBatches++;
+                const pct = 5 + Math.round((completedBatches / chunks.length) * 85);
+                mergingProgressRef.current = pct;
+                mergingMessageRef.current = `배치 전송 중... (${completedBatches}/${chunks.length})`;
+                return r;
+              })
+          );
+          await parallelLimit(batchTasks, BATCH_PARALLEL_LIMIT);
+
+          mergingProgressRef.current = 92;
+          mergingMessageRef.current = '병합 마무리 중...';
+          await clusteringService.mergeFinalize(projectId, sessionId, mergedClusterNumber);
+        }
       } else {
         const nums = Array.from(exceptions);
 
