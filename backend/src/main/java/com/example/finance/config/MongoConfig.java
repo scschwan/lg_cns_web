@@ -34,6 +34,11 @@ public class MongoConfig extends AbstractMongoClientConfiguration {
     }
 
     @Override
+    protected boolean autoIndexCreation() {
+        return true;
+    }
+
+    @Override
     public MongoClient mongoClient() {
 
         ConnectionString connectionString = new ConnectionString(mongoUri);
