@@ -188,12 +188,40 @@ public class ShortListService {
 
         double selectionRatio = longListTotal > 0 ? (shortListTotal / longListTotal) * 100 : 0.0;
 
+        // 세분화 건수 계산 (계정명/클러스터/세부클러스터)
+        long longAccountCount = longItems.stream()
+                .map(LongShortList.ListItem::getAccountName)
+                .filter(a -> a != null)
+                .distinct().count();
+        long longClusterCount = longItems.stream()
+                .filter(i -> i.getLevel() != null && i.getLevel() == 2)
+                .count();
+        long longSubClusterCount = longItems.stream()
+                .filter(i -> i.getLevel() != null && i.getLevel() == 3)
+                .count();
+        long shortAccountCount = shortItems.stream()
+                .map(LongShortList.ListItem::getAccountName)
+                .filter(a -> a != null)
+                .distinct().count();
+        long shortClusterCount = shortItems.stream()
+                .filter(i -> i.getLevel() != null && i.getLevel() == 2)
+                .count();
+        long shortSubClusterCount = shortItems.stream()
+                .filter(i -> i.getLevel() != null && i.getLevel() == 3)
+                .count();
+
         return ShortListStatsResponse.builder()
                 .longListItemCount(longLevel2.size())
                 .shortListItemCount(shortLevel2.size())
                 .totalAmount(longListTotal)
                 .shortListTotalAmount(shortListTotal)
                 .selectionRatio(Math.round(selectionRatio * 100.0) / 100.0)
+                .longListAccountCount((int) longAccountCount)
+                .longListClusterCount((int) longClusterCount)
+                .longListSubClusterCount((int) longSubClusterCount)
+                .shortListAccountCount((int) shortAccountCount)
+                .shortListClusterCount((int) shortClusterCount)
+                .shortListSubClusterCount((int) shortSubClusterCount)
                 .build();
     }
 
