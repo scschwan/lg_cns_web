@@ -413,16 +413,13 @@ public class SessionDataService {
             log.warn("session_data 캐시 조회 실패 (무시): {}", e.getMessage());
         }
 
-        // 2. MongoDB 조회 (is_hidden=true인 행 제외)
+        // 2. MongoDB 조회 (is_hidden 포함하여 전체 반환, 프론트에서 회색 표시)
         long startTime = System.currentTimeMillis();
 
-        // is_hidden이 true가 아닌 행만 카운트 (is_hidden 없는 기존 데이터도 포함)
-        Query countQuery = new Query(Criteria.where("session_id").is(sessionId)
-                .and("is_hidden").ne(true));
+        Query countQuery = new Query(Criteria.where("session_id").is(sessionId));
         long totalCount = mongoTemplate.count(countQuery, "session_data");
 
-        Query query = new Query(Criteria.where("session_id").is(sessionId)
-                .and("is_hidden").ne(true))
+        Query query = new Query(Criteria.where("session_id").is(sessionId))
                 .with(org.springframework.data.domain.Sort.by("_id"))
                 .skip((long) page * size)
                 .limit(size);
@@ -441,6 +438,7 @@ public class SessionDataService {
                 Map<String, Object> row = new LinkedHashMap<>();
                 row.put("_id", doc.getObjectId("_id").toString());
                 row.put("row_number", doc.getInteger("row_number"));
+                row.put("_isHidden", Boolean.TRUE.equals(doc.getBoolean("is_hidden")));
                 row.putAll(data);
                 rows.add(row);
             }

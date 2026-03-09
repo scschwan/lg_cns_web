@@ -300,6 +300,19 @@ function ClusteringPage() {
   const [clusterTotalPages, setClusterTotalPages] = useState(0);
   const [sort, setSort] = useState(null);
 
+  // 클라이언트 사이드 정렬
+  const sortedClusterData = useMemo(() => {
+    if (!sort || !clusterData.length) return clusterData;
+    const { field, direction } = sort;
+    return [...clusterData].sort((a, b) => {
+      const aVal = a[field], bVal = b[field];
+      if (aVal == null) return 1;
+      if (bVal == null) return -1;
+      const cmp = typeof aVal === 'number' ? aVal - bVal : String(aVal).localeCompare(String(bVal));
+      return direction === 'asc' ? cmp : -cmp;
+    });
+  }, [clusterData, sort]);
+
   /* 체크박스 (selectAllMode + exceptions) */
   const [selectAllMode, setSelectAllMode] = useState(false);
   const [exceptions, setExceptions] = useState(new Set());
@@ -1775,7 +1788,7 @@ function ClusteringPage() {
               <CardContent className="p-0 flex-1 min-h-0 flex flex-col">
                 <AdvancedTable
                   columns={clusterColumns}
-                  data={clusterData}
+                  data={sortedClusterData}
                   rowKey={r => r.clusterNumber}
                   sort={sort}
                   onSortChange={(f, d) => setSort({ field: f, direction: d })}

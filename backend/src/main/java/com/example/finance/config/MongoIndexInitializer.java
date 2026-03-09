@@ -24,17 +24,33 @@ public class MongoIndexInitializer {
 
     @EventListener(ApplicationReadyEvent.class)
     public void ensureIndexes() {
+        // session_data: updateMulti 성능을 위한 복합 인덱스
+        createIndex("session_data", "session_rawdata_idx",
+                new Index().on("session_id", Sort.Direction.ASC).on("raw_data_id", Sort.Direction.ASC));
+
+        // process_data: 페이징 쿼리 성능 (session_id + is_hidden 필터)
+        createIndex("process_data", "session_hidden_idx",
+                new Index().on("session_id", Sort.Direction.ASC).on("is_hidden", Sort.Direction.ASC));
+
+        // process_view_data: process_data_id 기반 조인
+        createIndex("process_view_data", "process_data_id_idx",
+                new Index().on("process_data_id", Sort.Direction.ASC));
+
+        // process_view_data: session 기반 조회
+        createIndex("process_view_data", "session_id_idx",
+                new Index().on("session_id", Sort.Direction.ASC));
+
+        // session_data: 페이징 쿼리 성능 (is_hidden 포함)
+        createIndex("session_data", "session_hidden_idx",
+                new Index().on("session_id", Sort.Direction.ASC).on("is_hidden", Sort.Direction.ASC));
+    }
+
+    private void createIndex(String collection, String indexName, Index index) {
         try {
-            // session_data: updateMulti 성능을 위한 복합 인덱스
-            mongoTemplate.indexOps("session_data").ensureIndex(
-                    new Index()
-                            .named("session_rawdata_idx")
-                            .on("session_id", Sort.Direction.ASC)
-                            .on("raw_data_id", Sort.Direction.ASC)
-            );
-            log.info("[INDEX] session_data.session_rawdata_idx 인덱스 생성/확인 완료");
+            mongoTemplate.indexOps(collection).ensureIndex(index.named(indexName));
+            log.info("[INDEX] {}.{} 인덱스 생성/확인 완료", collection, indexName);
         } catch (Exception e) {
-            log.error("[INDEX] 인덱스 생성 실패: {}", e.getMessage(), e);
+            log.error("[INDEX] {}.{} 인덱스 생성 실패: {}", collection, indexName, e.getMessage());
         }
     }
 }
