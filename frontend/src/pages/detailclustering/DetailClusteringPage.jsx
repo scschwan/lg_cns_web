@@ -187,6 +187,18 @@ function DetailClusteringPage() {
   const [clusterTotalPages, setClusterTotalPages] = useState(0);
   const [sort, setSort] = useState(null);
 
+  const sortedClusterData = useMemo(() => {
+    if (!sort || !clusterData.length) return clusterData;
+    const { field, direction } = sort;
+    return [...clusterData].sort((a, b) => {
+      const aVal = a[field], bVal = b[field];
+      if (aVal == null) return 1;
+      if (bVal == null) return -1;
+      const cmp = typeof aVal === 'number' ? aVal - bVal : String(aVal).localeCompare(String(bVal));
+      return direction === 'asc' ? cmp : -cmp;
+    });
+  }, [clusterData, sort]);
+
   const [selectAllMode, setSelectAllMode] = useState(false);
   const [exceptions, setExceptions] = useState(new Set());
   const [isDraggingRow, setIsDraggingRow] = useState(false);
@@ -948,7 +960,7 @@ function DetailClusteringPage() {
             <Card className="flex-1 flex flex-col min-h-0 shadow-sm overflow-hidden">
               <CardHeader className="py-2.5 px-4 border-b bg-white flex-shrink-0"><CardTitle className="text-sm font-bold">미세부병합 클러스터 ({clusterTotalCount.toLocaleString()}건)</CardTitle></CardHeader>
               <CardContent className="p-0 flex-1 min-h-0 flex flex-col">
-                <AdvancedTable columns={clusterColumns} data={clusterData} rowKey={r => r.clusterNumber} sort={sort} onSortChange={(f, d) => setSort({ field: f, direction: d })} loading={loading} emptyMessage="클러스터 데이터가 없습니다." onRowMouseDown={handleTableRowMouseDown} onRowMouseEnter={handleTableRowMouseEnter} rowClassName={(r) => isRowChecked(r.clusterNumber) ? 'bg-blue-50' : ''} />
+                <AdvancedTable columns={clusterColumns} data={sortedClusterData} rowKey={r => r.clusterNumber} sort={sort} onSortChange={(f, d) => setSort({ field: f, direction: d })} loading={loading} emptyMessage="클러스터 데이터가 없습니다." onRowMouseDown={handleTableRowMouseDown} onRowMouseEnter={handleTableRowMouseEnter} rowClassName={(r) => isRowChecked(r.clusterNumber) ? 'bg-blue-50' : ''} />
               </CardContent>
               <Pagination currentPage={clusterPage} totalPages={clusterTotalPages} totalCount={clusterTotalCount} pageSize={clusterPageSize} onPageChange={handlePageChange} onPageSizeChange={handlePageSizeChange} />
             </Card>

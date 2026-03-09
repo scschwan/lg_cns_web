@@ -78,11 +78,13 @@ public class ExportService {
         // 2. 가시성 컬럼 목록 조회
         List<String> visibleColumns = getVisibleColumnNames(sessionId);
 
-        // 3. session_data 페이징 조회 (raw_data 기반)
-        Query countQuery = new Query(Criteria.where("session_id").is(sessionId));
+        // 3. session_data 페이징 조회 (삭제된 데이터 제외)
+        Criteria baseCriteria = Criteria.where("session_id").is(sessionId)
+                .and("is_hidden").ne(true);
+        Query countQuery = new Query(baseCriteria);
         long totalCount = mongoTemplate.count(countQuery, "session_data");
 
-        Query query = new Query(Criteria.where("session_id").is(sessionId))
+        Query query = new Query(baseCriteria)
                 .with(Sort.by("row_number"))
                 .skip((long) page * size)
                 .limit(size);

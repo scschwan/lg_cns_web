@@ -767,6 +767,7 @@ export default function StartAnalysisPage() {
                     sort={processedSort}
                     onSortChange={(field, direction) => setProcessedSort({ field, direction })}
                     loading={loading}
+                    rowClassName={(row) => row._isHidden ? 'bg-gray-100 opacity-50 line-through' : ''}
                   />
               </CardContent>
 
