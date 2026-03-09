@@ -4,12 +4,10 @@ import com.example.finance.dto.request.costreduction.SaveListRequest;
 import com.example.finance.dto.response.costreduction.*;
 import com.example.finance.model.costreduction.LongShortList;
 import com.example.finance.model.data.ClusterStatistics;
-import com.example.finance.model.data.ClusteringResult;
 import com.example.finance.model.data.SessionDataDocument;
 import com.example.finance.model.session.FileSession;
 import com.example.finance.repository.costreduction.LongShortListRepository;
 import com.example.finance.repository.data.ClusterStatisticsRepository;
-import com.example.finance.repository.data.ClusteringResultRepository;
 import com.example.finance.repository.data.SessionDataRepository;
 import com.example.finance.repository.session.FileSessionRepository;
 import com.example.finance.service.common.RedisService;
@@ -34,7 +32,6 @@ import java.util.stream.Collectors;
 public class LongListService {
 
     private final ClusterStatisticsRepository clusterStatisticsRepository;
-    private final ClusteringResultRepository clusteringResultRepository;
     private final SessionDataRepository sessionDataRepository;
     private final LongShortListRepository longShortListRepository;
     private final FileSessionRepository fileSessionRepository;
@@ -535,154 +532,70 @@ public class LongListService {
 
     /**
      * 클러스터 통계 ID 기반 Raw Data 페이징 조회
+     *
+     * session_data.stats_l2_id / stats_l3_id 기반 직접 페이징 조회
+     * - Level 2 (클러스터): stats_l2_id == statisticsId
+     * - Level 3 (세부클러스터): stats_l3_id == statisticsId
      */
     public RawDataPageResponse getRawData(String statisticsId, int page, int size) {
         ClusterStatistics stats = clusterStatisticsRepository.findById(statisticsId)
                 .orElseThrow(() -> new RuntimeException("통계 데이터를 찾을 수 없습니다: " + statisticsId));
 
-        List<String> dataIndices = collectDataIndices(stats);
-        return fetchRawDataPage(dataIndices, page, size);
+        Pageable pageable = PageRequest.of(page, size, Sort.by("rowNumber").ascending());
+        Page<SessionDataDocument> dataPage;
+        long totalCount;
+
+        if (stats.getLevel() == 3) {
+            // 세부클러스터: stats_l3_id로 직접 조회
+            dataPage = sessionDataRepository.findByStatsL3Id(statisticsId, pageable);
+            totalCount = dataPage.getTotalElements();
+        } else if (stats.getLevel() == 2) {
+            // 클러스터: stats_l2_id로 직접 조회
+            dataPage = sessionDataRepository.findByStatsL2Id(statisticsId, pageable);
+            totalCount = dataPage.getTotalElements();
+        } else {
+            return RawDataPageResponse.builder()
+                    .columns(Collections.emptyList()).rows(Collections.emptyList())
+                    .page(page).size(size).totalCount(0).totalPages(0).build();
+        }
+
+        return buildRawDataResponse(dataPage, page, size, totalCount);
     }
 
     /**
      * 계정명(Account) 수준 Raw Data 페이징 조회
-     * - 배치 쿼리로 N+1 문제 해결: 세션당 최대 2회 쿼리로 축소
+     *
+     * 계정명에 소속된 모든 Level 2 cluster_statistics ID를 수집 후
+     * session_data.stats_l2_id IN (ids) 으로 직접 페이징 조회
      */
     public RawDataPageResponse getAccountRawData(String projectId, String accountName, int page, int size) {
         List<ClusterStatistics> allStats = findStatsByProject(projectId);
-        List<ClusterStatistics> level2Stats = allStats.stream()
+        List<String> l2StatsIds = allStats.stream()
                 .filter(s -> s.getLevel() == 2 && accountName.equals(s.getAccountName()))
+                .map(ClusterStatistics::getId)
                 .toList();
 
-        List<String> allDataIndices = collectDataIndicesBatch(level2Stats);
-        return fetchRawDataPage(allDataIndices, page, size);
-    }
-
-    /**
-     * 클러스터 통계 ID 기반 Raw Data - 단건 조회용
-     */
-    private List<String> collectDataIndices(ClusterStatistics stats) {
-        String sessionId = stats.getSessionId();
-        Integer clusterNumber = stats.getClusterNumber();
-
-        if (sessionId == null || clusterNumber == null) {
-            return Collections.emptyList();
-        }
-
-        List<String> dataIndices = new ArrayList<>();
-
-        if (stats.getLevel() == 3) {
-            clusteringResultRepository.findFirstBySessionIdAndClusterNumber(sessionId, clusterNumber)
-                    .ifPresent(cr -> dataIndices.addAll(cr.getDataIndices()));
-        } else if (stats.getLevel() == 2) {
-            List<ClusteringResult> children = clusteringResultRepository
-                    .findBySessionIdAndClusterIdOrderByClusterNumberAsc(sessionId, clusterNumber);
-            if (!children.isEmpty()) {
-                for (ClusteringResult child : children) {
-                    if (child.getDataIndices() != null) {
-                        dataIndices.addAll(child.getDataIndices());
-                    }
-                }
-            } else {
-                clusteringResultRepository.findFirstBySessionIdAndClusterNumber(sessionId, clusterNumber)
-                        .ifPresent(cr -> {
-                            if (cr.getDataIndices() != null) {
-                                dataIndices.addAll(cr.getDataIndices());
-                            }
-                        });
-            }
-        }
-
-        return dataIndices;
-    }
-
-    /**
-     * 여러 ClusterStatistics의 dataIndices를 배치로 수집 (N+1 쿼리 방지)
-     *
-     * 기존: 클러스터마다 개별 쿼리 (20개 클러스터 → 20~40회 DB 조회)
-     * 개선: 세션별로 그룹화하여 일괄 조회 (2개 세션 → 최대 4회 DB 조회)
-     */
-    private List<String> collectDataIndicesBatch(List<ClusterStatistics> statsList) {
-        if (statsList.isEmpty()) {
-            return Collections.emptyList();
-        }
-
-        // 세션별로 그룹화
-        Map<String, List<ClusterStatistics>> bySession = statsList.stream()
-                .filter(s -> s.getSessionId() != null && s.getClusterNumber() != null)
-                .collect(Collectors.groupingBy(ClusterStatistics::getSessionId));
-
-        List<String> allDataIndices = new ArrayList<>();
-
-        for (Map.Entry<String, List<ClusterStatistics>> entry : bySession.entrySet()) {
-            String sessionId = entry.getKey();
-            List<ClusterStatistics> stats = entry.getValue();
-            List<Integer> clusterNumbers = stats.stream()
-                    .map(ClusterStatistics::getClusterNumber)
-                    .toList();
-
-            // 1회 쿼리: 모든 클러스터 번호에 대한 하위 클러스터 일괄 조회
-            List<ClusteringResult> children = clusteringResultRepository
-                    .findBySessionIdAndClusterIdIn(sessionId, clusterNumbers);
-
-            // 하위 클러스터가 있는 부모 클러스터 번호 식별
-            Set<Integer> parentWithChildren = children.stream()
-                    .map(ClusteringResult::getClusterId)
-                    .collect(Collectors.toSet());
-
-            // 하위 클러스터의 dataIndices 수집
-            for (ClusteringResult child : children) {
-                if (child.getDataIndices() != null) {
-                    allDataIndices.addAll(child.getDataIndices());
-                }
-            }
-
-            // 하위 클러스터가 없는 독립 클러스터 일괄 조회 (1회 쿼리)
-            List<Integer> independentNumbers = clusterNumbers.stream()
-                    .filter(cn -> !parentWithChildren.contains(cn))
-                    .toList();
-
-            if (!independentNumbers.isEmpty()) {
-                List<ClusteringResult> independents = clusteringResultRepository
-                        .findBySessionIdAndClusterNumberIn(sessionId, independentNumbers);
-                for (ClusteringResult cr : independents) {
-                    if (cr.getDataIndices() != null) {
-                        allDataIndices.addAll(cr.getDataIndices());
-                    }
-                }
-            }
-        }
-
-        return allDataIndices;
-    }
-
-    /**
-     * dataIndices(raw_data_id 목록)로 SessionDataDocument 페이징 조회
-     */
-    private RawDataPageResponse fetchRawDataPage(List<String> dataIndices, int page, int size) {
-        if (dataIndices.isEmpty()) {
+        if (l2StatsIds.isEmpty()) {
             return RawDataPageResponse.builder()
-                    .columns(Collections.emptyList())
-                    .rows(Collections.emptyList())
-                    .page(page)
-                    .size(size)
-                    .totalCount(0)
-                    .totalPages(0)
-                    .build();
+                    .columns(Collections.emptyList()).rows(Collections.emptyList())
+                    .page(page).size(size).totalCount(0).totalPages(0).build();
         }
 
         Pageable pageable = PageRequest.of(page, size, Sort.by("rowNumber").ascending());
-        Page<SessionDataDocument> dataPage = sessionDataRepository.findByRawDataIdIn(dataIndices, pageable);
+        Page<SessionDataDocument> dataPage = sessionDataRepository.findByStatsL2IdIn(l2StatsIds, pageable);
+        return buildRawDataResponse(dataPage, page, size, dataPage.getTotalElements());
+    }
 
-        // 컬럼 헤더 추출 (첫 번째 행의 data 키에서)
+    /**
+     * Page<SessionDataDocument> → RawDataPageResponse 변환
+     */
+    private RawDataPageResponse buildRawDataResponse(Page<SessionDataDocument> dataPage, int page, int size, long totalCount) {
         List<String> columns = new ArrayList<>();
         List<Map<String, Object>> rows = new ArrayList<>();
 
         for (SessionDataDocument doc : dataPage.getContent()) {
             if (doc.getData() != null) {
-                if (columns.isEmpty()) {
-                    columns.addAll(doc.getData().keySet());
-                }
+                if (columns.isEmpty()) columns.addAll(doc.getData().keySet());
                 Map<String, Object> row = new LinkedHashMap<>();
                 row.put("_rowNumber", doc.getRowNumber());
                 row.putAll(doc.getData());
@@ -691,11 +604,9 @@ public class LongListService {
         }
 
         return RawDataPageResponse.builder()
-                .columns(columns)
-                .rows(rows)
-                .page(page)
-                .size(size)
-                .totalCount(dataPage.getTotalElements())
+                .columns(columns).rows(rows)
+                .page(page).size(size)
+                .totalCount(totalCount)
                 .totalPages(dataPage.getTotalPages())
                 .build();
     }

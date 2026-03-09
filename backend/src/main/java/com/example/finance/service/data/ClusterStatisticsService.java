@@ -3,6 +3,7 @@ package com.example.finance.service.data;
 import com.example.finance.model.data.ClusterStatistics;
 import com.example.finance.model.data.ClusterStatistics.BreakdownItem;
 import com.example.finance.model.data.ClusteringResult;
+import com.example.finance.model.data.SessionDataDocument;
 import com.example.finance.model.session.FileSession;
 import com.example.finance.repository.data.ClusterStatisticsRepository;
 import com.example.finance.service.common.RedisService;
@@ -269,6 +270,91 @@ public class ClusterStatisticsService {
                 statisticsList.stream().filter(s -> s.getLevel() == 1).count(),
                 statisticsList.stream().filter(s -> s.getLevel() == 2).count(),
                 statisticsList.stream().filter(s -> s.getLevel() == 3).count());
+
+        // ★ session_data에 cluster_statistics ID 역참조 저장 (raw-data 조회 최적화)
+        updateSessionDataStatsIds(sessionId, statisticsList, allClusters, clusterIdsWithSubClustering);
+    }
+
+    /**
+     * session_data 문서에 stats_l2_id, stats_l3_id를 bulk update로 설정
+     *
+     * 각 session_data는 자신이 속한 클러스터(level 2)와 세부클러스터(level 3)의
+     * cluster_statistics 문서 ID를 저장한다.
+     *
+     * 매핑 규칙:
+     * - cluster_id 기준으로 level 2 stats ID 매핑
+     * - cluster_sub_id > 0: 해당 세부클러스터의 level 3 stats ID
+     * - cluster_sub_id == -1 이면서 해당 클러스터에 세부클러스터가 존재: '기타' level 3 stats ID
+     * - 세부클러스터 없는 클러스터: stats_l3_id 없음
+     */
+    private void updateSessionDataStatsIds(String sessionId, List<ClusterStatistics> statisticsList,
+                                            List<ClusteringResult> allClusters,
+                                            Set<Integer> clusterIdsWithSubClustering) {
+        long t0 = System.currentTimeMillis();
+
+        // Level 2 stats: clusterNumber → stats ID
+        Map<Integer, String> l2StatsMap = statisticsList.stream()
+                .filter(s -> s.getLevel() == 2 && s.getClusterNumber() != null)
+                .collect(Collectors.toMap(ClusterStatistics::getClusterNumber, ClusterStatistics::getId));
+
+        // Level 3 stats: clusterNumber → stats ID (세부클러스터)
+        Map<Integer, String> l3StatsMap = statisticsList.stream()
+                .filter(s -> s.getLevel() == 3 && s.getClusterNumber() != null)
+                .collect(Collectors.toMap(ClusterStatistics::getClusterNumber, ClusterStatistics::getId));
+
+        // Level 3 '기타' stats: parentClusterNumber → stats ID
+        Map<Integer, String> l3EtcStatsMap = statisticsList.stream()
+                .filter(s -> s.getLevel() == 3 && s.getClusterNumber() == null
+                        && s.getParentClusterNumber() != null)
+                .collect(Collectors.toMap(ClusterStatistics::getParentClusterNumber, ClusterStatistics::getId));
+
+        // clustering_result별 raw_data_id → (l2_stats_id, l3_stats_id) 매핑 구성
+        // allClusters에서 각 클러스터의 dataIndices(raw_data_id)를 기반으로 bulk update
+        int updateCount = 0;
+
+        for (ClusteringResult cr : allClusters) {
+            if (cr.getDataIndices() == null || cr.getDataIndices().isEmpty()) continue;
+
+            Integer clusterId = cr.getClusterId();
+            Integer clusterSubId = cr.getClusterSubId();
+            Integer clusterNumber = cr.getClusterNumber();
+
+            // Level 2 stats ID 결정: clusterId가 유효하면 해당 값, 아니면 자기 자신(독립 클러스터)
+            String l2StatsId;
+            if (clusterId != null && clusterId > 0) {
+                l2StatsId = l2StatsMap.get(clusterId);
+            } else {
+                l2StatsId = l2StatsMap.get(clusterNumber);
+            }
+
+            // Level 3 stats ID 결정
+            String l3StatsId = null;
+            Integer parentClusterId = (clusterId != null && clusterId > 0) ? clusterId : clusterNumber;
+
+            if (clusterSubId != null && clusterSubId > 0) {
+                // 세부클러스터에 할당됨 → 해당 세부클러스터의 stats ID
+                l3StatsId = l3StatsMap.get(clusterSubId);
+            } else if (clusterIdsWithSubClustering.contains(parentClusterId)
+                    && !clusterNumber.equals(parentClusterId)) {
+                // 세부클러스터가 존재하는 클러스터인데 미분류 → '기타'
+                l3StatsId = l3EtcStatsMap.get(parentClusterId);
+            }
+
+            if (l2StatsId == null) continue;
+
+            // bulk update: 해당 raw_data_id들의 session_data에 stats ID 설정
+            Query query = new Query(Criteria.where("session_id").is(sessionId)
+                    .and("raw_data_id").in(cr.getDataIndices()));
+            Update update = new Update().set("stats_l2_id", l2StatsId);
+            if (l3StatsId != null) {
+                update.set("stats_l3_id", l3StatsId);
+            }
+            mongoTemplate.updateMulti(query, update, SessionDataDocument.class);
+            updateCount += cr.getDataIndices().size();
+        }
+
+        log.info("[STATS-LINK] session_data stats ID 역참조 설정 완료: sessionId={}, ~{}건, {}ms",
+                sessionId, updateCount, System.currentTimeMillis() - t0);
     }
 
     /**
