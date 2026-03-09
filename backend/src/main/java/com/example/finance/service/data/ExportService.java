@@ -1533,7 +1533,6 @@ public class ExportService {
 
         // ── 4단계: 통계 데이터 병렬 사전 로드 (ForkJoinPool) ──
         tracker.beginStep("4.PVD로드(병렬)");
-        final long pvdStartTime = System.currentTimeMillis();
         CompletableFuture<Map<String, ClusterStatisticsService.DocData>> pvdFuture =
                 CompletableFuture.supplyAsync(() -> {
                     long t = System.currentTimeMillis();
