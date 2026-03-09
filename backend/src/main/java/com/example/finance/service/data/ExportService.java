@@ -23,6 +23,8 @@ import software.amazon.awssdk.services.s3.presigner.S3Presigner;
 import software.amazon.awssdk.services.s3.presigner.model.GetObjectPresignRequest;
 import software.amazon.awssdk.services.s3.presigner.model.PresignedGetObjectRequest;
 
+import com.example.finance.util.PerformanceTracker;
+
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.time.Duration;
@@ -591,6 +593,22 @@ public class ExportService {
     }
 
     /**
+     * 성능 트래킹 포함 Excel 내보내기
+     */
+    private ExportResult exportAllClustersOptimizedWithTracking(String sessionId, String projectId,
+                                                                  List<ClusteringResult> topClusters,
+                                                                  List<ClusteringResult> allClusters,
+                                                                  PerformanceTracker tracker) throws IOException {
+        log.info("[EXPORT-OPT] 시작(추적): sessionId={}, topClusters={}, allClusters={}", sessionId, topClusters.size(), allClusters.size());
+
+        ExportResult result = generateExcelOptimizedWithTracking(sessionId, projectId, topClusters, allClusters, tracker);
+
+        updateSessionExportPath(sessionId, result.getS3Key());
+
+        return result;
+    }
+
+    /**
      * Excel 파일 생성 (병렬 처리)
      */
     private ExportResult generateExcel(String sessionId, String projectId,
@@ -701,6 +719,177 @@ public class ExportService {
         } finally {
             workbook.dispose();
         }
+    }
+
+    /**
+     * 성능 트래킹 포함 Excel 생성
+     */
+    private ExportResult generateExcelOptimizedWithTracking(String sessionId, String projectId,
+                                                               List<ClusteringResult> topClusters,
+                                                               List<ClusteringResult> allClusters,
+                                                               PerformanceTracker tracker) throws IOException {
+        log.info("[EXPORT-OPT] Excel 생성 시작(추적): sessionId={}, topClusters={}", sessionId, topClusters.size());
+        long t0 = System.currentTimeMillis();
+
+        SXSSFWorkbook workbook = new SXSSFWorkbook(100);
+        try {
+            List<String> visibleColumns = getVisibleColumnNames(sessionId);
+            List<String> allColumns = new ArrayList<>();
+            allColumns.add("클러스터명");
+            allColumns.add("세부클러스터명");
+            allColumns.addAll(visibleColumns);
+
+            // 1. 요약 시트
+            long t1 = System.currentTimeMillis();
+            createSummarySheet(workbook, topClusters, allClusters);
+            long summaryMs = System.currentTimeMillis() - t1;
+            tracker.addSubStep("5.Excel생성+S3업로드", "요약시트", summaryMs, null);
+            log.info("[EXPORT-OPT][TIMING] 요약시트: {}ms", summaryMs);
+
+            // 2. clusterInfoMap 구성
+            t1 = System.currentTimeMillis();
+            Map<String, ClusterInfo> clusterInfoMap = buildRawIdToClusterMapFromList(allClusters);
+            long mapMs = System.currentTimeMillis() - t1;
+            tracker.addSubStep("5.Excel생성+S3업로드", "clusterInfoMap구성", mapMs,
+                    String.format("%d건", clusterInfoMap.size()));
+            log.info("[EXPORT-OPT][TIMING] clusterInfoMap구성: {}ms ({}건)", mapMs, clusterInfoMap.size());
+
+            // 3. raw_data 시트 (배치 쿼리 트래킹 포함)
+            t1 = System.currentTimeMillis();
+            createRawDataSheetOptimizedWithTracking(workbook, sessionId, topClusters, allColumns, clusterInfoMap, tracker);
+            long rawDataMs = System.currentTimeMillis() - t1;
+            tracker.addSubStep("5.Excel생성+S3업로드", "raw_data시트", rawDataMs, null);
+            log.info("[EXPORT-OPT][TIMING] raw_data시트: {}ms", rawDataMs);
+
+            // 4. Excel → byte[]
+            tracker.snapshotMemory("Excel직렬화전");
+            t1 = System.currentTimeMillis();
+            ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
+            workbook.write(outputStream);
+            byte[] excelBytes = outputStream.toByteArray();
+            long serializeMs = System.currentTimeMillis() - t1;
+            tracker.addSubStep("5.Excel생성+S3업로드", "Excel직렬화", serializeMs,
+                    String.format("%dKB", excelBytes.length / 1024));
+            log.info("[EXPORT-OPT][TIMING] Excel직렬화: {}ms ({}bytes)", serializeMs, excelBytes.length);
+
+            // 5. S3 업로드
+            t1 = System.currentTimeMillis();
+            String s3Key = generateS3Key(sessionId);
+            uploadToS3(s3Key, excelBytes);
+            long s3Ms = System.currentTimeMillis() - t1;
+            tracker.addSubStep("5.Excel생성+S3업로드", "S3업로드", s3Ms,
+                    String.format("%dKB", excelBytes.length / 1024));
+            log.info("[EXPORT-OPT][TIMING] S3업로드: {}ms", s3Ms);
+
+            // 6. Presigned URL 생성
+            String downloadUrl = generatePresignedUrl(s3Key);
+
+            log.info("[EXPORT-OPT] Excel 생성 전체 완료: {}ms", System.currentTimeMillis() - t0);
+            return ExportResult.builder()
+                    .s3Key(s3Key)
+                    .downloadUrl(downloadUrl)
+                    .fileSize(excelBytes.length)
+                    .exportedAt(LocalDateTime.now())
+                    .build();
+        } finally {
+            workbook.dispose();
+        }
+    }
+
+    /**
+     * 성능 트래킹 포함 raw_data 시트 생성 — 배치 쿼리별 시간 추적
+     */
+    private void createRawDataSheetOptimizedWithTracking(SXSSFWorkbook workbook, String sessionId,
+                                                            List<ClusteringResult> clusters, List<String> columns,
+                                                            Map<String, ClusterInfo> clusterInfoMap,
+                                                            PerformanceTracker tracker) {
+        Sheet sheet = workbook.createSheet("raw_data");
+        CellStyle headerStyle = createHeaderStyle(workbook);
+
+        Row headerRow = sheet.createRow(0);
+        for (int i = 0; i < columns.size(); i++) {
+            Cell cell = headerRow.createCell(i);
+            cell.setCellValue(columns.get(i));
+            cell.setCellStyle(headerStyle);
+        }
+
+        // 배치 쿼리: 전체 raw_data_id를 수집
+        long t0 = System.currentTimeMillis();
+        Set<String> allRawDataIds = new LinkedHashSet<>();
+        for (ClusteringResult c : clusters) {
+            if (c.getDataIndices() != null) allRawDataIds.addAll(c.getDataIndices());
+        }
+        long collectMs = System.currentTimeMillis() - t0;
+        log.info("[EXPORT-OPT-BATCH] 전체 raw_data_id 수집: {}건, 클러스터 수: {}, {}ms",
+                allRawDataIds.size(), clusters.size(), collectMs);
+
+        Map<String, Document> dataMap = new HashMap<>(allRawDataIds.size());
+        List<String> idList = new ArrayList<>(allRawDataIds);
+        int BATCH_SIZE = 10_000;
+        int batchCount = 0;
+
+        long batchQueryTotalStart = System.currentTimeMillis();
+        for (int i = 0; i < idList.size(); i += BATCH_SIZE) {
+            List<String> batch = idList.subList(i, Math.min(i + BATCH_SIZE, idList.size()));
+            long batchStart = System.currentTimeMillis();
+
+            Query batchQuery = new Query(Criteria.where("session_id").is(sessionId)
+                    .and("raw_data_id").in(batch));
+            batchQuery.fields().include("raw_data_id").include("data");
+            List<Document> batchResult = mongoTemplate.find(batchQuery, Document.class, "session_data");
+
+            long batchMs = System.currentTimeMillis() - batchStart;
+            tracker.trackBatch("5.Excel생성+S3업로드", batchCount + 1, batchResult.size(), batchMs);
+            tracker.trackQuery("5.Excel생성+S3업로드",
+                    String.format("raw_data_batch_%d", batchCount + 1), batchResult.size(), batchMs);
+
+            for (Document doc : batchResult) {
+                dataMap.put(doc.getString("raw_data_id"), doc);
+            }
+            batchCount++;
+        }
+        long batchQueryTotalMs = System.currentTimeMillis() - batchQueryTotalStart;
+        log.info("[EXPORT-OPT-BATCH] 배치 쿼리 완료: {}회 쿼리, {}건 로드, {}ms",
+                batchCount, dataMap.size(), batchQueryTotalMs);
+
+        // 행 생성
+        long rowGenStart = System.currentTimeMillis();
+        int rowNum = 1;
+        for (ClusteringResult cluster : clusters) {
+            List<String> rawDataIds = cluster.getDataIndices();
+            if (rawDataIds == null || rawDataIds.isEmpty()) continue;
+
+            for (String rawDataId : rawDataIds) {
+                Document doc = dataMap.get(rawDataId);
+                if (doc == null) continue;
+                if (rowNum > MAX_ROWS_PER_SHEET) {
+                    log.warn("Max rows exceeded");
+                    break;
+                }
+
+                Row row = sheet.createRow(rowNum++);
+                ClusterInfo info = clusterInfoMap.getOrDefault(rawDataId, ClusterInfo.NONE);
+                String clusterName = info.clusterName != null ? info.clusterName : cluster.getClusterName();
+                String subClusterName = info.subClusterName != null ? info.subClusterName : "-";
+                row.createCell(0).setCellValue(truncateText(clusterName));
+                row.createCell(1).setCellValue(truncateText(subClusterName));
+
+                @SuppressWarnings("unchecked")
+                Map<String, Object> data = (Map<String, Object>) doc.get("data");
+                if (data != null) {
+                    for (int i = 2; i < columns.size(); i++) {
+                        Cell cell = row.createCell(i);
+                        Object value = data.get(columns.get(i));
+                        setCellValue(cell, value);
+                    }
+                }
+            }
+        }
+        long rowGenMs = System.currentTimeMillis() - rowGenStart;
+        double throughput = rowGenMs > 0 ? ((rowNum - 1) * 1000.0 / rowGenMs) : 0;
+
+        log.info("[EXPORT-OPT-BATCH] raw_data 시트 생성 완료: {} rows, 배치쿼리={}ms, 행생성={}ms, throughput={}rows/sec, 총 {}ms",
+                rowNum - 1, batchQueryTotalMs, rowGenMs, String.format("%.0f", throughput), System.currentTimeMillis() - t0);
     }
 
     /**
@@ -1262,9 +1451,11 @@ public class ExportService {
                                                       boolean forceExport, String taskId) throws IOException {
         long totalStart = System.currentTimeMillis();
         long stepStart;
+        PerformanceTracker tracker = PerformanceTracker.start(sessionId, "세션완료");
         log.info("[FIRE-AND-FORGET] doCompleteSessionWithMongoProgress 진입: sessionId={}, forceExport={}", sessionId, forceExport);
 
         // ── 1단계: 세션 정보 확인 ──
+        tracker.beginStep("1.세션조회");
         updateExportStatus(sessionId, "EXPORTING", 5, "세션 정보 확인 중...");
         updateRedisProgress(taskId, sessionId, 5, "세션 정보 확인 중...");
 
@@ -1273,10 +1464,12 @@ public class ExportService {
         FileSession session = mongoTemplate.findOne(query, FileSession.class);
         String oldExportPath = session != null ? session.getExportPath() : null;
         boolean isReCompletion = session != null && Boolean.TRUE.equals(session.getIsCompleted());
+        tracker.endStep("1.세션조회", String.format("isReCompletion=%s", isReCompletion));
         log.info("[TIMING] 1.세션조회: {}ms (isReCompletion={}, oldExportPath={})",
                 System.currentTimeMillis() - stepStart, isReCompletion, oldExportPath);
 
         // ── 2단계: 기존 데이터 정리 (항상 수행 — 기존 export 파일/통계가 있으면 삭제 후 재생성) ──
+        tracker.beginStep("2.데이터정리");
         stepStart = System.currentTimeMillis();
         boolean hasExistingExport = oldExportPath != null && !oldExportPath.isBlank();
         boolean hasExistingData = hasExistingExport || isReCompletion;
@@ -1312,6 +1505,7 @@ public class ExportService {
             log.warn("[FIRE-AND-FORGET] PVD 캐시 삭제 실패 (무시): {}", e.getMessage());
         }
 
+        tracker.endStep("2.데이터정리", String.format("hasExistingData=%s", hasExistingData));
         log.info("[TIMING] 2.기존데이터정리: {}ms", System.currentTimeMillis() - stepStart);
 
         // 항상 export 재생성 (기존 데이터를 정리했으므로)
@@ -1319,12 +1513,17 @@ public class ExportService {
         log.info("[FIRE-AND-FORGET] needsExport={} (항상 재생성)", needsExport);
 
         // ── 3단계: 클러스터 데이터 1회 로드 (전체 흐름에서 재사용) ──
+        tracker.beginStep("3.클러스터로드");
         stepStart = System.currentTimeMillis();
         List<ClusteringResult> allClusters = mongoTemplate.find(
                 new Query(Criteria.where("session_id").is(sessionId))
                         .with(Sort.by("cluster_number")),
                 ClusteringResult.class);
-        log.info("[TIMING] 3.클러스터로드: {}ms ({}건)", System.currentTimeMillis() - stepStart, allClusters.size());
+        int totalDataIndices = allClusters.stream()
+                .mapToInt(c -> c.getDataIndices() != null ? c.getDataIndices().size() : 0).sum();
+        tracker.endStep("3.클러스터로드", String.format("%d건, dataIndices총합=%d", allClusters.size(), totalDataIndices));
+        log.info("[TIMING] 3.클러스터로드: {}ms ({}건, dataIndices총합={})",
+                System.currentTimeMillis() - stepStart, allClusters.size(), totalDataIndices);
 
         // 최상위 클러스터 필터링 (독립 + 병합부모)
         List<ClusteringResult> topClusters = allClusters.stream()
@@ -1333,24 +1532,32 @@ public class ExportService {
                 .collect(Collectors.toList());
 
         // ── 4단계: 통계 데이터 병렬 사전 로드 (ForkJoinPool) ──
+        tracker.beginStep("4.PVD로드(병렬)");
         CompletableFuture<Map<String, ClusterStatisticsService.DocData>> pvdFuture =
                 CompletableFuture.supplyAsync(() -> {
                     long t = System.currentTimeMillis();
                     Map<String, ClusterStatisticsService.DocData> data =
                             clusterStatisticsService.loadProcessViewData(sessionId);
-                    log.info("[TIMING] 4.PVD로드(병렬): {}ms ({}건)", System.currentTimeMillis() - t, data.size());
+                    long pvdElapsed = System.currentTimeMillis() - t;
+                    tracker.endStep("4.PVD로드(병렬)", String.format("%d건, %dms", data.size(), pvdElapsed));
+                    log.info("[TIMING] 4.PVD로드(병렬): {}ms ({}건)", pvdElapsed, data.size());
                     return data;
                 });
 
         // ── 5단계: Excel 생성 + S3 업로드 ──
+        tracker.beginStep("5.Excel생성+S3업로드");
+        tracker.snapshotMemory("Excel생성전");
         String exportPath;
         if (needsExport) {
             updateExportStatus(sessionId, "EXPORTING", 10, "Excel 파일 생성 중...");
             updateRedisProgress(taskId, sessionId, 10, "Excel 파일 생성 중...");
 
             stepStart = System.currentTimeMillis();
-            ExportResult exportResult = exportAllClustersOptimized(sessionId, projectId, topClusters, allClusters);
+            ExportResult exportResult = exportAllClustersOptimizedWithTracking(sessionId, projectId, topClusters, allClusters, tracker);
             exportPath = exportResult.getS3Key();
+            tracker.endStep("5.Excel생성+S3업로드",
+                    String.format("size=%dKB, topClusters=%d", exportResult.getFileSize() / 1024, topClusters.size()));
+            tracker.snapshotMemory("Excel생성후");
             log.info("[TIMING] 5.Excel생성+S3업로드: {}ms (s3Key={}, size={}bytes)",
                     System.currentTimeMillis() - stepStart, exportPath, exportResult.getFileSize());
 
@@ -1358,25 +1565,38 @@ public class ExportService {
             updateRedisProgress(taskId, sessionId, 60, "Excel 생성 완료. 통계 생성 중...");
         } else {
             exportPath = oldExportPath;
+            tracker.endStep("5.Excel생성+S3업로드", "스킵 (기존 export 재사용)");
             updateExportStatus(sessionId, "EXPORTING", 60, "통계 생성 중...");
             updateRedisProgress(taskId, sessionId, 60, "통계 생성 중...");
         }
 
         // ── 6단계: 통계 생성 ──
+        tracker.beginStep("6.통계생성");
         stepStart = System.currentTimeMillis();
         try {
+            long pvdWaitStart = System.currentTimeMillis();
             Map<String, ClusterStatisticsService.DocData> pvdData = pvdFuture.get(120, TimeUnit.SECONDS);
+            long pvdWaitMs = System.currentTimeMillis() - pvdWaitStart;
+            tracker.addSubStep("6.통계생성", "PVD대기", pvdWaitMs,
+                    String.format("%d건, 4단계와 병렬실행 → 실제대기=%dms", pvdData.size(), pvdWaitMs));
+
+            long statsCalcStart = System.currentTimeMillis();
             clusterStatisticsService.generateStatisticsWithData(sessionId, projectId, pvdData, allClusters);
+            tracker.addSubStep("6.통계생성", "통계계산+저장", System.currentTimeMillis() - statsCalcStart, null);
         } catch (TimeoutException e) {
             log.warn("[FIRE-AND-FORGET] pvd 로드 타임아웃, 동기 방식으로 fallback");
             clusterStatisticsService.generateStatistics(sessionId, projectId);
+            tracker.addSubStep("6.통계생성", "PVD타임아웃→동기fallback", System.currentTimeMillis() - stepStart, null);
         } catch (Exception e) {
             log.warn("[FIRE-AND-FORGET] pvd 병렬 로드 실패, 동기 방식으로 fallback: {}", e.getMessage());
             clusterStatisticsService.generateStatistics(sessionId, projectId);
+            tracker.addSubStep("6.통계생성", "PVD실패→동기fallback", System.currentTimeMillis() - stepStart, e.getMessage());
         }
+        tracker.endStep("6.통계생성");
         log.info("[TIMING] 6.통계생성: {}ms", System.currentTimeMillis() - stepStart);
 
         // ── 7단계: 세션 완료 처리 ──
+        tracker.beginStep("7.세션완료처리");
         updateExportStatus(sessionId, "EXPORTING", 90, "세션 완료 처리 중...");
         updateRedisProgress(taskId, sessionId, 90, "세션 완료 처리 중...");
 
@@ -1391,8 +1611,10 @@ public class ExportService {
                 .set("export_message", null)
                 .set("progress_percentage", 100);
         mongoTemplate.updateFirst(clearQuery, clearUpdate, FileSession.class);
+        tracker.endStep("7.세션완료처리");
 
         log.info("[TIMING] 전체완료: {}ms (sessionId={})", System.currentTimeMillis() - totalStart, sessionId);
+        tracker.logSummary();
     }
 
     // ★ Redis 진행률 업데이트 헬퍼
