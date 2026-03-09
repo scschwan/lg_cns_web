@@ -197,21 +197,21 @@ function PhaseNavigationBar({ stats, currentPhase, projectId, navigate, dynamicS
     {
       key: 'LONG_LIST',
       label: 'Raw List',
-      count: stats?.longListItemCount ?? '-',
+      detailedCount: stats ? `계정명:${stats.longListAccountCount ?? '-'} / 클러스터:${stats.longListClusterCount ?? '-'} / 세부:${stats.longListSubClusterCount ?? '-'}` : null,
       amount: stats?.totalAmount ?? 0,
       path: `/projects/${projectId}/longlist`,
     },
     {
       key: 'SHORT_LIST',
       label: 'Long List',
-      count: dynamicShortList ? dynamicShortList.count : (stats?.shortListItemCount ?? '-'),
+      detailedCount: stats ? `계정명:${stats.shortListAccountCount ?? '-'} / 클러스터:${stats.shortListClusterCount ?? '-'} / 세부:${stats.shortListSubClusterCount ?? '-'}` : null,
       amount: dynamicShortList ? dynamicShortList.amount : (stats?.shortListTotalAmount ?? 0),
       path: `/projects/${projectId}/shortlist`,
     },
     {
       key: 'ABLE_REGISTER',
       label: 'Short List',
-      count: null,
+      detailedCount: null,
       amount: null,
       path: `/projects/${projectId}/able-register`,
     },
@@ -220,27 +220,27 @@ function PhaseNavigationBar({ stats, currentPhase, projectId, navigate, dynamicS
   const currentIdx = phases.findIndex(p => p.key === currentPhase);
 
   return (
-    <div className="flex items-center gap-1 py-2">
+    <div className="flex items-center gap-2 py-3">
       {phases.map((phase, idx) => {
         const isActive = phase.key === currentPhase;
         const isPast = idx < currentIdx;
         return (
           <React.Fragment key={phase.key}>
-            {idx > 0 && <ArrowRight className="w-4 h-4 text-muted-foreground/50 flex-shrink-0" />}
+            {idx > 0 && <ArrowRight className="w-7 h-7 text-muted-foreground/50 flex-shrink-0" />}
             <button
               onClick={() => navigate(phase.path)}
               className={cn(
-                'flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs transition-colors',
+                'flex items-center gap-3 px-8 py-5 rounded-lg text-lg transition-colors',
                 isActive && 'bg-blue-600 text-white',
                 isPast && 'bg-blue-50 text-blue-700 hover:bg-blue-100',
                 !isActive && !isPast && 'bg-muted/50 text-muted-foreground hover:bg-muted',
               )}
             >
-              {isPast && <CheckCircle2 className="w-3.5 h-3.5" />}
-              <span className="font-medium">{phase.label}</span>
-              {phase.count != null && (
-                <Badge variant={isActive ? 'secondary' : 'outline'} className="text-[10px] px-1.5 py-0 ml-0.5">
-                  {phase.count}건 / {formatAmount(phase.amount)}
+              {isPast && <CheckCircle2 className="w-6 h-6" />}
+              <span className="font-bold">{phase.label}</span>
+              {phase.detailedCount != null && (
+                <Badge variant={isActive ? 'secondary' : 'outline'} className="text-base px-3 py-1 ml-1">
+                  {phase.detailedCount} | {formatAmount(phase.amount)}
                 </Badge>
               )}
             </button>

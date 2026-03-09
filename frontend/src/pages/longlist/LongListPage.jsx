@@ -299,6 +299,83 @@ function RatioDetailModal({ open, onClose, title, data }) {
 }
 
 /* ============================================================
+   Top N Summary Pie (Top3/5/10 vs 그 외)
+   ============================================================ */
+function TopNSummaryPie({ data, title }) {
+  const [topN, setTopN] = useState(3);
+
+  const summaryData = useMemo(() => {
+    if (!data || data.length === 0) return [];
+    const sorted = [...data].sort((a, b) => (b.amount || b.totalAmount || 0) - (a.amount || a.totalAmount || 0));
+    const topItems = sorted.slice(0, topN);
+    const restItems = sorted.slice(topN);
+    const restTotal = restItems.reduce((s, d) => s + (d.amount || d.totalAmount || 0), 0);
+    const result = topItems.map(d => ({
+      name: d.name,
+      value: d.amount || d.totalAmount || 0,
+    }));
+    if (restItems.length > 0) {
+      result.push({ name: '그 외', value: restTotal });
+    }
+    return result;
+  }, [data, topN]);
+
+  const total = summaryData.reduce((s, d) => s + d.value, 0);
+
+  return (
+    <Card>
+      <CardHeader className="pb-2 px-5 pt-5">
+        <div className="flex items-center justify-between">
+          <CardTitle className="text-sm font-semibold flex items-center gap-2">
+            <Eye className="w-4 h-4 text-muted-foreground" />{title}
+          </CardTitle>
+          <Select value={topN.toString()} onValueChange={v => setTopN(+v)}>
+            <SelectTrigger className="w-[80px] h-7 text-xs"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="3">Top 3</SelectItem>
+              <SelectItem value="5">Top 5</SelectItem>
+              <SelectItem value="10">Top 10</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+      </CardHeader>
+      <CardContent className="px-5 pb-5">
+        <div className="flex items-start gap-6">
+          <div className="relative">
+            <ResponsiveContainer width={160} height={160}>
+              <PieChart>
+                <Pie data={summaryData} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius={40} outerRadius={70} paddingAngle={2}>
+                  {summaryData.map((_, idx) => (
+                    <Cell key={idx} fill={CHART_COLORS[idx % CHART_COLORS.length]} />
+                  ))}
+                </Pie>
+                <Tooltip formatter={(v) => formatAmount(v)} />
+              </PieChart>
+            </ResponsiveContainer>
+            <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+              <span className="text-[10px] text-muted-foreground">합계</span>
+              <span className="text-xs font-bold">{formatAmount(total)}</span>
+            </div>
+          </div>
+          <div className="flex-1 space-y-1.5 min-w-0">
+            {summaryData.map((item, idx) => (
+              <div key={idx} className="flex items-center gap-2 text-xs">
+                <div className="w-3 h-3 rounded-sm flex-shrink-0" style={{ backgroundColor: CHART_COLORS[idx % CHART_COLORS.length] }} />
+                <span className="truncate flex-1">{item.name}</span>
+                <span className="font-semibold tabular-nums flex-shrink-0">{formatAmount(item.value)}</span>
+                <span className="text-muted-foreground tabular-nums flex-shrink-0 w-10 text-right">
+                  {total > 0 ? (item.value / total * 100).toFixed(1) : 0}%
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+/* ============================================================
    Selected Item Stats Card
    ============================================================ */
 function SelectedItemCard({ itemStats, itemName, onRawDataClick }) {
@@ -494,7 +571,14 @@ export default function LongListPage() {
     setExpandedIds(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
   }, []);
 
-  const expandAll = () => setExpandedIds(new Set(treeData.map(i => getNodeId(i))));
+  const expandAll = () => {
+    const ids = new Set();
+    const traverse = (nodes) => {
+      nodes.forEach(n => { ids.add(getNodeId(n)); if (n.children?.length) traverse(n.children); });
+    };
+    traverse(treeData);
+    setExpandedIds(ids);
+  };
   const collapseAll = () => setExpandedIds(new Set());
   const selectAll = () => setCheckedIds(new Set(getAllLeafIds(treeData)));
   const deselectAll = () => setCheckedIds(new Set());
@@ -564,6 +648,7 @@ export default function LongListPage() {
       // 부모 클러스터(Level 2)의 ID도 함께 수집해서 전송
       const allIds = collectAllStatisticsIds(treeData, checkedIds);
       await costReductionService.saveLongListSelectionsByIds(projectId, allIds);
+      await costReductionService.transitionPhase(projectId, 'SHORT_LIST');
       navigate(`/projects/${projectId}/shortlist`);
     } catch (err) {
       console.error('Failed to save selections:', err);
@@ -760,96 +845,108 @@ export default function LongListPage() {
                 <>
                   {/* 공급업체 차트 */}
                   {supplierChartData.length > 0 && (
-                    <div className="grid grid-cols-2 gap-4">
-                      <Card>
-                        <CardHeader className="pb-2 px-5 pt-5">
-                          <CardTitle className="text-sm font-semibold flex items-center gap-2">
-                            <BarChart3 className="w-4 h-4 text-muted-foreground" />
-                            공급업체별 금액 비교
-                          </CardTitle>
-                        </CardHeader>
-                        <CardContent className="px-2 pb-4">
-                          <ResponsiveContainer width="100%" height={Math.max(200, supplierChartData.length * 32)}>
-                            <BarChart data={[...supplierChartData].reverse()} layout="vertical" margin={{ left: 10, right: 20 }}>
-                              <CartesianGrid strokeDasharray="3 3" />
-                              <XAxis type="number" tick={{ fontSize: 10 }} unit="억" />
-                              <YAxis type="category" dataKey="name" tick={{ fontSize: 10 }} width={100} />
-                              <Tooltip formatter={(v) => [`${v}억`, '금액']} />
-                              <Bar dataKey="금액" radius={[0, 4, 4, 0]}>
-                                {[...supplierChartData].reverse().map((item, idx) => {
-                                  const origIdx = supplierChartData.findIndex(d => d.name === item.name);
-                                  return <Cell key={idx} fill={CHART_COLORS[origIdx % CHART_COLORS.length]} />;
-                                })}
-                              </Bar>
-                            </BarChart>
-                          </ResponsiveContainer>
-                        </CardContent>
-                      </Card>
-                      <Card>
-                        <CardHeader className="pb-2 px-5 pt-5">
-                          <div className="flex items-center justify-between">
+                    <>
+                      <div className="grid grid-cols-2 gap-4">
+                        <Card>
+                          <CardHeader className="pb-2 px-5 pt-5">
                             <CardTitle className="text-sm font-semibold flex items-center gap-2">
-                              <Eye className="w-4 h-4 text-muted-foreground" />
-                              공급업체별 금액 비율
+                              <BarChart3 className="w-4 h-4 text-muted-foreground" />
+                              공급업체별 금액 비교
                             </CardTitle>
-                            <Button variant="ghost" size="sm" className="text-xs text-blue-600 h-7 px-2"
-                              onClick={() => setRatioDetailModal({ open: true, title: '공급업체별 금액 비율', data: supplierChartData })}>
-                              <Eye className="w-3 h-3 mr-1" />자세히 보기
-                            </Button>
-                          </div>
-                        </CardHeader>
-                        <CardContent className="px-5 pb-5">
-                          <ChartPieWithLegend data={supplierChartData} />
-                        </CardContent>
-                      </Card>
-                    </div>
+                          </CardHeader>
+                          <CardContent className="px-2 pb-4">
+                            <ResponsiveContainer width="100%" height={Math.max(200, supplierChartData.length * 32)}>
+                              <BarChart data={[...supplierChartData].reverse()} layout="vertical" margin={{ left: 10, right: 20 }}>
+                                <CartesianGrid strokeDasharray="3 3" />
+                                <XAxis type="number" tick={{ fontSize: 10 }} unit="억" />
+                                <YAxis type="category" dataKey="name" tick={{ fontSize: 10 }} width={100} />
+                                <Tooltip formatter={(v) => [`${v}억`, '금액']} />
+                                <Bar dataKey="금액" radius={[0, 4, 4, 0]}>
+                                  {[...supplierChartData].reverse().map((item, idx) => {
+                                    const origIdx = supplierChartData.findIndex(d => d.name === item.name);
+                                    return <Cell key={idx} fill={CHART_COLORS[origIdx % CHART_COLORS.length]} />;
+                                  })}
+                                </Bar>
+                              </BarChart>
+                            </ResponsiveContainer>
+                          </CardContent>
+                        </Card>
+                        <Card>
+                          <CardHeader className="pb-2 px-5 pt-5">
+                            <div className="flex items-center justify-between">
+                              <CardTitle className="text-sm font-semibold flex items-center gap-2">
+                                <Eye className="w-4 h-4 text-muted-foreground" />
+                                공급업체별 금액 비율
+                              </CardTitle>
+                              <Button variant="ghost" size="sm" className="text-xs text-blue-600 h-7 px-2"
+                                onClick={() => setRatioDetailModal({ open: true, title: '공급업체별 금액 비율', data: supplierChartData })}>
+                                <Eye className="w-3 h-3 mr-1" />자세히 보기
+                              </Button>
+                            </div>
+                          </CardHeader>
+                          <CardContent className="px-5 pb-5">
+                            <ChartPieWithLegend data={supplierChartData} />
+                          </CardContent>
+                        </Card>
+                      </div>
+                      <div className="grid grid-cols-2 gap-4">
+                        <TopNSummaryPie data={supplierChartData} title="공급업체 Top N 요약" />
+                        <div />
+                      </div>
+                    </>
                   )}
 
                   {/* 코스트센터 차트 */}
                   {costCenterChartData.length > 0 && (
-                    <div className="grid grid-cols-2 gap-4">
-                      <Card>
-                        <CardHeader className="pb-2 px-5 pt-5">
-                          <CardTitle className="text-sm font-semibold flex items-center gap-2">
-                            <BarChart3 className="w-4 h-4 text-muted-foreground" />
-                            코스트센터별 금액 비교
-                          </CardTitle>
-                        </CardHeader>
-                        <CardContent className="px-2 pb-4">
-                          <ResponsiveContainer width="100%" height={Math.max(200, costCenterChartData.length * 32)}>
-                            <BarChart data={[...costCenterChartData].reverse()} layout="vertical" margin={{ left: 10, right: 20 }}>
-                              <CartesianGrid strokeDasharray="3 3" />
-                              <XAxis type="number" tick={{ fontSize: 10 }} unit="억" />
-                              <YAxis type="category" dataKey="name" tick={{ fontSize: 10 }} width={100} />
-                              <Tooltip formatter={(v) => [`${v}억`, '금액']} />
-                              <Bar dataKey="금액" radius={[0, 4, 4, 0]}>
-                                {[...costCenterChartData].reverse().map((item, idx) => {
-                                  const origIdx = costCenterChartData.findIndex(d => d.name === item.name);
-                                  return <Cell key={idx} fill={CHART_COLORS[origIdx % CHART_COLORS.length]} />;
-                                })}
-                              </Bar>
-                            </BarChart>
-                          </ResponsiveContainer>
-                        </CardContent>
-                      </Card>
-                      <Card>
-                        <CardHeader className="pb-2 px-5 pt-5">
-                          <div className="flex items-center justify-between">
+                    <>
+                      <div className="grid grid-cols-2 gap-4">
+                        <Card>
+                          <CardHeader className="pb-2 px-5 pt-5">
                             <CardTitle className="text-sm font-semibold flex items-center gap-2">
-                              <Eye className="w-4 h-4 text-muted-foreground" />
-                              코스트센터별 금액 비율
+                              <BarChart3 className="w-4 h-4 text-muted-foreground" />
+                              코스트센터별 금액 비교
                             </CardTitle>
-                            <Button variant="ghost" size="sm" className="text-xs text-blue-600 h-7 px-2"
-                              onClick={() => setRatioDetailModal({ open: true, title: '코스트센터별 금액 비율', data: costCenterChartData })}>
-                              <Eye className="w-3 h-3 mr-1" />자세히 보기
-                            </Button>
-                          </div>
-                        </CardHeader>
-                        <CardContent className="px-5 pb-5">
-                          <ChartPieWithLegend data={costCenterChartData} />
-                        </CardContent>
-                      </Card>
-                    </div>
+                          </CardHeader>
+                          <CardContent className="px-2 pb-4">
+                            <ResponsiveContainer width="100%" height={Math.max(200, costCenterChartData.length * 32)}>
+                              <BarChart data={[...costCenterChartData].reverse()} layout="vertical" margin={{ left: 10, right: 20 }}>
+                                <CartesianGrid strokeDasharray="3 3" />
+                                <XAxis type="number" tick={{ fontSize: 10 }} unit="억" />
+                                <YAxis type="category" dataKey="name" tick={{ fontSize: 10 }} width={100} />
+                                <Tooltip formatter={(v) => [`${v}억`, '금액']} />
+                                <Bar dataKey="금액" radius={[0, 4, 4, 0]}>
+                                  {[...costCenterChartData].reverse().map((item, idx) => {
+                                    const origIdx = costCenterChartData.findIndex(d => d.name === item.name);
+                                    return <Cell key={idx} fill={CHART_COLORS[origIdx % CHART_COLORS.length]} />;
+                                  })}
+                                </Bar>
+                              </BarChart>
+                            </ResponsiveContainer>
+                          </CardContent>
+                        </Card>
+                        <Card>
+                          <CardHeader className="pb-2 px-5 pt-5">
+                            <div className="flex items-center justify-between">
+                              <CardTitle className="text-sm font-semibold flex items-center gap-2">
+                                <Eye className="w-4 h-4 text-muted-foreground" />
+                                코스트센터별 금액 비율
+                              </CardTitle>
+                              <Button variant="ghost" size="sm" className="text-xs text-blue-600 h-7 px-2"
+                                onClick={() => setRatioDetailModal({ open: true, title: '코스트센터별 금액 비율', data: costCenterChartData })}>
+                                <Eye className="w-3 h-3 mr-1" />자세히 보기
+                              </Button>
+                            </div>
+                          </CardHeader>
+                          <CardContent className="px-5 pb-5">
+                            <ChartPieWithLegend data={costCenterChartData} />
+                          </CardContent>
+                        </Card>
+                      </div>
+                      <div className="grid grid-cols-2 gap-4">
+                        <TopNSummaryPie data={costCenterChartData} title="코스트센터 Top N 요약" />
+                        <div />
+                      </div>
+                    </>
                   )}
                 </>
               )}
@@ -990,6 +1087,15 @@ function buildListItemsFromChecked(treeData, checkedIds) {
       if (!clusterHasCheckedLeaf) return;
 
       // 항상 level 2 클러스터 항목을 포함 (ShortList 트리 구조 유지용)
+      // 세부클러스터가 있으면 체크된 것만 합산하여 부모 금액 재계산
+      const checkedChildren = cluster.children?.filter(sub => checkedIds.has(getNodeId(sub))) || [];
+      const recalcAmount = cluster.children?.length > 0
+        ? checkedChildren.reduce((sum, sub) => sum + (sub.totalAmount || 0), 0)
+        : cluster.totalAmount;
+      const recalcCount = cluster.children?.length > 0
+        ? checkedChildren.reduce((sum, sub) => sum + (sub.totalCount || 0), 0)
+        : cluster.totalCount;
+
       items.push({
         statisticsId: cluster.statisticsId,
         sessionId: cluster.sessionId,
@@ -998,8 +1104,8 @@ function buildListItemsFromChecked(treeData, checkedIds) {
         clusterName: cluster.clusterName,
         level: cluster.level,
         parentClusterNumber: cluster.parentClusterNumber,
-        totalAmount: cluster.totalAmount,
-        totalCount: cluster.totalCount,
+        totalAmount: recalcAmount,
+        totalCount: recalcCount,
       });
 
       // level 3 세부클러스터 항목도 포함

@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { useParams } from 'react-router-dom';
+import { useParams, useNavigate } from 'react-router-dom';
 import {
   Search, Edit2, Eye, Trash2, FolderKanban,
   TrendingUp, DollarSign, ClipboardList, CheckCircle2, Clock,
   AlertCircle, FileText, Link2, FileIcon, ExternalLink, X, Save, Loader2,
+  ArrowRight,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -215,12 +216,81 @@ function TaskDocumentsModal({ open, onClose, task, projectId }) {
   );
 }
 
+/* ====== Phase Navigation Bar ====== */
+function PhaseNavigationBar({ stats, summary, currentPhase, projectId, navigate }) {
+  const phases = [
+    {
+      key: 'LONG_LIST',
+      label: 'Raw List',
+      detailedCount: stats ? `계정명:${stats.longListAccountCount ?? '-'} / 클러스터:${stats.longListClusterCount ?? '-'} / 세부:${stats.longListSubClusterCount ?? '-'}` : null,
+      amount: stats?.totalAmount ?? 0,
+      path: `/projects/${projectId}/longlist`,
+    },
+    {
+      key: 'SHORT_LIST',
+      label: 'Long List',
+      detailedCount: stats ? `계정명:${stats.shortListAccountCount ?? '-'} / 클러스터:${stats.shortListClusterCount ?? '-'} / 세부:${stats.shortListSubClusterCount ?? '-'}` : null,
+      amount: stats?.shortListTotalAmount ?? 0,
+      path: `/projects/${projectId}/shortlist`,
+    },
+    {
+      key: 'ABLE_REGISTER',
+      label: 'Short List',
+      detailedCount: null,
+      amount: null,
+      path: `/projects/${projectId}/able-register`,
+    },
+    {
+      key: 'ABLE_MANAGE',
+      label: 'Able 과제',
+      detailedCount: summary ? `${summary.totalTasks ?? 0}건` : null,
+      amount: summary?.totalBaseAmount ?? 0,
+      path: `/projects/${projectId}/able-task-manage`,
+    },
+  ];
+
+  const currentIdx = phases.findIndex(p => p.key === currentPhase);
+
+  return (
+    <div className="flex items-center gap-2 py-3">
+      {phases.map((phase, idx) => {
+        const isActive = phase.key === currentPhase;
+        const isPast = idx < currentIdx;
+        return (
+          <React.Fragment key={phase.key}>
+            {idx > 0 && <ArrowRight className="w-7 h-7 text-muted-foreground/50 flex-shrink-0" />}
+            <button
+              onClick={() => navigate(phase.path)}
+              className={cn(
+                'flex items-center gap-3 px-8 py-5 rounded-lg text-lg transition-colors',
+                isActive && 'bg-blue-600 text-white',
+                isPast && 'bg-blue-50 text-blue-700 hover:bg-blue-100',
+                !isActive && !isPast && 'bg-muted/50 text-muted-foreground hover:bg-muted',
+              )}
+            >
+              {isPast && <CheckCircle2 className="w-6 h-6" />}
+              <span className="font-bold">{phase.label}</span>
+              {phase.detailedCount != null && (
+                <Badge variant={isActive ? 'secondary' : 'outline'} className="text-base px-3 py-1 ml-1">
+                  {phase.detailedCount} | {formatAmount(phase.amount)}
+                </Badge>
+              )}
+            </button>
+          </React.Fragment>
+        );
+      })}
+    </div>
+  );
+}
+
 /* ====== Main ====== */
 export default function AbleTaskManagePage() {
   const { projectId } = useParams();
+  const navigate = useNavigate();
   const { isEditor } = useEditorLock(projectId);
   const [tasks, setTasks] = useState([]);
   const [summary, setSummary] = useState(null);
+  const [phaseStats, setPhaseStats] = useState(null);
   const [loading, setLoading] = useState(true);
   const [searchKeyword, setSearchKeyword] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
@@ -233,12 +303,14 @@ export default function AbleTaskManagePage() {
   const loadData = async () => {
     try {
       setLoading(true);
-      const [tasksRes, summaryRes] = await Promise.all([
+      const [tasksRes, summaryRes, statsRes] = await Promise.all([
         costReductionService.getTasks(projectId),
         costReductionService.getTaskSummary(projectId),
+        costReductionService.getShortListStats(projectId).catch(() => null),
       ]);
       setTasks(tasksRes);
       setSummary(summaryRes);
+      setPhaseStats(statsRes);
     } catch (error) {
       console.error('Failed to load tasks:', error);
     } finally {
@@ -291,6 +363,7 @@ export default function AbleTaskManagePage() {
         <div className="flex items-center justify-between">
           <div><h1 className="text-xl font-bold text-foreground">Able 과제 관리</h1><p className="text-sm text-muted-foreground mt-1">등록된 과제의 현황을 관리하고 모니터링합니다</p></div>
         </div>
+        <PhaseNavigationBar stats={phaseStats} summary={summary} currentPhase="ABLE_MANAGE" projectId={projectId} navigate={navigate} />
       </div>
 
       <div className="flex-1 overflow-y-auto">

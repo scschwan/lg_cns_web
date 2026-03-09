@@ -238,7 +238,8 @@ public class ExportService {
         for (int i = 0; i < idList.size(); i += BATCH_SIZE) {
             List<String> batch = idList.subList(i, Math.min(i + BATCH_SIZE, idList.size()));
             Query batchQuery = new Query(Criteria.where("session_id").is(sessionId)
-                    .and("raw_data_id").in(batch));
+                    .and("raw_data_id").in(batch)
+                    .and("is_hidden").ne(true));
             // ★ projection 추가: 필요한 필드만 조회 (raw_data_id + data)
             batchQuery.fields().include("raw_data_id").include("data");
             List<Document> batchResult = mongoTemplate.find(batchQuery, Document.class, "session_data");
@@ -435,7 +436,8 @@ public class ExportService {
         List<String> pageIds = rawDataIds.subList(fromIndex, toIndex);
 
         Query dataQuery = new Query(Criteria.where("session_id").is(sessionId)
-                .and("raw_data_id").in(pageIds));
+                .and("raw_data_id").in(pageIds)
+                .and("is_hidden").ne(true));
         List<Document> sessionDataList = mongoTemplate.find(dataQuery, Document.class, "session_data");
 
         // 순서 보장을 위해 재정렬
@@ -836,7 +838,8 @@ public class ExportService {
             long batchStart = System.currentTimeMillis();
 
             Query batchQuery = new Query(Criteria.where("session_id").is(sessionId)
-                    .and("raw_data_id").in(batch));
+                    .and("raw_data_id").in(batch)
+                    .and("is_hidden").ne(true));
             batchQuery.fields().include("raw_data_id").include("data");
             List<Document> batchResult = mongoTemplate.find(batchQuery, Document.class, "session_data");
 
@@ -992,7 +995,8 @@ public class ExportService {
         for (int i = 0; i < idList.size(); i += BATCH_SIZE) {
             List<String> batch = idList.subList(i, Math.min(i + BATCH_SIZE, idList.size()));
             Query batchQuery = new Query(Criteria.where("session_id").is(sessionId)
-                    .and("raw_data_id").in(batch));
+                    .and("raw_data_id").in(batch)
+                    .and("is_hidden").ne(true));
             List<Document> batchResult = mongoTemplate.find(batchQuery, Document.class, "session_data");
             for (Document doc : batchResult) {
                 dataMap.put(doc.getString("raw_data_id"), doc);
