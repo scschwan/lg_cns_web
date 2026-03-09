@@ -435,7 +435,8 @@ public class ExportService {
         List<String> pageIds = rawDataIds.subList(fromIndex, toIndex);
 
         Query dataQuery = new Query(Criteria.where("session_id").is(sessionId)
-                .and("raw_data_id").in(pageIds));
+                .and("raw_data_id").in(pageIds)
+                .and("is_hidden").ne(true));
         List<Document> sessionDataList = mongoTemplate.find(dataQuery, Document.class, "session_data");
 
         // 순서 보장을 위해 재정렬
