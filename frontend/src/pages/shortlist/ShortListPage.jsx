@@ -481,26 +481,27 @@ function SelectedItemCard({ stats, onRawDataClick }) {
 
 /* ====== Phase Navigation Bar ====== */
 function PhaseNavigationBar({ stats, currentPhase, projectId, navigate, dynamicShortList, checkableItemCount }) {
+  const shortListAmount = dynamicShortList ? dynamicShortList.amount : (stats?.shortListTotalAmount ?? 0);
   const phases = [
     {
       key: 'LONG_LIST',
       label: 'Raw List',
-      detailedCount: stats ? `계정명:${stats.longListAccountCount ?? '-'} / 클러스터:${stats.longListClusterCount ?? '-'} / 세부:${stats.longListSubClusterCount ?? '-'}` : null,
-      amount: stats?.totalAmount ?? 0,
+      line1: stats ? `계정명 : ${stats.longListAccountCount ?? '-'} / 클러스터 : ${stats.longListClusterCount ?? '-'} / 세부 : ${stats.longListSubClusterCount ?? '-'}` : null,
+      line2: stats ? `합산금액 : ${formatAmount(stats.totalAmount ?? 0)}` : null,
       path: `/projects/${projectId}/longlist`,
     },
     {
       key: 'SHORT_LIST',
       label: 'Long List',
-      detailedCount: stats ? `계정명:${stats.shortListAccountCount ?? '-'} / 클러스터:${stats.shortListClusterCount ?? '-'} / 세부:${stats.shortListSubClusterCount ?? '-'}` : null,
-      amount: dynamicShortList ? dynamicShortList.amount : (stats?.shortListTotalAmount ?? 0),
+      line1: stats ? `계정명 : ${stats.shortListAccountCount ?? '-'} / 클러스터 : ${stats.shortListClusterCount ?? '-'} / 세부 : ${stats.shortListSubClusterCount ?? '-'}` : null,
+      line2: `합산금액 : ${formatAmount(shortListAmount)}`,
       path: `/projects/${projectId}/shortlist`,
     },
     {
       key: 'ABLE_REGISTER',
       label: 'Short List',
-      detailedCount: null,
-      amount: null,
+      line1: stats ? `계정명 : ${stats.ableRegisterAccountCount ?? '-'} / 클러스터 : ${stats.ableRegisterClusterCount ?? '-'}` : null,
+      line2: stats ? `합산금액 : ${formatAmount(stats.ableRegisterTotalAmount ?? 0)}` : null,
       path: `/projects/${projectId}/able-register`,
     },
   ];
@@ -508,7 +509,7 @@ function PhaseNavigationBar({ stats, currentPhase, projectId, navigate, dynamicS
   const currentIdx = phases.findIndex(p => p.key === currentPhase);
 
   return (
-    <div className="flex items-center gap-2 py-3">
+    <div className="flex items-center gap-2 py-3 flex-wrap">
       {phases.map((phase, idx) => {
         const isActive = phase.key === currentPhase;
         const isPast = idx < currentIdx;
@@ -526,9 +527,12 @@ function PhaseNavigationBar({ stats, currentPhase, projectId, navigate, dynamicS
             >
               {isPast && <CheckCircle2 className="w-6 h-6" />}
               <span className="font-bold">{phase.label}</span>
-              {phase.detailedCount != null && (
-                <Badge variant={isActive ? 'secondary' : 'outline'} className="text-base px-3 py-1 ml-1">
-                  {phase.detailedCount} | {formatAmount(phase.amount)}
+              {phase.line1 != null && (
+                <Badge variant={isActive ? 'secondary' : 'outline'} className="text-sm px-3 py-1.5 ml-1 leading-relaxed whitespace-pre-line text-left">
+                  <span className="flex flex-col gap-0.5">
+                    <span>{phase.line1}</span>
+                    <span>{phase.line2}</span>
+                  </span>
                 </Badge>
               )}
             </button>

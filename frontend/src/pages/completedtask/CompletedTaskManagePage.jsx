@@ -162,36 +162,36 @@ function PhaseNavigationBar({ stats, summary, completedSummary, currentPhase, pr
     {
       key: 'LONG_LIST',
       label: 'Raw List',
-      detailedCount: stats ? `계정명:${stats.longListAccountCount ?? '-'} / 클러스터:${stats.longListClusterCount ?? '-'} / 세부:${stats.longListSubClusterCount ?? '-'}` : null,
-      amount: stats?.totalAmount ?? 0,
+      line1: stats ? `계정명 : ${stats.longListAccountCount ?? '-'} / 클러스터 : ${stats.longListClusterCount ?? '-'} / 세부 : ${stats.longListSubClusterCount ?? '-'}` : null,
+      line2: stats ? `합산금액 : ${formatAmount(stats.totalAmount ?? 0)}` : null,
       path: `/projects/${projectId}/longlist`,
     },
     {
       key: 'SHORT_LIST',
       label: 'Long List',
-      detailedCount: stats ? `계정명:${stats.shortListAccountCount ?? '-'} / 클러스터:${stats.shortListClusterCount ?? '-'} / 세부:${stats.shortListSubClusterCount ?? '-'}` : null,
-      amount: stats?.shortListTotalAmount ?? 0,
+      line1: stats ? `계정명 : ${stats.shortListAccountCount ?? '-'} / 클러스터 : ${stats.shortListClusterCount ?? '-'} / 세부 : ${stats.shortListSubClusterCount ?? '-'}` : null,
+      line2: stats ? `합산금액 : ${formatAmount(stats.shortListTotalAmount ?? 0)}` : null,
       path: `/projects/${projectId}/shortlist`,
     },
     {
       key: 'ABLE_REGISTER',
       label: 'Short List',
-      detailedCount: null,
-      amount: null,
+      line1: stats ? `계정명 : ${stats.ableRegisterAccountCount ?? '-'} / 클러스터 : ${stats.ableRegisterClusterCount ?? '-'}` : null,
+      line2: stats ? `합산금액 : ${formatAmount(stats.ableRegisterTotalAmount ?? 0)}` : null,
       path: `/projects/${projectId}/able-register`,
     },
     {
       key: 'ABLE_MANAGE',
       label: 'Able 과제',
-      detailedCount: summary ? `${summary.totalTasks ?? 0}건` : null,
-      amount: summary?.totalBaseAmount ?? 0,
+      line1: summary ? `과제수 : ${summary.totalTasks ?? 0}건` : null,
+      line2: summary ? `합산금액 : ${formatAmount(summary.totalBaseAmount ?? 0)}` : null,
       path: `/projects/${projectId}/able-task-manage`,
     },
     {
       key: 'COMPLETED',
       label: '완료 과제',
-      detailedCount: completedSummary ? `완료:${completedSummary.totalCompleted}건 / 예상절감:${formatAmount(completedSummary.totalSavingTarget)}` : null,
-      amount: completedSummary?.totalActualSaving ?? 0,
+      line1: completedSummary ? `완료 : ${completedSummary.totalCompleted}건 / 예상절감 : ${formatAmount(completedSummary.totalSavingTarget)}` : null,
+      line2: completedSummary ? `합산금액 : ${formatAmount(completedSummary.totalActualSaving ?? 0)}` : null,
       path: `/projects/${projectId}/completed-task-manage`,
     },
   ];
@@ -217,9 +217,12 @@ function PhaseNavigationBar({ stats, summary, completedSummary, currentPhase, pr
             >
               {isPast && <CheckCircle2 className="w-6 h-6" />}
               <span className="font-bold">{phase.label}</span>
-              {phase.detailedCount != null && (
-                <Badge variant={isActive ? 'secondary' : 'outline'} className="text-base px-3 py-1 ml-1">
-                  {phase.detailedCount} | {formatAmount(phase.amount)}
+              {phase.line1 != null && (
+                <Badge variant={isActive ? 'secondary' : 'outline'} className="text-sm px-3 py-1.5 ml-1 leading-relaxed whitespace-pre-line text-left">
+                  <span className="flex flex-col gap-0.5">
+                    <span>{phase.line1}</span>
+                    <span>{phase.line2}</span>
+                  </span>
                 </Badge>
               )}
             </button>

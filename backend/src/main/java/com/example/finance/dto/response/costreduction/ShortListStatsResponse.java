@@ -24,4 +24,9 @@ public class ShortListStatsResponse {
     private Integer shortListAccountCount;
     private Integer shortListClusterCount;
     private Integer shortListSubClusterCount;
+
+    // Able 과제 등록 단계 (Short List) 건수
+    private Integer ableRegisterAccountCount;
+    private Integer ableRegisterClusterCount;
+    private Double ableRegisterTotalAmount;
 }

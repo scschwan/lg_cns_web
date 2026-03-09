@@ -2,9 +2,11 @@ package com.example.finance.service.costreduction;
 
 import com.example.finance.dto.request.costreduction.SaveListRequest;
 import com.example.finance.dto.response.costreduction.*;
+import com.example.finance.model.costreduction.AbleTask;
 import com.example.finance.model.costreduction.LongShortList;
 import com.example.finance.model.data.ClusterStatistics;
 import com.example.finance.model.data.SessionDataDocument;
+import com.example.finance.repository.costreduction.AbleTaskRepository;
 import com.example.finance.repository.costreduction.LongShortListRepository;
 import com.example.finance.repository.data.ClusterStatisticsRepository;
 import com.example.finance.repository.data.SessionDataRepository;
@@ -30,6 +32,7 @@ import java.util.stream.Collectors;
 public class ShortListService {
 
     private final LongShortListRepository longShortListRepository;
+    private final AbleTaskRepository ableTaskRepository;
     private final ClusterStatisticsRepository clusterStatisticsRepository;
     private final SessionDataRepository sessionDataRepository;
     private final RedisService redisService;
@@ -210,6 +213,21 @@ public class ShortListService {
                 .filter(i -> i.getLevel() != null && i.getLevel() == 3)
                 .count();
 
+        // Able 과제 등록 단계 (Short List → Able) 통계
+        List<AbleTask> ableTasks = ableTaskRepository.findByProjectId(projectId);
+        long ableAccountCount = ableTasks.stream()
+                .flatMap(t -> t.getMajorAccounts() != null ? t.getMajorAccounts().stream() : java.util.stream.Stream.empty())
+                .filter(a -> a != null && !a.isEmpty())
+                .distinct().count();
+        long ableClusterCount = ableTasks.stream()
+                .flatMap(t -> t.getClusters() != null ? t.getClusters().stream() : java.util.stream.Stream.empty())
+                .map(AbleTask.ClusterRef::getClusterName)
+                .filter(c -> c != null && !c.isEmpty())
+                .distinct().count();
+        double ableTotalAmount = ableTasks.stream()
+                .mapToDouble(t -> t.getBaseAmount() != null ? t.getBaseAmount() : 0.0)
+                .sum();
+
         return ShortListStatsResponse.builder()
                 .longListItemCount(longLevel2.size())
                 .shortListItemCount(shortLevel2.size())
@@ -222,6 +240,9 @@ public class ShortListService {
                 .shortListAccountCount((int) shortAccountCount)
                 .shortListClusterCount((int) shortClusterCount)
                 .shortListSubClusterCount((int) shortSubClusterCount)
+                .ableRegisterAccountCount((int) ableAccountCount)
+                .ableRegisterClusterCount((int) ableClusterCount)
+                .ableRegisterTotalAmount(ableTotalAmount)
                 .build();
     }
 
