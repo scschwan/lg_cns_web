@@ -313,10 +313,11 @@ public class ClusterStatisticsService {
                         && s.getParentClusterNumber() != null)
                 .collect(Collectors.toMap(ClusterStatistics::getParentClusterNumber, ClusterStatistics::getId));
 
-        // 동일 (l2StatsId, l3StatsId) 조합별로 dataIndices를 그룹화하여 updateMulti 호출 수 최소화
-        // 기존: 클러스터당 1회 (207회) → 개선: (l2, l3) 조합당 1회 (~8회 이하)
-        Map<String, List<String>> groupedDataIndices = new java.util.HashMap<>(); // key: "l2|l3"
-        Map<String, String[]> groupStatsIds = new java.util.HashMap<>(); // key → [l2StatsId, l3StatsId]
+        // (l2StatsId, l3StatsId) 조합별로 dataIndices를 그룹화한 뒤,
+        // $in 배치 크기를 500건으로 제한하여 DocumentDB 타임아웃 방지
+        final int BATCH_SIZE = 500;
+        Map<String, List<String>> groupedDataIndices = new java.util.HashMap<>();
+        Map<String, String[]> groupStatsIds = new java.util.HashMap<>();
         int totalDataCount = 0;
 
         for (ClusteringResult cr : allClusters) {
@@ -326,7 +327,6 @@ public class ClusterStatisticsService {
             Integer clusterSubId = cr.getClusterSubId();
             Integer clusterNumber = cr.getClusterNumber();
 
-            // Level 2 stats ID 결정
             String l2StatsId;
             if (clusterId != null && clusterId > 0) {
                 l2StatsId = l2StatsMap.get(clusterId);
@@ -334,7 +334,6 @@ public class ClusterStatisticsService {
                 l2StatsId = l2StatsMap.get(clusterNumber);
             }
 
-            // Level 3 stats ID 결정
             String l3StatsId = null;
             Integer parentClusterId = (clusterId != null && clusterId > 0) ? clusterId : clusterNumber;
 
@@ -354,7 +353,7 @@ public class ClusterStatisticsService {
             totalDataCount += cr.getDataIndices().size();
         }
 
-        // 그룹별 단일 updateMulti 실행
+        // 그룹별로 500건씩 배치 updateMulti 실행
         int updateMultiCalls = 0;
         long slowestUpdateMs = 0;
         int slowestUpdateSize = 0;
@@ -363,35 +362,40 @@ public class ClusterStatisticsService {
             String[] ids = groupStatsIds.get(entry.getKey());
             String l2StatsId = ids[0];
             String l3StatsId = ids[1];
-            List<String> dataIndices = entry.getValue();
+            List<String> allIndices = entry.getValue();
 
-            long updateStart = System.currentTimeMillis();
-            Query query = new Query(Criteria.where("session_id").is(sessionId)
-                    .and("raw_data_id").in(dataIndices));
-            Update update = new Update().set("stats_l2_id", l2StatsId);
-            if (l3StatsId != null) {
-                update.set("stats_l3_id", l3StatsId);
-            }
-            var updateResult = mongoTemplate.updateMulti(query, update, SessionDataDocument.class);
-            long updateMs = System.currentTimeMillis() - updateStart;
-            updateMultiCalls++;
+            // 500건씩 분할하여 updateMulti
+            for (int i = 0; i < allIndices.size(); i += BATCH_SIZE) {
+                List<String> batch = allIndices.subList(i, Math.min(i + BATCH_SIZE, allIndices.size()));
 
-            if (updateMs > slowestUpdateMs) {
-                slowestUpdateMs = updateMs;
-                slowestUpdateSize = dataIndices.size();
-            }
+                long updateStart = System.currentTimeMillis();
+                Query query = new Query(Criteria.where("session_id").is(sessionId)
+                        .and("raw_data_id").in(batch));
+                Update update = new Update().set("stats_l2_id", l2StatsId);
+                if (l3StatsId != null) {
+                    update.set("stats_l3_id", l3StatsId);
+                }
+                var updateResult = mongoTemplate.updateMulti(query, update, SessionDataDocument.class);
+                long updateMs = System.currentTimeMillis() - updateStart;
+                updateMultiCalls++;
 
-            if (updateMs > 500) {
-                log.warn("[STATS-LINK] 느린 updateMulti: group={}, dataIndices={}, matched={}, modified={}, {}ms",
-                        entry.getKey(), dataIndices.size(),
-                        updateResult.getMatchedCount(), updateResult.getModifiedCount(), updateMs);
+                if (updateMs > slowestUpdateMs) {
+                    slowestUpdateMs = updateMs;
+                    slowestUpdateSize = batch.size();
+                }
+
+                if (updateMs > 500) {
+                    log.warn("[STATS-LINK] 느린 updateMulti: group={}, batch={}/{}, matched={}, modified={}, {}ms",
+                            entry.getKey(), batch.size(), allIndices.size(),
+                            updateResult.getMatchedCount(), updateResult.getModifiedCount(), updateMs);
+                }
             }
         }
 
         long totalMs = System.currentTimeMillis() - t0;
         log.info("[STATS-LINK] session_data stats ID 역참조 설정 완료: sessionId={}, ~{}건, " +
-                        "updateMulti={}회(그룹화), 총 {}ms, 최느린쿼리={}ms({}건)",
-                sessionId, totalDataCount, updateMultiCalls, totalMs, slowestUpdateMs, slowestUpdateSize);
+                        "updateMulti={}회(배치{}건), 총 {}ms, 최느린쿼리={}ms({}건)",
+                sessionId, totalDataCount, updateMultiCalls, BATCH_SIZE, totalMs, slowestUpdateMs, slowestUpdateSize);
     }
 
     /**
