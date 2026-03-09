@@ -1573,27 +1573,27 @@ public class ExportService {
         // ── 6단계: 통계 생성 ──
         tracker.beginStep("6.통계생성");
         stepStart = System.currentTimeMillis();
+        // PVD 로드와 통계 생성을 분리하여 실패 원인을 정확히 추적
+        Map<String, ClusterStatisticsService.DocData> pvdData = null;
         try {
             long pvdWaitStart = System.currentTimeMillis();
-            Map<String, ClusterStatisticsService.DocData> pvdData = pvdFuture.get(120, TimeUnit.SECONDS);
+            pvdData = pvdFuture.get(120, TimeUnit.SECONDS);
             long pvdWaitMs = System.currentTimeMillis() - pvdWaitStart;
             tracker.addSubStep("6.통계생성", "PVD대기", pvdWaitMs,
                     String.format("%d건, 4단계와 병렬실행 → 실제대기=%dms", pvdData.size(), pvdWaitMs));
-
-            long statsCalcStart = System.currentTimeMillis();
-            clusterStatisticsService.generateStatisticsWithData(sessionId, projectId, pvdData, allClusters);
-            tracker.addSubStep("6.통계생성", "통계계산+저장", System.currentTimeMillis() - statsCalcStart, null);
         } catch (TimeoutException e) {
-            log.warn("[FIRE-AND-FORGET] pvd 로드 타임아웃, 동기 방식으로 pvd만 재로드 (allClusters 재활용)");
-            Map<String, ClusterStatisticsService.DocData> pvdData = clusterStatisticsService.loadProcessViewData(sessionId);
-            clusterStatisticsService.generateStatisticsWithData(sessionId, projectId, pvdData, allClusters);
-            tracker.addSubStep("6.통계생성", "PVD타임아웃→동기fallback(clusters재활용)", System.currentTimeMillis() - stepStart, null);
+            log.warn("[FIRE-AND-FORGET] pvd 병렬 로드 타임아웃, 동기 방식으로 pvd만 재로드");
+            pvdData = clusterStatisticsService.loadProcessViewData(sessionId);
+            tracker.addSubStep("6.통계생성", "PVD타임아웃→동기fallback", System.currentTimeMillis() - stepStart, null);
         } catch (Exception e) {
-            log.warn("[FIRE-AND-FORGET] pvd 병렬 로드 실패, 동기 방식으로 pvd만 재로드 (allClusters 재활용): {}", e.getMessage());
-            Map<String, ClusterStatisticsService.DocData> pvdData = clusterStatisticsService.loadProcessViewData(sessionId);
-            clusterStatisticsService.generateStatisticsWithData(sessionId, projectId, pvdData, allClusters);
-            tracker.addSubStep("6.통계생성", "PVD실패→동기fallback(clusters재활용)", System.currentTimeMillis() - stepStart, e.getMessage());
+            log.warn("[FIRE-AND-FORGET] pvd 병렬 로드 실패, 동기 방식으로 pvd만 재로드: {}", e.getMessage());
+            pvdData = clusterStatisticsService.loadProcessViewData(sessionId);
+            tracker.addSubStep("6.통계생성", "PVD실패→동기fallback", System.currentTimeMillis() - stepStart, e.getMessage());
         }
+
+        long statsCalcStart = System.currentTimeMillis();
+        clusterStatisticsService.generateStatisticsWithData(sessionId, projectId, pvdData, allClusters);
+        tracker.addSubStep("6.통계생성", "통계계산+저장", System.currentTimeMillis() - statsCalcStart, null);
         tracker.endStep("6.통계생성");
         log.info("[TIMING] 6.통계생성: {}ms", System.currentTimeMillis() - stepStart);
 
