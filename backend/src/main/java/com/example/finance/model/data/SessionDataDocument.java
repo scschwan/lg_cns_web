@@ -23,7 +23,9 @@ import java.util.Map;
         @CompoundIndex(name = "project_session_idx", def = "{'project_id': 1, 'session_id': 1}"),
         @CompoundIndex(name = "session_upload_idx", def = "{'session_id': 1, 'upload_id': 1}"),
         @CompoundIndex(name = "raw_data_rownum_idx", def = "{'raw_data_id': 1, 'row_number': 1}"),
-        @CompoundIndex(name = "session_hidden_idx", def = "{'session_id': 1, 'is_hidden': 1}")
+        @CompoundIndex(name = "session_hidden_idx", def = "{'session_id': 1, 'is_hidden': 1}"),
+        @CompoundIndex(name = "stats_l2_rownum_idx", def = "{'stats_l2_id': 1, 'row_number': 1}"),
+        @CompoundIndex(name = "stats_l3_rownum_idx", def = "{'stats_l3_id': 1, 'row_number': 1}")
 })
 public class SessionDataDocument {
 
@@ -50,6 +52,20 @@ public class SessionDataDocument {
     @Field("is_hidden")
     @Builder.Default
     private Boolean isHidden = false;
+
+    /**
+     * cluster_statistics level 2 (클러스터) 문서 ID
+     * 세션 완료(export) 시 설정
+     */
+    @Field("stats_l2_id")
+    private String statsL2Id;
+
+    /**
+     * cluster_statistics level 3 (세부클러스터) 문서 ID
+     * 세션 완료(export) 시 설정. 세부클러스터 미할당 시 '기타' 항목 ID 저장
+     */
+    @Field("stats_l3_id")
+    private String statsL3Id;
 
     @Field("created_at")
     private LocalDateTime createdAt;

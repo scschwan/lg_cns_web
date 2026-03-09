@@ -121,16 +121,6 @@ public class ClusterStatistics {
     private List<BreakdownItem> supplierBreakdown = new ArrayList<>();
 
     /**
-     * Raw Data ID 목록 (row_number 기준 정렬)
-     * - Level 2/3: 해당 클러스터의 session_data raw_data_id 배열
-     * - Level 1: 빈 배열 (계정 수준은 Level 2에서 집계)
-     * - Raw Data 페이징 조회 시 배열 슬라이싱으로 해당 페이지 ID만 추출하여 $in 쿼리 최적화
-     */
-    @Field("data_indices")
-    @Builder.Default
-    private List<String> dataIndices = new ArrayList<>();
-
-    /**
      * 생성 시간
      */
     @Field("created_at")
