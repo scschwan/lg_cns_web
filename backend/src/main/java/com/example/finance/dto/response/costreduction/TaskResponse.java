@@ -29,8 +29,13 @@ public class TaskResponse {
     private String status;
     private Double actualSaving;
     private String rating;
+    private String progressDetails;
+    private String issues;
+    private String customerFollowUp;
+    private String actionItems;
     private LocalDateTime completedAt;
     private LocalDateTime createdAt;
+    private LocalDateTime updatedAt;
     private Integer documentCount;
 
     @Data
