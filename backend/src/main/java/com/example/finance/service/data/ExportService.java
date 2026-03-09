@@ -1584,13 +1584,15 @@ public class ExportService {
             clusterStatisticsService.generateStatisticsWithData(sessionId, projectId, pvdData, allClusters);
             tracker.addSubStep("6.통계생성", "통계계산+저장", System.currentTimeMillis() - statsCalcStart, null);
         } catch (TimeoutException e) {
-            log.warn("[FIRE-AND-FORGET] pvd 로드 타임아웃, 동기 방식으로 fallback");
-            clusterStatisticsService.generateStatistics(sessionId, projectId);
-            tracker.addSubStep("6.통계생성", "PVD타임아웃→동기fallback", System.currentTimeMillis() - stepStart, null);
+            log.warn("[FIRE-AND-FORGET] pvd 로드 타임아웃, 동기 방식으로 pvd만 재로드 (allClusters 재활용)");
+            Map<String, ClusterStatisticsService.DocData> pvdData = clusterStatisticsService.loadProcessViewData(sessionId);
+            clusterStatisticsService.generateStatisticsWithData(sessionId, projectId, pvdData, allClusters);
+            tracker.addSubStep("6.통계생성", "PVD타임아웃→동기fallback(clusters재활용)", System.currentTimeMillis() - stepStart, null);
         } catch (Exception e) {
-            log.warn("[FIRE-AND-FORGET] pvd 병렬 로드 실패, 동기 방식으로 fallback: {}", e.getMessage());
-            clusterStatisticsService.generateStatistics(sessionId, projectId);
-            tracker.addSubStep("6.통계생성", "PVD실패→동기fallback", System.currentTimeMillis() - stepStart, e.getMessage());
+            log.warn("[FIRE-AND-FORGET] pvd 병렬 로드 실패, 동기 방식으로 pvd만 재로드 (allClusters 재활용): {}", e.getMessage());
+            Map<String, ClusterStatisticsService.DocData> pvdData = clusterStatisticsService.loadProcessViewData(sessionId);
+            clusterStatisticsService.generateStatisticsWithData(sessionId, projectId, pvdData, allClusters);
+            tracker.addSubStep("6.통계생성", "PVD실패→동기fallback(clusters재활용)", System.currentTimeMillis() - stepStart, e.getMessage());
         }
         tracker.endStep("6.통계생성");
         log.info("[TIMING] 6.통계생성: {}ms", System.currentTimeMillis() - stepStart);

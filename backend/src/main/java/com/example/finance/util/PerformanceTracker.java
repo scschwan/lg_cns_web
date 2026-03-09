@@ -3,9 +3,11 @@ package com.example.finance.util;
 import lombok.extern.slf4j.Slf4j;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * 세션 완료 프로세스의 구간별 성능을 추적하는 경량 유틸리티.
@@ -23,8 +25,8 @@ public class PerformanceTracker {
     private final String sessionId;
     private final String operation;
     private final long startTime;
-    private final Map<String, StepRecord> steps = new LinkedHashMap<>();
-    private final List<MemorySnapshot> memorySnapshots = new ArrayList<>();
+    private final Map<String, StepRecord> steps = new ConcurrentHashMap<>();
+    private final List<MemorySnapshot> memorySnapshots = Collections.synchronizedList(new ArrayList<>());
 
     private PerformanceTracker(String sessionId, String operation) {
         this.sessionId = sessionId;
@@ -174,9 +176,9 @@ public class PerformanceTracker {
         long endTime;
         long elapsed;
         String details;
-        final List<SubStepRecord> subSteps = new ArrayList<>();
-        final List<QueryMetric> queryMetrics = new ArrayList<>();
-        final List<BatchMetric> batchMetrics = new ArrayList<>();
+        final List<SubStepRecord> subSteps = Collections.synchronizedList(new ArrayList<>());
+        final List<QueryMetric> queryMetrics = Collections.synchronizedList(new ArrayList<>());
+        final List<BatchMetric> batchMetrics = Collections.synchronizedList(new ArrayList<>());
 
         StepRecord(String stepName, long startTime) {
             this.stepName = stepName;
