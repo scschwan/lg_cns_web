@@ -70,6 +70,18 @@ public class AbleTask {
     @Field("rating")
     private String rating;
 
+    @Field("progress_details")
+    private String progressDetails;
+
+    @Field("issues")
+    private String issues;
+
+    @Field("customer_follow_up")
+    private String customerFollowUp;
+
+    @Field("action_items")
+    private String actionItems;
+
     @Field("completed_at")
     private LocalDateTime completedAt;
 

@@ -12,6 +12,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter,
 } from '@/components/ui/dialog';
@@ -82,7 +83,7 @@ function CompletedTaskDetailModal({ open, onClose, task }) {
 function EditTaskModal({ open, onClose, task, onSave }) {
   const [form, setForm] = useState({});
   useEffect(() => {
-    if (task) setForm({ taskName: task.taskName, department: task.department, consultant: task.consultant, baseAmount: task.baseAmount, expectedSavingAmount: task.expectedSavingAmount, actualSaving: task.actualSaving, rating: task.rating });
+    if (task) setForm({ taskName: task.taskName, department: task.department, consultant: task.consultant, baseAmount: task.baseAmount, expectedSavingAmount: task.expectedSavingAmount, actualSaving: task.actualSaving, rating: task.rating, customerFollowUp: task.customerFollowUp, actionItems: task.actionItems });
   }, [task]);
   if (!task) return null;
   const handleChange = (f, v) => setForm(prev => ({ ...prev, [f]: v }));
@@ -110,6 +111,8 @@ function EditTaskModal({ open, onClose, task, onSave }) {
               <SelectContent><SelectItem value="A+">A+</SelectItem><SelectItem value="A">A</SelectItem><SelectItem value="B+">B+</SelectItem><SelectItem value="B">B</SelectItem></SelectContent>
             </Select>
           </div>
+          <div className="space-y-1.5"><Label>고객사 Follow Up</Label><Textarea value={form.customerFollowUp || ''} onChange={e => handleChange('customerFollowUp', e.target.value)} placeholder="고객사 follow up 내용을 입력하세요" rows={3} className="text-sm" /></div>
+          <div className="space-y-1.5"><Label>조치사항</Label><Textarea value={form.actionItems || ''} onChange={e => handleChange('actionItems', e.target.value)} placeholder="조치사항을 입력하세요" rows={3} className="text-sm" /></div>
         </div>
         <DialogFooter className="gap-2">
           <Button variant="outline" onClick={() => onClose(false)}>취소</Button>

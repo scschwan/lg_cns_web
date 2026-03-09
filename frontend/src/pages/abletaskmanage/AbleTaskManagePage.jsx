@@ -4,7 +4,7 @@ import {
   Search, Edit2, Eye, Trash2, FolderKanban,
   TrendingUp, DollarSign, ClipboardList, CheckCircle2, Clock,
   AlertCircle, FileText, Link2, FileIcon, ExternalLink, X, Save, Loader2,
-  ArrowRight,
+  ArrowRight, ArrowUpDown, ArrowUp, ArrowDown,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -12,6 +12,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter,
 } from '@/components/ui/dialog';
@@ -93,10 +94,11 @@ function TaskEditModal({ open, onClose, task, onSave }) {
   const [form, setForm] = useState({});
   useEffect(() => {
     if (task) setForm({
-      taskName: task.taskName, department: task.department, consultant: task.consultant,
+      taskName: task.taskName, department: task.department, manager: task.manager, consultant: task.consultant,
       baseAmount: task.baseAmount, expectedSavingRate: task.expectedSavingRate,
       expectedSavingAmount: task.expectedSavingAmount, progress: task.progress, status: task.status,
       actualSaving: task.actualSaving, rating: task.rating,
+      progressDetails: task.progressDetails, issues: task.issues,
     });
   }, [task]);
 
@@ -127,8 +129,9 @@ function TaskEditModal({ open, onClose, task, onSave }) {
         </DialogHeader>
         <div className="space-y-4">
           <div className="space-y-1.5"><Label>과제명</Label><Input value={form.taskName || ''} onChange={e => handleChange('taskName', e.target.value)} className="h-9 text-sm" /></div>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-3 gap-3">
             <div className="space-y-1.5"><Label>담당부서</Label><Input value={form.department || ''} onChange={e => handleChange('department', e.target.value)} className="h-9 text-sm" /></div>
+            <div className="space-y-1.5"><Label>담당자명</Label><Input value={form.manager || ''} onChange={e => handleChange('manager', e.target.value)} className="h-9 text-sm" /></div>
             <div className="space-y-1.5"><Label>컨설턴트</Label><Input value={form.consultant || ''} onChange={e => handleChange('consultant', e.target.value)} className="h-9 text-sm" /></div>
           </div>
           <div className="grid grid-cols-3 gap-3">
@@ -167,6 +170,8 @@ function TaskEditModal({ open, onClose, task, onSave }) {
               </div>
             </div>
           )}
+          <div className="space-y-1.5"><Label>진척사항</Label><Textarea value={form.progressDetails || ''} onChange={e => handleChange('progressDetails', e.target.value)} placeholder="진척사항을 입력하세요" rows={3} className="text-sm" /></div>
+          <div className="space-y-1.5"><Label>이슈사항</Label><Textarea value={form.issues || ''} onChange={e => handleChange('issues', e.target.value)} placeholder="이슈사항을 입력하세요" rows={3} className="text-sm" /></div>
         </div>
         <DialogFooter className="gap-2 sm:gap-0">
           <Button variant="outline" onClick={() => onClose(false)}><X className="w-4 h-4 mr-1.5" />취소</Button>
@@ -346,14 +351,70 @@ export default function AbleTaskManagePage() {
 
   const statusChartData = useMemo(() => {
     const map = {}; STATUS_OPTIONS.forEach(s => { map[s] = 0; }); tasks.forEach(t => { if (map[t.status] !== undefined) map[t.status]++; });
-    return Object.entries(map).map(([name, value]) => ({ name, value }));
+    return Object.entries(map).map(([name, value]) => ({ name, value })).filter(d => d.value > 0);
   }, [tasks]);
 
-  const consultantChartData = useMemo(() => {
+  const consultantTaskCountData = useMemo(() => {
     const map = {};
-    tasks.forEach(t => { const c = t.consultant || '미배정'; if (!map[c]) map[c] = { name: c, 과제수: 0, 절감액: 0 }; map[c].과제수++; map[c].절감액 += Math.round((t.expectedSavingAmount || 0) / 10000); });
+    tasks.forEach(t => { const c = t.consultant || '미배정'; if (!map[c]) map[c] = { name: c, 과제수: 0 }; map[c].과제수++; });
     return Object.values(map);
   }, [tasks]);
+
+  const consultantSavingData = useMemo(() => {
+    const map = {};
+    tasks.forEach(t => { const c = t.consultant || '미배정'; if (!map[c]) map[c] = { name: c, 절감액: 0 }; map[c].절감액 += (t.expectedSavingAmount || 0); });
+    return Object.values(map);
+  }, [tasks]);
+
+  const abbreviateYAxis = (v) => {
+    if (v >= 100000000) return (v / 100000000).toFixed(1) + '억';
+    if (v >= 10000) return (v / 10000).toFixed(0) + '만';
+    return v;
+  };
+
+  // Sort state
+  const [sortConfig, setSortConfig] = useState({ key: null, direction: null });
+  const handleSort = (key) => {
+    setSortConfig(prev => {
+      if (prev.key === key) {
+        if (prev.direction === 'asc') return { key, direction: 'desc' };
+        if (prev.direction === 'desc') return { key: null, direction: null };
+      }
+      return { key, direction: 'asc' };
+    });
+  };
+  const SortIcon = ({ colKey }) => {
+    if (sortConfig.key !== colKey) return <ArrowUpDown className="w-3 h-3 ml-1 inline opacity-40" />;
+    return sortConfig.direction === 'asc' ? <ArrowUp className="w-3 h-3 ml-1 inline" /> : <ArrowDown className="w-3 h-3 ml-1 inline" />;
+  };
+
+  const sortedTasks = useMemo(() => {
+    let result = [...filteredTasks];
+    if (sortConfig.key && sortConfig.direction) {
+      result.sort((a, b) => {
+        let aVal, bVal;
+        switch (sortConfig.key) {
+          case 'taskName': aVal = a.taskName || ''; bVal = b.taskName || ''; break;
+          case 'baseAmount': aVal = a.baseAmount || 0; bVal = b.baseAmount || 0; break;
+          case 'savingAmount': aVal = a.expectedSavingAmount || 0; bVal = b.expectedSavingAmount || 0; break;
+          case 'progress': aVal = a.progress || 0; bVal = b.progress || 0; break;
+          case 'status': aVal = a.status || ''; bVal = b.status || ''; break;
+          default: return 0;
+        }
+        if (aVal < bVal) return sortConfig.direction === 'asc' ? -1 : 1;
+        if (aVal > bVal) return sortConfig.direction === 'asc' ? 1 : -1;
+        return 0;
+      });
+    } else {
+      // Default sort by createdAt ascending
+      result.sort((a, b) => {
+        const aDate = a.createdAt || '';
+        const bDate = b.createdAt || '';
+        return aDate < bDate ? -1 : aDate > bDate ? 1 : 0;
+      });
+    }
+    return result;
+  }, [filteredTasks, sortConfig]);
 
   if (loading) return <div className="h-full flex items-center justify-center"><Loader2 className="w-8 h-8 animate-spin text-muted-foreground" /></div>;
 
@@ -375,20 +436,28 @@ export default function AbleTaskManagePage() {
             <Card><CardContent className="p-4"><div className="flex items-center gap-3"><div className="w-10 h-10 rounded-lg bg-orange-500 flex items-center justify-center flex-shrink-0"><FolderKanban className="w-5 h-5 text-white" /></div><div><p className="text-xs text-muted-foreground">평균 진척율</p><p className="text-xl font-bold tabular-nums">{summary?.avgProgress ?? 0}<span className="text-sm font-normal ml-0.5">%</span></p></div></div></CardContent></Card>
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-3 gap-4">
             <Card>
               <CardHeader className="pb-2 px-5 pt-4"><CardTitle className="text-sm font-semibold">과제 상태별 현황</CardTitle></CardHeader>
               <CardContent className="px-2 pb-4">
-                <ResponsiveContainer width="100%" height={200}>
-                  <PieChart><Pie data={statusChartData} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius={50} outerRadius={80} paddingAngle={3} label={({ name, value }) => `${name} ${value}`}>{statusChartData.map((_, idx) => <Cell key={idx} fill={CHART_COLORS[idx]} />)}</Pie><Tooltip /><Legend wrapperStyle={{ fontSize: 12 }} /></PieChart>
+                <ResponsiveContainer width="100%" height={300}>
+                  <PieChart><Pie data={statusChartData} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius={50} outerRadius={90} paddingAngle={3} label={({ name, value }) => `${name} ${value}`}>{statusChartData.map((_, idx) => <Cell key={idx} fill={CHART_COLORS[idx]} />)}</Pie><Tooltip /><Legend wrapperStyle={{ fontSize: 12 }} /></PieChart>
                 </ResponsiveContainer>
               </CardContent>
             </Card>
             <Card>
-              <CardHeader className="pb-2 px-5 pt-4"><CardTitle className="text-sm font-semibold">컨설턴트별 과제 현황</CardTitle></CardHeader>
+              <CardHeader className="pb-2 px-5 pt-4"><CardTitle className="text-sm font-semibold">컨설턴트별 과제수</CardTitle></CardHeader>
               <CardContent className="px-2 pb-4">
-                <ResponsiveContainer width="100%" height={200}>
-                  <BarChart data={consultantChartData}><CartesianGrid strokeDasharray="3 3" /><XAxis dataKey="name" tick={{ fontSize: 11 }} /><YAxis tick={{ fontSize: 11 }} /><Tooltip /><Legend wrapperStyle={{ fontSize: 12 }} /><Bar dataKey="과제수" fill="#3b82f6" radius={[4, 4, 0, 0]} /><Bar dataKey="절감액" fill="#10b981" radius={[4, 4, 0, 0]} /></BarChart>
+                <ResponsiveContainer width="100%" height={300}>
+                  <BarChart data={consultantTaskCountData}><CartesianGrid strokeDasharray="3 3" /><XAxis dataKey="name" tick={{ fontSize: 11 }} /><YAxis tick={{ fontSize: 11 }} allowDecimals={false} /><Tooltip /><Bar dataKey="과제수" fill="#3b82f6" radius={[4, 4, 0, 0]} /></BarChart>
+                </ResponsiveContainer>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader className="pb-2 px-5 pt-4"><CardTitle className="text-sm font-semibold">컨설턴트별 절감액</CardTitle></CardHeader>
+              <CardContent className="px-2 pb-4">
+                <ResponsiveContainer width="100%" height={300}>
+                  <BarChart data={consultantSavingData}><CartesianGrid strokeDasharray="3 3" /><XAxis dataKey="name" tick={{ fontSize: 11 }} /><YAxis tick={{ fontSize: 11 }} tickFormatter={abbreviateYAxis} /><Tooltip formatter={(v) => v.toLocaleString() + '원'} /><Bar dataKey="절감액" fill="#10b981" radius={[4, 4, 0, 0]} /></BarChart>
                 </ResponsiveContainer>
               </CardContent>
             </Card>
@@ -410,24 +479,31 @@ export default function AbleTaskManagePage() {
                   <TableHeader>
                     <TableRow className="bg-muted/50">
                       <TableHead className="w-[50px] text-center">No</TableHead>
-                      <TableHead>과제명</TableHead><TableHead>대계정</TableHead><TableHead>담당부서</TableHead><TableHead>컨설턴트</TableHead>
-                      <TableHead className="text-right">모수 금액</TableHead><TableHead className="text-right">절감액</TableHead>
-                      <TableHead className="w-[120px]">진척율</TableHead><TableHead className="text-center">상태</TableHead>
+                      <TableHead className="cursor-pointer select-none" onClick={() => handleSort('taskName')}>과제명<SortIcon colKey="taskName" /></TableHead>
+                      <TableHead>대계정</TableHead><TableHead>담당부서</TableHead><TableHead>담당자명</TableHead><TableHead>컨설턴트</TableHead>
+                      <TableHead className="text-right cursor-pointer select-none" onClick={() => handleSort('baseAmount')}>모수 금액<SortIcon colKey="baseAmount" /></TableHead>
+                      <TableHead className="text-right cursor-pointer select-none" onClick={() => handleSort('savingAmount')}>절감액<SortIcon colKey="savingAmount" /></TableHead>
+                      <TableHead className="w-[120px] cursor-pointer select-none" onClick={() => handleSort('progress')}>진척율<SortIcon colKey="progress" /></TableHead>
+                      <TableHead className="text-center cursor-pointer select-none" onClick={() => handleSort('status')}>상태<SortIcon colKey="status" /></TableHead>
+                      <TableHead className="text-center">등록시간</TableHead><TableHead className="text-center">수정시간</TableHead>
                       <TableHead className="text-center w-[130px]">관리</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {filteredTasks.map((task, idx) => (
+                    {sortedTasks.map((task, idx) => (
                       <TableRow key={task.id} className="hover:bg-muted/30">
                         <TableCell className="text-center text-xs tabular-nums">{idx + 1}</TableCell>
                         <TableCell className="text-sm font-medium">{task.taskName}</TableCell>
                         <TableCell className="text-xs">{task.majorAccounts?.join(', ') || '-'}</TableCell>
                         <TableCell className="text-xs">{task.department || '-'}</TableCell>
+                        <TableCell className="text-xs">{task.manager || '-'}</TableCell>
                         <TableCell className="text-xs">{task.consultant || '-'}</TableCell>
                         <TableCell className="text-right text-xs tabular-nums">{formatAmount(task.baseAmount ?? 0)}</TableCell>
                         <TableCell className="text-right text-xs tabular-nums text-green-600 font-medium">{formatAmount(task.expectedSavingAmount ?? 0)}</TableCell>
                         <TableCell><div className="flex items-center gap-2"><Progress value={task.progress ?? 0} className="h-1.5 flex-1" /><span className="text-[10px] tabular-nums w-8 text-right">{task.progress ?? 0}%</span></div></TableCell>
                         <TableCell className="text-center"><Badge className={cn('text-[10px] px-1.5', STATUS_MAP[task.status]?.color)}>{task.status}</Badge></TableCell>
+                        <TableCell className="text-center text-[10px] tabular-nums text-muted-foreground">{task.createdAt ? new Date(task.createdAt).toLocaleString('ko-KR', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }) : '-'}</TableCell>
+                        <TableCell className="text-center text-[10px] tabular-nums text-muted-foreground">{task.updatedAt ? new Date(task.updatedAt).toLocaleString('ko-KR', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }) : '-'}</TableCell>
                         <TableCell className="text-center">
                           <div className="flex items-center justify-center gap-1">
                             <Button variant="ghost" size="sm" className="h-6 w-6 p-0" onClick={() => setDetailTask(task)} title="상세 보기"><Eye className="w-3 h-3" /></Button>
@@ -438,11 +514,11 @@ export default function AbleTaskManagePage() {
                         </TableCell>
                       </TableRow>
                     ))}
-                    {filteredTasks.length === 0 && <TableRow><TableCell colSpan={10} className="text-center text-sm text-muted-foreground py-8">{tasks.length === 0 ? '등록된 과제가 없습니다.' : '검색 결과가 없습니다.'}</TableCell></TableRow>}
+                    {sortedTasks.length === 0 && <TableRow><TableCell colSpan={13} className="text-center text-sm text-muted-foreground py-8">{tasks.length === 0 ? '등록된 과제가 없습니다.' : '검색 결과가 없습니다.'}</TableCell></TableRow>}
                   </TableBody>
                 </Table>
               </div>
-              <div className="px-5 py-3 border-t text-xs text-muted-foreground">총 {filteredTasks.length}건 표시 중</div>
+              <div className="px-5 py-3 border-t text-xs text-muted-foreground">총 {sortedTasks.length}건 표시 중</div>
             </CardContent>
           </Card>
         </div>

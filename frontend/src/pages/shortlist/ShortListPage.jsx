@@ -304,42 +304,33 @@ function RatioDetailModal({ open, onClose, title, data }) {
 
 /* ====== Top N Summary Pie (Top3/5/10 vs 그 외) ====== */
 function TopNSummaryPie({ data, title }) {
-  const [topN, setTopN] = useState(3);
+  const TOP_N = 3;
+  const TOP3_COLOR = '#3b82f6';
+  const REST_COLOR = '#94a3b8';
 
   const summaryData = useMemo(() => {
     if (!data || data.length === 0) return [];
     const sorted = [...data].sort((a, b) => (b.amount || b.totalAmount || 0) - (a.amount || a.totalAmount || 0));
-    const topItems = sorted.slice(0, topN);
-    const restItems = sorted.slice(topN);
+    const top3Items = sorted.slice(0, TOP_N);
+    const restItems = sorted.slice(TOP_N);
+    const top3Total = top3Items.reduce((s, d) => s + (d.amount || d.totalAmount || 0), 0);
     const restTotal = restItems.reduce((s, d) => s + (d.amount || d.totalAmount || 0), 0);
-    const result = topItems.map(d => ({
-      name: d.name,
-      value: d.amount || d.totalAmount || 0,
-    }));
+    const result = [{ name: 'Top3 합산', value: top3Total }];
     if (restItems.length > 0) {
       result.push({ name: '그 외', value: restTotal });
     }
     return result;
-  }, [data, topN]);
+  }, [data]);
 
+  const COLORS = [TOP3_COLOR, REST_COLOR];
   const total = summaryData.reduce((s, d) => s + d.value, 0);
 
   return (
     <Card>
       <CardHeader className="pb-2 px-5 pt-5">
-        <div className="flex items-center justify-between">
-          <CardTitle className="text-sm font-semibold flex items-center gap-2">
-            <Eye className="w-4 h-4 text-muted-foreground" />{title}
-          </CardTitle>
-          <Select value={topN.toString()} onValueChange={v => setTopN(+v)}>
-            <SelectTrigger className="w-[80px] h-7 text-xs"><SelectValue /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="3">Top 3</SelectItem>
-              <SelectItem value="5">Top 5</SelectItem>
-              <SelectItem value="10">Top 10</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
+        <CardTitle className="text-sm font-semibold flex items-center gap-2">
+          <Eye className="w-4 h-4 text-muted-foreground" />{title}
+        </CardTitle>
       </CardHeader>
       <CardContent className="px-5 pb-5">
         <div className="flex items-start gap-6">
@@ -348,7 +339,7 @@ function TopNSummaryPie({ data, title }) {
               <PieChart>
                 <Pie data={summaryData} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius={40} outerRadius={70} paddingAngle={2}>
                   {summaryData.map((_, idx) => (
-                    <Cell key={idx} fill={CHART_COLORS[idx % CHART_COLORS.length]} />
+                    <Cell key={idx} fill={COLORS[idx]} />
                   ))}
                 </Pie>
                 <Tooltip formatter={(v) => formatAmount(v)} />
@@ -362,7 +353,7 @@ function TopNSummaryPie({ data, title }) {
           <div className="flex-1 space-y-1.5 min-w-0">
             {summaryData.map((item, idx) => (
               <div key={idx} className="flex items-center gap-2 text-xs">
-                <div className="w-3 h-3 rounded-sm flex-shrink-0" style={{ backgroundColor: CHART_COLORS[idx % CHART_COLORS.length] }} />
+                <div className="w-3 h-3 rounded-sm flex-shrink-0" style={{ backgroundColor: COLORS[idx] }} />
                 <span className="truncate flex-1">{item.name}</span>
                 <span className="font-semibold tabular-nums flex-shrink-0">{formatAmount(item.value)}</span>
                 <span className="text-muted-foreground tabular-nums flex-shrink-0 w-10 text-right">
@@ -1047,92 +1038,82 @@ export default function ShortListPage() {
                 <>
                   {/* 공급업체 차트 */}
                   {barData.length > 0 && (
-                    <>
-                      <div className="grid grid-cols-2 gap-4">
-                        <Card>
-                          <CardHeader className="pb-2 px-5 pt-5">
-                            <CardTitle className="text-sm font-semibold flex items-center gap-2">
-                              <BarChart3 className="w-4 h-4 text-muted-foreground" />
-                              공급업체별 금액 비교
-                            </CardTitle>
-                          </CardHeader>
-                          <CardContent className="px-2 pb-4">
-                            <ResponsiveContainer width="100%" height={Math.max(200, barData.length * 32)}>
-                              <BarChart data={[...barData].reverse()} layout="vertical" margin={{ left: 10, right: 20 }}>
-                                <CartesianGrid strokeDasharray="3 3" />
-                                <XAxis type="number" tick={{ fontSize: 10 }} unit="억" />
-                                <YAxis type="category" dataKey="name" tick={{ fontSize: 10 }} width={100} />
-                                <Tooltip formatter={(v) => [`${v}억`, '금액']} />
-                                <Bar dataKey="금액" radius={[0, 4, 4, 0]}>
-                                  {[...barData].reverse().map((item, idx) => {
-                                    const origIdx = barData.findIndex(d => d.name === item.name);
-                                    return <Cell key={idx} fill={CHART_COLORS[origIdx % CHART_COLORS.length]} />;
-                                  })}
-                                </Bar>
-                              </BarChart>
-                            </ResponsiveContainer>
-                          </CardContent>
-                        </Card>
-                        <div>
-                          <ChartPieWithLegend data={chartData.supplierBreakdown} title="공급업체별 금액 비율" />
-                          <div className="flex justify-end px-5 pb-3 -mt-2">
-                            <Button variant="ghost" size="sm" className="text-xs text-blue-600 h-7 px-2"
-                              onClick={() => setRatioDetailModal({ open: true, title: '공급업체별 금액 비율', data: barData })}>
-                              <Eye className="w-3 h-3 mr-1" />자세히 보기
-                            </Button>
-                          </div>
+                    <div className="grid grid-cols-3 gap-4">
+                      <Card>
+                        <CardHeader className="pb-2 px-5 pt-5">
+                          <CardTitle className="text-sm font-semibold flex items-center gap-2">
+                            <BarChart3 className="w-4 h-4 text-muted-foreground" />
+                            공급업체별 금액 비교
+                          </CardTitle>
+                        </CardHeader>
+                        <CardContent className="px-2 pb-4">
+                          <ResponsiveContainer width="100%" height={Math.max(200, barData.length * 32)}>
+                            <BarChart data={[...barData].reverse()} layout="vertical" margin={{ left: 10, right: 20 }}>
+                              <CartesianGrid strokeDasharray="3 3" />
+                              <XAxis type="number" tick={{ fontSize: 10 }} unit="억" />
+                              <YAxis type="category" dataKey="name" tick={{ fontSize: 10 }} width={100} />
+                              <Tooltip formatter={(v) => [`${v}억`, '금액']} />
+                              <Bar dataKey="금액" radius={[0, 4, 4, 0]}>
+                                {[...barData].reverse().map((item, idx) => {
+                                  const origIdx = barData.findIndex(d => d.name === item.name);
+                                  return <Cell key={idx} fill={CHART_COLORS[origIdx % CHART_COLORS.length]} />;
+                                })}
+                              </Bar>
+                            </BarChart>
+                          </ResponsiveContainer>
+                        </CardContent>
+                      </Card>
+                      <div>
+                        <ChartPieWithLegend data={chartData.supplierBreakdown} title="공급업체별 금액 비율" />
+                        <div className="flex justify-end px-5 pb-3 -mt-2">
+                          <Button variant="ghost" size="sm" className="text-xs text-blue-600 h-7 px-2"
+                            onClick={() => setRatioDetailModal({ open: true, title: '공급업체별 금액 비율', data: barData })}>
+                            <Eye className="w-3 h-3 mr-1" />자세히 보기
+                          </Button>
                         </div>
                       </div>
-                      <div className="grid grid-cols-2 gap-4">
-                        <TopNSummaryPie data={barData} title="공급업체 Top N 요약" />
-                        <div />
-                      </div>
-                    </>
+                      <TopNSummaryPie data={barData} title="공급업체 Top3 요약" />
+                    </div>
                   )}
 
                   {/* 코스트센터 차트 */}
                   {costCenterBarData.length > 0 && (
-                    <>
-                      <div className="grid grid-cols-2 gap-4">
-                        <Card>
-                          <CardHeader className="pb-2 px-5 pt-5">
-                            <CardTitle className="text-sm font-semibold flex items-center gap-2">
-                              <BarChart3 className="w-4 h-4 text-muted-foreground" />
-                              코스트센터별 금액 비교
-                            </CardTitle>
-                          </CardHeader>
-                          <CardContent className="px-2 pb-4">
-                            <ResponsiveContainer width="100%" height={Math.max(200, costCenterBarData.length * 32)}>
-                              <BarChart data={[...costCenterBarData].reverse()} layout="vertical" margin={{ left: 10, right: 20 }}>
-                                <CartesianGrid strokeDasharray="3 3" />
-                                <XAxis type="number" tick={{ fontSize: 10 }} unit="억" />
-                                <YAxis type="category" dataKey="name" tick={{ fontSize: 10 }} width={100} />
-                                <Tooltip formatter={(v) => [`${v}억`, '금액']} />
-                                <Bar dataKey="금액" radius={[0, 4, 4, 0]}>
-                                  {[...costCenterBarData].reverse().map((item, idx) => {
-                                    const origIdx = costCenterBarData.findIndex(d => d.name === item.name);
-                                    return <Cell key={idx} fill={CHART_COLORS[origIdx % CHART_COLORS.length]} />;
-                                  })}
-                                </Bar>
-                              </BarChart>
-                            </ResponsiveContainer>
-                          </CardContent>
-                        </Card>
-                        <div>
-                          <ChartPieWithLegend data={chartData.costCenterBreakdown} title="코스트센터별 금액 비율" />
-                          <div className="flex justify-end px-5 pb-3 -mt-2">
-                            <Button variant="ghost" size="sm" className="text-xs text-blue-600 h-7 px-2"
-                              onClick={() => setRatioDetailModal({ open: true, title: '코스트센터별 금액 비율', data: costCenterBarData })}>
-                              <Eye className="w-3 h-3 mr-1" />자세히 보기
-                            </Button>
-                          </div>
+                    <div className="grid grid-cols-3 gap-4">
+                      <Card>
+                        <CardHeader className="pb-2 px-5 pt-5">
+                          <CardTitle className="text-sm font-semibold flex items-center gap-2">
+                            <BarChart3 className="w-4 h-4 text-muted-foreground" />
+                            코스트센터별 금액 비교
+                          </CardTitle>
+                        </CardHeader>
+                        <CardContent className="px-2 pb-4">
+                          <ResponsiveContainer width="100%" height={Math.max(200, costCenterBarData.length * 32)}>
+                            <BarChart data={[...costCenterBarData].reverse()} layout="vertical" margin={{ left: 10, right: 20 }}>
+                              <CartesianGrid strokeDasharray="3 3" />
+                              <XAxis type="number" tick={{ fontSize: 10 }} unit="억" />
+                              <YAxis type="category" dataKey="name" tick={{ fontSize: 10 }} width={100} />
+                              <Tooltip formatter={(v) => [`${v}억`, '금액']} />
+                              <Bar dataKey="금액" radius={[0, 4, 4, 0]}>
+                                {[...costCenterBarData].reverse().map((item, idx) => {
+                                  const origIdx = costCenterBarData.findIndex(d => d.name === item.name);
+                                  return <Cell key={idx} fill={CHART_COLORS[origIdx % CHART_COLORS.length]} />;
+                                })}
+                              </Bar>
+                            </BarChart>
+                          </ResponsiveContainer>
+                        </CardContent>
+                      </Card>
+                      <div>
+                        <ChartPieWithLegend data={chartData.costCenterBreakdown} title="코스트센터별 금액 비율" />
+                        <div className="flex justify-end px-5 pb-3 -mt-2">
+                          <Button variant="ghost" size="sm" className="text-xs text-blue-600 h-7 px-2"
+                            onClick={() => setRatioDetailModal({ open: true, title: '코스트센터별 금액 비율', data: costCenterBarData })}>
+                            <Eye className="w-3 h-3 mr-1" />자세히 보기
+                          </Button>
                         </div>
                       </div>
-                      <div className="grid grid-cols-2 gap-4">
-                        <TopNSummaryPie data={costCenterBarData} title="코스트센터 Top N 요약" />
-                        <div />
-                      </div>
-                    </>
+                      <TopNSummaryPie data={costCenterBarData} title="코스트센터 Top3 요약" />
+                    </div>
                   )}
                 </>
               ) : (

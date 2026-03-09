@@ -118,6 +118,10 @@ public class AbleTaskService {
         }
         if (request.getActualSaving() != null) task.setActualSaving(request.getActualSaving());
         if (request.getRating() != null) task.setRating(request.getRating());
+        if (request.getProgressDetails() != null) task.setProgressDetails(request.getProgressDetails());
+        if (request.getIssues() != null) task.setIssues(request.getIssues());
+        if (request.getCustomerFollowUp() != null) task.setCustomerFollowUp(request.getCustomerFollowUp());
+        if (request.getActionItems() != null) task.setActionItems(request.getActionItems());
 
         task.setUpdatedAt(LocalDateTime.now());
         task = ableTaskRepository.save(task);
@@ -312,8 +316,13 @@ public class AbleTaskService {
                 .status(task.getStatus())
                 .actualSaving(task.getActualSaving())
                 .rating(task.getRating())
+                .progressDetails(task.getProgressDetails())
+                .issues(task.getIssues())
+                .customerFollowUp(task.getCustomerFollowUp())
+                .actionItems(task.getActionItems())
                 .completedAt(task.getCompletedAt())
                 .createdAt(task.getCreatedAt())
+                .updatedAt(task.getUpdatedAt())
                 .documentCount(documentCount)
                 .build();
     }

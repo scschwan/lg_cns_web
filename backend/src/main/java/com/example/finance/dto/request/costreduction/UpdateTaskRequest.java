@@ -22,4 +22,8 @@ public class UpdateTaskRequest {
     private String status;
     private Double actualSaving;
     private String rating;
+    private String progressDetails;
+    private String issues;
+    private String customerFollowUp;
+    private String actionItems;
 }
