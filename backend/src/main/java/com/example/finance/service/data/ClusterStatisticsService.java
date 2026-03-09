@@ -261,18 +261,23 @@ public class ClusterStatisticsService {
         }
 
         // 일괄 저장
+        long saveStart = System.currentTimeMillis();
         if (!statisticsList.isEmpty()) {
             clusterStatisticsRepository.saveAll(statisticsList);
         }
+        long saveMs = System.currentTimeMillis() - saveStart;
 
-        log.info("클러스터 통계 생성 완료: sessionId={}, level1={}, level2={}, level3={}",
+        log.info("클러스터 통계 생성 완료: sessionId={}, level1={}, level2={}, level3={}, saveAll={}ms",
                 sessionId,
                 statisticsList.stream().filter(s -> s.getLevel() == 1).count(),
                 statisticsList.stream().filter(s -> s.getLevel() == 2).count(),
-                statisticsList.stream().filter(s -> s.getLevel() == 3).count());
+                statisticsList.stream().filter(s -> s.getLevel() == 3).count(),
+                saveMs);
 
         // ★ session_data에 cluster_statistics ID 역참조 저장 (raw-data 조회 최적화)
+        long statsIdsStart = System.currentTimeMillis();
         updateSessionDataStatsIds(sessionId, statisticsList, allClusters, clusterIdsWithSubClustering);
+        log.info("[STATS-TIMING] updateSessionDataStatsIds: {}ms", System.currentTimeMillis() - statsIdsStart);
     }
 
     /**
@@ -311,6 +316,9 @@ public class ClusterStatisticsService {
         // clustering_result별 raw_data_id → (l2_stats_id, l3_stats_id) 매핑 구성
         // allClusters에서 각 클러스터의 dataIndices(raw_data_id)를 기반으로 bulk update
         int updateCount = 0;
+        int updateMultiCalls = 0;
+        long slowestUpdateMs = 0;
+        int slowestUpdateSize = 0;
 
         for (ClusteringResult cr : allClusters) {
             if (cr.getDataIndices() == null || cr.getDataIndices().isEmpty()) continue;
@@ -343,18 +351,34 @@ public class ClusterStatisticsService {
             if (l2StatsId == null) continue;
 
             // bulk update: 해당 raw_data_id들의 session_data에 stats ID 설정
+            long updateStart = System.currentTimeMillis();
             Query query = new Query(Criteria.where("session_id").is(sessionId)
                     .and("raw_data_id").in(cr.getDataIndices()));
             Update update = new Update().set("stats_l2_id", l2StatsId);
             if (l3StatsId != null) {
                 update.set("stats_l3_id", l3StatsId);
             }
-            mongoTemplate.updateMulti(query, update, SessionDataDocument.class);
+            var updateResult = mongoTemplate.updateMulti(query, update, SessionDataDocument.class);
+            long updateMs = System.currentTimeMillis() - updateStart;
             updateCount += cr.getDataIndices().size();
+            updateMultiCalls++;
+
+            if (updateMs > slowestUpdateMs) {
+                slowestUpdateMs = updateMs;
+                slowestUpdateSize = cr.getDataIndices().size();
+            }
+
+            if (updateMs > 500) {
+                log.warn("[STATS-LINK] 느린 updateMulti: cluster#{}, dataIndices={}, matched={}, modified={}, {}ms",
+                        cr.getClusterNumber(), cr.getDataIndices().size(),
+                        updateResult.getMatchedCount(), updateResult.getModifiedCount(), updateMs);
+            }
         }
 
-        log.info("[STATS-LINK] session_data stats ID 역참조 설정 완료: sessionId={}, ~{}건, {}ms",
-                sessionId, updateCount, System.currentTimeMillis() - t0);
+        long totalMs = System.currentTimeMillis() - t0;
+        log.info("[STATS-LINK] session_data stats ID 역참조 설정 완료: sessionId={}, ~{}건, " +
+                        "updateMulti={}회, 총 {}ms, 최느린쿼리={}ms({}건)",
+                sessionId, updateCount, updateMultiCalls, totalMs, slowestUpdateMs, slowestUpdateSize);
     }
 
     /**
@@ -384,7 +408,9 @@ public class ClusterStatisticsService {
                 .projection(new Document("raw_data_id", 1).append("department", 1)
                         .append("supplier", 1).append("money", 1))
                 .into(new ArrayList<>());
+        long queryMs = System.currentTimeMillis() - t0;
 
+        long mapStart = System.currentTimeMillis();
         Map<String, DocData> map = new HashMap<>(docs.size());
         for (Document doc : docs) {
             String rawDataId = doc.getString("raw_data_id");
@@ -395,8 +421,10 @@ public class ClusterStatisticsService {
                 map.put(rawDataId, new DocData(dept, sup, money));
             }
         }
-        log.info("[PVD-LOAD] MongoDB 조회 완료: sessionId={}, rows={}, {}ms",
-                sessionId, map.size(), System.currentTimeMillis() - t0);
+        long mapConvertMs = System.currentTimeMillis() - mapStart;
+        long totalMs = System.currentTimeMillis() - t0;
+        log.info("[PVD-LOAD] MongoDB 조회 완료: sessionId={}, rows={}, 총 {}ms (쿼리={}ms, Map변환={}ms)",
+                sessionId, map.size(), totalMs, queryMs, mapConvertMs);
 
         // ★ Redis에 캐싱 (2시간 TTL, 10만건 이하만 캐싱)
         if (map.size() <= 100_000) {
