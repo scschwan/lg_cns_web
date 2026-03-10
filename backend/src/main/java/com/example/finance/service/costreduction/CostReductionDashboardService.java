@@ -178,8 +178,8 @@ public class CostReductionDashboardService {
                                                     CostReductionPhase targetPhase) {
         CostReductionDashboard dashboard = getOrCreateDashboard(projectId);
 
-        // SHORT_LIST 또는 ABLE_REGISTER 전환 시 리스트 잠금
-        if (targetPhase == CostReductionPhase.SHORT_LIST || targetPhase == CostReductionPhase.ABLE_REGISTER) {
+        // ABLE_REGISTER 전환 시에만 리스트 잠금 (SHORT_LIST 단계에서는 잠금 안 함)
+        if (targetPhase == CostReductionPhase.ABLE_REGISTER) {
             dashboard.setIsListLocked(true);
         }
 
