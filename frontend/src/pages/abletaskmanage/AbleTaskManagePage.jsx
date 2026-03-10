@@ -475,7 +475,7 @@ function PhaseNavigationBar({ stats, summary, currentPhase, projectId, navigate 
                 <span className="font-bold text-base whitespace-nowrap">{phase.label}</span>
               </div>
               {phase.line1 != null && (
-                <div className={cn('text-[15px] leading-snug text-center font-medium', isActive ? 'text-white/90' : '')}>
+                <div className={cn('text-[15px] leading-snug text-center font-medium', isActive ? 'text-white/90' : 'text-black')}>
                   <div>{phase.line1}</div>
                   <div>{phase.line2}</div>
                 </div>
@@ -485,10 +485,7 @@ function PhaseNavigationBar({ stats, summary, currentPhase, projectId, navigate 
         );
       })}
       {emptySlots > 0 && Array.from({ length: emptySlots }).map((_, i) => (
-        <React.Fragment key={`empty-${i}`}>
-          <ArrowRight className="w-4 h-4 text-muted-foreground/40 flex-shrink-0" />
-          <div className="flex-1 basis-0 min-w-0" />
-        </React.Fragment>
+        <div key={`empty-${i}`} className="flex-1 basis-0 min-w-0" />
       ))}
     </div>
   );
