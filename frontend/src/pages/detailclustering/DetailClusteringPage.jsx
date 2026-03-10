@@ -871,12 +871,12 @@ function DetailClusteringPage() {
                   <div className="space-y-2">
                     <div className="flex items-center gap-2 flex-wrap">
                       <Select value={searchColumn} onValueChange={setSearchColumn}><SelectTrigger className="w-[120px] h-8 text-xs"><SelectValue placeholder="검색 기준" /></SelectTrigger><SelectContent>{searchableColumns.map(col => <SelectItem key={col.key} value={col.key}>{col.label}</SelectItem>)}</SelectContent></Select>
-                      <Input className="h-8 text-sm flex-1 min-w-[150px]" placeholder="검색 키워드 입력..." value={searchKeyword} onChange={e => setSearchKeyword(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleSearch()} />
+                      <Input className="h-8 text-sm flex-1 min-w-[150px]" placeholder="검색 키워드 (AND: &, OR: , 구분)" value={searchKeyword} onChange={e => setSearchKeyword(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleSearch()} />
                       <label className="flex items-center gap-1 text-xs cursor-pointer whitespace-nowrap"><Checkbox checked={exactMatch} onCheckedChange={setExactMatch} />완전일치</label>
                     </div>
                     <div className="flex items-center gap-2 flex-wrap">
                       <span className="text-xs text-muted-foreground w-[120px]">제외 키워드:</span>
-                      <Input className="h-8 text-sm flex-1 min-w-[150px]" placeholder="제외 항목 입력..." value={excludeKeyword} onChange={e => setExcludeKeyword(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleSearch()} />
+                      <Input className="h-8 text-sm flex-1 min-w-[150px]" placeholder="제외 항목 (AND: &, OR: , 구분)" value={excludeKeyword} onChange={e => setExcludeKeyword(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleSearch()} />
                       <label className="flex items-center gap-1 text-xs cursor-pointer whitespace-nowrap"><Checkbox checked={excludeExactMatch} onCheckedChange={setExcludeExactMatch} />완전일치</label>
                     </div>
                     <div className="flex items-center gap-2 flex-wrap">

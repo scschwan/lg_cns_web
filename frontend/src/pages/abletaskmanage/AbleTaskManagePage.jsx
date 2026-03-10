@@ -430,26 +430,26 @@ function PhaseNavigationBar({ stats, summary, currentPhase, projectId, navigate 
   const currentIdx = phases.findIndex(p => p.key === currentPhase);
 
   return (
-    <div className="flex items-center gap-2 py-3 flex-wrap">
+    <div className="flex items-center gap-2 py-3 flex-wrap font-sans">
       {phases.map((phase, idx) => {
         const isActive = phase.key === currentPhase;
         const isPast = idx < currentIdx;
         return (
           <React.Fragment key={phase.key}>
-            {idx > 0 && <ArrowRight className="w-7 h-7 text-muted-foreground/50 flex-shrink-0" />}
+            {idx > 0 && <ArrowRight className="w-6 h-6 text-muted-foreground/50 flex-shrink-0" />}
             <button
               onClick={() => navigate(phase.path)}
               className={cn(
-                'flex items-center gap-3 px-8 py-5 rounded-lg text-lg transition-colors',
+                'flex items-center gap-3 px-6 py-4 rounded-lg text-base font-sans transition-colors',
                 isActive && 'bg-blue-600 text-white',
                 isPast && 'bg-blue-50 text-blue-700 hover:bg-blue-100',
                 !isActive && !isPast && 'bg-muted/50 text-muted-foreground hover:bg-muted',
               )}
             >
-              {isPast && <CheckCircle2 className="w-6 h-6" />}
-              <span className="font-bold">{phase.label}</span>
+              {isPast && <CheckCircle2 className="w-5 h-5" />}
+              <span className="font-bold text-sm">{phase.label}</span>
               {phase.line1 != null && (
-                <Badge variant={isActive ? 'secondary' : 'outline'} className="text-sm px-3 py-1.5 ml-1 leading-relaxed whitespace-pre-line text-left">
+                <Badge variant={isActive ? 'secondary' : 'outline'} className="text-xs px-2.5 py-1.5 ml-1 leading-relaxed whitespace-pre-line text-left font-normal">
                   <span className="flex flex-col gap-0.5">
                     <span>{phase.line1}</span>
                     <span>{phase.line2}</span>

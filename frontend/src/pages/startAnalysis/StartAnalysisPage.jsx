@@ -413,7 +413,7 @@ export default function StartAnalysisPage() {
     loadDistinctValues(colName);
   };
 
-  // 데이터 삭제 (선택된 값 기반)
+  // 데이터 삭제 (선택된 값 기반) - WAF 제한 대응 배치 처리
   const handleDataDeleteByValues = async () => {
     if (isViewer) return;
     if (deleteCheckedSet.size === 0) {
@@ -422,7 +422,11 @@ export default function StartAnalysisPage() {
     }
     try {
       const values = Array.from(deleteCheckedSet);
-      await uploadService.hideByColumnValues(projectId, sessionId, deleteBaseColumn, values);
+      const BATCH_SIZE = 50;
+      for (let i = 0; i < values.length; i += BATCH_SIZE) {
+        const batch = values.slice(i, i + BATCH_SIZE);
+        await uploadService.hideByColumnValues(projectId, sessionId, deleteBaseColumn, batch);
+      }
       // visible → hidden으로 이동
       setDistinctVisible(prev => prev.filter(v => !deleteCheckedSet.has(v.value)));
       setDistinctHidden(prev => {
@@ -447,7 +451,7 @@ export default function StartAnalysisPage() {
     }
   };
 
-  // 데이터 원복 (hidden 항목 선택 기반)
+  // 데이터 원복 (hidden 항목 선택 기반) - WAF 제한 대응 배치 처리
   const handleDataRestoreByValues = async () => {
     if (isViewer) return;
     if (deleteCheckedSet.size === 0) {
@@ -456,7 +460,11 @@ export default function StartAnalysisPage() {
     }
     try {
       const values = Array.from(deleteCheckedSet);
-      await uploadService.restoreByColumnValues(projectId, sessionId, deleteBaseColumn, values);
+      const BATCH_SIZE = 50;
+      for (let i = 0; i < values.length; i += BATCH_SIZE) {
+        const batch = values.slice(i, i + BATCH_SIZE);
+        await uploadService.restoreByColumnValues(projectId, sessionId, deleteBaseColumn, batch);
+      }
       // hidden → visible로 이동
       setDistinctHidden(prev => prev.filter(v => !deleteCheckedSet.has(v.value)));
       setDistinctVisible(prev => {

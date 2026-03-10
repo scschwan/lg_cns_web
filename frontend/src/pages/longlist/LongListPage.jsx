@@ -416,6 +416,7 @@ export default function LongListPage() {
   const [isDragging, setIsDragging] = useState(false);
   const dragStartRef = useRef(null);
 
+  // Long List는 ABLE_REGISTER 이상(isListLocked) 단계에서만 잠금, SHORT_LIST 단계에서는 편집 가능
   const isReadOnly = isViewer || !isEditor || dashboardStatus?.isListLocked;
 
   // 트리를 flat list로 변환 (현재 확장된 상태 기반)
@@ -706,7 +707,7 @@ export default function LongListPage() {
           <div>
             <div className="flex items-center gap-2">
               <h1 className="text-xl font-bold text-foreground">Long List 도출</h1>
-              {dashboardStatus?.isListLocked && <Badge variant="destructive" className="gap-1"><Lock className="w-3 h-3" />리스트 잠금</Badge>}
+              {dashboardStatus?.isListLocked && <Badge variant="destructive" className="gap-1"><Lock className="w-3 h-3" />과제 등록 잠금</Badge>}
             </div>
             <p className="text-sm text-muted-foreground mt-1">
               비용 유형별 분류 및 분석 결과를 확인합니다
