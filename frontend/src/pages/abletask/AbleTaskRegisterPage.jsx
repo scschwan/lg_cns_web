@@ -192,7 +192,7 @@ function TreeRow({ item, level = 0, expandedIds, toggleExpand, checkedIds, onChe
 }
 
 /* ====== Phase Navigation Bar ====== */
-function PhaseNavigationBar({ stats, summary, currentPhase, projectId, navigate }) {
+function PhaseNavigationBar({ stats, currentPhase, projectId, navigate }) {
   const phases = [
     {
       key: 'LONG_LIST', label: 'Raw List',
@@ -212,19 +212,10 @@ function PhaseNavigationBar({ stats, summary, currentPhase, projectId, navigate 
       line2: stats ? <><b>합산금액</b> : {formatAmount(stats.shortListTotalAmount ?? 0)}</> : null,
       path: `/projects/${projectId}/able-register`,
     },
-    {
-      key: 'ABLE_MANAGE', label: 'Able 과제',
-      line1: summary ? <><b>과제수</b> : {summary.totalTasks ?? 0}건</> : null,
-      line2: summary ? <><b>합산금액</b> : {formatAmount(summary.totalBaseAmount ?? 0)}</> : null,
-      path: `/projects/${projectId}/able-manage`,
-    },
-    {
-      key: 'COMPLETED', label: '완료 과제',
-      line1: null, line2: null,
-      path: `/projects/${projectId}/completed-manage`,
-    },
   ];
+  const TOTAL_SLOTS = 5;
   const currentIdx = phases.findIndex(p => p.key === currentPhase);
+  const emptySlots = TOTAL_SLOTS - phases.length;
   return (
     <div className="flex items-center gap-1.5 py-3 font-sans w-full">
       {phases.map((phase, idx) => {
@@ -236,18 +227,18 @@ function PhaseNavigationBar({ stats, summary, currentPhase, projectId, navigate 
             <button
               onClick={() => navigate(phase.path)}
               className={cn(
-                'flex-1 basis-0 flex flex-col items-center gap-1 px-3 py-3 rounded-lg font-sans transition-colors min-w-0',
+                'flex-1 basis-0 flex flex-col items-center gap-1.5 px-3 py-3.5 rounded-lg font-sans transition-colors min-w-0',
                 isActive && 'bg-blue-600 text-white',
                 isPast && 'bg-blue-50 text-blue-700 hover:bg-blue-100',
                 !isActive && !isPast && 'bg-muted/50 text-muted-foreground hover:bg-muted',
               )}
             >
               <div className="flex items-center gap-1.5">
-                {isPast && <CheckCircle2 className="w-4 h-4 flex-shrink-0" />}
-                <span className="font-bold text-sm whitespace-nowrap">{phase.label}</span>
+                {isPast && <CheckCircle2 className="w-5 h-5 flex-shrink-0" />}
+                <span className="font-bold text-base whitespace-nowrap">{phase.label}</span>
               </div>
               {phase.line1 != null && (
-                <div className={cn('text-[13px] leading-snug text-center', isActive ? 'text-blue-100' : 'text-muted-foreground')}>
+                <div className={cn('text-[15px] leading-snug text-center font-medium', isActive ? 'text-white/90' : '')}>
                   <div>{phase.line1}</div>
                   <div>{phase.line2}</div>
                 </div>
@@ -256,6 +247,12 @@ function PhaseNavigationBar({ stats, summary, currentPhase, projectId, navigate 
           </React.Fragment>
         );
       })}
+      {emptySlots > 0 && Array.from({ length: emptySlots }).map((_, i) => (
+        <React.Fragment key={`empty-${i}`}>
+          <ArrowRight className="w-4 h-4 text-muted-foreground/40 flex-shrink-0" />
+          <div className="flex-1 basis-0 min-w-0" />
+        </React.Fragment>
+      ))}
     </div>
   );
 }
@@ -269,7 +266,6 @@ export default function AbleTaskRegisterPage() {
 
   const [treeData, setTreeData] = useState([]);
   const [phaseStats, setPhaseStats] = useState(null);
-  const [taskSummary, setTaskSummary] = useState(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [unlocking, setUnlocking] = useState(false);
@@ -300,15 +296,13 @@ export default function AbleTaskRegisterPage() {
     const load = async () => {
       try {
         setLoading(true);
-        const [treeRes, statsRes, summaryRes] = await Promise.all([
+        const [treeRes, statsRes] = await Promise.all([
           costReductionService.getShortListSelectionTree(projectId),
           costReductionService.getShortListStats(projectId),
-          costReductionService.getTaskSummary(projectId).catch(() => null),
         ]);
         const tree = treeRes.tree || [];
         setTreeData(tree);
         setPhaseStats(statsRes);
-        setTaskSummary(summaryRes);
         // 모든 노드 확장 (대분류 + 클러스터)
         const allIds = new Set();
         const collectIds = (nodes) => { nodes.forEach(n => { allIds.add(n.id); if (n.children?.length) collectIds(n.children); }); };
@@ -492,7 +486,7 @@ export default function AbleTaskRegisterPage() {
             리스트 잠금 해제
           </Button>
         </div>
-        <PhaseNavigationBar stats={phaseStats} summary={taskSummary} currentPhase="ABLE_REGISTER" projectId={projectId} navigate={navigate} />
+        <PhaseNavigationBar stats={phaseStats} currentPhase="ABLE_REGISTER" projectId={projectId} navigate={navigate} />
       </div>
 
       <div className="flex-1 overflow-hidden flex">
