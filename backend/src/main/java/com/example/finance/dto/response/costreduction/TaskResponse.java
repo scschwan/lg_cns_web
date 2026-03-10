@@ -47,5 +47,6 @@ public class TaskResponse {
         private String clusterName;
         private String accountName;
         private Integer level;
+        private String parentClusterName;
     }
 }
