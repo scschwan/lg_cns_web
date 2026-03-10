@@ -45,10 +45,21 @@ const formatAmount = (v) => {
   return v?.toLocaleString() ?? '0';
 };
 
+function getClusterNames(clusters, level) {
+  const arr = clusters || [];
+  if (level === 2) {
+    const names = new Set();
+    arr.forEach(c => {
+      if (c.level === 2 && c.clusterName) names.add(c.clusterName);
+      if (c.level === 3 && c.parentClusterName) names.add(c.parentClusterName);
+    });
+    return [...names];
+  }
+  return [...new Set(arr.filter(c => c.level === 3).map(c => c.clusterName).filter(Boolean))];
+}
+
 function ClusterNames({ clusters, level }) {
-  const filtered = (clusters || []).filter(c => level ? c.level === level : true);
-  if (filtered.length === 0) return <span className="text-muted-foreground">-</span>;
-  const names = [...new Set(filtered.map(c => c.clusterName).filter(Boolean))];
+  const names = getClusterNames(clusters, level);
   if (names.length === 0) return <span className="text-muted-foreground">-</span>;
   return (
     <span title={names.join(', ')}>
@@ -74,8 +85,8 @@ function CompletedTaskDetailModal({ open, onClose, task }) {
             <div><span className="text-muted-foreground">과제명:</span> <span className="font-medium">{task.taskName}</span></div>
             <div><span className="text-muted-foreground">등급:</span> <Badge className={cn('text-xs ml-1 border', RATING_MAP[task.rating])}>{task.rating || '-'}</Badge></div>
             <div><span className="text-muted-foreground">대계정:</span> <span className="font-medium">{task.majorAccounts?.join(', ') || '-'}</span></div>
-            <div><span className="text-muted-foreground">클러스터명:</span> <span className="font-medium">{(task.clusters || []).filter(c => c.level === 2).map(c => c.clusterName).filter(Boolean).join(', ') || '-'}</span></div>
-            <div><span className="text-muted-foreground">세부클러스터명:</span> <span className="font-medium">{(task.clusters || []).filter(c => c.level === 3).map(c => c.clusterName).filter(Boolean).join(', ') || '-'}</span></div>
+            <div><span className="text-muted-foreground">클러스터명:</span> <span className="font-medium">{getClusterNames(task.clusters, 2).join(', ') || '-'}</span></div>
+            <div><span className="text-muted-foreground">세부클러스터명:</span> <span className="font-medium">{getClusterNames(task.clusters, 3).join(', ') || '-'}</span></div>
             <div><span className="text-muted-foreground">담당부서:</span> <span className="font-medium">{task.department || '-'}</span></div>
             <div><span className="text-muted-foreground">담당자:</span> <span className="font-medium">{task.manager || '-'}</span></div>
             <div><span className="text-muted-foreground">컨설턴트:</span> <span className="font-medium">{task.consultant || '-'}</span></div>

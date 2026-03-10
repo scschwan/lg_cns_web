@@ -86,19 +86,12 @@ public class AbleTaskService {
                         t -> taskDocumentRepository.countByTaskId(t.getId())
                 ));
 
-        // 클러스터 레벨 정보 일괄 조회
-        Set<String> allStatsIds = tasks.stream()
-                .filter(t -> t.getClusters() != null)
-                .flatMap(t -> t.getClusters().stream())
-                .map(AbleTask.ClusterRef::getStatisticsId)
-                .filter(Objects::nonNull)
-                .collect(Collectors.toSet());
-        Map<String, Integer> levelMap = allStatsIds.isEmpty() ? Collections.emptyMap()
-                : clusterStatisticsRepository.findAllById(allStatsIds).stream()
-                    .collect(Collectors.toMap(ClusterStatistics::getId, ClusterStatistics::getLevel, (a, b) -> a));
+        // 클러스터 통계 일괄 조회 및 부모 클러스터명 매핑
+        Map<String, ClusterStatistics> statsMap = buildStatsMap(tasks);
+        Map<String, String> parentNameMap = buildParentNameMap(statsMap);
 
         return tasks.stream()
-                .map(t -> toResponse(t, docCounts.getOrDefault(t.getId(), 0L).intValue(), levelMap))
+                .map(t -> toResponse(t, docCounts.getOrDefault(t.getId(), 0L).intValue(), statsMap, parentNameMap))
                 .toList();
     }
 
@@ -110,14 +103,10 @@ public class AbleTaskService {
                 .orElseThrow(() -> new RuntimeException("과제를 찾을 수 없습니다: " + taskId));
         int docCount = (int) taskDocumentRepository.countByTaskId(taskId);
 
-        Set<String> statsIds = task.getClusters() != null
-                ? task.getClusters().stream().map(AbleTask.ClusterRef::getStatisticsId).filter(Objects::nonNull).collect(Collectors.toSet())
-                : Collections.emptySet();
-        Map<String, Integer> levelMap = statsIds.isEmpty() ? Collections.emptyMap()
-                : clusterStatisticsRepository.findAllById(statsIds).stream()
-                    .collect(Collectors.toMap(ClusterStatistics::getId, ClusterStatistics::getLevel, (a, b) -> a));
+        Map<String, ClusterStatistics> statsMap = buildStatsMap(List.of(task));
+        Map<String, String> parentNameMap = buildParentNameMap(statsMap);
 
-        return toResponse(task, docCount, levelMap);
+        return toResponse(task, docCount, statsMap, parentNameMap);
     }
 
     /**
@@ -382,18 +371,76 @@ public class AbleTaskService {
     }
 
     private TaskResponse toResponse(AbleTask task, int documentCount) {
-        return toResponse(task, documentCount, Collections.emptyMap());
+        return toResponse(task, documentCount, Collections.emptyMap(), Collections.emptyMap());
     }
 
-    private TaskResponse toResponse(AbleTask task, int documentCount, Map<String, Integer> levelMap) {
+    /**
+     * 모든 과제의 클러스터 statisticsId → ClusterStatistics 매핑 일괄 조회
+     */
+    private Map<String, ClusterStatistics> buildStatsMap(List<AbleTask> tasks) {
+        Set<String> allStatsIds = tasks.stream()
+                .filter(t -> t.getClusters() != null)
+                .flatMap(t -> t.getClusters().stream())
+                .map(AbleTask.ClusterRef::getStatisticsId)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toSet());
+        if (allStatsIds.isEmpty()) return Collections.emptyMap();
+        return clusterStatisticsRepository.findAllById(allStatsIds).stream()
+                .collect(Collectors.toMap(ClusterStatistics::getId, s -> s, (a, b) -> a));
+    }
+
+    /**
+     * level 3 클러스터의 부모(level 2) 클러스터명 매핑 생성
+     * key: level 3 statisticsId, value: 부모 클러스터명
+     */
+    private Map<String, String> buildParentNameMap(Map<String, ClusterStatistics> statsMap) {
+        // level 3 항목만 추출하여 sessionId + parentClusterNumber 별로 그룹
+        Map<String, Set<Integer>> sessionParentNumbers = new HashMap<>();
+        List<ClusterStatistics> level3Stats = new ArrayList<>();
+        for (ClusterStatistics s : statsMap.values()) {
+            if (s.getLevel() != null && s.getLevel() == 3 && s.getParentClusterNumber() != null && s.getSessionId() != null) {
+                level3Stats.add(s);
+                sessionParentNumbers.computeIfAbsent(s.getSessionId(), k -> new HashSet<>()).add(s.getParentClusterNumber());
+            }
+        }
+        if (level3Stats.isEmpty()) return Collections.emptyMap();
+
+        // 부모 클러스터(level 2) 일괄 조회: sessionId별 level 2 클러스터 조회
+        // sessionId → (clusterNumber → clusterName) 매핑
+        Map<String, Map<Integer, String>> parentLookup = new HashMap<>();
+        for (String sessionId : sessionParentNumbers.keySet()) {
+            List<ClusterStatistics> level2Stats = clusterStatisticsRepository.findBySessionIdAndLevel(sessionId, 2);
+            Map<Integer, String> numToName = level2Stats.stream()
+                    .filter(s -> s.getClusterNumber() != null)
+                    .collect(Collectors.toMap(ClusterStatistics::getClusterNumber, ClusterStatistics::getClusterName, (a, b) -> a));
+            parentLookup.put(sessionId, numToName);
+        }
+
+        // level 3 statisticsId → 부모 클러스터명 매핑
+        Map<String, String> result = new HashMap<>();
+        for (ClusterStatistics s : level3Stats) {
+            Map<Integer, String> numToName = parentLookup.getOrDefault(s.getSessionId(), Collections.emptyMap());
+            String parentName = numToName.get(s.getParentClusterNumber());
+            if (parentName != null) {
+                result.put(s.getId(), parentName);
+            }
+        }
+        return result;
+    }
+
+    private TaskResponse toResponse(AbleTask task, int documentCount, Map<String, ClusterStatistics> statsMap, Map<String, String> parentNameMap) {
         List<TaskResponse.ClusterRefDto> clusters = task.getClusters() != null
                 ? task.getClusters().stream()
-                    .map(c -> TaskResponse.ClusterRefDto.builder()
+                    .map(c -> {
+                        ClusterStatistics stat = statsMap.get(c.getStatisticsId());
+                        return TaskResponse.ClusterRefDto.builder()
                             .statisticsId(c.getStatisticsId())
                             .clusterName(c.getClusterName())
                             .accountName(c.getAccountName())
-                            .level(levelMap.getOrDefault(c.getStatisticsId(), null))
-                            .build())
+                            .level(stat != null ? stat.getLevel() : null)
+                            .parentClusterName(parentNameMap.get(c.getStatisticsId()))
+                            .build();
+                    })
                     .toList()
                 : List.of();
 
