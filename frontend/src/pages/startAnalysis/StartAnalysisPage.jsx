@@ -371,13 +371,9 @@ export default function StartAnalysisPage() {
       }))
     );
 
-    // 서버 업데이트 (batch)
+    // 서버 업데이트 (batch 단일 요청)
     try {
-      await Promise.all(
-        updates.map(u =>
-          uploadService.updateColumnVisibility(projectId, sessionId, u.originalName, u.isVisible)
-        )
-      );
+      await uploadService.updateColumnVisibilityBatch(projectId, sessionId, updates);
       // step_history: 데이터 변경 발생 → 현재 step(2) 저장
       uploadService.updateStepHistory(projectId, sessionId, 2).catch(() => {});
     } catch (error) {
