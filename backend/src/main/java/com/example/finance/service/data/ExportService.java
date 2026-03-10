@@ -435,6 +435,21 @@ public class ExportService {
 
         List<String> pageIds = rawDataIds.subList(fromIndex, toIndex);
 
+        // 세부클러스터 rawDataId → 세부클러스터명 매핑 구성
+        Map<String, String> rawIdToSubClusterName = new HashMap<>();
+        List<ClusteringResult> subClusters = mongoTemplate.find(
+                new Query(Criteria.where("session_id").is(sessionId)
+                        .and("cluster_id").is(clusterNumber)
+                        .and("cluster_sub_id").is(clusterNumber)),
+                ClusteringResult.class);
+        for (ClusteringResult sub : subClusters) {
+            if (sub.getDataIndices() != null) {
+                for (String rawId : sub.getDataIndices()) {
+                    rawIdToSubClusterName.put(rawId, sub.getClusterName());
+                }
+            }
+        }
+
         Query dataQuery = new Query(Criteria.where("session_id").is(sessionId)
                 .and("raw_data_id").in(pageIds)
                 .and("is_hidden").ne(true));
@@ -451,7 +466,7 @@ public class ExportService {
 
             Map<String, Object> row = new LinkedHashMap<>();
             row.put("클러스터명", cluster.getClusterName());
-            row.put("세부클러스터명", "-"); // TODO: 세부클러스터링 시 업데이트
+            row.put("세부클러스터명", rawIdToSubClusterName.getOrDefault(rawId, "-"));
 
             @SuppressWarnings("unchecked")
             Map<String, Object> data = (Map<String, Object>) doc.get("data");

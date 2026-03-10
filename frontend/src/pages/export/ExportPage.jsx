@@ -4,7 +4,8 @@ import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom';
 import {
   ChevronRight, ChevronDown, Home, Download, Trash2, Eye, RefreshCw,
-  CheckSquare, Square, Edit3, Save, X, ExternalLink, AlertTriangle, Lock, Loader2
+  CheckSquare, Square, Edit3, Save, X, ExternalLink, AlertTriangle, Lock, Loader2,
+  ArrowUpDown, ArrowUp, ArrowDown
 } from 'lucide-react';
 import { useSessionEditorLock } from '../../hooks/useSessionEditorLock';
 
@@ -148,6 +149,7 @@ function ExportPage() {
   const [editingName, setEditingName] = useState('');
   const [editingSubCluster, setEditingSubCluster] = useState(null);
   const [editingSubName, setEditingSubName] = useState('');
+  const [clusterSort, setClusterSort] = useState(null);
 
   // 클러스터별 세부 항목 탭
   const [detailData, setDetailData] = useState([]);
@@ -665,6 +667,50 @@ function ExportPage() {
   const sortedAllData = useMemo(() => sortDataLocal(allData, allDataSort), [allData, allDataSort, sortDataLocal]);
   const sortedDetailData = useMemo(() => sortDataLocal(detailData, detailSort), [detailData, detailSort, sortDataLocal]);
 
+  // ===== Clustering 결과 정렬 (계층 구조 유지) =====
+  const sortedClusterData = useMemo(() => {
+    if (!clusterSort) return clusterData;
+    // 부모 그룹 단위로 분리
+    const groups = [];
+    let currentGroup = null;
+    for (const row of clusterData) {
+      if (row.isParentRow) {
+        currentGroup = { parent: row, children: [] };
+        groups.push(currentGroup);
+      } else if (currentGroup) {
+        currentGroup.children.push(row);
+      }
+    }
+    // 부모 기준으로 그룹 정렬
+    const { field, direction } = clusterSort;
+    groups.sort((a, b) => {
+      const aVal = a.parent[field];
+      const bVal = b.parent[field];
+      if (aVal == null && bVal == null) return 0;
+      if (aVal == null) return 1;
+      if (bVal == null) return -1;
+      if (typeof aVal === 'number' && typeof bVal === 'number') {
+        return direction === 'asc' ? aVal - bVal : bVal - aVal;
+      }
+      return direction === 'asc' ? String(aVal).localeCompare(String(bVal)) : String(bVal).localeCompare(String(aVal));
+    });
+    // 그룹 내 세부클러스터명 정렬
+    if (field === 'subClusterName') {
+      for (const g of groups) {
+        g.children.sort((a, b) => {
+          const aVal = a[field];
+          const bVal = b[field];
+          if (aVal == null && bVal == null) return 0;
+          if (aVal == null) return 1;
+          if (bVal == null) return -1;
+          return direction === 'asc' ? String(aVal).localeCompare(String(bVal)) : String(bVal).localeCompare(String(aVal));
+        });
+      }
+    }
+    // 평탄화
+    return groups.flatMap(g => [g.parent, ...g.children]);
+  }, [clusterData, clusterSort]);
+
   // ===== 선택된 클러스터 수 =====
   const selectedClusterCount = clusterCheckedSet.size;
   const parentClusterCount = clusterData.filter(c => c.isParentRow).length;
@@ -834,16 +880,42 @@ function ExportPage() {
                   <thead className="bg-gray-100 sticky top-0 z-10">
                     <tr>
                       <th className="px-2 py-1.5 text-left font-semibold w-8"></th>
-                      <th className="px-2 py-1.5 text-left font-semibold">클러스터명</th>
-                      <th className="px-2 py-1.5 text-left font-semibold">세부클러스터명</th>
-                      <th className="px-2 py-1.5 text-left font-semibold">키워드</th>
-                      <th className="px-2 py-1.5 text-right font-semibold">Count</th>
-                      <th className="px-2 py-1.5 text-right font-semibold">합산</th>
+                      {[
+                        { key: 'clusterName', label: '클러스터명', align: 'left' },
+                        { key: 'subClusterName', label: '세부클러스터명', align: 'left' },
+                        { key: 'keywords', label: '키워드', align: 'left', sortable: false },
+                        { key: 'count', label: 'Count', align: 'right' },
+                        { key: 'totalAmount', label: '합산', align: 'right' },
+                      ].map(col => (
+                        <th
+                          key={col.key}
+                          className={`px-2 py-1.5 font-semibold ${col.align === 'right' ? 'text-right' : 'text-left'} ${col.sortable !== false ? 'cursor-pointer select-none hover:bg-gray-200' : ''}`}
+                          onClick={() => {
+                            if (col.sortable === false) return;
+                            setClusterSort(prev =>
+                              prev?.field === col.key
+                                ? { field: col.key, direction: prev.direction === 'asc' ? 'desc' : 'asc' }
+                                : { field: col.key, direction: 'desc' }
+                            );
+                          }}
+                        >
+                          <span className={`inline-flex items-center ${col.align === 'right' ? 'justify-end w-full' : ''}`}>
+                            {col.label}
+                            {col.sortable !== false && (
+                              clusterSort?.field === col.key
+                                ? clusterSort.direction === 'asc'
+                                  ? <ArrowUp className="h-3 w-3 ml-1 flex-shrink-0" />
+                                  : <ArrowDown className="h-3 w-3 ml-1 flex-shrink-0" />
+                                : <ArrowUpDown className="h-3 w-3 ml-1 opacity-30 flex-shrink-0" />
+                            )}
+                          </span>
+                        </th>
+                      ))}
                       <th className="px-2 py-1.5 text-center font-semibold w-12">관리</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {clusterData.map((cluster, idx) => {
+                    {sortedClusterData.map((cluster, idx) => {
                       const isChecked = clusterCheckedSet.has(cluster.clusterNumber);
                       const isEditing = editingCluster === cluster.clusterNumber;
                       const isParent = cluster.isParentRow;
@@ -958,7 +1030,7 @@ function ExportPage() {
                         </tr>
                       );
                     })}
-                    {clusterData.length === 0 && (
+                    {sortedClusterData.length === 0 && (
                       <tr><td colSpan={7} className="text-center py-8 text-muted-foreground">클러스터 데이터가 없습니다.</td></tr>
                     )}
                   </tbody>
