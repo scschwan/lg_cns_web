@@ -357,18 +357,44 @@ public class LongListService {
         // DB에서 ClusterStatistics 일괄 조회
         List<ClusterStatistics> statsList = clusterStatisticsRepository.findAllById(statisticsIds);
 
+        // Level 3 항목을 parentClusterNumber 기준으로 그룹핑 (세부 클러스터 제거 시 금액 재계산용)
+        Map<String, List<ClusterStatistics>> level3ByParent = statsList.stream()
+                .filter(s -> s.getLevel() != null && s.getLevel() == 3)
+                .collect(Collectors.groupingBy(
+                        s -> s.getSessionId() + ":" + s.getParentClusterNumber()
+                ));
+
         List<LongShortList.ListItem> items = statsList.stream()
-                .map(stats -> LongShortList.ListItem.builder()
-                        .statisticsId(stats.getId())
-                        .sessionId(stats.getSessionId())
-                        .accountName(stats.getAccountName())
-                        .clusterNumber(stats.getClusterNumber())
-                        .clusterName(stats.getClusterName())
-                        .level(stats.getLevel())
-                        .parentClusterNumber(stats.getParentClusterNumber())
-                        .totalAmount(stats.getTotalAmount())
-                        .totalCount(stats.getTotalCount())
-                        .build())
+                .map(stats -> {
+                    Double amount = stats.getTotalAmount();
+                    Integer count = stats.getTotalCount();
+
+                    // Level 2 항목: 선택된 Level 3 자식이 있으면 그 합산으로 재계산
+                    if (stats.getLevel() != null && stats.getLevel() == 2) {
+                        String parentKey = stats.getSessionId() + ":" + stats.getClusterNumber();
+                        List<ClusterStatistics> selectedSubs = level3ByParent.get(parentKey);
+                        if (selectedSubs != null && !selectedSubs.isEmpty()) {
+                            amount = selectedSubs.stream()
+                                    .mapToDouble(s -> s.getTotalAmount() != null ? s.getTotalAmount() : 0.0)
+                                    .sum();
+                            count = selectedSubs.stream()
+                                    .mapToInt(s -> s.getTotalCount() != null ? s.getTotalCount() : 0)
+                                    .sum();
+                        }
+                    }
+
+                    return LongShortList.ListItem.builder()
+                            .statisticsId(stats.getId())
+                            .sessionId(stats.getSessionId())
+                            .accountName(stats.getAccountName())
+                            .clusterNumber(stats.getClusterNumber())
+                            .clusterName(stats.getClusterName())
+                            .level(stats.getLevel())
+                            .parentClusterNumber(stats.getParentClusterNumber())
+                            .totalAmount(amount)
+                            .totalCount(count)
+                            .build();
+                })
                 .toList();
 
         LongShortList list = longShortListRepository.findFirstByProjectId(projectId)

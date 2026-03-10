@@ -111,13 +111,22 @@ public class ShortListService {
                         .toList();
 
                 TreeNode node = toTreeNode(l2, statsMap.get(l2.getStatisticsId()));
+                // 세부 클러스터가 있으면 선택된 것들의 합산으로 금액/건수 재계산
+                if (!subItems.isEmpty()) {
+                    double recalcAmount = subItems.stream()
+                            .mapToDouble(s -> s.getTotalAmount() != null ? s.getTotalAmount() : 0.0).sum();
+                    int recalcCount = subItems.stream()
+                            .mapToInt(s -> s.getTotalCount() != null ? s.getTotalCount() : 0).sum();
+                    node.setTotalAmount(recalcAmount);
+                    node.setTotalCount(recalcCount);
+                }
                 node.setChildren(new ArrayList<>(subChildren));
                 return node;
             }).toList();
 
-            // 대분류 노드 (합산) - Level 2 항목만 합산 (Level 3는 Level 2에 포함되어 있으므로 중복 방지)
-            int totalCount = level2Items.stream().mapToInt(i -> i.getTotalCount() != null ? i.getTotalCount() : 0).sum();
-            double totalAmount = level2Items.stream().mapToDouble(i -> i.getTotalAmount() != null ? i.getTotalAmount() : 0.0).sum();
+            // 대분류 노드 (합산) - Level 2 항목 합산 (세부 클러스터가 있는 경우 재계산된 금액 사용)
+            int totalCount = clusterNodes.stream().mapToInt(n -> n.getTotalCount() != null ? n.getTotalCount() : 0).sum();
+            double totalAmount = clusterNodes.stream().mapToDouble(n -> n.getTotalAmount() != null ? n.getTotalAmount() : 0.0).sum();
 
             // supplierCount / costCenterCount는 ClusterStatistics에서 가져옴 (Level 2만)
             int supplierCount = level2Items.stream()
@@ -175,19 +184,16 @@ public class ShortListService {
                 ? list.getShortListItems() : Collections.emptyList();
 
         // Level 2 항목만 집계 (Level 2 + Level 3 모두 저장되므로, Level 2만 합산하여 중복 방지)
+        // 단, Level 3 세부 클러스터가 일부 제외된 경우 Level 2 금액을 Level 3 합산으로 재계산
+        double longListTotal = recalculateLevel2Total(longItems);
+        double shortListTotal = recalculateLevel2Total(shortItems);
+
         List<LongShortList.ListItem> longLevel2 = longItems.stream()
                 .filter(i -> i.getLevel() != null && i.getLevel() == 2)
                 .toList();
         List<LongShortList.ListItem> shortLevel2 = shortItems.stream()
                 .filter(i -> i.getLevel() != null && i.getLevel() == 2)
                 .toList();
-
-        double longListTotal = longLevel2.stream()
-                .mapToDouble(i -> i.getTotalAmount() != null ? i.getTotalAmount() : 0.0)
-                .sum();
-        double shortListTotal = shortLevel2.stream()
-                .mapToDouble(i -> i.getTotalAmount() != null ? i.getTotalAmount() : 0.0)
-                .sum();
 
         double selectionRatio = longListTotal > 0 ? (shortListTotal / longListTotal) * 100 : 0.0;
 
@@ -476,12 +482,21 @@ public class ShortListService {
                 List<TreeNode> subChildren = subItems.stream()
                         .map(sub -> toTreeNode(sub, statsMap.get(sub.getStatisticsId()))).toList();
                 TreeNode node = toTreeNode(l2, statsMap.get(l2.getStatisticsId()));
+                // 세부 클러스터가 있으면 선택된 것들의 합산으로 금액/건수 재계산
+                if (!subItems.isEmpty()) {
+                    double recalcAmount = subItems.stream()
+                            .mapToDouble(s -> s.getTotalAmount() != null ? s.getTotalAmount() : 0.0).sum();
+                    int recalcCount = subItems.stream()
+                            .mapToInt(s -> s.getTotalCount() != null ? s.getTotalCount() : 0).sum();
+                    node.setTotalAmount(recalcAmount);
+                    node.setTotalCount(recalcCount);
+                }
                 node.setChildren(new ArrayList<>(subChildren));
                 return node;
             }).toList();
 
-            int totalCount = level2Items.stream().mapToInt(i -> i.getTotalCount() != null ? i.getTotalCount() : 0).sum();
-            double totalAmount = level2Items.stream().mapToDouble(i -> i.getTotalAmount() != null ? i.getTotalAmount() : 0.0).sum();
+            int totalCount = clusterNodes.stream().mapToInt(n -> n.getTotalCount() != null ? n.getTotalCount() : 0).sum();
+            double totalAmount = clusterNodes.stream().mapToDouble(n -> n.getTotalAmount() != null ? n.getTotalAmount() : 0.0).sum();
             int supplierCount = level2Items.stream().map(i -> statsMap.get(i.getStatisticsId()))
                     .filter(Objects::nonNull).mapToInt(s -> s.getSupplierCount() != null ? s.getSupplierCount() : 0).sum();
             int costCenterCount = level2Items.stream().map(i -> statsMap.get(i.getStatisticsId()))
@@ -551,6 +566,32 @@ public class ShortListService {
                             .toList();
                 })
                 .orElse(Collections.emptyList());
+    }
+
+    /**
+     * Level 2 항목의 합산 금액을 계산하되, Level 3 세부 클러스터가 존재하는 경우
+     * Level 2 원본 금액 대신 선택된 Level 3 합산으로 재계산
+     */
+    private double recalculateLevel2Total(List<LongShortList.ListItem> items) {
+        if (items == null || items.isEmpty()) return 0.0;
+
+        // Level 3 항목을 부모 키 기준 그룹핑
+        Map<String, Double> level3SumByParent = items.stream()
+                .filter(i -> i.getLevel() != null && i.getLevel() == 3)
+                .collect(Collectors.groupingBy(
+                        i -> i.getSessionId() + ":" + i.getParentClusterNumber(),
+                        Collectors.summingDouble(i -> i.getTotalAmount() != null ? i.getTotalAmount() : 0.0)
+                ));
+
+        return items.stream()
+                .filter(i -> i.getLevel() != null && i.getLevel() == 2)
+                .mapToDouble(l2 -> {
+                    String parentKey = l2.getSessionId() + ":" + l2.getClusterNumber();
+                    Double subTotal = level3SumByParent.get(parentKey);
+                    // Level 3 자식이 있으면 그 합산 사용, 없으면 Level 2 원본 사용
+                    return subTotal != null ? subTotal : (l2.getTotalAmount() != null ? l2.getTotalAmount() : 0.0);
+                })
+                .sum();
     }
 
     private TreeNode toTreeNode(LongShortList.ListItem item, ClusterStatistics stats) {

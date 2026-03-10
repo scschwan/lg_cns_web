@@ -67,23 +67,12 @@ function collectNodeData(nodes, checkedIds) {
         : checkedIds.has(cluster.statisticsId || cluster.id);
       if (!clusterHasCheckedLeaf) return;
 
-      // level 2 항목 항상 포함
-      items.push({
-        statisticsId: cluster.statisticsId,
-        sessionId: cluster.sessionId,
-        accountName: cluster.accountName,
-        clusterNumber: cluster.clusterNumber,
-        clusterName: cluster.clusterName,
-        level: cluster.level,
-        parentClusterNumber: cluster.parentClusterNumber,
-        totalAmount: cluster.totalAmount,
-        totalCount: cluster.totalCount,
-      });
-
-      // level 3 하위 항목 중 체크된 것만 포함
+      // level 3 하위 항목 중 체크된 것만 먼저 수집
+      const checkedSubs = [];
       if (cluster.children?.length) {
         cluster.children.forEach(sub => {
           if (checkedIds.has(sub.statisticsId || sub.id)) {
+            checkedSubs.push(sub);
             items.push({
               statisticsId: sub.statisticsId,
               sessionId: sub.sessionId,
@@ -98,6 +87,24 @@ function collectNodeData(nodes, checkedIds) {
           }
         });
       }
+
+      // level 2 항목: 세부 클러스터가 있으면 체크된 것들의 합산으로 금액/건수 재계산
+      const hasSubClusters = cluster.children?.length > 0;
+      items.push({
+        statisticsId: cluster.statisticsId,
+        sessionId: cluster.sessionId,
+        accountName: cluster.accountName,
+        clusterNumber: cluster.clusterNumber,
+        clusterName: cluster.clusterName,
+        level: cluster.level,
+        parentClusterNumber: cluster.parentClusterNumber,
+        totalAmount: hasSubClusters
+          ? checkedSubs.reduce((sum, s) => sum + (s.totalAmount || 0), 0)
+          : cluster.totalAmount,
+        totalCount: hasSubClusters
+          ? checkedSubs.reduce((sum, s) => sum + (s.totalCount || 0), 0)
+          : cluster.totalCount,
+      });
     });
   });
   return items;
