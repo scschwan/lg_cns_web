@@ -449,13 +449,10 @@ function PhaseNavigationBar({ stats, summary, currentPhase, projectId, navigate 
       line2: summary ? <><b>합산금액</b> : {formatAmount(summary.totalBaseAmount ?? 0)}</> : null,
       path: `/projects/${projectId}/able-manage`,
     },
-    {
-      key: 'COMPLETED', label: '완료 과제',
-      line1: null, line2: null,
-      path: `/projects/${projectId}/completed-manage`,
-    },
   ];
+  const TOTAL_SLOTS = 5;
   const currentIdx = phases.findIndex(p => p.key === currentPhase);
+  const emptySlots = TOTAL_SLOTS - phases.length;
   return (
     <div className="flex items-center gap-1.5 py-3 font-sans w-full">
       {phases.map((phase, idx) => {
@@ -467,18 +464,18 @@ function PhaseNavigationBar({ stats, summary, currentPhase, projectId, navigate 
             <button
               onClick={() => navigate(phase.path)}
               className={cn(
-                'flex-1 basis-0 flex flex-col items-center gap-1 px-3 py-3 rounded-lg font-sans transition-colors min-w-0',
+                'flex-1 basis-0 flex flex-col items-center gap-1.5 px-3 py-3.5 rounded-lg font-sans transition-colors min-w-0',
                 isActive && 'bg-blue-600 text-white',
                 isPast && 'bg-blue-50 text-blue-700 hover:bg-blue-100',
                 !isActive && !isPast && 'bg-muted/50 text-muted-foreground hover:bg-muted',
               )}
             >
               <div className="flex items-center gap-1.5">
-                {isPast && <CheckCircle2 className="w-4 h-4 flex-shrink-0" />}
-                <span className="font-bold text-sm whitespace-nowrap">{phase.label}</span>
+                {isPast && <CheckCircle2 className="w-5 h-5 flex-shrink-0" />}
+                <span className="font-bold text-base whitespace-nowrap">{phase.label}</span>
               </div>
               {phase.line1 != null && (
-                <div className={cn('text-[13px] leading-snug text-center', isActive ? 'text-blue-100' : 'text-muted-foreground')}>
+                <div className={cn('text-[15px] leading-snug text-center font-medium', isActive ? 'text-white/90' : '')}>
                   <div>{phase.line1}</div>
                   <div>{phase.line2}</div>
                 </div>
@@ -487,6 +484,12 @@ function PhaseNavigationBar({ stats, summary, currentPhase, projectId, navigate 
           </React.Fragment>
         );
       })}
+      {emptySlots > 0 && Array.from({ length: emptySlots }).map((_, i) => (
+        <React.Fragment key={`empty-${i}`}>
+          <ArrowRight className="w-4 h-4 text-muted-foreground/40 flex-shrink-0" />
+          <div className="flex-1 basis-0 min-w-0" />
+        </React.Fragment>
+      ))}
     </div>
   );
 }

@@ -228,18 +228,18 @@ function PhaseNavigationBar({ stats, summary, completedSummary, currentPhase, pr
             <button
               onClick={() => navigate(phase.path)}
               className={cn(
-                'flex-1 basis-0 flex flex-col items-center gap-1 px-3 py-3 rounded-lg font-sans transition-colors min-w-0',
+                'flex-1 basis-0 flex flex-col items-center gap-1.5 px-3 py-3.5 rounded-lg font-sans transition-colors min-w-0',
                 isActive && 'bg-blue-600 text-white',
                 isPast && 'bg-blue-50 text-blue-700 hover:bg-blue-100',
                 !isActive && !isPast && 'bg-muted/50 text-muted-foreground hover:bg-muted',
               )}
             >
               <div className="flex items-center gap-1.5">
-                {isPast && <CheckCircle2 className="w-4 h-4 flex-shrink-0" />}
-                <span className="font-bold text-sm whitespace-nowrap">{phase.label}</span>
+                {isPast && <CheckCircle2 className="w-5 h-5 flex-shrink-0" />}
+                <span className="font-bold text-base whitespace-nowrap">{phase.label}</span>
               </div>
               {phase.line1 != null && (
-                <div className={cn('text-[13px] leading-snug text-center', isActive ? 'text-blue-100' : 'text-muted-foreground')}>
+                <div className={cn('text-[15px] leading-snug text-center font-medium', isActive ? 'text-white/90' : '')}>
                   <div>{phase.line1}</div>
                   <div>{phase.line2}</div>
                 </div>
