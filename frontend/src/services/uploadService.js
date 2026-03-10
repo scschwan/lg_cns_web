@@ -688,6 +688,18 @@ const uploadService = {
         return response.data;
     },
 
+    /**
+     * 컬럼 가시성 일괄 변경
+     * PUT /api/projects/{projectId}/upload/sessions/{sessionId}/column-mappings/batch
+     */
+    updateColumnVisibilityBatch: async (projectId, sessionId, updates) => {
+        const response = await api.put(
+            `/api/projects/${projectId}/upload/sessions/${sessionId}/column-mappings/batch`,
+            { updates }
+        );
+        return response.data;
+    },
+
     // ========== 데이터 삭제 API ==========
 
     /**
