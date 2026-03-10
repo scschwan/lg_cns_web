@@ -137,6 +137,15 @@ public class ClusteringService {
 
             String supplierVal = includeSupplier ? first.getString("supplier") : null;
             String deptVal = includeCostCenter ? first.getString("department") : null;
+
+            // 공급업체명/코스트센터명을 키워드에도 추가 (검색 및 표시 용도)
+            if (supplierVal != null && !supplierVal.isEmpty()) {
+                keywords.add(supplierVal);
+            }
+            if (deptVal != null && !deptVal.isEmpty()) {
+                keywords.add(deptVal);
+            }
+
             String clusterName = keywords.isEmpty() ? "(키워드 없음)" : String.join("_", keywords);
             if (clusterName.length() > 100) clusterName = clusterName.substring(0, 100) + "...";
 
@@ -1687,6 +1696,26 @@ public class ClusteringService {
         if (column == null || column.isBlank()) column = "keyword";
         String fieldName = getFieldNameForColumn(column);
 
+        // AND(&) / OR(,) 검색 지원
+        if (!exact && value != null) {
+            if (value.contains("&")) {
+                String[] andTerms = value.split("&");
+                Criteria[] andCriteria = java.util.Arrays.stream(andTerms)
+                        .map(String::trim).filter(t -> !t.isEmpty())
+                        .map(t -> Criteria.where(fieldName).regex(Pattern.compile(Pattern.quote(t), Pattern.CASE_INSENSITIVE)))
+                        .toArray(Criteria[]::new);
+                if (andCriteria.length > 0) return new Criteria().andOperator(andCriteria);
+            }
+            if (value.contains(",")) {
+                String[] orTerms = value.split(",");
+                Criteria[] orCriteria = java.util.Arrays.stream(orTerms)
+                        .map(String::trim).filter(t -> !t.isEmpty())
+                        .map(t -> Criteria.where(fieldName).regex(Pattern.compile(Pattern.quote(t), Pattern.CASE_INSENSITIVE)))
+                        .toArray(Criteria[]::new);
+                if (orCriteria.length > 0) return new Criteria().orOperator(orCriteria);
+            }
+        }
+
         if (exact) {
             return Criteria.where(fieldName).is(value);
         } else {
@@ -1700,6 +1729,26 @@ public class ClusteringService {
     private Criteria buildExcludeCriteria(String column, String value, boolean exact) {
         if (column == null || column.isBlank()) column = "keyword";
         String fieldName = getFieldNameForColumn(column);
+
+        // AND(&) / OR(,) 제외 검색 지원
+        if (!exact && value != null) {
+            if (value.contains("&")) {
+                String[] andTerms = value.split("&");
+                Criteria[] andCriteria = java.util.Arrays.stream(andTerms)
+                        .map(String::trim).filter(t -> !t.isEmpty())
+                        .map(t -> Criteria.where(fieldName).regex(Pattern.compile(Pattern.quote(t), Pattern.CASE_INSENSITIVE)))
+                        .toArray(Criteria[]::new);
+                if (andCriteria.length > 0) return new Criteria().andOperator(andCriteria).not();
+            }
+            if (value.contains(",")) {
+                String[] orTerms = value.split(",");
+                Criteria[] norCriteria = java.util.Arrays.stream(orTerms)
+                        .map(String::trim).filter(t -> !t.isEmpty())
+                        .map(t -> Criteria.where(fieldName).not().regex(Pattern.compile(Pattern.quote(t), Pattern.CASE_INSENSITIVE)))
+                        .toArray(Criteria[]::new);
+                if (norCriteria.length > 0) return new Criteria().andOperator(norCriteria);
+            }
+        }
 
         if (exact) {
             return Criteria.where(fieldName).ne(value);

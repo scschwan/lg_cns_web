@@ -15,7 +15,7 @@ public class AccountPartition {
     private String accountName;
 
     private String sessionName;
-
+    private String workerName;
 
     // 프론트엔드 매핑 호환성을 위해 필드명 확인 필요
     private long rowCount;

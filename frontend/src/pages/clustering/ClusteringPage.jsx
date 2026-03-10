@@ -1531,7 +1531,7 @@ function ClusteringPage() {
                       </Select>
                       <Input
                         className="h-8 text-sm flex-1 min-w-[150px]"
-                        placeholder="검색 키워드 입력..."
+                        placeholder="검색 키워드 (AND: &, OR: , 구분)"
                         value={searchKeyword}
                         onChange={e => setSearchKeyword(e.target.value)}
                         onKeyDown={e => e.key === 'Enter' && handleSearch()}
@@ -1547,7 +1547,7 @@ function ClusteringPage() {
                       <span className="text-xs text-muted-foreground w-[120px]">제외 키워드:</span>
                       <Input
                         className="h-8 text-sm flex-1 min-w-[150px]"
-                        placeholder="제외 항목 입력..."
+                        placeholder="제외 항목 (AND: &, OR: , 구분)"
                         value={excludeKeyword}
                         onChange={e => setExcludeKeyword(e.target.value)}
                         onKeyDown={e => e.key === 'Enter' && handleSearch()}

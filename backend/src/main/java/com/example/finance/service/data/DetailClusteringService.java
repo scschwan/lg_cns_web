@@ -1150,6 +1150,35 @@ public class DetailClusteringService {
     private Criteria buildSearchCriteria(String column, String value, boolean exact) {
         if (column == null || column.isBlank()) column = "keyword";
         String fieldName = getFieldNameForColumn(column);
+
+        // AND(&) / OR(,) 검색 지원
+        if (!exact && value != null) {
+            // AND 검색: & 구분자
+            if (value.contains("&")) {
+                String[] andTerms = value.split("&");
+                Criteria[] andCriteria = java.util.Arrays.stream(andTerms)
+                        .map(String::trim)
+                        .filter(t -> !t.isEmpty())
+                        .map(t -> Criteria.where(fieldName).regex(Pattern.compile(Pattern.quote(t), Pattern.CASE_INSENSITIVE)))
+                        .toArray(Criteria[]::new);
+                if (andCriteria.length > 0) {
+                    return new Criteria().andOperator(andCriteria);
+                }
+            }
+            // OR 검색: , 구분자
+            if (value.contains(",")) {
+                String[] orTerms = value.split(",");
+                Criteria[] orCriteria = java.util.Arrays.stream(orTerms)
+                        .map(String::trim)
+                        .filter(t -> !t.isEmpty())
+                        .map(t -> Criteria.where(fieldName).regex(Pattern.compile(Pattern.quote(t), Pattern.CASE_INSENSITIVE)))
+                        .toArray(Criteria[]::new);
+                if (orCriteria.length > 0) {
+                    return new Criteria().orOperator(orCriteria);
+                }
+            }
+        }
+
         if (exact) {
             return Criteria.where(fieldName).is(value);
         } else {
@@ -1160,6 +1189,37 @@ public class DetailClusteringService {
     private Criteria buildExcludeCriteria(String column, String value, boolean exact) {
         if (column == null || column.isBlank()) column = "keyword";
         String fieldName = getFieldNameForColumn(column);
+
+        // AND(&) / OR(,) 제외 검색 지원
+        if (!exact && value != null) {
+            // AND 제외: & 구분자 → 모든 키워드를 포함하는 항목 제외
+            if (value.contains("&")) {
+                String[] andTerms = value.split("&");
+                Criteria[] andCriteria = java.util.Arrays.stream(andTerms)
+                        .map(String::trim)
+                        .filter(t -> !t.isEmpty())
+                        .map(t -> Criteria.where(fieldName).regex(Pattern.compile(Pattern.quote(t), Pattern.CASE_INSENSITIVE)))
+                        .toArray(Criteria[]::new);
+                if (andCriteria.length > 0) {
+                    // NOT (A AND B) = exclude items matching ALL terms
+                    return new Criteria().andOperator(andCriteria).not();
+                }
+            }
+            // OR 제외: , 구분자 → 하나라도 포함하는 항목 제외
+            if (value.contains(",")) {
+                String[] orTerms = value.split(",");
+                Criteria[] norCriteria = java.util.Arrays.stream(orTerms)
+                        .map(String::trim)
+                        .filter(t -> !t.isEmpty())
+                        .map(t -> Criteria.where(fieldName).not().regex(Pattern.compile(Pattern.quote(t), Pattern.CASE_INSENSITIVE)))
+                        .toArray(Criteria[]::new);
+                if (norCriteria.length > 0) {
+                    // All terms must be excluded (AND of NOT conditions)
+                    return new Criteria().andOperator(norCriteria);
+                }
+            }
+        }
+
         if (exact) {
             return Criteria.where(fieldName).ne(value);
         } else {

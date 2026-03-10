@@ -1551,7 +1551,7 @@ public class FileSessionService {
                         .sessionId(UUID.randomUUID().toString())
                         .projectId(projectId)
                         .sessionName(sessionName)
-                        .workerName("") // 초기 작업자는 없음
+                        .workerName(partition.getWorkerName() != null ? partition.getWorkerName() : "")
                         .createdBy(userId)
                         .createdAt(LocalDateTime.now())
                         .updatedAt(LocalDateTime.now())

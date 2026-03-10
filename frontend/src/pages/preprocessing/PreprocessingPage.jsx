@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ChevronRight, ChevronLeft, Home, Plus, Trash2, Lock } from 'lucide-react';
+import { ChevronRight, Home, Plus, Trash2, Lock } from 'lucide-react';
 import preprocessingService from '../../services/preprocessingService';
 import { useSessionEditorLock } from '../../hooks/useSessionEditorLock';
 import uploadService from '../../services/uploadService';
@@ -864,16 +864,8 @@ function PreprocessingPage() {
 
             </div>
 
-            {/* 이전/완료 버튼 (하단 고정) */}
-            <div className="pt-3 mt-auto flex-shrink-0 z-20 bg-gray-50 pb-2 space-y-2">
-              <Button
-                variant="outline"
-                className="w-full h-10 text-sm"
-                onClick={() => navigate(`/projects/${projectId}/sessions/${sessionId}/startanalysis`)}
-              >
-                <ChevronLeft className="h-4 w-4 mr-1" />
-                이전 단계 (Step 2: Start Analysis)
-              </Button>
+            {/* 완료 버튼 (하단 고정) */}
+            <div className="pt-3 mt-auto flex-shrink-0 z-20 bg-gray-50 pb-2">
               <Button
                 className="w-full bg-green-600 hover:bg-green-700 text-white shadow-lg h-12 text-base font-semibold"
                 onClick={handleComplete}

@@ -171,7 +171,11 @@ const Sidebar = () => {
     // currentStep이면 활성화
     if (sessionData.currentStep === stepEnum) return false;
 
-    // 방문한 적 없고 currentStep도 아니면 비활성화
+    // 현재 step보다 이전 step이면 활성화 (이전 단계는 항상 접근 가능)
+    const currentStepId = Object.entries(stepIdToEnum).find(([, v]) => v === sessionData.currentStep)?.[0];
+    if (currentStepId && step.id < Number(currentStepId)) return false;
+
+    // 방문한 적 없고 currentStep도 아니고 이전 step도 아니면 비활성화
     return true;
   };
 
