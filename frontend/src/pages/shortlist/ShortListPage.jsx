@@ -504,13 +504,6 @@ function PhaseNavigationBar({ stats, currentPhase, projectId, navigate, dynamicS
       line2: `합산금액 : ${formatAmount(shortListAmount)}`,
       path: `/projects/${projectId}/shortlist`,
     },
-    {
-      key: 'ABLE_REGISTER',
-      label: 'Short List',
-      line1: stats ? `계정명 : ${stats.ableRegisterAccountCount ?? '-'} / 클러스터 : ${stats.ableRegisterClusterCount ?? '-'}` : null,
-      line2: stats ? `합산금액 : ${formatAmount(stats.ableRegisterTotalAmount ?? 0)}` : null,
-      path: `/projects/${projectId}/able-register`,
-    },
   ];
 
   const currentIdx = phases.findIndex(p => p.key === currentPhase);
