@@ -805,14 +805,17 @@ public class DetailClusteringService {
 
         Criteria criteria = Criteria.where("session_id").is(sessionId)
                 .and("cluster_id").is(clusterId)
-                .and("cluster_number").ne(clusterId)
                 .and("cluster_sub_id").is(-1);
 
+        List<Criteria> additionalCriteria = new ArrayList<>();
+        // cluster_number 조건: ne와 in을 동시에 적용할 때 동일 필드 충돌 방지
         if (withinClusterNumbers != null && !withinClusterNumbers.isEmpty()) {
-            criteria = criteria.and("cluster_number").in(withinClusterNumbers);
+            additionalCriteria.add(Criteria.where("cluster_number").ne(clusterId));
+            additionalCriteria.add(Criteria.where("cluster_number").in(withinClusterNumbers));
+        } else {
+            criteria = criteria.and("cluster_number").ne(clusterId);
         }
 
-        List<Criteria> additionalCriteria = new ArrayList<>();
         if (searchValue != null && !searchValue.isBlank()) {
             additionalCriteria.add(buildSearchCriteria(searchColumn, searchValue, exactMatch));
         }
@@ -887,14 +890,17 @@ public class DetailClusteringService {
 
         Criteria criteria = Criteria.where("session_id").is(sessionId)
                 .and("cluster_id").is(clusterId)
-                .and("cluster_number").ne(clusterId)
                 .and("cluster_sub_id").is(-1);
 
+        List<Criteria> additionalCriteria = new ArrayList<>();
+        // cluster_number 조건: ne와 in을 동시에 적용할 때 동일 필드 충돌 방지
         if (withinClusterNumbers != null && !withinClusterNumbers.isEmpty()) {
-            criteria = criteria.and("cluster_number").in(withinClusterNumbers);
+            additionalCriteria.add(Criteria.where("cluster_number").ne(clusterId));
+            additionalCriteria.add(Criteria.where("cluster_number").in(withinClusterNumbers));
+        } else {
+            criteria = criteria.and("cluster_number").ne(clusterId);
         }
 
-        List<Criteria> additionalCriteria = new ArrayList<>();
         if (searchValue != null && !searchValue.isBlank()) {
             additionalCriteria.add(buildSearchCriteria(searchColumn, searchValue, exactMatch));
         }
