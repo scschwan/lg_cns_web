@@ -46,6 +46,19 @@ const formatAmount = (v) => {
   return v?.toLocaleString() ?? '0';
 };
 
+function ClusterNames({ clusters, level }) {
+  const filtered = (clusters || []).filter(c => level ? c.level === level : true);
+  if (filtered.length === 0) return <span className="text-muted-foreground">-</span>;
+  const names = [...new Set(filtered.map(c => c.clusterName).filter(Boolean))];
+  if (names.length === 0) return <span className="text-muted-foreground">-</span>;
+  return (
+    <span title={names.join(', ')}>
+      <span className="truncate">{names[0]}</span>
+      {names.length > 1 && <span className="text-muted-foreground ml-0.5">+{names.length - 1}</span>}
+    </span>
+  );
+}
+
 /* ====== Task Detail Modal ====== */
 function TaskDetailModal({ open, onClose, task, projectId }) {
   const [documents, setDocuments] = useState([]);
@@ -70,6 +83,8 @@ function TaskDetailModal({ open, onClose, task, projectId }) {
             <div><span className="text-muted-foreground">과제명:</span> <span className="font-medium">{task.taskName}</span></div>
             <div><span className="text-muted-foreground">상태:</span> <Badge className={cn('text-xs ml-1', STATUS_MAP[task.status]?.color)}>{task.status}</Badge></div>
             <div><span className="text-muted-foreground">대계정:</span> <span className="font-medium">{task.majorAccounts?.join(', ') || '-'}</span></div>
+            <div><span className="text-muted-foreground">클러스터명:</span> <span className="font-medium">{(task.clusters || []).filter(c => c.level === 2).map(c => c.clusterName).filter(Boolean).join(', ') || '-'}</span></div>
+            <div><span className="text-muted-foreground">세부클러스터명:</span> <span className="font-medium">{(task.clusters || []).filter(c => c.level === 3).map(c => c.clusterName).filter(Boolean).join(', ') || '-'}</span></div>
             <div><span className="text-muted-foreground">담당부서:</span> <span className="font-medium">{task.department || '-'}</span></div>
             <div><span className="text-muted-foreground">담당자:</span> <span className="font-medium">{task.manager || '-'}</span></div>
             <div><span className="text-muted-foreground">컨설턴트:</span> <span className="font-medium">{task.consultant || '-'}</span></div>
@@ -656,7 +671,7 @@ export default function AbleTaskManagePage() {
                     <TableRow className="bg-muted/50">
                       <TableHead className="w-[50px] text-center">No</TableHead>
                       <TableHead className="cursor-pointer select-none" onClick={() => handleSort('taskName')}>과제명<SortIcon colKey="taskName" /></TableHead>
-                      <TableHead>대계정</TableHead><TableHead>담당부서</TableHead><TableHead>담당자명</TableHead><TableHead>컨설턴트</TableHead>
+                      <TableHead>대계정</TableHead><TableHead className="max-w-[120px]">클러스터명</TableHead><TableHead className="max-w-[120px]">세부클러스터명</TableHead><TableHead>담당부서</TableHead><TableHead>담당자명</TableHead><TableHead>컨설턴트</TableHead>
                       <TableHead className="text-right cursor-pointer select-none" onClick={() => handleSort('baseAmount')}>모수 금액<SortIcon colKey="baseAmount" /></TableHead>
                       <TableHead className="text-right cursor-pointer select-none" onClick={() => handleSort('savingAmount')}>절감액<SortIcon colKey="savingAmount" /></TableHead>
                       <TableHead className="w-[120px] cursor-pointer select-none" onClick={() => handleSort('progress')}>진척율<SortIcon colKey="progress" /></TableHead>
@@ -671,6 +686,8 @@ export default function AbleTaskManagePage() {
                         <TableCell className="text-center text-xs tabular-nums">{idx + 1}</TableCell>
                         <TableCell className="text-sm font-medium">{task.taskName}</TableCell>
                         <TableCell className="text-xs">{task.majorAccounts?.join(', ') || '-'}</TableCell>
+                        <TableCell className="text-xs max-w-[120px]"><ClusterNames clusters={task.clusters} level={2} /></TableCell>
+                        <TableCell className="text-xs max-w-[120px]"><ClusterNames clusters={task.clusters} level={3} /></TableCell>
                         <TableCell className="text-xs">{task.department || '-'}</TableCell>
                         <TableCell className="text-xs">{task.manager || '-'}</TableCell>
                         <TableCell className="text-xs">{task.consultant || '-'}</TableCell>
@@ -690,7 +707,7 @@ export default function AbleTaskManagePage() {
                         </TableCell>
                       </TableRow>
                     ))}
-                    {sortedTasks.length === 0 && <TableRow><TableCell colSpan={13} className="text-center text-sm text-muted-foreground py-8">{tasks.length === 0 ? '등록된 과제가 없습니다.' : '검색 결과가 없습니다.'}</TableCell></TableRow>}
+                    {sortedTasks.length === 0 && <TableRow><TableCell colSpan={15} className="text-center text-sm text-muted-foreground py-8">{tasks.length === 0 ? '등록된 과제가 없습니다.' : '검색 결과가 없습니다.'}</TableCell></TableRow>}
                   </TableBody>
                 </Table>
               </div>
