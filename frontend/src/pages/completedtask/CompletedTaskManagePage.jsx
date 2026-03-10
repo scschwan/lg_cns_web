@@ -45,6 +45,19 @@ const formatAmount = (v) => {
   return v?.toLocaleString() ?? '0';
 };
 
+function ClusterNames({ clusters, level }) {
+  const filtered = (clusters || []).filter(c => level ? c.level === level : true);
+  if (filtered.length === 0) return <span className="text-muted-foreground">-</span>;
+  const names = [...new Set(filtered.map(c => c.clusterName).filter(Boolean))];
+  if (names.length === 0) return <span className="text-muted-foreground">-</span>;
+  return (
+    <span title={names.join(', ')}>
+      <span className="truncate">{names[0]}</span>
+      {names.length > 1 && <span className="text-muted-foreground ml-0.5">+{names.length - 1}</span>}
+    </span>
+  );
+}
+
 /* ====== Detail Modal ====== */
 function CompletedTaskDetailModal({ open, onClose, task }) {
   if (!task) return null;
@@ -61,6 +74,8 @@ function CompletedTaskDetailModal({ open, onClose, task }) {
             <div><span className="text-muted-foreground">과제명:</span> <span className="font-medium">{task.taskName}</span></div>
             <div><span className="text-muted-foreground">등급:</span> <Badge className={cn('text-xs ml-1 border', RATING_MAP[task.rating])}>{task.rating || '-'}</Badge></div>
             <div><span className="text-muted-foreground">대계정:</span> <span className="font-medium">{task.majorAccounts?.join(', ') || '-'}</span></div>
+            <div><span className="text-muted-foreground">클러스터명:</span> <span className="font-medium">{(task.clusters || []).filter(c => c.level === 2).map(c => c.clusterName).filter(Boolean).join(', ') || '-'}</span></div>
+            <div><span className="text-muted-foreground">세부클러스터명:</span> <span className="font-medium">{(task.clusters || []).filter(c => c.level === 3).map(c => c.clusterName).filter(Boolean).join(', ') || '-'}</span></div>
             <div><span className="text-muted-foreground">담당부서:</span> <span className="font-medium">{task.department || '-'}</span></div>
             <div><span className="text-muted-foreground">담당자:</span> <span className="font-medium">{task.manager || '-'}</span></div>
             <div><span className="text-muted-foreground">컨설턴트:</span> <span className="font-medium">{task.consultant || '-'}</span></div>
@@ -372,7 +387,7 @@ export default function CompletedTaskManagePage() {
                   <TableHeader>
                     <TableRow className="bg-muted/50">
                       <TableHead className="w-[50px] text-center">No</TableHead>
-                      <TableHead>과제명</TableHead><TableHead>담당부서</TableHead><TableHead>컨설턴트</TableHead>
+                      <TableHead>과제명</TableHead><TableHead className="max-w-[120px]">클러스터명</TableHead><TableHead className="max-w-[120px]">세부클러스터명</TableHead><TableHead>담당부서</TableHead><TableHead>컨설턴트</TableHead>
                       <TableHead className="text-right">모수 금액</TableHead><TableHead className="text-right">예상 절감액</TableHead><TableHead className="text-right">실제 절감액</TableHead>
                       <TableHead className="text-center">달성율</TableHead><TableHead className="text-center">등급</TableHead>
                       <TableHead className="text-center w-[120px]">관리</TableHead>
@@ -385,6 +400,8 @@ export default function CompletedTaskManagePage() {
                         <TableRow key={task.id} className="hover:bg-muted/30">
                           <TableCell className="text-center text-xs tabular-nums">{idx + 1}</TableCell>
                           <TableCell className="text-sm font-medium">{task.taskName}</TableCell>
+                          <TableCell className="text-xs max-w-[120px]"><ClusterNames clusters={task.clusters} level={2} /></TableCell>
+                          <TableCell className="text-xs max-w-[120px]"><ClusterNames clusters={task.clusters} level={3} /></TableCell>
                           <TableCell className="text-xs">{task.department || '-'}</TableCell>
                           <TableCell className="text-xs">{task.consultant || '-'}</TableCell>
                           <TableCell className="text-right text-xs tabular-nums">{formatAmount(task.baseAmount ?? 0)}</TableCell>
@@ -403,7 +420,7 @@ export default function CompletedTaskManagePage() {
                         </TableRow>
                       );
                     })}
-                    {filteredTasks.length === 0 && <TableRow><TableCell colSpan={10} className="text-center text-sm text-muted-foreground py-8">{tasks.length === 0 ? '완료된 과제가 없습니다.' : '검색 결과가 없습니다.'}</TableCell></TableRow>}
+                    {filteredTasks.length === 0 && <TableRow><TableCell colSpan={12} className="text-center text-sm text-muted-foreground py-8">{tasks.length === 0 ? '완료된 과제가 없습니다.' : '검색 결과가 없습니다.'}</TableCell></TableRow>}
                   </TableBody>
                 </Table>
               </div>

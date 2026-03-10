@@ -46,5 +46,6 @@ public class TaskResponse {
         private String statisticsId;
         private String clusterName;
         private String accountName;
+        private Integer level;
     }
 }

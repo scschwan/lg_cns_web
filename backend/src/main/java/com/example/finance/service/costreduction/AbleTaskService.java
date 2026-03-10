@@ -11,18 +11,18 @@ import com.example.finance.dto.response.costreduction.WeeklyProgressResponse;
 import com.example.finance.model.costreduction.AbleTask;
 import com.example.finance.model.costreduction.TaskDocument;
 import com.example.finance.model.costreduction.TaskWeeklyProgress;
+import com.example.finance.model.data.ClusterStatistics;
 import com.example.finance.repository.costreduction.AbleTaskRepository;
 import com.example.finance.repository.costreduction.TaskDocumentRepository;
 import com.example.finance.repository.costreduction.TaskWeeklyProgressRepository;
+import com.example.finance.repository.data.ClusterStatisticsRepository;
 import com.example.finance.service.common.S3Service;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
-import java.util.List;
-import java.util.Map;
-import java.util.UUID;
+import java.util.*;
 import java.util.stream.Collectors;
 
 @Slf4j
@@ -33,6 +33,7 @@ public class AbleTaskService {
     private final AbleTaskRepository ableTaskRepository;
     private final TaskDocumentRepository taskDocumentRepository;
     private final TaskWeeklyProgressRepository weeklyProgressRepository;
+    private final ClusterStatisticsRepository clusterStatisticsRepository;
     private final S3Service s3Service;
 
     /**
@@ -85,8 +86,19 @@ public class AbleTaskService {
                         t -> taskDocumentRepository.countByTaskId(t.getId())
                 ));
 
+        // 클러스터 레벨 정보 일괄 조회
+        Set<String> allStatsIds = tasks.stream()
+                .filter(t -> t.getClusters() != null)
+                .flatMap(t -> t.getClusters().stream())
+                .map(AbleTask.ClusterRef::getStatisticsId)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toSet());
+        Map<String, Integer> levelMap = allStatsIds.isEmpty() ? Collections.emptyMap()
+                : clusterStatisticsRepository.findAllById(allStatsIds).stream()
+                    .collect(Collectors.toMap(ClusterStatistics::getId, ClusterStatistics::getLevel, (a, b) -> a));
+
         return tasks.stream()
-                .map(t -> toResponse(t, docCounts.getOrDefault(t.getId(), 0L).intValue()))
+                .map(t -> toResponse(t, docCounts.getOrDefault(t.getId(), 0L).intValue(), levelMap))
                 .toList();
     }
 
@@ -97,7 +109,15 @@ public class AbleTaskService {
         AbleTask task = ableTaskRepository.findById(taskId)
                 .orElseThrow(() -> new RuntimeException("과제를 찾을 수 없습니다: " + taskId));
         int docCount = (int) taskDocumentRepository.countByTaskId(taskId);
-        return toResponse(task, docCount);
+
+        Set<String> statsIds = task.getClusters() != null
+                ? task.getClusters().stream().map(AbleTask.ClusterRef::getStatisticsId).filter(Objects::nonNull).collect(Collectors.toSet())
+                : Collections.emptySet();
+        Map<String, Integer> levelMap = statsIds.isEmpty() ? Collections.emptyMap()
+                : clusterStatisticsRepository.findAllById(statsIds).stream()
+                    .collect(Collectors.toMap(ClusterStatistics::getId, ClusterStatistics::getLevel, (a, b) -> a));
+
+        return toResponse(task, docCount, levelMap);
     }
 
     /**
@@ -362,12 +382,17 @@ public class AbleTaskService {
     }
 
     private TaskResponse toResponse(AbleTask task, int documentCount) {
+        return toResponse(task, documentCount, Collections.emptyMap());
+    }
+
+    private TaskResponse toResponse(AbleTask task, int documentCount, Map<String, Integer> levelMap) {
         List<TaskResponse.ClusterRefDto> clusters = task.getClusters() != null
                 ? task.getClusters().stream()
                     .map(c -> TaskResponse.ClusterRefDto.builder()
                             .statisticsId(c.getStatisticsId())
                             .clusterName(c.getClusterName())
                             .accountName(c.getAccountName())
+                            .level(levelMap.getOrDefault(c.getStatisticsId(), null))
                             .build())
                     .toList()
                 : List.of();
