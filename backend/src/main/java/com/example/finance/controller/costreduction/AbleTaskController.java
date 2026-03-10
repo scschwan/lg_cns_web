@@ -2,10 +2,12 @@ package com.example.finance.controller.costreduction;
 
 import com.example.finance.dto.request.costreduction.AddLinkRequest;
 import com.example.finance.dto.request.costreduction.CreateTaskRequest;
+import com.example.finance.dto.request.costreduction.CreateWeeklyProgressRequest;
 import com.example.finance.dto.request.costreduction.UpdateTaskRequest;
 import com.example.finance.dto.response.costreduction.TaskDocumentResponse;
 import com.example.finance.dto.response.costreduction.TaskResponse;
 import com.example.finance.dto.response.costreduction.TaskSummaryResponse;
+import com.example.finance.dto.response.costreduction.WeeklyProgressResponse;
 import com.example.finance.security.CurrentUser;
 import com.example.finance.security.UserPrincipal;
 import com.example.finance.service.costreduction.AbleTaskService;
@@ -133,6 +135,48 @@ public class AbleTaskController {
             @PathVariable String documentId,
             @CurrentUser UserPrincipal userPrincipal) {
         ableTaskService.deleteDocument(documentId);
+        return ResponseEntity.noContent().build();
+    }
+
+    // ===== Weekly Progress Management =====
+
+    @GetMapping("/{taskId}/weekly-progress")
+    public ResponseEntity<List<WeeklyProgressResponse>> getWeeklyProgress(
+            @PathVariable String projectId,
+            @PathVariable String taskId,
+            @CurrentUser UserPrincipal userPrincipal) {
+        List<WeeklyProgressResponse> list = ableTaskService.getWeeklyProgress(taskId);
+        return ResponseEntity.ok(list);
+    }
+
+    @PostMapping("/{taskId}/weekly-progress")
+    public ResponseEntity<WeeklyProgressResponse> createWeeklyProgress(
+            @PathVariable String projectId,
+            @PathVariable String taskId,
+            @RequestBody CreateWeeklyProgressRequest request,
+            @CurrentUser UserPrincipal userPrincipal) {
+        WeeklyProgressResponse response = ableTaskService.createWeeklyProgress(taskId, projectId, request);
+        return ResponseEntity.ok(response);
+    }
+
+    @PutMapping("/{taskId}/weekly-progress/{progressId}")
+    public ResponseEntity<WeeklyProgressResponse> updateWeeklyProgress(
+            @PathVariable String projectId,
+            @PathVariable String taskId,
+            @PathVariable String progressId,
+            @RequestBody CreateWeeklyProgressRequest request,
+            @CurrentUser UserPrincipal userPrincipal) {
+        WeeklyProgressResponse response = ableTaskService.updateWeeklyProgress(progressId, request);
+        return ResponseEntity.ok(response);
+    }
+
+    @DeleteMapping("/{taskId}/weekly-progress/{progressId}")
+    public ResponseEntity<Void> deleteWeeklyProgress(
+            @PathVariable String projectId,
+            @PathVariable String taskId,
+            @PathVariable String progressId,
+            @CurrentUser UserPrincipal userPrincipal) {
+        ableTaskService.deleteWeeklyProgress(progressId);
         return ResponseEntity.noContent().build();
     }
 }

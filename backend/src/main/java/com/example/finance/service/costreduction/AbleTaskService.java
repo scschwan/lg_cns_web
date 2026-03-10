@@ -2,14 +2,18 @@ package com.example.finance.service.costreduction;
 
 import com.example.finance.dto.request.costreduction.AddLinkRequest;
 import com.example.finance.dto.request.costreduction.CreateTaskRequest;
+import com.example.finance.dto.request.costreduction.CreateWeeklyProgressRequest;
 import com.example.finance.dto.request.costreduction.UpdateTaskRequest;
 import com.example.finance.dto.response.costreduction.TaskDocumentResponse;
 import com.example.finance.dto.response.costreduction.TaskResponse;
 import com.example.finance.dto.response.costreduction.TaskSummaryResponse;
+import com.example.finance.dto.response.costreduction.WeeklyProgressResponse;
 import com.example.finance.model.costreduction.AbleTask;
 import com.example.finance.model.costreduction.TaskDocument;
+import com.example.finance.model.costreduction.TaskWeeklyProgress;
 import com.example.finance.repository.costreduction.AbleTaskRepository;
 import com.example.finance.repository.costreduction.TaskDocumentRepository;
+import com.example.finance.repository.costreduction.TaskWeeklyProgressRepository;
 import com.example.finance.service.common.S3Service;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -28,6 +32,7 @@ public class AbleTaskService {
 
     private final AbleTaskRepository ableTaskRepository;
     private final TaskDocumentRepository taskDocumentRepository;
+    private final TaskWeeklyProgressRepository weeklyProgressRepository;
     private final S3Service s3Service;
 
     /**
@@ -287,6 +292,73 @@ public class AbleTaskService {
 
         taskDocumentRepository.deleteById(documentId);
         log.info("Document deleted: documentId={}", documentId);
+    }
+
+    // ===== Weekly Progress Management =====
+
+    /**
+     * 주차별 진척사항 목록 조회
+     */
+    public List<WeeklyProgressResponse> getWeeklyProgress(String taskId) {
+        return weeklyProgressRepository.findByTaskIdOrderByCreatedAtDesc(taskId).stream()
+                .map(this::toWeeklyResponse)
+                .toList();
+    }
+
+    /**
+     * 주차별 진척사항 등록
+     */
+    public WeeklyProgressResponse createWeeklyProgress(String taskId, String projectId, CreateWeeklyProgressRequest request) {
+        TaskWeeklyProgress progress = TaskWeeklyProgress.builder()
+                .taskId(taskId)
+                .projectId(projectId)
+                .weekNumber(request.getWeekNumber())
+                .progressDetails(request.getProgressDetails())
+                .issues(request.getIssues())
+                .author(request.getAuthor())
+                .createdAt(LocalDateTime.now())
+                .updatedAt(LocalDateTime.now())
+                .build();
+        progress = weeklyProgressRepository.save(progress);
+        log.info("Weekly progress created: taskId={}, id={}", taskId, progress.getId());
+        return toWeeklyResponse(progress);
+    }
+
+    /**
+     * 주차별 진척사항 수정
+     */
+    public WeeklyProgressResponse updateWeeklyProgress(String progressId, CreateWeeklyProgressRequest request) {
+        TaskWeeklyProgress progress = weeklyProgressRepository.findById(progressId)
+                .orElseThrow(() -> new RuntimeException("진척사항을 찾을 수 없습니다: " + progressId));
+        if (request.getWeekNumber() != null) progress.setWeekNumber(request.getWeekNumber());
+        if (request.getProgressDetails() != null) progress.setProgressDetails(request.getProgressDetails());
+        if (request.getIssues() != null) progress.setIssues(request.getIssues());
+        if (request.getAuthor() != null) progress.setAuthor(request.getAuthor());
+        progress.setUpdatedAt(LocalDateTime.now());
+        progress = weeklyProgressRepository.save(progress);
+        log.info("Weekly progress updated: id={}", progressId);
+        return toWeeklyResponse(progress);
+    }
+
+    /**
+     * 주차별 진척사항 삭제
+     */
+    public void deleteWeeklyProgress(String progressId) {
+        weeklyProgressRepository.deleteById(progressId);
+        log.info("Weekly progress deleted: id={}", progressId);
+    }
+
+    private WeeklyProgressResponse toWeeklyResponse(TaskWeeklyProgress p) {
+        return WeeklyProgressResponse.builder()
+                .id(p.getId())
+                .taskId(p.getTaskId())
+                .weekNumber(p.getWeekNumber())
+                .progressDetails(p.getProgressDetails())
+                .issues(p.getIssues())
+                .author(p.getAuthor())
+                .createdAt(p.getCreatedAt())
+                .updatedAt(p.getUpdatedAt())
+                .build();
     }
 
     private TaskResponse toResponse(AbleTask task, int documentCount) {

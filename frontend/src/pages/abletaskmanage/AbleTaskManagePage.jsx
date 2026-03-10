@@ -4,7 +4,7 @@ import {
   Search, Edit2, Eye, Trash2, FolderKanban,
   TrendingUp, DollarSign, ClipboardList, CheckCircle2, Clock,
   AlertCircle, FileText, Link2, FileIcon, ExternalLink, X, Save, Loader2,
-  ArrowRight, ArrowUpDown, ArrowUp, ArrowDown,
+  ArrowRight, ArrowUpDown, ArrowUp, ArrowDown, Plus, Pencil,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -49,16 +49,18 @@ const formatAmount = (v) => {
 /* ====== Task Detail Modal ====== */
 function TaskDetailModal({ open, onClose, task, projectId }) {
   const [documents, setDocuments] = useState([]);
+  const [weeklyProgress, setWeeklyProgress] = useState([]);
   useEffect(() => {
     if (task && open) {
       costReductionService.getTaskDocuments(projectId, task.id).then(setDocuments).catch(console.error);
+      costReductionService.getWeeklyProgress(projectId, task.id).then(setWeeklyProgress).catch(console.error);
     }
   }, [task, open, projectId]);
 
   if (!task) return null;
   return (
     <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent className="max-w-lg max-h-[80vh] overflow-y-auto">
+      <DialogContent className="max-w-3xl max-h-[85vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2"><Eye className="w-5 h-5 text-blue-600" />{task.taskName} 상세 정보</DialogTitle>
           <DialogDescription>과제 등록 정보를 확인합니다.</DialogDescription>
@@ -82,6 +84,39 @@ function TaskDetailModal({ open, onClose, task, projectId }) {
             </div>
             <div className="flex justify-between text-sm"><span className="text-muted-foreground">등록 자료</span><span className="font-semibold tabular-nums">{documents.length}건</span></div>
           </div>
+
+          {/* 주차별 진척사항 요약 */}
+          <div className="border-t pt-4">
+            <h4 className="text-sm font-semibold mb-3">주차별 진척사항</h4>
+            {weeklyProgress.length === 0 ? (
+              <p className="text-xs text-muted-foreground text-center py-4">등록된 주차별 진척사항이 없습니다.</p>
+            ) : (
+              <div className="border rounded-md overflow-hidden">
+                <Table>
+                  <TableHeader>
+                    <TableRow className="bg-muted/50">
+                      <TableHead className="text-xs w-[70px]">주차</TableHead>
+                      <TableHead className="text-xs">진행사항</TableHead>
+                      <TableHead className="text-xs">이슈사항</TableHead>
+                      <TableHead className="text-xs w-[70px]">작성자</TableHead>
+                      <TableHead className="text-xs w-[90px]">작성일</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {weeklyProgress.map(wp => (
+                      <TableRow key={wp.id}>
+                        <TableCell className="text-xs font-medium">{wp.weekNumber}</TableCell>
+                        <TableCell className="text-xs whitespace-pre-wrap max-w-[200px]">{wp.progressDetails || '-'}</TableCell>
+                        <TableCell className="text-xs whitespace-pre-wrap max-w-[200px]">{wp.issues || '-'}</TableCell>
+                        <TableCell className="text-xs">{wp.author || '-'}</TableCell>
+                        <TableCell className="text-xs tabular-nums">{wp.createdAt ? new Date(wp.createdAt).toLocaleDateString('ko-KR') : '-'}</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            )}
+          </div>
         </div>
         <DialogFooter><Button variant="outline" onClick={() => onClose(false)}>닫기</Button></DialogFooter>
       </DialogContent>
@@ -89,18 +124,66 @@ function TaskDetailModal({ open, onClose, task, projectId }) {
   );
 }
 
-/* ====== Task Edit Modal ====== */
-function TaskEditModal({ open, onClose, task, onSave }) {
+/* ====== Weekly Progress Sub-Modal (상세보기/수정) ====== */
+function WeeklyProgressSubModal({ open, onClose, item, mode, onSave }) {
   const [form, setForm] = useState({});
   useEffect(() => {
-    if (task) setForm({
-      taskName: task.taskName, department: task.department, manager: task.manager, consultant: task.consultant,
-      baseAmount: task.baseAmount, expectedSavingRate: task.expectedSavingRate,
-      expectedSavingAmount: task.expectedSavingAmount, progress: task.progress, status: task.status,
-      actualSaving: task.actualSaving, rating: task.rating,
-      progressDetails: task.progressDetails, issues: task.issues,
-    });
+    if (item) setForm({ weekNumber: item.weekNumber || '', progressDetails: item.progressDetails || '', issues: item.issues || '', author: item.author || '' });
+  }, [item]);
+  if (!item) return null;
+  const isView = mode === 'view';
+  const handleChange = (f, v) => setForm(prev => ({ ...prev, [f]: v }));
+  return (
+    <Dialog open={open} onOpenChange={onClose}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">{isView ? <Eye className="w-5 h-5 text-blue-600" /> : <Pencil className="w-5 h-5 text-orange-600" />}{isView ? '진척사항 상세' : '진척사항 수정'}</DialogTitle>
+          <DialogDescription>{isView ? '주차별 진척사항 상세 내용입니다.' : '진척사항을 수정합니다.'}</DialogDescription>
+        </DialogHeader>
+        <div className="space-y-3">
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1"><Label className="text-xs">주차</Label>{isView ? <p className="text-sm font-medium">{form.weekNumber}</p> : <Input value={form.weekNumber} onChange={e => handleChange('weekNumber', e.target.value)} className="h-8 text-sm" placeholder="예: 1주차" />}</div>
+            <div className="space-y-1"><Label className="text-xs">작성자</Label>{isView ? <p className="text-sm font-medium">{form.author || '-'}</p> : <Input value={form.author} onChange={e => handleChange('author', e.target.value)} className="h-8 text-sm" />}</div>
+          </div>
+          <div className="space-y-1"><Label className="text-xs">진행사항</Label>{isView ? <p className="text-sm whitespace-pre-wrap rounded-md bg-muted/50 p-2.5 min-h-[60px]">{form.progressDetails || '-'}</p> : <Textarea value={form.progressDetails} onChange={e => handleChange('progressDetails', e.target.value)} rows={3} className="text-sm" placeholder="진행사항을 입력하세요" />}</div>
+          <div className="space-y-1"><Label className="text-xs">이슈사항</Label>{isView ? <p className="text-sm whitespace-pre-wrap rounded-md bg-muted/50 p-2.5 min-h-[60px]">{form.issues || '-'}</p> : <Textarea value={form.issues} onChange={e => handleChange('issues', e.target.value)} rows={3} className="text-sm" placeholder="이슈사항을 입력하세요" />}</div>
+        </div>
+        <DialogFooter className="gap-2">
+          <Button variant="outline" size="sm" onClick={() => onClose(false)}>닫기</Button>
+          {!isView && <Button size="sm" onClick={() => { onSave(item.id, form); onClose(false); }}><Save className="w-3.5 h-3.5 mr-1" />저장</Button>}
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+/* ====== Task Edit Modal ====== */
+function TaskEditModal({ open, onClose, task, onSave, projectId }) {
+  const [form, setForm] = useState({});
+  const [weeklyList, setWeeklyList] = useState([]);
+  const [weeklyLoading, setWeeklyLoading] = useState(false);
+  const [addForm, setAddForm] = useState(null); // null = hidden, object = form data
+  const [subModal, setSubModal] = useState({ open: false, item: null, mode: 'view' });
+
+  useEffect(() => {
+    if (task) {
+      setForm({
+        taskName: task.taskName, department: task.department, manager: task.manager, consultant: task.consultant,
+        baseAmount: task.baseAmount, expectedSavingRate: task.expectedSavingRate,
+        expectedSavingAmount: task.expectedSavingAmount, progress: task.progress, status: task.status,
+        actualSaving: task.actualSaving, rating: task.rating,
+      });
+      setAddForm(null);
+    }
   }, [task]);
+
+  // Load weekly progress
+  useEffect(() => {
+    if (task && open && projectId) {
+      setWeeklyLoading(true);
+      costReductionService.getWeeklyProgress(projectId, task.id).then(setWeeklyList).catch(console.error).finally(() => setWeeklyLoading(false));
+    }
+  }, [task, open, projectId]);
 
   // 절감율 변경 시 절감액 자동 계산
   useEffect(() => {
@@ -109,9 +192,7 @@ function TaskEditModal({ open, onClose, task, onSave }) {
     if (base > 0 && rate > 0) {
       const calculated = Math.round(base * rate / 100);
       setForm(prev => {
-        if (prev.expectedSavingAmount !== calculated) {
-          return { ...prev, expectedSavingAmount: calculated };
-        }
+        if (prev.expectedSavingAmount !== calculated) return { ...prev, expectedSavingAmount: calculated };
         return prev;
       });
     }
@@ -120,65 +201,157 @@ function TaskEditModal({ open, onClose, task, onSave }) {
   if (!task) return null;
   const handleChange = (f, v) => setForm(prev => ({ ...prev, [f]: v }));
 
+  const handleAddWeekly = async () => {
+    if (!addForm?.weekNumber) return;
+    try {
+      const created = await costReductionService.createWeeklyProgress(projectId, task.id, addForm);
+      setWeeklyList(prev => [created, ...prev]);
+      setAddForm(null);
+    } catch (e) { console.error('Failed to create weekly progress:', e); }
+  };
+
+  const handleUpdateWeekly = async (progressId, data) => {
+    try {
+      const updated = await costReductionService.updateWeeklyProgress(projectId, task.id, progressId, data);
+      setWeeklyList(prev => prev.map(w => w.id === progressId ? updated : w));
+    } catch (e) { console.error('Failed to update weekly progress:', e); }
+  };
+
+  const handleDeleteWeekly = async (progressId) => {
+    try {
+      await costReductionService.deleteWeeklyProgress(projectId, task.id, progressId);
+      setWeeklyList(prev => prev.filter(w => w.id !== progressId));
+    } catch (e) { console.error('Failed to delete weekly progress:', e); }
+  };
+
   return (
-    <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent className="max-w-lg max-h-[85vh] overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2"><Edit2 className="w-5 h-5 text-orange-600" />과제 수정</DialogTitle>
-          <DialogDescription>과제 정보를 수정합니다.</DialogDescription>
-        </DialogHeader>
-        <div className="space-y-4">
-          <div className="space-y-1.5"><Label>과제명</Label><Input value={form.taskName || ''} onChange={e => handleChange('taskName', e.target.value)} className="h-9 text-sm" /></div>
-          <div className="grid grid-cols-3 gap-3">
-            <div className="space-y-1.5"><Label>담당부서</Label><Input value={form.department || ''} onChange={e => handleChange('department', e.target.value)} className="h-9 text-sm" /></div>
-            <div className="space-y-1.5"><Label>담당자명</Label><Input value={form.manager || ''} onChange={e => handleChange('manager', e.target.value)} className="h-9 text-sm" /></div>
-            <div className="space-y-1.5"><Label>컨설턴트</Label><Input value={form.consultant || ''} onChange={e => handleChange('consultant', e.target.value)} className="h-9 text-sm" /></div>
-          </div>
-          <div className="grid grid-cols-3 gap-3">
-            <div className="space-y-1.5"><Label>모수금액</Label><Input type="number" step={1} value={form.baseAmount ?? ''} onChange={e => handleChange('baseAmount', e.target.value === '' ? '' : +e.target.value)} className="h-9 text-sm" /></div>
-            <div className="space-y-1.5"><Label>절감율 (%)</Label><Input type="number" step="0.1" value={form.expectedSavingRate ?? ''} onChange={e => handleChange('expectedSavingRate', e.target.value === '' ? '' : +e.target.value)} className="h-9 text-sm" /></div>
-            <div className="space-y-1.5"><Label>절감액 (자동계산)</Label><Input type="number" step={1} value={form.expectedSavingAmount ?? ''} readOnly className="h-9 text-sm bg-muted/50" /></div>
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-1.5"><Label>진척율 (%)</Label>
-              <Input
-                type="text" inputMode="numeric"
-                value={form.progress != null && form.progress !== '' ? String(Number(form.progress)) : ''}
-                onChange={e => {
-                  const raw = e.target.value.replace(/[^\d]/g, '');
-                  if (raw === '') handleChange('progress', '');
-                  else handleChange('progress', Math.min(100, Math.max(0, parseInt(raw, 10))));
-                }}
-                className="h-9 text-sm"
-              />
+    <>
+      <Dialog open={open} onOpenChange={onClose}>
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2"><Edit2 className="w-5 h-5 text-orange-600" />과제 수정</DialogTitle>
+            <DialogDescription>과제 정보를 수정하고 주차별 진척사항을 관리합니다.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            {/* 과제 기본 정보 */}
+            <div className="space-y-1.5"><Label>과제명</Label><Input value={form.taskName || ''} onChange={e => handleChange('taskName', e.target.value)} className="h-9 text-sm" /></div>
+            <div className="grid grid-cols-3 gap-3">
+              <div className="space-y-1.5"><Label>담당부서</Label><Input value={form.department || ''} onChange={e => handleChange('department', e.target.value)} className="h-9 text-sm" /></div>
+              <div className="space-y-1.5"><Label>담당자명</Label><Input value={form.manager || ''} onChange={e => handleChange('manager', e.target.value)} className="h-9 text-sm" /></div>
+              <div className="space-y-1.5"><Label>컨설턴트</Label><Input value={form.consultant || ''} onChange={e => handleChange('consultant', e.target.value)} className="h-9 text-sm" /></div>
             </div>
-            <div className="space-y-1.5"><Label>상태</Label>
-              <Select value={form.status || ''} onValueChange={v => handleChange('status', v)}>
-                <SelectTrigger className="h-9 text-sm"><SelectValue /></SelectTrigger>
-                <SelectContent>{STATUS_OPTIONS.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}</SelectContent>
-              </Select>
+            <div className="grid grid-cols-3 gap-3">
+              <div className="space-y-1.5"><Label>모수금액</Label><Input type="number" step={1} value={form.baseAmount ?? ''} onChange={e => handleChange('baseAmount', e.target.value === '' ? '' : +e.target.value)} className="h-9 text-sm" /></div>
+              <div className="space-y-1.5"><Label>절감율 (%)</Label><Input type="number" step="0.1" value={form.expectedSavingRate ?? ''} onChange={e => handleChange('expectedSavingRate', e.target.value === '' ? '' : +e.target.value)} className="h-9 text-sm" /></div>
+              <div className="space-y-1.5"><Label>절감액 (자동계산)</Label><Input type="number" step={1} value={form.expectedSavingAmount ?? ''} readOnly className="h-9 text-sm bg-muted/50" /></div>
             </div>
-          </div>
-          {form.status === '완료' && (
             <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1.5"><Label>실제 절감액</Label><Input type="number" step={1} value={form.actualSaving ?? ''} onChange={e => handleChange('actualSaving', e.target.value === '' ? '' : +e.target.value)} className="h-9 text-sm" /></div>
-              <div className="space-y-1.5"><Label>등급</Label>
-                <Select value={form.rating || ''} onValueChange={v => handleChange('rating', v)}>
-                  <SelectTrigger className="h-9 text-sm"><SelectValue placeholder="등급" /></SelectTrigger>
-                  <SelectContent><SelectItem value="A+">A+</SelectItem><SelectItem value="A">A</SelectItem><SelectItem value="B+">B+</SelectItem><SelectItem value="B">B</SelectItem></SelectContent>
+              <div className="space-y-1.5"><Label>진척율 (%)</Label>
+                <Input type="text" inputMode="numeric"
+                  value={form.progress != null && form.progress !== '' ? String(Number(form.progress)) : ''}
+                  onChange={e => { const raw = e.target.value.replace(/[^\d]/g, ''); if (raw === '') handleChange('progress', ''); else handleChange('progress', Math.min(100, Math.max(0, parseInt(raw, 10)))); }}
+                  className="h-9 text-sm" />
+              </div>
+              <div className="space-y-1.5"><Label>상태</Label>
+                <Select value={form.status || ''} onValueChange={v => handleChange('status', v)}>
+                  <SelectTrigger className="h-9 text-sm"><SelectValue /></SelectTrigger>
+                  <SelectContent>{STATUS_OPTIONS.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}</SelectContent>
                 </Select>
               </div>
             </div>
-          )}
-          <div className="space-y-1.5"><Label>진척사항</Label><Textarea value={form.progressDetails || ''} onChange={e => handleChange('progressDetails', e.target.value)} placeholder="진척사항을 입력하세요" rows={3} className="text-sm" /></div>
-          <div className="space-y-1.5"><Label>이슈사항</Label><Textarea value={form.issues || ''} onChange={e => handleChange('issues', e.target.value)} placeholder="이슈사항을 입력하세요" rows={3} className="text-sm" /></div>
-        </div>
-        <DialogFooter className="gap-2 sm:gap-0">
-          <Button variant="outline" onClick={() => onClose(false)}><X className="w-4 h-4 mr-1.5" />취소</Button>
-          <Button onClick={() => { onSave(task.id, form); onClose(false); }}><Save className="w-4 h-4 mr-1.5" />저장</Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+            {form.status === '완료' && (
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5"><Label>실제 절감액</Label><Input type="number" step={1} value={form.actualSaving ?? ''} onChange={e => handleChange('actualSaving', e.target.value === '' ? '' : +e.target.value)} className="h-9 text-sm" /></div>
+                <div className="space-y-1.5"><Label>등급</Label>
+                  <Select value={form.rating || ''} onValueChange={v => handleChange('rating', v)}>
+                    <SelectTrigger className="h-9 text-sm"><SelectValue placeholder="등급" /></SelectTrigger>
+                    <SelectContent><SelectItem value="A+">A+</SelectItem><SelectItem value="A">A</SelectItem><SelectItem value="B+">B+</SelectItem><SelectItem value="B">B</SelectItem></SelectContent>
+                  </Select>
+                </div>
+              </div>
+            )}
+
+            {/* 주차별 진척사항 게시판 */}
+            <div className="border-t pt-4">
+              <div className="flex items-center justify-between mb-3">
+                <h4 className="text-sm font-semibold">주차별 진척사항</h4>
+                <Button size="sm" variant="outline" className="h-7 text-xs gap-1" onClick={() => setAddForm({ weekNumber: '', progressDetails: '', issues: '', author: '' })}>
+                  <Plus className="w-3.5 h-3.5" />추가
+                </Button>
+              </div>
+
+              {/* 인라인 추가 폼 */}
+              {addForm && (
+                <div className="border rounded-md p-3 mb-3 bg-blue-50/50 space-y-2">
+                  <div className="grid grid-cols-2 gap-2">
+                    <Input placeholder="주차 (예: 1주차)" value={addForm.weekNumber} onChange={e => setAddForm(prev => ({ ...prev, weekNumber: e.target.value }))} className="h-8 text-sm" />
+                    <Input placeholder="작성자" value={addForm.author} onChange={e => setAddForm(prev => ({ ...prev, author: e.target.value }))} className="h-8 text-sm" />
+                  </div>
+                  <Textarea placeholder="진행사항" value={addForm.progressDetails} onChange={e => setAddForm(prev => ({ ...prev, progressDetails: e.target.value }))} rows={2} className="text-sm" />
+                  <Textarea placeholder="이슈사항" value={addForm.issues} onChange={e => setAddForm(prev => ({ ...prev, issues: e.target.value }))} rows={2} className="text-sm" />
+                  <div className="flex justify-end gap-2">
+                    <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => setAddForm(null)}>취소</Button>
+                    <Button size="sm" className="h-7 text-xs" onClick={handleAddWeekly} disabled={!addForm.weekNumber}><Save className="w-3 h-3 mr-1" />등록</Button>
+                  </div>
+                </div>
+              )}
+
+              {weeklyLoading ? (
+                <div className="text-center py-4"><Loader2 className="w-5 h-5 animate-spin mx-auto text-muted-foreground" /></div>
+              ) : weeklyList.length === 0 ? (
+                <p className="text-xs text-muted-foreground text-center py-4 border rounded-md">등록된 주차별 진척사항이 없습니다.</p>
+              ) : (
+                <div className="border rounded-md overflow-hidden">
+                  <Table>
+                    <TableHeader>
+                      <TableRow className="bg-muted/50">
+                        <TableHead className="text-xs w-[70px]">주차</TableHead>
+                        <TableHead className="text-xs">진행사항</TableHead>
+                        <TableHead className="text-xs">이슈사항</TableHead>
+                        <TableHead className="text-xs w-[70px]">작성자</TableHead>
+                        <TableHead className="text-xs w-[90px]">작성일</TableHead>
+                        <TableHead className="text-xs w-[80px] text-center">관리</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {weeklyList.map(wp => (
+                        <TableRow key={wp.id} className="hover:bg-muted/30">
+                          <TableCell className="text-xs font-medium">{wp.weekNumber}</TableCell>
+                          <TableCell className="text-xs truncate max-w-[180px]" title={wp.progressDetails}>{wp.progressDetails || '-'}</TableCell>
+                          <TableCell className="text-xs truncate max-w-[180px]" title={wp.issues}>{wp.issues || '-'}</TableCell>
+                          <TableCell className="text-xs">{wp.author || '-'}</TableCell>
+                          <TableCell className="text-xs tabular-nums">{wp.createdAt ? new Date(wp.createdAt).toLocaleDateString('ko-KR') : '-'}</TableCell>
+                          <TableCell className="text-center">
+                            <div className="flex items-center justify-center gap-0.5">
+                              <Button variant="ghost" size="sm" className="h-5 w-5 p-0" onClick={() => setSubModal({ open: true, item: wp, mode: 'view' })} title="상세보기"><Eye className="w-3 h-3" /></Button>
+                              <Button variant="ghost" size="sm" className="h-5 w-5 p-0" onClick={() => setSubModal({ open: true, item: wp, mode: 'edit' })} title="수정"><Pencil className="w-3 h-3" /></Button>
+                              <Button variant="ghost" size="sm" className="h-5 w-5 p-0 text-red-500 hover:text-red-700" onClick={() => handleDeleteWeekly(wp.id)} title="삭제"><Trash2 className="w-3 h-3" /></Button>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              )}
+            </div>
+          </div>
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button variant="outline" onClick={() => onClose(false)}><X className="w-4 h-4 mr-1.5" />취소</Button>
+            <Button onClick={() => { onSave(task.id, form); onClose(false); }}><Save className="w-4 h-4 mr-1.5" />저장</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* 주차별 진척사항 상세/수정 서브 모달 */}
+      <WeeklyProgressSubModal
+        open={subModal.open}
+        onClose={() => setSubModal({ open: false, item: null, mode: 'view' })}
+        item={subModal.item}
+        mode={subModal.mode}
+        onSave={handleUpdateWeekly}
+      />
+    </>
   );
 }
 
@@ -528,7 +701,7 @@ export default function AbleTaskManagePage() {
       </div>
 
       <TaskDetailModal open={!!detailTask} onClose={() => setDetailTask(null)} task={detailTask} projectId={projectId} />
-      <TaskEditModal open={!!editTask} onClose={() => setEditTask(null)} task={editTask} onSave={handleEditSave} />
+      <TaskEditModal open={!!editTask} onClose={() => setEditTask(null)} task={editTask} onSave={handleEditSave} projectId={projectId} />
       <TaskDocumentsModal open={!!docsTask} onClose={() => setDocsTask(null)} task={docsTask} projectId={projectId} />
 
       {/* Delete Confirmation Dialog */}
