@@ -139,6 +139,7 @@ function ExportPage() {
   const [allDataPageSize, setAllDataPageSize] = useState(100);
   const [allDataTotalCount, setAllDataTotalCount] = useState(0);
   const [allDataTotalPages, setAllDataTotalPages] = useState(0);
+  const [allDataSort, setAllDataSort] = useState(null);
 
   // Clustering 결과 탭
   const [clusterData, setClusterData] = useState([]);
@@ -156,6 +157,7 @@ function ExportPage() {
   const [detailTotalCount, setDetailTotalCount] = useState(0);
   const [detailTotalPages, setDetailTotalPages] = useState(0);
   const [selectedCluster, setSelectedCluster] = useState(null);
+  const [detailSort, setDetailSort] = useState(null);
 
   // 제거열 설정
   const [columnSettings, setColumnSettings] = useState([]);
@@ -623,6 +625,7 @@ function ExportPage() {
     return allDataColumns.map(colName => ({
       key: colName,
       label: colName,
+      sortable: true,
       width: colName === '클러스터명' || colName === '세부클러스터명' ? 120 : 100,
       sticky: colName === '클러스터명' || colName === '세부클러스터명',
       render: (row) => <span className="text-xs">{formatNumber(row[colName])}</span>
@@ -634,11 +637,33 @@ function ExportPage() {
     return detailColumns.map(colName => ({
       key: colName,
       label: colName,
+      sortable: true,
       width: colName === '클러스터명' || colName === '세부클러스터명' ? 120 : 100,
       sticky: colName === '클러스터명' || colName === '세부클러스터명',
       render: (row) => <span className="text-xs">{formatNumber(row[colName])}</span>
     }));
   }, [detailColumns]);
+
+  // ===== 프론트 정렬 =====
+  const sortDataLocal = useCallback((data, sort) => {
+    if (!sort) return data;
+    const sorted = [...data];
+    sorted.sort((a, b) => {
+      const aVal = a[sort.field];
+      const bVal = b[sort.field];
+      if (aVal == null && bVal == null) return 0;
+      if (aVal == null) return 1;
+      if (bVal == null) return -1;
+      if (typeof aVal === 'number' && typeof bVal === 'number') {
+        return sort.direction === 'asc' ? aVal - bVal : bVal - aVal;
+      }
+      return sort.direction === 'asc' ? String(aVal).localeCompare(String(bVal)) : String(bVal).localeCompare(String(aVal));
+    });
+    return sorted;
+  }, []);
+
+  const sortedAllData = useMemo(() => sortDataLocal(allData, allDataSort), [allData, allDataSort, sortDataLocal]);
+  const sortedDetailData = useMemo(() => sortDataLocal(detailData, detailSort), [detailData, detailSort, sortDataLocal]);
 
   // ===== 선택된 클러스터 수 =====
   const selectedClusterCount = clusterCheckedSet.size;
@@ -695,8 +720,10 @@ function ExportPage() {
                 <div className="flex-1 min-h-0">
                   <AdvancedTable
                     columns={allDataTableColumns}
-                    data={allData}
+                    data={sortedAllData}
                     rowKey={(r, i) => r._rawDataId || i}
+                    sort={allDataSort}
+                    onSortChange={(field, direction) => setAllDataSort({ field, direction })}
                     emptyMessage="데이터가 없습니다."
                     maxHeight="100%"
                   />
@@ -745,8 +772,10 @@ function ExportPage() {
                   {detailData.length > 0 ? (
                     <AdvancedTable
                       columns={detailTableColumns}
-                      data={detailData}
+                      data={sortedDetailData}
                       rowKey={(r, i) => i}
+                      sort={detailSort}
+                      onSortChange={(field, direction) => setDetailSort({ field, direction })}
                       emptyMessage="클러스터를 선택해주세요."
                       maxHeight="100%"
                     />

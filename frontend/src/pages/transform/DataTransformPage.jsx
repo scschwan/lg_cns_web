@@ -545,11 +545,14 @@ function DataTransformPage() {
           label: col,
           sortable: true,
           minWidth: 60,
-          render: (row) => (
-            <span className="whitespace-nowrap">
-              {row[col] != null ? String(row[col]) : ''}
-            </span>
-          ),
+          render: (row) => {
+            const val = row[col];
+            if (val == null) return '';
+            if (typeof val === 'number') {
+              return <span className="whitespace-nowrap">{val.toLocaleString()}</span>;
+            }
+            return <span className="whitespace-nowrap">{String(val)}</span>;
+          },
         });
       }
     });
