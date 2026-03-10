@@ -239,7 +239,7 @@ function PhaseNavigationBar({ stats, summary, completedSummary, currentPhase, pr
                 <span className="font-bold text-base whitespace-nowrap">{phase.label}</span>
               </div>
               {phase.line1 != null && (
-                <div className="text-[15px] leading-snug text-center font-medium text-black">
+                <div className={cn('text-[15px] leading-snug text-center font-medium', isActive ? 'text-white/90' : 'text-black')}>
                   <div>{phase.line1}</div>
                   <div>{phase.line2}</div>
                 </div>
