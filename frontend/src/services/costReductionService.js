@@ -274,6 +274,28 @@ const costReductionService = {
     return response.data;
   },
 
+  // ===== Weekly Progress =====
+
+  getWeeklyProgress: async (projectId, taskId) => {
+    const response = await api.get(`/api/projects/${projectId}/tasks/${taskId}/weekly-progress`);
+    return response.data;
+  },
+
+  createWeeklyProgress: async (projectId, taskId, data) => {
+    const response = await api.post(`/api/projects/${projectId}/tasks/${taskId}/weekly-progress`, data);
+    return response.data;
+  },
+
+  updateWeeklyProgress: async (projectId, taskId, progressId, data) => {
+    const response = await api.put(`/api/projects/${projectId}/tasks/${taskId}/weekly-progress/${progressId}`, data);
+    return response.data;
+  },
+
+  deleteWeeklyProgress: async (projectId, taskId, progressId) => {
+    const response = await api.delete(`/api/projects/${projectId}/tasks/${taskId}/weekly-progress/${progressId}`);
+    return response.data;
+  },
+
   // ===== Dashboard Batch Generation =====
 
   startDashboardGeneration: async (projectId, sessions) => {
