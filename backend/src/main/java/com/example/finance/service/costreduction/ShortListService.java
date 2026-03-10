@@ -37,6 +37,7 @@ public class ShortListService {
     private final SessionDataRepository sessionDataRepository;
     private final RedisService redisService;
     private final ObjectMapper objectMapper;
+    private final LongListService longListService;
 
     private static final Duration CACHE_TTL = Duration.ofMinutes(30);
 
@@ -234,12 +235,19 @@ public class ShortListService {
                 .mapToDouble(t -> t.getBaseAmount() != null ? t.getBaseAmount() : 0.0)
                 .sum();
 
+        // Raw 데이터 통계 (전처리 결과 = Long List 도출 페이지 전체 데이터)
+        LongListStatsResponse rawStats = longListService.getStats(projectId);
+
         return ShortListStatsResponse.builder()
                 .longListItemCount(longLevel2.size())
                 .shortListItemCount(shortLevel2.size())
                 .totalAmount(longListTotal)
                 .shortListTotalAmount(shortListTotal)
                 .selectionRatio(Math.round(selectionRatio * 100.0) / 100.0)
+                .rawAccountCount(rawStats.getAccountCount())
+                .rawClusterCount(rawStats.getMainClusterCount())
+                .rawSubClusterCount(rawStats.getSubClusterCount())
+                .rawTotalAmount(rawStats.getTotalAmount())
                 .longListAccountCount((int) longAccountCount)
                 .longListClusterCount((int) longClusterCount)
                 .longListSubClusterCount((int) longSubClusterCount)

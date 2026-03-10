@@ -193,27 +193,26 @@ function TreeRow({ item, level = 0, expandedIds, toggleExpand, checkedIds, onChe
 
 /* ====== Phase Navigation Bar ====== */
 function PhaseNavigationBar({ stats, currentPhase, projectId, navigate, dynamicShortList }) {
-  const shortListAmount = dynamicShortList ? dynamicShortList.amount : (stats?.shortListTotalAmount ?? 0);
   const phases = [
     {
       key: 'LONG_LIST',
       label: 'Raw List',
-      line1: stats ? `계정명 : ${stats.longListAccountCount ?? '-'} / 클러스터 : ${stats.longListClusterCount ?? '-'} / 세부 : ${stats.longListSubClusterCount ?? '-'}` : null,
-      line2: stats ? `합산금액 : ${formatAmount(stats.totalAmount ?? 0)}` : null,
+      line1: stats ? <><b>계정명</b> : {stats.rawAccountCount ?? '-'} / <b>클러스터</b> : {stats.rawClusterCount ?? '-'} / <b>세부</b> : {stats.rawSubClusterCount ?? '-'}</> : null,
+      line2: stats ? <><b>합산금액</b> : {formatAmount(stats.rawTotalAmount ?? 0)}</> : null,
       path: `/projects/${projectId}/longlist`,
     },
     {
       key: 'SHORT_LIST',
       label: 'Long List',
-      line1: stats ? `계정명 : ${stats.shortListAccountCount ?? '-'} / 클러스터 : ${stats.shortListClusterCount ?? '-'} / 세부 : ${stats.shortListSubClusterCount ?? '-'}` : null,
-      line2: `합산금액 : ${formatAmount(shortListAmount)}`,
+      line1: stats ? <><b>계정명</b> : {stats.longListAccountCount ?? '-'} / <b>클러스터</b> : {stats.longListClusterCount ?? '-'} / <b>세부</b> : {stats.longListSubClusterCount ?? '-'}</> : null,
+      line2: stats ? <><b>합산금액</b> : {formatAmount(stats.totalAmount ?? 0)}</> : null,
       path: `/projects/${projectId}/shortlist`,
     },
     {
       key: 'ABLE_REGISTER',
       label: 'Short List',
-      line1: stats ? `계정명 : ${stats.shortListAccountCount ?? '-'} / 클러스터 : ${stats.shortListClusterCount ?? '-'} / 세부 : ${stats.shortListSubClusterCount ?? '-'}` : null,
-      line2: stats ? `합산금액 : ${formatAmount(stats.shortListTotalAmount ?? 0)}` : null,
+      line1: stats ? <><b>계정명</b> : {stats.shortListAccountCount ?? '-'} / <b>클러스터</b> : {stats.shortListClusterCount ?? '-'} / <b>세부</b> : {stats.shortListSubClusterCount ?? '-'}</> : null,
+      line2: stats ? <><b>합산금액</b> : {formatAmount(stats.shortListTotalAmount ?? 0)}</> : null,
       path: `/projects/${projectId}/able-register`,
     },
   ];

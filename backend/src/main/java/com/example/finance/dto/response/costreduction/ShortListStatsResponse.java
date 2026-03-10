@@ -17,10 +17,18 @@ public class ShortListStatsResponse {
     private Double shortListTotalAmount;
     private Double selectionRatio;
 
-    // 세분화 건수 (계정명/클러스터/세부클러스터)
+    // Raw 데이터 통계 (전처리 결과 = Long List 도출 페이지 전체 데이터)
+    private Integer rawAccountCount;
+    private Integer rawClusterCount;
+    private Integer rawSubClusterCount;
+    private Double rawTotalAmount;
+
+    // Long List 도출 결과 (계정명/클러스터/세부클러스터)
     private Integer longListAccountCount;
     private Integer longListClusterCount;
     private Integer longListSubClusterCount;
+
+    // Short List 도출 결과
     private Integer shortListAccountCount;
     private Integer shortListClusterCount;
     private Integer shortListSubClusterCount;
