@@ -448,13 +448,13 @@ function ClusteringPage() {
 
                     <div className="grid grid-cols-2 gap-3 pt-2 border-t">
                       <div>
-                        <div className="text-xs text-muted-foreground mb-1">레코드 수</div>
+                        <div className="text-xs font-bold text-muted-foreground mb-1">레코드 수</div>
                         <div className="text-lg font-bold">
                           {selectedCluster.recordCount.toLocaleString()}
                         </div>
                       </div>
                       <div>
-                        <div className="text-xs text-muted-foreground mb-1">합계 금액</div>
+                        <div className="text-xs font-bold text-muted-foreground mb-1">합계 금액</div>
                         <div className="text-lg font-bold">
                           {(selectedCluster.totalAmount / 1000000).toFixed(1)}M
                         </div>

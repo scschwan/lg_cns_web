@@ -475,7 +475,7 @@ function SelectedItemCard({ stats, onRawDataClick }) {
                 <item.icon className="w-3.5 h-3.5 text-white" />
               </div>
               <div>
-                <p className="text-[10px] text-muted-foreground">{item.label}</p>
+                <p className="text-[10px] font-bold text-muted-foreground">{item.label}</p>
                 <p className="text-sm font-bold tabular-nums">{item.value}</p>
               </div>
             </div>
@@ -898,7 +898,7 @@ export default function ShortListPage() {
                     <ListChecks className="w-4 h-4 text-white" />
                   </div>
                   <div>
-                    <p className="text-xs text-muted-foreground">Long List 항목</p>
+                    <p className="text-xs font-bold text-muted-foreground">Long List 항목</p>
                     <p className="text-lg font-bold tabular-nums">{dynamicStats.checkableItemCount}</p>
                   </div>
                 </div>
@@ -911,7 +911,7 @@ export default function ShortListPage() {
                     <DollarSign className="w-4 h-4 text-white" />
                   </div>
                   <div>
-                    <p className="text-xs text-muted-foreground">선택 금액 합계</p>
+                    <p className="text-xs font-bold text-muted-foreground">선택 금액 합계</p>
                     <p className="text-lg font-bold tabular-nums">{formatAmount(dynamicStats.selectedAmount)}</p>
                   </div>
                 </div>
@@ -924,7 +924,7 @@ export default function ShortListPage() {
                     <TrendingUp className="w-4 h-4 text-white" />
                   </div>
                   <div>
-                    <p className="text-xs text-muted-foreground">전체 대비 비율</p>
+                    <p className="text-xs font-bold text-muted-foreground">전체 대비 비율</p>
                     <p className="text-lg font-bold tabular-nums text-green-600">{dynamicStats.totalRatio}%</p>
                   </div>
                 </div>
@@ -937,7 +937,7 @@ export default function ShortListPage() {
                     <Layers className="w-4 h-4 text-white" />
                   </div>
                   <div>
-                    <p className="text-xs text-muted-foreground">선택 항목 수</p>
+                    <p className="text-xs font-bold text-muted-foreground">선택 항목 수</p>
                     <p className="text-lg font-bold tabular-nums">{dynamicStats.leafCheckedCount}</p>
                   </div>
                 </div>
