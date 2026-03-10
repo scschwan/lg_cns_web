@@ -224,7 +224,7 @@ export default function AdminDashboard() {
                         <div className="flex items-center gap-3">
                             <Users className="h-8 w-8 text-blue-500" />
                             <div>
-                                <p className="text-sm text-muted-foreground">전체 사용자</p>
+                                <p className="text-sm font-bold text-muted-foreground">전체 사용자</p>
                                 <p className="text-2xl font-bold">{stats?.totalUsers ?? '-'}</p>
                             </div>
                         </div>
@@ -235,7 +235,7 @@ export default function AdminDashboard() {
                         <div className="flex items-center gap-3">
                             <Clock className="h-8 w-8 text-yellow-500" />
                             <div>
-                                <p className="text-sm text-muted-foreground">승인 대기</p>
+                                <p className="text-sm font-bold text-muted-foreground">승인 대기</p>
                                 <p className="text-2xl font-bold">{stats?.pendingUsers ?? '-'}</p>
                             </div>
                         </div>
@@ -246,7 +246,7 @@ export default function AdminDashboard() {
                         <div className="flex items-center gap-3">
                             <FolderKanban className="h-8 w-8 text-green-500" />
                             <div>
-                                <p className="text-sm text-muted-foreground">프로젝트</p>
+                                <p className="text-sm font-bold text-muted-foreground">프로젝트</p>
                                 <p className="text-2xl font-bold">{stats?.totalProjects ?? '-'}</p>
                             </div>
                         </div>
@@ -257,7 +257,7 @@ export default function AdminDashboard() {
                         <div className="flex items-center gap-3">
                             <Monitor className="h-8 w-8 text-purple-500" />
                             <div>
-                                <p className="text-sm text-muted-foreground">전체 세션</p>
+                                <p className="text-sm font-bold text-muted-foreground">전체 세션</p>
                                 <p className="text-2xl font-bold">{stats?.totalSessions ?? '-'}</p>
                             </div>
                         </div>

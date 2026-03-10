@@ -84,7 +84,7 @@ function StatCard({ icon: Icon, label, value, unit, color, onClick }) {
             <Icon className="w-5 h-5 text-white" />
           </div>
           <div className="min-w-0">
-            <p className="text-xs text-muted-foreground truncate">{label}</p>
+            <p className="text-xs font-bold text-muted-foreground truncate">{label}</p>
             <p className="text-xl font-bold tabular-nums">
               {typeof value === 'number' ? value.toLocaleString() : value}
               {unit && <span className="text-sm font-normal text-muted-foreground ml-1">{unit}</span>}
