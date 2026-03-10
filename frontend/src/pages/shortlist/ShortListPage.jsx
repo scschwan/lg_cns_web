@@ -487,52 +487,65 @@ function SelectedItemCard({ stats, onRawDataClick }) {
 }
 
 /* ====== Phase Navigation Bar ====== */
-function PhaseNavigationBar({ stats, currentPhase, projectId, navigate, dynamicShortList, checkableItemCount }) {
+function PhaseNavigationBar({ stats, summary, currentPhase, projectId, navigate }) {
   const phases = [
     {
-      key: 'LONG_LIST',
-      label: 'Raw List',
+      key: 'LONG_LIST', label: 'Raw List',
       line1: stats ? <><b>대계정</b> : {stats.rawAccountCount ?? '-'} / <b>클러스터</b> : {stats.rawClusterCount ?? '-'} / <b>세부</b> : {stats.rawSubClusterCount ?? '-'}</> : null,
       line2: stats ? <><b>합산금액</b> : {formatAmount(stats.rawTotalAmount ?? 0)}</> : null,
       path: `/projects/${projectId}/longlist`,
     },
     {
-      key: 'SHORT_LIST',
-      label: 'Long List',
+      key: 'SHORT_LIST', label: 'Long List',
       line1: stats ? <><b>대계정</b> : {stats.longListAccountCount ?? '-'} / <b>클러스터</b> : {stats.longListClusterCount ?? '-'} / <b>세부</b> : {stats.longListSubClusterCount ?? '-'}</> : null,
       line2: stats ? <><b>합산금액</b> : {formatAmount(stats.totalAmount ?? 0)}</> : null,
       path: `/projects/${projectId}/shortlist`,
     },
+    {
+      key: 'ABLE_REGISTER', label: 'Short List',
+      line1: stats ? <><b>대계정</b> : {stats.shortListAccountCount ?? '-'} / <b>클러스터</b> : {stats.shortListClusterCount ?? '-'} / <b>세부</b> : {stats.shortListSubClusterCount ?? '-'}</> : null,
+      line2: stats ? <><b>합산금액</b> : {formatAmount(stats.shortListTotalAmount ?? 0)}</> : null,
+      path: `/projects/${projectId}/able-register`,
+    },
+    {
+      key: 'ABLE_MANAGE', label: 'Able 과제',
+      line1: summary ? <><b>과제수</b> : {summary.totalTasks ?? 0}건</> : null,
+      line2: summary ? <><b>합산금액</b> : {formatAmount(summary.totalBaseAmount ?? 0)}</> : null,
+      path: `/projects/${projectId}/able-manage`,
+    },
+    {
+      key: 'COMPLETED', label: '완료 과제',
+      line1: null, line2: null,
+      path: `/projects/${projectId}/completed-manage`,
+    },
   ];
-
   const currentIdx = phases.findIndex(p => p.key === currentPhase);
-
   return (
-    <div className="flex items-center gap-2 py-3 font-sans w-full">
+    <div className="flex items-center gap-1.5 py-3 font-sans w-full">
       {phases.map((phase, idx) => {
         const isActive = phase.key === currentPhase;
         const isPast = idx < currentIdx;
         return (
           <React.Fragment key={phase.key}>
-            {idx > 0 && <ArrowRight className="w-5 h-5 text-muted-foreground/50 flex-shrink-0" />}
+            {idx > 0 && <ArrowRight className="w-4 h-4 text-muted-foreground/40 flex-shrink-0" />}
             <button
               onClick={() => navigate(phase.path)}
               className={cn(
-                'flex-1 flex items-center justify-center gap-3 px-4 py-4 rounded-lg text-base font-sans transition-colors min-w-0',
+                'flex-1 basis-0 flex flex-col items-center gap-1 px-3 py-3 rounded-lg font-sans transition-colors min-w-0',
                 isActive && 'bg-blue-600 text-white',
                 isPast && 'bg-blue-50 text-blue-700 hover:bg-blue-100',
                 !isActive && !isPast && 'bg-muted/50 text-muted-foreground hover:bg-muted',
               )}
             >
-              {isPast && <CheckCircle2 className="w-5 h-5 flex-shrink-0" />}
-              <span className="font-bold text-sm whitespace-nowrap">{phase.label}</span>
+              <div className="flex items-center gap-1.5">
+                {isPast && <CheckCircle2 className="w-4 h-4 flex-shrink-0" />}
+                <span className="font-bold text-sm whitespace-nowrap">{phase.label}</span>
+              </div>
               {phase.line1 != null && (
-                <Badge variant={isActive ? 'secondary' : 'outline'} className="text-[13px] px-2.5 py-1.5 ml-1 leading-relaxed whitespace-pre-line text-left font-normal">
-                  <span className="flex flex-col gap-0.5">
-                    <span>{phase.line1}</span>
-                    <span>{phase.line2}</span>
-                  </span>
-                </Badge>
+                <div className={cn('text-[13px] leading-snug text-center', isActive ? 'text-blue-100' : 'text-muted-foreground')}>
+                  <div>{phase.line1}</div>
+                  <div>{phase.line2}</div>
+                </div>
               )}
             </button>
           </React.Fragment>
@@ -552,6 +565,7 @@ export default function ShortListPage() {
 
   const [treeData, setTreeData] = useState([]);
   const [stats, setStats] = useState(null);
+  const [taskSummary, setTaskSummary] = useState(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [lockedIds, setLockedIds] = useState(new Set());
@@ -635,16 +649,18 @@ export default function ShortListPage() {
     const loadData = async () => {
       try {
         setLoading(true);
-        const [treeRes, statsRes, selectionsRes, lockedRes] = await Promise.all([
+        const [treeRes, statsRes, selectionsRes, lockedRes, summaryRes] = await Promise.all([
           costReductionService.getShortListTree(projectId),
           costReductionService.getShortListStats(projectId),
           costReductionService.getShortListSelections(projectId),
           costReductionService.getLockedStatisticsIds(projectId).catch(() => []),
+          costReductionService.getTaskSummary(projectId).catch(() => null),
         ]);
 
         const tree = treeRes.tree || [];
         setTreeData(tree);
         setStats(statsRes);
+        setTaskSummary(summaryRes);
         setLockedIds(new Set(lockedRes || []));
 
         // 기본: 모든 항목 선택, 저장된 Short List 선택이 있으면 복원
@@ -881,7 +897,7 @@ export default function ShortListPage() {
             </Button>
           </div>
         </div>
-        <PhaseNavigationBar stats={stats} currentPhase="SHORT_LIST" projectId={projectId} navigate={navigate} dynamicShortList={{ count: dynamicStats.leafCheckedCount, amount: dynamicStats.selectedAmount }} checkableItemCount={dynamicStats.checkableItemCount} />
+        <PhaseNavigationBar stats={stats} summary={taskSummary} currentPhase="SHORT_LIST" projectId={projectId} navigate={navigate} dynamicShortList={{ count: dynamicStats.leafCheckedCount, amount: dynamicStats.selectedAmount }} checkableItemCount={dynamicStats.checkableItemCount} />
       </div>
 
       {/* Scrollable Content */}
