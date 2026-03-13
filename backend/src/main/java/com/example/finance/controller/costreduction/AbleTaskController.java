@@ -128,6 +128,16 @@ public class AbleTaskController {
         return ResponseEntity.ok(result);
     }
 
+    @GetMapping("/{taskId}/documents/{documentId}/download-url")
+    public ResponseEntity<Map<String, String>> getDocumentDownloadUrl(
+            @PathVariable String projectId,
+            @PathVariable String taskId,
+            @PathVariable String documentId,
+            @CurrentUser UserPrincipal userPrincipal) {
+        String downloadUrl = ableTaskService.getDocumentDownloadUrl(documentId);
+        return ResponseEntity.ok(Map.of("downloadUrl", downloadUrl));
+    }
+
     @DeleteMapping("/{taskId}/documents/{documentId}")
     public ResponseEntity<Void> deleteDocument(
             @PathVariable String projectId,

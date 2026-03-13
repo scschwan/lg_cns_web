@@ -285,6 +285,18 @@ public class AbleTaskService {
     }
 
     /**
+     * 파일 다운로드 Presigned URL 생성
+     */
+    public String getDocumentDownloadUrl(String documentId) {
+        TaskDocument doc = taskDocumentRepository.findById(documentId)
+                .orElseThrow(() -> new RuntimeException("문서를 찾을 수 없습니다: " + documentId));
+        if (!"file".equals(doc.getType()) || doc.getS3Key() == null) {
+            throw new RuntimeException("다운로드할 수 없는 문서입니다: " + documentId);
+        }
+        return s3Service.generateDownloadUrl(doc.getS3Key());
+    }
+
+    /**
      * 문서 삭제
      */
     public void deleteDocument(String documentId) {
