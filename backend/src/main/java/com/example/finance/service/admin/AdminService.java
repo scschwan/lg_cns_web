@@ -177,6 +177,18 @@ public class AdminService {
                 .orElseThrow(() -> new RuntimeException("프로젝트를 찾을 수 없습니다"));
 
         ProjectRole newRole = ProjectRole.valueOf(role);
+
+        // 소유자(OWNER)는 프로젝트당 1명만 허용 — 새 소유자 지정 시 기존 소유자를 편집자(EDITOR)로 자동 변경
+        if (newRole == ProjectRole.OWNER) {
+            for (ProjectMember m : project.getMembers()) {
+                if (m.getRole() == ProjectRole.OWNER && !m.getUserId().equals(targetUserId)) {
+                    m.setRole(ProjectRole.EDITOR);
+                    writeLog(adminId, "CHANGE_ROLE", "PROJECT", projectId,
+                            "기존 소유자 " + m.getUserId() + " → EDITOR (자동 변경)");
+                }
+            }
+        }
+
         boolean found = false;
         for (ProjectMember m : project.getMembers()) {
             if (m.getUserId().equals(targetUserId)) {
@@ -203,9 +215,21 @@ public class AdminService {
             throw new RuntimeException("이미 프로젝트에 소속된 멤버입니다");
         }
 
+        ProjectRole newRole = ProjectRole.valueOf(role);
+        // 소유자(OWNER)로 추가 시 기존 소유자를 편집자(EDITOR)로 자동 변경
+        if (newRole == ProjectRole.OWNER) {
+            for (ProjectMember m : project.getMembers()) {
+                if (m.getRole() == ProjectRole.OWNER) {
+                    m.setRole(ProjectRole.EDITOR);
+                    writeLog(adminId, "CHANGE_ROLE", "PROJECT", projectId,
+                            "기존 소유자 " + m.getUserId() + " → EDITOR (자동 변경)");
+                }
+            }
+        }
+
         ProjectMember member = ProjectMember.builder()
                 .userId(targetUserId)
-                .role(ProjectRole.valueOf(role))
+                .role(newRole)
                 .invitedBy(adminId)
                 .joinedAt(LocalDateTime.now())
                 .build();

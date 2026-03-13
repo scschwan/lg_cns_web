@@ -258,7 +258,7 @@ function RatioDetailModal({ open, onClose, title, data }) {
         </DialogHeader>
         <div className="flex-1 overflow-y-auto">
           <div className="flex flex-col items-center gap-6 py-4">
-            <ResponsiveContainer width="100%" height={260}>
+            <ResponsiveContainer width="100%" height={380}>
               <PieChart>
                 <Pie data={pieData} dataKey="amount" nameKey="name" cx="50%" cy="50%" innerRadius={60} outerRadius={110} paddingAngle={2} label={({ ratio }) => `${ratio}%`}>
                   {pieData.map((entry, idx) => {
@@ -837,7 +837,7 @@ export default function LongListPage() {
                 <>
                   {/* 공급업체 차트 */}
                   {supplierChartData.length > 0 && (
-                    <div className="grid grid-cols-3 gap-4">
+                    <div className="grid grid-cols-2 gap-4">
                       <Card>
                         <CardHeader className="pb-2 px-5 pt-5">
                           <CardTitle className="text-sm font-semibold flex items-center gap-2">
@@ -879,13 +879,12 @@ export default function LongListPage() {
                           <ChartPieWithLegend data={supplierChartData} />
                         </CardContent>
                       </Card>
-                      <TopNSummaryPie data={supplierChartData} title="공급업체 Top3 요약" />
                     </div>
                   )}
 
                   {/* 코스트센터 차트 */}
                   {costCenterChartData.length > 0 && (
-                    <div className="grid grid-cols-3 gap-4">
+                    <div className="grid grid-cols-2 gap-4">
                       <Card>
                         <CardHeader className="pb-2 px-5 pt-5">
                           <CardTitle className="text-sm font-semibold flex items-center gap-2">
@@ -927,7 +926,6 @@ export default function LongListPage() {
                           <ChartPieWithLegend data={costCenterChartData} />
                         </CardContent>
                       </Card>
-                      <TopNSummaryPie data={costCenterChartData} title="코스트센터 Top3 요약" />
                     </div>
                   )}
                 </>

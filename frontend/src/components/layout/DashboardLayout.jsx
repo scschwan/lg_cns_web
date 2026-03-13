@@ -9,7 +9,7 @@ const DashboardLayout = ({ children }) => {
   const { projectId } = useParams();
 
   return (
-    <div className="flex h-full overflow-hidden bg-background">
+    <div className="flex h-full overflow-hidden bg-background font-pretendard">
       {/* Sidebar — 뷰어도 메뉴 이동 가능 */}
       <Sidebar />
 

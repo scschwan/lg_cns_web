@@ -37,6 +37,12 @@ const RATING_MAP = {
   'B+': 'bg-yellow-100 text-yellow-700 border-yellow-300',
   'B': 'bg-orange-100 text-orange-700 border-orange-300',
 };
+const RATING_COLORS = {
+  'A+': '#10b981',  // green
+  'A': '#3b82f6',   // blue
+  'B+': '#f59e0b',  // amber
+  'B': '#f97316',   // orange
+};
 
 const formatAmount = (v) => {
   if (v >= 100000000) return (v / 100000000).toFixed(1) + '억';
@@ -172,7 +178,7 @@ function DocumentsModal({ open, onClose, task, projectId }) {
                 <span className="text-sm font-medium truncate">{doc.label}</span>
                 <Badge variant="outline" className={cn('text-[10px] px-1.5 flex-shrink-0', doc.type === 'link' ? 'border-blue-300 bg-blue-50 text-blue-600' : 'border-gray-300 bg-gray-50 text-gray-600')}>{doc.type === 'link' ? '링크' : '파일'}</Badge>
               </div>
-              {doc.type === 'link' && doc.url && <Button variant="ghost" size="sm" className="h-7 w-7 p-0 flex-shrink-0" onClick={() => window.open(doc.url, '_blank')}><ExternalLink className="w-3.5 h-3.5" /></Button>}
+              {doc.url && <Button variant="ghost" size="sm" className="h-7 w-7 p-0 flex-shrink-0" onClick={() => window.open(doc.url, '_blank')}><ExternalLink className="w-3.5 h-3.5" /></Button>}
             </div>
           ))}
         </div>
@@ -218,7 +224,7 @@ function PhaseNavigationBar({ stats, summary, completedSummary, currentPhase, pr
   ];
   const currentIdx = phases.findIndex(p => p.key === currentPhase);
   return (
-    <div className="flex items-center gap-1.5 py-3 font-sans w-full">
+    <div className="flex items-center gap-1.5 py-3 font-pretendard w-full">
       {phases.map((phase, idx) => {
         const isActive = phase.key === currentPhase;
         const isPast = idx < currentIdx;
@@ -228,7 +234,7 @@ function PhaseNavigationBar({ stats, summary, completedSummary, currentPhase, pr
             <button
               onClick={() => navigate(phase.path)}
               className={cn(
-                'flex-1 basis-0 flex flex-col items-center gap-1.5 px-3 py-3.5 rounded-lg font-sans transition-colors min-w-0',
+                'flex-1 basis-0 flex flex-col items-center gap-1.5 px-3 py-3.5 rounded-lg font-pretendard transition-colors min-w-0',
                 isActive && 'bg-blue-600 text-white',
                 isPast && 'bg-blue-50 text-blue-700 hover:bg-blue-100',
                 !isActive && !isPast && 'bg-muted/50 text-muted-foreground hover:bg-muted',
@@ -236,10 +242,10 @@ function PhaseNavigationBar({ stats, summary, completedSummary, currentPhase, pr
             >
               <div className="flex items-center gap-1.5">
                 {isPast && <CheckCircle2 className="w-5 h-5 flex-shrink-0" />}
-                <span className="font-bold text-base whitespace-nowrap">{phase.label}</span>
+                <span className="font-bold text-xl whitespace-nowrap">{phase.label}</span>
               </div>
               {phase.line1 != null && (
-                <div className={cn('text-[15px] leading-snug text-center font-medium', isActive ? 'text-white/90' : 'text-black')}>
+                <div className={cn('text-[19px] leading-snug text-center font-medium', isActive ? 'text-white/90' : 'text-black')}>
                   <div>{phase.line1}</div>
                   <div>{phase.line2}</div>
                 </div>
@@ -362,8 +368,8 @@ export default function CompletedTaskManagePage() {
             <Card>
               <CardHeader className="pb-2 px-5 pt-4"><CardTitle className="text-sm font-semibold flex items-center gap-2"><BarChart3 className="w-4 h-4 text-muted-foreground" />등급별 분포</CardTitle></CardHeader>
               <CardContent className="px-2 pb-4">
-                <ResponsiveContainer width="100%" height={220}>
-                  <PieChart><Pie data={ratingChartData} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius={50} outerRadius={80} paddingAngle={3} label={({ name, value }) => `${name} ${value}`}>{ratingChartData.map((_, idx) => <Cell key={idx} fill={CHART_COLORS[idx]} />)}</Pie><Tooltip /><Legend wrapperStyle={{ fontSize: 12 }} /></PieChart>
+                <ResponsiveContainer width="100%" height={280}>
+                  <PieChart><Pie data={ratingChartData} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius={50} outerRadius={80} paddingAngle={3} label={({ name, value }) => `${name} ${value}`}>{ratingChartData.map((entry, idx) => <Cell key={idx} fill={RATING_COLORS[entry.name] || CHART_COLORS[idx]} />)}</Pie><Tooltip /><Legend wrapperStyle={{ fontSize: 12 }} /></PieChart>
                 </ResponsiveContainer>
               </CardContent>
             </Card>
