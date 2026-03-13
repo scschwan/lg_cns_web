@@ -269,7 +269,7 @@ function RatioDetailModal({ open, onClose, title, data }) {
         </DialogHeader>
         <div className="flex-1 overflow-y-auto">
           <div className="flex flex-col items-center gap-6 py-4">
-            <ResponsiveContainer width="100%" height={260}>
+            <ResponsiveContainer width="100%" height={380}>
               <PieChart>
                 <Pie data={pieData} dataKey="amount" nameKey="name" cx="50%" cy="50%" innerRadius={60} outerRadius={110} paddingAngle={2} label={({ ratio }) => `${ratio}%`}>
                   {pieData.map((entry, idx) => {
@@ -391,10 +391,10 @@ function ChartPieWithLegend({ data, title }) {
   );
   const total = useMemo(() => visibleData.reduce((s, d) => s + (d.totalAmount || 0), 0), [visibleData]);
 
-  const pieData = visibleData.map(d => ({
-    name: d.name,
-    value: d.totalAmount || 0,
-  }));
+  const pieData = visibleData.map(d => {
+    const origIdx = sortedData.findIndex(s => s.name === d.name);
+    return { name: d.name, value: d.totalAmount || 0, origIdx };
+  });
 
   const toggleItem = (idx) => {
     setHiddenItems(prev => {
@@ -406,11 +406,13 @@ function ChartPieWithLegend({ data, title }) {
 
   return (
     <Card>
-      <CardHeader className="pb-2 px-5 pt-5">
-        <CardTitle className="text-sm font-semibold flex items-center gap-2">
-          <Eye className="w-4 h-4 text-muted-foreground" />{title}
-        </CardTitle>
-      </CardHeader>
+      {title && (
+        <CardHeader className="pb-2 px-5 pt-5">
+          <CardTitle className="text-sm font-semibold flex items-center gap-2">
+            <Eye className="w-4 h-4 text-muted-foreground" />{title}
+          </CardTitle>
+        </CardHeader>
+      )}
       <CardContent className="px-5 pb-5">
         <div className="flex items-start gap-6">
           <div className="relative">
@@ -418,7 +420,7 @@ function ChartPieWithLegend({ data, title }) {
               <PieChart>
                 <Pie data={pieData} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius={40} outerRadius={70} paddingAngle={2}>
                   {pieData.map((entry, idx) => {
-                    return <Cell key={idx} fill={CHART_COLORS[idx % CHART_COLORS.length]} />;
+                    return <Cell key={idx} fill={CHART_COLORS[entry.origIdx % CHART_COLORS.length]} />;
                   })}
                 </Pie>
                 <Tooltip formatter={(v) => formatAmount(v)} />
@@ -506,7 +508,7 @@ function PhaseNavigationBar({ stats, currentPhase, projectId, navigate }) {
   const currentIdx = phases.findIndex(p => p.key === currentPhase);
   const emptySlots = TOTAL_SLOTS - phases.length;
   return (
-    <div className="flex items-center gap-1.5 py-3 font-sans w-full">
+    <div className="flex items-center gap-1.5 py-3 font-pretendard w-full">
       {phases.map((phase, idx) => {
         const isActive = phase.key === currentPhase;
         const isPast = idx < currentIdx;
@@ -516,7 +518,7 @@ function PhaseNavigationBar({ stats, currentPhase, projectId, navigate }) {
             <button
               onClick={() => navigate(phase.path)}
               className={cn(
-                'flex-1 basis-0 flex flex-col items-center gap-1.5 px-3 py-3.5 rounded-lg font-sans transition-colors min-w-0',
+                'flex-1 basis-0 flex flex-col items-center gap-1.5 px-3 py-3.5 rounded-lg font-pretendard transition-colors min-w-0',
                 isActive && 'bg-blue-600 text-white',
                 isPast && 'bg-blue-50 text-blue-700 hover:bg-blue-100',
                 !isActive && !isPast && 'bg-muted/50 text-muted-foreground hover:bg-muted',
@@ -524,10 +526,10 @@ function PhaseNavigationBar({ stats, currentPhase, projectId, navigate }) {
             >
               <div className="flex items-center gap-1.5">
                 {isPast && <CheckCircle2 className="w-5 h-5 flex-shrink-0" />}
-                <span className="font-bold text-base whitespace-nowrap">{phase.label}</span>
+                <span className="font-bold text-xl whitespace-nowrap">{phase.label}</span>
               </div>
               {phase.line1 != null && (
-                <div className={cn('text-[15px] leading-snug text-center font-medium', isActive ? 'text-white/90' : 'text-black')}>
+                <div className={cn('text-[19px] leading-snug text-center font-medium', isActive ? 'text-white/90' : 'text-black')}>
                   <div>{phase.line1}</div>
                   <div>{phase.line2}</div>
                 </div>
@@ -1042,7 +1044,7 @@ export default function ShortListPage() {
                 <>
                   {/* 공급업체 차트 */}
                   {barData.length > 0 && (
-                    <div className="grid grid-cols-3 gap-4">
+                    <div className="grid grid-cols-2 gap-4">
                       <Card>
                         <CardHeader className="pb-2 px-5 pt-5">
                           <CardTitle className="text-sm font-semibold flex items-center gap-2">
@@ -1067,22 +1069,29 @@ export default function ShortListPage() {
                           </ResponsiveContainer>
                         </CardContent>
                       </Card>
-                      <div>
-                        <ChartPieWithLegend data={chartData.supplierBreakdown} title="공급업체별 금액 비율" />
-                        <div className="flex justify-end px-5 pb-3 -mt-2">
-                          <Button variant="ghost" size="sm" className="text-xs text-blue-600 h-7 px-2"
-                            onClick={() => setRatioDetailModal({ open: true, title: '공급업체별 금액 비율', data: barData })}>
-                            <Eye className="w-3 h-3 mr-1" />자세히 보기
-                          </Button>
-                        </div>
-                      </div>
-                      <TopNSummaryPie data={barData} title="공급업체 Top3 요약" />
+                      <Card>
+                        <CardHeader className="pb-2 px-5 pt-5">
+                          <div className="flex items-center justify-between">
+                            <CardTitle className="text-sm font-semibold flex items-center gap-2">
+                              <Eye className="w-4 h-4 text-muted-foreground" />
+                              공급업체별 금액 비율
+                            </CardTitle>
+                            <Button variant="ghost" size="sm" className="text-xs text-blue-600 h-7 px-2"
+                              onClick={() => setRatioDetailModal({ open: true, title: '공급업체별 금액 비율', data: barData })}>
+                              <Eye className="w-3 h-3 mr-1" />자세히 보기
+                            </Button>
+                          </div>
+                        </CardHeader>
+                        <CardContent className="px-5 pb-5">
+                          <ChartPieWithLegend data={chartData.supplierBreakdown} title="" />
+                        </CardContent>
+                      </Card>
                     </div>
                   )}
 
                   {/* 코스트센터 차트 */}
                   {costCenterBarData.length > 0 && (
-                    <div className="grid grid-cols-3 gap-4">
+                    <div className="grid grid-cols-2 gap-4">
                       <Card>
                         <CardHeader className="pb-2 px-5 pt-5">
                           <CardTitle className="text-sm font-semibold flex items-center gap-2">
@@ -1107,16 +1116,23 @@ export default function ShortListPage() {
                           </ResponsiveContainer>
                         </CardContent>
                       </Card>
-                      <div>
-                        <ChartPieWithLegend data={chartData.costCenterBreakdown} title="코스트센터별 금액 비율" />
-                        <div className="flex justify-end px-5 pb-3 -mt-2">
-                          <Button variant="ghost" size="sm" className="text-xs text-blue-600 h-7 px-2"
-                            onClick={() => setRatioDetailModal({ open: true, title: '코스트센터별 금액 비율', data: costCenterBarData })}>
-                            <Eye className="w-3 h-3 mr-1" />자세히 보기
-                          </Button>
-                        </div>
-                      </div>
-                      <TopNSummaryPie data={costCenterBarData} title="코스트센터 Top3 요약" />
+                      <Card>
+                        <CardHeader className="pb-2 px-5 pt-5">
+                          <div className="flex items-center justify-between">
+                            <CardTitle className="text-sm font-semibold flex items-center gap-2">
+                              <Eye className="w-4 h-4 text-muted-foreground" />
+                              코스트센터별 금액 비율
+                            </CardTitle>
+                            <Button variant="ghost" size="sm" className="text-xs text-blue-600 h-7 px-2"
+                              onClick={() => setRatioDetailModal({ open: true, title: '코스트센터별 금액 비율', data: costCenterBarData })}>
+                              <Eye className="w-3 h-3 mr-1" />자세히 보기
+                            </Button>
+                          </div>
+                        </CardHeader>
+                        <CardContent className="px-5 pb-5">
+                          <ChartPieWithLegend data={chartData.costCenterBreakdown} title="" />
+                        </CardContent>
+                      </Card>
                     </div>
                   )}
                 </>

@@ -38,6 +38,12 @@ const STATUS_MAP = {
   '완료': { color: 'bg-green-100 text-green-700', icon: CheckCircle2 },
 };
 const STATUS_OPTIONS = ['진행 중', '검토 중', '보류', '완료'];
+const STATUS_COLORS = {
+  '진행 중': '#3b82f6',  // blue
+  '검토 중': '#f59e0b',  // amber
+  '보류': '#6b7280',     // gray
+  '완료': '#10b981',     // green
+};
 
 const formatAmount = (v) => {
   if (v >= 100000000) return (v / 100000000).toFixed(1) + '억';
@@ -384,21 +390,58 @@ function TaskEditModal({ open, onClose, task, onSave, projectId }) {
 }
 
 /* ====== Documents Modal ====== */
-function TaskDocumentsModal({ open, onClose, task, projectId }) {
+function TaskDocumentsModal({ open, onClose, task, projectId, isEditor }) {
   const [documents, setDocuments] = useState([]);
+  const [addLinkOpen, setAddLinkOpen] = useState(false);
+  const [newLinkUrl, setNewLinkUrl] = useState('');
+  const [newLinkLabel, setNewLinkLabel] = useState('');
+  const [uploading, setUploading] = useState(false);
+  const fileInputRef = React.useRef(null);
+
+  const loadDocs = () => {
+    if (task) costReductionService.getTaskDocuments(projectId, task.id).then(setDocuments).catch(console.error);
+  };
+
   useEffect(() => {
-    if (task && open) {
-      costReductionService.getTaskDocuments(projectId, task.id).then(setDocuments).catch(console.error);
-    }
+    if (task && open) loadDocs();
   }, [task, open, projectId]);
+
+  const handleAddLink = async () => {
+    if (!newLinkUrl.trim()) return;
+    try {
+      await costReductionService.addTaskLink(projectId, task.id, { url: newLinkUrl.trim(), label: newLinkLabel.trim() || newLinkUrl.trim() });
+      setNewLinkUrl(''); setNewLinkLabel(''); setAddLinkOpen(false);
+      loadDocs();
+    } catch (e) { alert('링크 추가 실패: ' + (e.response?.data?.message || e.message)); }
+  };
+
+  const handleUploadFiles = async (files) => {
+    setUploading(true);
+    try {
+      for (const file of files) {
+        const urlRes = await costReductionService.getTaskUploadUrl(projectId, task.id, file.name);
+        await fetch(urlRes.presignedUrl, { method: 'PUT', body: file });
+      }
+      loadDocs();
+    } catch (e) { alert('파일 업로드 실패: ' + (e.response?.data?.message || e.message)); }
+    finally { setUploading(false); }
+  };
+
+  const handleDeleteDoc = async (docId) => {
+    if (!window.confirm('이 자료를 삭제하시겠습니까?')) return;
+    try {
+      await costReductionService.deleteTaskDocument(projectId, task.id, docId);
+      loadDocs();
+    } catch (e) { alert('삭제 실패: ' + (e.response?.data?.message || e.message)); }
+  };
 
   if (!task) return null;
   return (
     <Dialog open={open} onOpenChange={onClose}>
       <DialogContent className="max-w-lg max-h-[80vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-2"><FileText className="w-5 h-5 text-indigo-600" />자료 조회 - {task.taskName}</DialogTitle>
-          <DialogDescription>등록된 자료 목록을 확인합니다.</DialogDescription>
+          <DialogTitle className="flex items-center gap-2"><FileText className="w-5 h-5 text-indigo-600" />자료 관리 - {task.taskName}</DialogTitle>
+          <DialogDescription>등록된 자료를 조회하고 추가/삭제할 수 있습니다.</DialogDescription>
         </DialogHeader>
         <div className="space-y-2">
           {documents.length === 0 && <div className="text-center text-sm text-muted-foreground py-8">등록된 자료가 없습니다.</div>}
@@ -412,11 +455,46 @@ function TaskDocumentsModal({ open, onClose, task, projectId }) {
                 <p className="text-xs text-muted-foreground truncate">{doc.name}</p>
               </div>
               <Badge variant="outline" className={cn('text-[10px] flex-shrink-0', doc.type === 'link' ? 'border-blue-300 text-blue-600' : 'border-green-300 text-green-600')}>{doc.type === 'link' ? '링크' : '파일'}</Badge>
-              {doc.type === 'link' && doc.url && <Button variant="ghost" size="sm" className="h-7 w-7 p-0 flex-shrink-0" onClick={() => window.open(doc.url, '_blank')}><ExternalLink className="w-3.5 h-3.5 text-muted-foreground" /></Button>}
+              {doc.url && <Button variant="ghost" size="sm" className="h-7 w-7 p-0 flex-shrink-0" onClick={() => window.open(doc.url, '_blank')}><ExternalLink className="w-3.5 h-3.5 text-muted-foreground" /></Button>}
+              {isEditor && <Button variant="ghost" size="sm" className="h-7 w-7 p-0 flex-shrink-0 text-red-500 hover:text-red-700" onClick={() => handleDeleteDoc(doc.id)}><Trash2 className="w-3.5 h-3.5" /></Button>}
             </div>
           ))}
         </div>
-        <DialogFooter><div className="flex items-center justify-between w-full"><span className="text-xs text-muted-foreground">총 {documents.length}건의 자료</span><Button variant="outline" onClick={() => onClose(false)}>닫기</Button></div></DialogFooter>
+
+        {/* 링크 추가 인라인 */}
+        {addLinkOpen && (
+          <div className="border rounded-lg p-3 space-y-2 bg-blue-50/50">
+            <Label className="text-xs">URL</Label>
+            <Input value={newLinkUrl} onChange={e => setNewLinkUrl(e.target.value)} placeholder="https://..." className="h-8 text-sm" />
+            <Label className="text-xs">라벨 (선택)</Label>
+            <Input value={newLinkLabel} onChange={e => setNewLinkLabel(e.target.value)} placeholder="링크 설명" className="h-8 text-sm" />
+            <div className="flex gap-2 justify-end">
+              <Button variant="outline" size="sm" onClick={() => { setAddLinkOpen(false); setNewLinkUrl(''); setNewLinkLabel(''); }}>취소</Button>
+              <Button size="sm" onClick={handleAddLink} disabled={!newLinkUrl.trim()}>추가</Button>
+            </div>
+          </div>
+        )}
+
+        <input type="file" ref={fileInputRef} multiple className="hidden" onChange={e => { if (e.target.files?.length) handleUploadFiles([...e.target.files]); e.target.value = ''; }} />
+
+        <DialogFooter>
+          <div className="flex items-center justify-between w-full">
+            <span className="text-xs text-muted-foreground">총 {documents.length}건의 자료</span>
+            <div className="flex gap-2">
+              {isEditor && (
+                <>
+                  <Button variant="outline" size="sm" onClick={() => setAddLinkOpen(true)} disabled={addLinkOpen}>
+                    <Link2 className="w-3 h-3 mr-1" />링크 추가
+                  </Button>
+                  <Button variant="outline" size="sm" onClick={() => fileInputRef.current?.click()} disabled={uploading}>
+                    {uploading ? <Loader2 className="w-3 h-3 mr-1 animate-spin" /> : <Plus className="w-3 h-3 mr-1" />}파일 업로드
+                  </Button>
+                </>
+              )}
+              <Button variant="outline" onClick={() => onClose(false)}>닫기</Button>
+            </div>
+          </div>
+        </DialogFooter>
       </DialogContent>
     </Dialog>
   );
@@ -454,7 +532,7 @@ function PhaseNavigationBar({ stats, summary, currentPhase, projectId, navigate 
   const currentIdx = phases.findIndex(p => p.key === currentPhase);
   const emptySlots = TOTAL_SLOTS - phases.length;
   return (
-    <div className="flex items-center gap-1.5 py-3 font-sans w-full">
+    <div className="flex items-center gap-1.5 py-3 font-pretendard w-full">
       {phases.map((phase, idx) => {
         const isActive = phase.key === currentPhase;
         const isPast = idx < currentIdx;
@@ -464,7 +542,7 @@ function PhaseNavigationBar({ stats, summary, currentPhase, projectId, navigate 
             <button
               onClick={() => navigate(phase.path)}
               className={cn(
-                'flex-1 basis-0 flex flex-col items-center gap-1.5 px-3 py-3.5 rounded-lg font-sans transition-colors min-w-0',
+                'flex-1 basis-0 flex flex-col items-center gap-1.5 px-3 py-3.5 rounded-lg font-pretendard transition-colors min-w-0',
                 isActive && 'bg-blue-600 text-white',
                 isPast && 'bg-blue-50 text-blue-700 hover:bg-blue-100',
                 !isActive && !isPast && 'bg-muted/50 text-muted-foreground hover:bg-muted',
@@ -472,10 +550,10 @@ function PhaseNavigationBar({ stats, summary, currentPhase, projectId, navigate 
             >
               <div className="flex items-center gap-1.5">
                 {isPast && <CheckCircle2 className="w-5 h-5 flex-shrink-0" />}
-                <span className="font-bold text-base whitespace-nowrap">{phase.label}</span>
+                <span className="font-bold text-xl whitespace-nowrap">{phase.label}</span>
               </div>
               {phase.line1 != null && (
-                <div className={cn('text-[15px] leading-snug text-center font-medium', isActive ? 'text-white/90' : 'text-black')}>
+                <div className={cn('text-[19px] leading-snug text-center font-medium', isActive ? 'text-white/90' : 'text-black')}>
                   <div>{phase.line1}</div>
                   <div>{phase.line2}</div>
                 </div>
@@ -644,7 +722,7 @@ export default function AbleTaskManagePage() {
               <CardHeader className="pb-2 px-5 pt-4"><CardTitle className="text-sm font-semibold">과제 상태별 현황</CardTitle></CardHeader>
               <CardContent className="px-2 pb-4">
                 <ResponsiveContainer width="100%" height={300}>
-                  <PieChart><Pie data={statusChartData} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius={50} outerRadius={90} paddingAngle={3} label={({ name, value }) => `${name} ${value}`}>{statusChartData.map((_, idx) => <Cell key={idx} fill={CHART_COLORS[idx]} />)}</Pie><Tooltip /><Legend wrapperStyle={{ fontSize: 12 }} /></PieChart>
+                  <PieChart><Pie data={statusChartData} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius={50} outerRadius={90} paddingAngle={3} label={({ name, value }) => `${name} ${value}`}>{statusChartData.map((entry, idx) => <Cell key={idx} fill={STATUS_COLORS[entry.name] || CHART_COLORS[idx]} />)}</Pie><Tooltip /><Legend wrapperStyle={{ fontSize: 12 }} /></PieChart>
                 </ResponsiveContainer>
               </CardContent>
             </Card>
@@ -731,7 +809,7 @@ export default function AbleTaskManagePage() {
 
       <TaskDetailModal open={!!detailTask} onClose={() => setDetailTask(null)} task={detailTask} projectId={projectId} />
       <TaskEditModal open={!!editTask} onClose={() => setEditTask(null)} task={editTask} onSave={handleEditSave} projectId={projectId} />
-      <TaskDocumentsModal open={!!docsTask} onClose={() => setDocsTask(null)} task={docsTask} projectId={projectId} />
+      <TaskDocumentsModal open={!!docsTask} onClose={() => setDocsTask(null)} task={docsTask} projectId={projectId} isEditor={isEditor} />
 
       {/* Delete Confirmation Dialog */}
       <Dialog open={!!deleteTask} onOpenChange={() => setDeleteTask(null)}>
