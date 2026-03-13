@@ -743,7 +743,7 @@ public class SessionDataService {
             if (idObj == null || idObj.toString().trim().isEmpty()) {
                 item.put("value", "__NULL__");
             } else {
-                item.put("value", idObj.toString());
+                item.put("value", formatValueForDisplay(idObj));
             }
             Object countObj = doc.get("count");
             item.put("count", countObj instanceof Number ? ((Number) countObj).longValue() : 0L);
@@ -769,7 +769,7 @@ public class SessionDataService {
             if (idObj == null || idObj.toString().trim().isEmpty()) {
                 item.put("value", "__NULL__");
             } else {
-                item.put("value", idObj.toString());
+                item.put("value", formatValueForDisplay(idObj));
             }
             Object countObj = doc.get("count");
             item.put("count", countObj instanceof Number ? ((Number) countObj).longValue() : 0L);
@@ -786,6 +786,47 @@ public class SessionDataService {
     }
 
     /**
+     * 숫자 타입의 소수점(.0) 정리하여 표시용 문자열 생성
+     */
+    private String formatValueForDisplay(Object value) {
+        if (value instanceof Double) {
+            double d = (Double) value;
+            if (d == Math.floor(d) && !Double.isInfinite(d)) {
+                return String.valueOf((long) d);
+            }
+            return String.valueOf(d);
+        }
+        if (value instanceof Float) {
+            float f = (Float) value;
+            if (f == Math.floor(f) && !Float.isInfinite(f)) {
+                return String.valueOf((long) f);
+            }
+            return String.valueOf(f);
+        }
+        return value.toString();
+    }
+
+    /**
+     * 문자열 값을 원래 타입(숫자)으로 변환하여 MongoDB 매칭용 목록 생성
+     */
+    private List<Object> convertValuesForMatching(List<String> stringValues) {
+        List<Object> matchValues = new ArrayList<>();
+        for (String v : stringValues) {
+            matchValues.add(v); // 문자열 그대로도 포함
+            try {
+                double d = Double.parseDouble(v);
+                matchValues.add(d);
+                if (d == Math.floor(d) && !Double.isInfinite(d)) {
+                    matchValues.add((long) d);
+                    matchValues.add((int) d);
+                }
+            } catch (NumberFormatException ignored) {
+            }
+        }
+        return matchValues;
+    }
+
+    /**
      * 특정 컬럼 값 기반으로 행 숨김 처리 (is_hidden = true)
      */
     public long hideByColumnValues(String sessionId, String columnName, List<String> values) {
@@ -799,6 +840,7 @@ public class SessionDataService {
         List<String> normalValues = values.stream()
                 .filter(v -> !"__NULL__".equals(v))
                 .collect(Collectors.toList());
+        List<Object> matchValues = convertValuesForMatching(normalValues);
 
         Criteria valueCriteria;
         if (hasNull && normalValues.isEmpty()) {
@@ -808,12 +850,12 @@ public class SessionDataService {
                     Criteria.where(fieldPath).exists(false));
         } else if (hasNull) {
             valueCriteria = new Criteria().orOperator(
-                    Criteria.where(fieldPath).in(normalValues),
+                    Criteria.where(fieldPath).in(matchValues),
                     Criteria.where(fieldPath).is(null),
                     Criteria.where(fieldPath).is(""),
                     Criteria.where(fieldPath).exists(false));
         } else {
-            valueCriteria = Criteria.where(fieldPath).in(normalValues);
+            valueCriteria = Criteria.where(fieldPath).in(matchValues);
         }
 
         Query query = new Query(new Criteria().andOperator(
@@ -845,6 +887,7 @@ public class SessionDataService {
         List<String> normalValues = values.stream()
                 .filter(v -> !"__NULL__".equals(v))
                 .collect(Collectors.toList());
+        List<Object> matchValues = convertValuesForMatching(normalValues);
 
         Criteria valueCriteria;
         if (hasNull && normalValues.isEmpty()) {
@@ -854,12 +897,12 @@ public class SessionDataService {
                     Criteria.where(fieldPath).exists(false));
         } else if (hasNull) {
             valueCriteria = new Criteria().orOperator(
-                    Criteria.where(fieldPath).in(normalValues),
+                    Criteria.where(fieldPath).in(matchValues),
                     Criteria.where(fieldPath).is(null),
                     Criteria.where(fieldPath).is(""),
                     Criteria.where(fieldPath).exists(false));
         } else {
-            valueCriteria = Criteria.where(fieldPath).in(normalValues);
+            valueCriteria = Criteria.where(fieldPath).in(matchValues);
         }
 
         Query query = new Query(new Criteria().andOperator(
