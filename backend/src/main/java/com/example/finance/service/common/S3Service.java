@@ -82,6 +82,33 @@ public class S3Service {
     }
 
     /**
+     * Presigned PUT URL 생성 (커스텀 S3 키 사용)
+     */
+    public String generatePresignedUploadUrl(String s3Key) {
+        log.info("Presigned Upload URL 생성: bucket={}, key={}", excelBucket, s3Key);
+
+        try (S3Presigner presigner = S3Presigner.builder()
+                .region(software.amazon.awssdk.regions.Region.of(region))
+                .build()) {
+
+            PutObjectRequest putObjectRequest = PutObjectRequest.builder()
+                    .bucket(excelBucket)
+                    .key(s3Key)
+                    .build();
+
+            PutObjectPresignRequest presignRequest = PutObjectPresignRequest.builder()
+                    .signatureDuration(Duration.ofHours(1))
+                    .putObjectRequest(putObjectRequest)
+                    .build();
+
+            PresignedPutObjectRequest presignedRequest = presigner.presignPutObject(presignRequest);
+            String url = presignedRequest.url().toString();
+            log.info("Presigned Upload URL 생성 완료: {}", url);
+            return url;
+        }
+    }
+
+    /**
      * S3 키 생성
      *
      * @param projectId 프로젝트 ID
