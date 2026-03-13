@@ -1051,7 +1051,6 @@ function DetailClusteringPage() {
                                 <Badge variant="outline" className="text-[9px] font-mono flex-shrink-0">#{c.clusterNumber}</Badge>
                                 <span className="truncate" title={c.clusterName}>{isMergingThis ? <span className="text-yellow-600 font-semibold">세부 병합중...</span> : isUnmergingThis ? <span className="text-red-600 font-semibold">해제중...</span> : truncateName(c.clusterName)}</span>
                               </div>
-                              <div className="flex flex-wrap gap-0.5 mt-0.5">{(c.keywords || []).slice(0, 4).map((k, i) => <Badge key={i} variant="secondary" className="text-[8px]">{k}</Badge>)}{(c.keywords || []).length > 4 && <Badge variant="secondary" className="text-[8px]">+{c.keywords.length - 4}</Badge>}</div>
                             </div>
                             <div className="text-right tabular-nums">{(c.count||0).toLocaleString()}</div>
                             <div className="text-right tabular-nums">{formatAmount(c.totalAmount||0)}</div>

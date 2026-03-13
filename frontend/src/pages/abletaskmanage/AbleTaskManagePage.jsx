@@ -4,7 +4,7 @@ import {
   Search, Edit2, Eye, Trash2, FolderKanban,
   TrendingUp, DollarSign, ClipboardList, CheckCircle2, Clock,
   AlertCircle, FileText, Link2, FileIcon, ExternalLink, X, Save, Loader2,
-  ArrowRight, ArrowUpDown, ArrowUp, ArrowDown, Plus, Pencil,
+  ArrowRight, ArrowUpDown, ArrowUp, ArrowDown, Plus, Pencil, Download,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -438,7 +438,7 @@ function TaskDocumentsModal({ open, onClose, task, projectId, isEditor }) {
   if (!task) return null;
   return (
     <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent className="max-w-lg max-h-[80vh] overflow-y-auto">
+      <DialogContent className="w-[900px] max-w-[900px] h-[80vh] max-h-[80vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2"><FileText className="w-5 h-5 text-indigo-600" />자료 관리 - {task.taskName}</DialogTitle>
           <DialogDescription>등록된 자료를 조회하고 추가/삭제할 수 있습니다.</DialogDescription>
@@ -451,11 +451,12 @@ function TaskDocumentsModal({ open, onClose, task, projectId, isEditor }) {
                 {doc.type === 'link' ? <Link2 className="w-4 h-4 text-blue-600" /> : <FileIcon className="w-4 h-4 text-green-600" />}
               </div>
               <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium truncate">{doc.label}</p>
-                <p className="text-xs text-muted-foreground truncate">{doc.name}</p>
+                <p className="text-sm font-medium truncate" title={doc.label}>{doc.label}</p>
+                <p className="text-xs text-muted-foreground truncate max-w-[500px]" title={doc.url || doc.name}>{doc.url || doc.name}</p>
               </div>
               <Badge variant="outline" className={cn('text-[10px] flex-shrink-0', doc.type === 'link' ? 'border-blue-300 text-blue-600' : 'border-green-300 text-green-600')}>{doc.type === 'link' ? '링크' : '파일'}</Badge>
-              {doc.url && <Button variant="ghost" size="sm" className="h-7 w-7 p-0 flex-shrink-0" onClick={() => window.open(doc.url, '_blank')}><ExternalLink className="w-3.5 h-3.5 text-muted-foreground" /></Button>}
+              {doc.url && <Button variant="ghost" size="sm" className="h-7 w-7 p-0 flex-shrink-0" onClick={() => window.open(doc.url, '_blank')} title="링크 열기"><ExternalLink className="w-3.5 h-3.5 text-muted-foreground" /></Button>}
+              {doc.url && doc.type === 'file' && <Button variant="ghost" size="sm" className="h-7 w-7 p-0 flex-shrink-0" onClick={() => { const a = document.createElement('a'); a.href = doc.url; a.download = doc.name || ''; document.body.appendChild(a); a.click(); document.body.removeChild(a); }} title="파일 다운로드"><Download className="w-3.5 h-3.5 text-green-600" /></Button>}
               {isEditor && <Button variant="ghost" size="sm" className="h-7 w-7 p-0 flex-shrink-0 text-red-500 hover:text-red-700" onClick={() => handleDeleteDoc(doc.id)}><Trash2 className="w-3.5 h-3.5" /></Button>}
             </div>
           ))}

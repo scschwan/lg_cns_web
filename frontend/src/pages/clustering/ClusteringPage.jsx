@@ -94,10 +94,6 @@ const MergedClusterRow = React.memo(function MergedClusterRow({
               : truncateName(cluster.clusterName)}
           </span>
         </div>
-        <div className="flex flex-wrap gap-0.5 mt-0.5">
-          {(cluster.keywords || []).slice(0, 5).map((k, i) => <Badge key={i} variant="secondary" className="text-[8px]">{k}</Badge>)}
-          {(cluster.keywordTotalCount || 0) > 5 && <Badge variant="secondary" className="text-[8px]">+{cluster.keywordTotalCount - 5}</Badge>}
-        </div>
       </div>
       <div className="text-right tabular-nums">{(cluster.count||0).toLocaleString()}</div>
       <div className="text-right tabular-nums">{formatAmount(cluster.totalAmount||0)}</div>
