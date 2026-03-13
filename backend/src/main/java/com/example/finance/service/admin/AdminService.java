@@ -303,17 +303,54 @@ public class AdminService {
         FileSession session = fileSessionRepository.findBySessionId(sessionId)
                 .orElseThrow(() -> new RuntimeException("세션을 찾을 수 없습니다"));
 
-        // session_data 컬렉션에서 해당 session_id 전부 삭제
         Query query = new Query(Criteria.where("session_id").is(sessionId));
-        mongoTemplate.remove(query, "session_data");
+
+        // session_data, column_mapping, process_data 삭제 (SessionDataService 사용)
+        sessionDataService.deleteSessionData(sessionId);
+        sessionDataService.deleteColumnMappings(sessionId);
+        sessionDataService.deleteProcessData(sessionId);
+
+        // clustering_results 삭제
+        mongoTemplate.remove(query, "clustering_results");
+        log.info("admin resetSession - clustering_results 삭제 완료: sessionId={}", sessionId);
+
+        // preprocessing_config 삭제
+        mongoTemplate.remove(query, "preprocessing_config");
+        log.info("admin resetSession - preprocessing_config 삭제 완료: sessionId={}", sessionId);
+
+        // process_view_data 삭제
+        mongoTemplate.remove(query, "process_view_data");
+        log.info("admin resetSession - process_view_data 삭제 완료: sessionId={}", sessionId);
+
+        // search_keyword_hierarchy 삭제
+        try {
+            mongoTemplate.remove(query, "search_keyword_hierarchy");
+            log.info("admin resetSession - search_keyword_hierarchy 삭제 완료: sessionId={}", sessionId);
+        } catch (Exception e) {
+            log.warn("admin resetSession - search_keyword_hierarchy 삭제 실패 (계속 진행): sessionId={}", sessionId, e);
+        }
+
+        // upload_sessions 삭제
+        try {
+            mongoTemplate.remove(query, "upload_sessions");
+            log.info("admin resetSession - upload_sessions 삭제 완료: sessionId={}", sessionId);
+        } catch (Exception e) {
+            log.warn("admin resetSession - upload_sessions 삭제 실패 (계속 진행): sessionId={}", sessionId, e);
+        }
 
         // FileSession 상태 초기화
         session.setIsCompleted(false);
         session.setCompletedAt(null);
         session.setCurrentStep(null);
         session.setProgressPercentage(0);
+        session.setExportPath(null);
+        if (session.getStepHistory() != null) {
+            session.getStepHistory().clear();
+        }
         session.setUpdatedAt(LocalDateTime.now());
         fileSessionRepository.save(session);
+
+        log.info("admin resetSession - 세션 초기화 완료: sessionId={}", sessionId);
 
         writeLog(adminId, "RESET_SESSION", "SESSION", sessionId,
                 session.getSessionName() + " 초기화");
