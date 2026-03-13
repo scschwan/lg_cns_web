@@ -884,7 +884,7 @@ function DataTransformPage() {
                             <SelectTrigger className="h-8 text-sm">
                               <SelectValue placeholder="키워드 선택" />
                             </SelectTrigger>
-                            <SelectContent>
+                            <SelectContent className="max-h-[300px] overflow-y-auto">
                               {keywordStats.map((stat) => (
                                 <SelectItem key={stat.keyword} value={stat.keyword}>
                                   {stat.keyword} ({stat.count})

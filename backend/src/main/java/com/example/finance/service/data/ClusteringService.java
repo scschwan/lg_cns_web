@@ -1162,7 +1162,47 @@ public class ClusteringService {
             throw new BusinessException("NO_CHILDREN", "하위 클러스터가 없습니다.");
         }
 
-        // ★ 최적화: saveAll → updateMulti 단일 쿼리로 자식 cluster_id 일괄 리셋
+        // ★ 세부 클러스터(sub-cluster)도 함께 병합 해제
+        // 자식 중 세부병합 부모(cluster_sub_id == cluster_number)인 것들의 번호 수집
+        List<Integer> childNumbers = children.stream()
+                .map(ClusteringResult::getClusterNumber)
+                .collect(Collectors.toList());
+
+        // 세부병합 부모 찾기: cluster_sub_id == cluster_number 인 자식들
+        List<ClusteringResult> subParents = children.stream()
+                .filter(c -> c.getClusterSubId() != null
+                        && c.getClusterSubId().equals(c.getClusterNumber()))
+                .collect(Collectors.toList());
+
+        if (!subParents.isEmpty()) {
+            List<Integer> subParentNumbers = subParents.stream()
+                    .map(ClusteringResult::getClusterNumber)
+                    .collect(Collectors.toList());
+            log.info("세부 클러스터 부모 {}개 발견, 함께 해제: {}", subParentNumbers.size(), subParentNumbers);
+
+            // 세부병합 자식들의 cluster_sub_id를 -1로 리셋
+            mongoTemplate.updateMulti(
+                    new Query(Criteria.where("session_id").is(sessionId)
+                            .and("cluster_sub_id").in(subParentNumbers)),
+                    new Update().set("cluster_sub_id", -1),
+                    "clustering_results");
+
+            // 세부병합 부모 레코드 삭제 (자기 자신이 cluster_sub_id인 가상 부모)
+            mongoTemplate.remove(
+                    new Query(Criteria.where("session_id").is(sessionId)
+                            .and("cluster_number").in(subParentNumbers)),
+                    "clustering_results");
+        }
+
+        // 나머지 자식의 cluster_sub_id도 -1로 리셋
+        mongoTemplate.updateMulti(
+                new Query(Criteria.where("session_id").is(sessionId)
+                        .and("cluster_number").in(childNumbers)
+                        .and("cluster_sub_id").ne(-1)),
+                new Update().set("cluster_sub_id", -1),
+                "clustering_results");
+
+        // ★ 자식 cluster_id 일괄 리셋
         mongoTemplate.updateMulti(
                 new Query(Criteria.where("session_id").is(sessionId)
                         .and("cluster_id").is(mergedClusterNumber)
@@ -1171,7 +1211,7 @@ public class ClusteringService {
                 "clustering_results");
         clusteringResultRepository.delete(merged);
 
-        log.info("병합 해제 완료: {}개 복원", children.size());
+        log.info("병합 해제 완료: {}개 복원 (세부클러스터 부모 {}개 포함)", children.size(), subParents.size());
 
         Map<String, Object> result = new HashMap<>();
         result.put("restoredCount", children.size());

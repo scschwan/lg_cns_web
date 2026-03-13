@@ -738,9 +738,13 @@ public class SessionDataService {
         List<Map<String, Object>> visibleValues = new ArrayList<>();
         for (Document doc : visibleResults) {
             Object idObj = doc.get("_id");
-            if (idObj == null) continue;
             Map<String, Object> item = new LinkedHashMap<>();
-            item.put("value", idObj.toString());
+            // null/빈 값은 __NULL__ 센티널로 표시
+            if (idObj == null || idObj.toString().trim().isEmpty()) {
+                item.put("value", "__NULL__");
+            } else {
+                item.put("value", idObj.toString());
+            }
             Object countObj = doc.get("count");
             item.put("count", countObj instanceof Number ? ((Number) countObj).longValue() : 0L);
             visibleValues.add(item);
@@ -761,9 +765,12 @@ public class SessionDataService {
         List<Map<String, Object>> hiddenValues = new ArrayList<>();
         for (Document doc : hiddenResults) {
             Object idObj = doc.get("_id");
-            if (idObj == null) continue;
             Map<String, Object> item = new LinkedHashMap<>();
-            item.put("value", idObj.toString());
+            if (idObj == null || idObj.toString().trim().isEmpty()) {
+                item.put("value", "__NULL__");
+            } else {
+                item.put("value", idObj.toString());
+            }
             Object countObj = doc.get("count");
             item.put("count", countObj instanceof Number ? ((Number) countObj).longValue() : 0L);
             hiddenValues.add(item);
@@ -787,9 +794,31 @@ public class SessionDataService {
         org.springframework.data.mongodb.core.query.Update update =
                 new org.springframework.data.mongodb.core.query.Update().set("is_hidden", true);
 
+        // __NULL__ 처리: null/빈 값도 매칭
+        boolean hasNull = values.contains("__NULL__");
+        List<String> normalValues = values.stream()
+                .filter(v -> !"__NULL__".equals(v))
+                .collect(Collectors.toList());
+
+        Criteria valueCriteria;
+        if (hasNull && normalValues.isEmpty()) {
+            valueCriteria = new Criteria().orOperator(
+                    Criteria.where(fieldPath).is(null),
+                    Criteria.where(fieldPath).is(""),
+                    Criteria.where(fieldPath).exists(false));
+        } else if (hasNull) {
+            valueCriteria = new Criteria().orOperator(
+                    Criteria.where(fieldPath).in(normalValues),
+                    Criteria.where(fieldPath).is(null),
+                    Criteria.where(fieldPath).is(""),
+                    Criteria.where(fieldPath).exists(false));
+        } else {
+            valueCriteria = Criteria.where(fieldPath).in(normalValues);
+        }
+
         Query query = new Query(new Criteria().andOperator(
                 Criteria.where("session_id").is(sessionId),
-                Criteria.where(fieldPath).in(values),
+                valueCriteria,
                 Criteria.where("is_hidden").ne(true)
         ));
 
@@ -811,9 +840,31 @@ public class SessionDataService {
         org.springframework.data.mongodb.core.query.Update update =
                 new org.springframework.data.mongodb.core.query.Update().set("is_hidden", false);
 
+        // __NULL__ 처리: null/빈 값도 매칭
+        boolean hasNull = values.contains("__NULL__");
+        List<String> normalValues = values.stream()
+                .filter(v -> !"__NULL__".equals(v))
+                .collect(Collectors.toList());
+
+        Criteria valueCriteria;
+        if (hasNull && normalValues.isEmpty()) {
+            valueCriteria = new Criteria().orOperator(
+                    Criteria.where(fieldPath).is(null),
+                    Criteria.where(fieldPath).is(""),
+                    Criteria.where(fieldPath).exists(false));
+        } else if (hasNull) {
+            valueCriteria = new Criteria().orOperator(
+                    Criteria.where(fieldPath).in(normalValues),
+                    Criteria.where(fieldPath).is(null),
+                    Criteria.where(fieldPath).is(""),
+                    Criteria.where(fieldPath).exists(false));
+        } else {
+            valueCriteria = Criteria.where(fieldPath).in(normalValues);
+        }
+
         Query query = new Query(new Criteria().andOperator(
                 Criteria.where("session_id").is(sessionId),
-                Criteria.where(fieldPath).in(values),
+                valueCriteria,
                 Criteria.where("is_hidden").is(true)
         ));
 

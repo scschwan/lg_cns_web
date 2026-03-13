@@ -19,7 +19,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
 import {
-  Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle,
+  Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from '@/components/ui/dialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Progress } from '@/components/ui/progress';
@@ -265,6 +265,7 @@ function ClusteringPage() {
   const [mergeActiveBlocking, setMergeActiveBlocking] = useState(false); // ★ 서버에서 병합 진행 중 차단
   const [unmerging, setUnmerging] = useState(false); // 해제 진행 중
   const [unmergingProgress, setUnmergingProgress] = useState(0); // 해제 진행률
+  const [autoMergeConfirm, setAutoMergeConfirm] = useState(null); // { type: 'keyword'|'supplier', items: [] }
   const [unmergingClusters, setUnmergingClusters] = useState(new Set()); // 현재 해제 중인 클러스터 번호들
   const [statistics, setStatistics] = useState({ totalRows: 0, unmergedCount: 0, unmergedTotalAmount: 0, mergedGroupCount: 0, hasSupplier: false });
   const [amountUnit, setAmountUnit] = useState('원');
@@ -1062,7 +1063,11 @@ function ClusteringPage() {
   const handleAutoMergeByKeywords = async () => {
     if (isViewer) return;
     if (kwCheckedSet.size === 0) { alert('키워드를 선택해주세요.'); return; }
-    if (!window.confirm(`선택한 ${kwCheckedSet.size}개 키워드의 클러스터를 자동 병합합니다.`)) return;
+    setAutoMergeConfirm({ type: 'keyword', items: [...kwCheckedSet] });
+  };
+
+  const executeAutoMergeByKeywords = async () => {
+    setAutoMergeConfirm(null);
     setMerging(true); setMergeOverlay(true); mergingProgressRef.current = 0;
     const total = kwCheckedSet.size; let done = 0;
     try {
@@ -1084,7 +1089,11 @@ function ClusteringPage() {
   const handleAutoMergeBySuppliers = async () => {
     if (isViewer) return;
     if (supCheckedSet.size === 0) { alert('공급업체를 선택해주세요.'); return; }
-    if (!window.confirm(`선택한 ${supCheckedSet.size}개 공급업체의 클러스터를 자동 병합합니다.`)) return;
+    setAutoMergeConfirm({ type: 'supplier', items: [...supCheckedSet] });
+  };
+
+  const executeAutoMergeBySuppliers = async () => {
+    setAutoMergeConfirm(null);
     setMerging(true); setMergeOverlay(true); mergingProgressRef.current = 0;
     const total = supCheckedSet.size; let done = 0;
     try {
@@ -1823,9 +1832,16 @@ function ClusteringPage() {
                       <CardHeader className="py-2 px-3 border-b flex-shrink-0">
                         <div className="flex items-center justify-between">
                           <CardTitle className="text-sm font-bold">키워드 통계 ({keywordStats.length}건)</CardTitle>
-                          <Button variant="ghost" size="sm" className="h-7 px-2" onClick={loadKwStats} disabled={kwLoading}>
-                            <RefreshCw className={`h-3 w-3 ${kwLoading ? 'animate-spin' : ''}`} />
-                          </Button>
+                          <div className="flex items-center gap-1">
+                            {kwCheckedSet.size > 0 && (
+                              <Button variant="outline" size="sm" className="h-7 px-2 text-xs text-red-600" onClick={() => setKwCheckedSet(new Set())}>
+                                모두 해제
+                              </Button>
+                            )}
+                            <Button variant="ghost" size="sm" className="h-7 px-2" onClick={loadKwStats} disabled={kwLoading}>
+                              <RefreshCw className={`h-3 w-3 ${kwLoading ? 'animate-spin' : ''}`} />
+                            </Button>
+                          </div>
                         </div>
                       </CardHeader>
                       <CardContent className="p-0 flex-1 overflow-auto">
@@ -1849,9 +1865,16 @@ function ClusteringPage() {
                         <CardHeader className="py-2 px-3 border-b flex-shrink-0">
                           <div className="flex items-center justify-between">
                             <CardTitle className="text-sm font-bold">공급업체 통계 ({supplierStats.length}건)</CardTitle>
-                            <Button variant="ghost" size="sm" className="h-7 px-2" onClick={loadSupStats} disabled={supLoading}>
-                              <RefreshCw className={`h-3 w-3 ${supLoading ? 'animate-spin' : ''}`} />
-                            </Button>
+                            <div className="flex items-center gap-1">
+                              {supCheckedSet.size > 0 && (
+                                <Button variant="outline" size="sm" className="h-7 px-2 text-xs text-red-600" onClick={() => setSupCheckedSet(new Set())}>
+                                  모두 해제
+                                </Button>
+                              )}
+                              <Button variant="ghost" size="sm" className="h-7 px-2" onClick={loadSupStats} disabled={supLoading}>
+                                <RefreshCw className={`h-3 w-3 ${supLoading ? 'animate-spin' : ''}`} />
+                              </Button>
+                            </div>
                           </div>
                         </CardHeader>
                         <CardContent className="p-0 flex-1 overflow-auto">
@@ -2242,6 +2265,34 @@ function ClusteringPage() {
               {undefinedMerging ? <><Loader2 className="h-4 w-4 mr-1 animate-spin" />병합 중...</> : '일괄 병합'}
             </Button>
           </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* 자동 병합 확인 다이얼로그 */}
+      <Dialog open={!!autoMergeConfirm} onOpenChange={() => setAutoMergeConfirm(null)}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>
+              {autoMergeConfirm?.type === 'keyword' ? '키워드' : '공급업체'} 자동 클러스터링 확인
+            </DialogTitle>
+            <DialogDescription>
+              선택한 {autoMergeConfirm?.items?.length || 0}개 항목의 클러스터를 자동 병합합니다.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="max-h-[300px] overflow-y-auto border rounded-md p-2 space-y-1">
+            {autoMergeConfirm?.items?.map((item, idx) => (
+              <div key={idx} className="text-sm px-2 py-1 bg-muted rounded">
+                {item}
+              </div>
+            ))}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setAutoMergeConfirm(null)}>취소</Button>
+            <Button onClick={() => {
+              if (autoMergeConfirm?.type === 'keyword') executeAutoMergeByKeywords();
+              else executeAutoMergeBySuppliers();
+            }}>확인</Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>
