@@ -164,32 +164,39 @@ function DocumentsModal({ open, onClose, task, projectId }) {
   if (!task) return null;
   return (
     <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent className="w-[900px] max-w-[900px] h-[80vh] max-h-[80vh] overflow-y-auto">
-        <DialogHeader>
+      <DialogContent className="w-[900px] max-w-[900px] h-[80vh] max-h-[80vh] flex flex-col p-0">
+        <DialogHeader className="px-6 pt-6 pb-3 flex-shrink-0">
           <DialogTitle className="flex items-center gap-2"><FileText className="w-5 h-5 text-violet-600" />자료 조회</DialogTitle>
           <DialogDescription>{task.taskName} - 총 {docs.length}건의 자료</DialogDescription>
         </DialogHeader>
-        <div className="space-y-2">
+        <div className="flex-1 overflow-y-auto px-6 space-y-2">
           {docs.length === 0 && <p className="text-sm text-muted-foreground text-center py-6">등록된 자료가 없습니다.</p>}
           {docs.map(doc => {
-            const truncText = (text, max = 20) => text && text.length > max ? text.slice(0, max) + '...' : text;
+            const truncText = (text, max = 40) => text && text.length > max ? text.slice(0, max) + '...' : text;
             return (
-            <div key={doc.id} className="flex items-center gap-3 rounded-lg border px-3 py-2.5 hover:bg-muted/40" style={{ tableLayout: 'fixed' }}>
+            <div key={doc.id} className="flex items-center gap-3 rounded-lg border px-3 py-2.5 hover:bg-muted/40">
               <div className={cn('w-8 h-8 rounded-md flex items-center justify-center flex-shrink-0', doc.type === 'link' ? 'bg-blue-100' : 'bg-green-100')}>
                 {doc.type === 'link' ? <Link2 className="w-4 h-4 text-blue-500 flex-shrink-0" /> : <FileIcon className="w-4 h-4 text-green-600 flex-shrink-0" />}
               </div>
-              <div className="flex-1 min-w-0" style={{ maxWidth: '600px' }}>
-                <p className="text-sm font-medium" title={doc.label}>{truncText(doc.label, 20)}</p>
-                <p className="text-xs text-muted-foreground" title={doc.url || doc.name}>{truncText(doc.url || doc.name, 20)}</p>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium" title={doc.label}>{truncText(doc.label, 40)}</p>
+                <p className="text-xs text-muted-foreground" title={doc.url || doc.name}>{truncText(doc.url || doc.name, 40)}</p>
               </div>
-              <Badge variant="outline" className={cn('text-[10px] px-1.5 flex-shrink-0', doc.type === 'link' ? 'border-blue-300 bg-blue-50 text-blue-600' : 'border-green-300 bg-green-50 text-green-600')}>{doc.type === 'link' ? '링크' : '파일'}</Badge>
-              {doc.type === 'link' && doc.url && <Button variant="ghost" size="sm" className="h-7 w-7 p-0 flex-shrink-0" onClick={() => window.open(doc.url, '_blank')} title="링크 열기"><ExternalLink className="w-3.5 h-3.5" /></Button>}
-              {doc.type === 'file' && <Button variant="ghost" size="sm" className="h-7 w-7 p-0 flex-shrink-0" onClick={async () => { try { const res = await costReductionService.getDocumentDownloadUrl(projectId, task.id, doc.id); const a = document.createElement('a'); a.href = res.downloadUrl; a.download = doc.name || ''; document.body.appendChild(a); a.click(); document.body.removeChild(a); } catch (e) { alert('다운로드 실패: ' + (e.response?.data?.message || e.message)); } }} title="파일 다운로드"><Download className="w-3.5 h-3.5 text-green-600" /></Button>}
+              <div className="flex items-center gap-1 flex-shrink-0 ml-auto">
+                <Badge variant="outline" className={cn('text-[10px] px-1.5', doc.type === 'link' ? 'border-blue-300 bg-blue-50 text-blue-600' : 'border-green-300 bg-green-50 text-green-600')}>{doc.type === 'link' ? '링크' : '파일'}</Badge>
+                {doc.type === 'link' && doc.url && <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={() => window.open(doc.url, '_blank')} title="링크 열기"><ExternalLink className="w-3.5 h-3.5" /></Button>}
+                {doc.type === 'file' && <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={async () => { try { const res = await costReductionService.getDocumentDownloadUrl(projectId, task.id, doc.id); const a = document.createElement('a'); a.href = res.downloadUrl; a.download = doc.name || ''; document.body.appendChild(a); a.click(); document.body.removeChild(a); } catch (e) { alert('다운로드 실패: ' + (e.response?.data?.message || e.message)); } }} title="파일 다운로드"><Download className="w-3.5 h-3.5 text-green-600" /></Button>}
+              </div>
             </div>
             );
           })}
         </div>
-        <DialogFooter><Button variant="outline" onClick={() => onClose(false)}>닫기</Button></DialogFooter>
+        <DialogFooter className="px-6 py-4 border-t flex-shrink-0">
+          <div className="flex items-center justify-between w-full">
+            <span className="text-xs text-muted-foreground">총 {docs.length}건의 자료</span>
+            <Button variant="outline" onClick={() => onClose(false)}>닫기</Button>
+          </div>
+        </DialogFooter>
       </DialogContent>
     </Dialog>
   );

@@ -254,7 +254,7 @@ public class AbleTaskService {
         String uploadId = UUID.randomUUID().toString().substring(0, 8);
         String s3Key = String.format("projects/%s/tasks/%s/documents/%s/%s",
                 projectId, taskId, uploadId, fileName);
-        String presignedUrl = s3Service.generatePresignedUrl(projectId, taskId, uploadId, fileName);
+        String presignedUrl = s3Service.generatePresignedUploadUrl(s3Key);
 
         // Document 사전 등록 (업로드 완료 전)
         TaskDocument doc = TaskDocument.builder()

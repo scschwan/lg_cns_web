@@ -438,50 +438,52 @@ function TaskDocumentsModal({ open, onClose, task, projectId, isEditor }) {
   if (!task) return null;
   return (
     <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent className="w-[900px] max-w-[900px] h-[80vh] max-h-[80vh] overflow-y-auto">
-        <DialogHeader>
+      <DialogContent className="w-[900px] max-w-[900px] h-[80vh] max-h-[80vh] flex flex-col p-0">
+        <DialogHeader className="px-6 pt-6 pb-3 flex-shrink-0">
           <DialogTitle className="flex items-center gap-2"><FileText className="w-5 h-5 text-indigo-600" />자료 관리 - {task.taskName}</DialogTitle>
           <DialogDescription>등록된 자료를 조회하고 추가/삭제할 수 있습니다.</DialogDescription>
         </DialogHeader>
-        <div className="space-y-2">
+        <div className="flex-1 overflow-y-auto px-6 space-y-2">
           {documents.length === 0 && <div className="text-center text-sm text-muted-foreground py-8">등록된 자료가 없습니다.</div>}
           {documents.map(doc => {
-            const truncText = (text, max = 20) => text && text.length > max ? text.slice(0, max) + '...' : text;
+            const truncText = (text, max = 40) => text && text.length > max ? text.slice(0, max) + '...' : text;
             return (
-            <div key={doc.id} className="flex items-center gap-3 p-3 rounded-lg border bg-muted/30 hover:bg-muted/60" style={{ tableLayout: 'fixed' }}>
+            <div key={doc.id} className="flex items-center gap-3 p-3 rounded-lg border bg-muted/30 hover:bg-muted/60">
               <div className={cn('w-8 h-8 rounded-md flex items-center justify-center flex-shrink-0', doc.type === 'link' ? 'bg-blue-100' : 'bg-green-100')}>
                 {doc.type === 'link' ? <Link2 className="w-4 h-4 text-blue-600" /> : <FileIcon className="w-4 h-4 text-green-600" />}
               </div>
-              <div className="flex-1 min-w-0" style={{ maxWidth: '600px' }}>
-                <p className="text-sm font-medium" title={doc.label}>{truncText(doc.label, 20)}</p>
-                <p className="text-xs text-muted-foreground" title={doc.url || doc.name}>{truncText(doc.url || doc.name, 20)}</p>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium" title={doc.label}>{truncText(doc.label, 40)}</p>
+                <p className="text-xs text-muted-foreground" title={doc.url || doc.name}>{truncText(doc.url || doc.name, 40)}</p>
               </div>
-              <Badge variant="outline" className={cn('text-[10px] flex-shrink-0', doc.type === 'link' ? 'border-blue-300 text-blue-600' : 'border-green-300 text-green-600')}>{doc.type === 'link' ? '링크' : '파일'}</Badge>
-              {doc.type === 'link' && doc.url && <Button variant="ghost" size="sm" className="h-7 w-7 p-0 flex-shrink-0" onClick={() => window.open(doc.url, '_blank')} title="링크 열기"><ExternalLink className="w-3.5 h-3.5 text-muted-foreground" /></Button>}
-              {doc.type === 'file' && <Button variant="ghost" size="sm" className="h-7 w-7 p-0 flex-shrink-0" onClick={async () => { try { const res = await costReductionService.getDocumentDownloadUrl(projectId, task.id, doc.id); const a = document.createElement('a'); a.href = res.downloadUrl; a.download = doc.name || ''; document.body.appendChild(a); a.click(); document.body.removeChild(a); } catch (e) { alert('다운로드 실패: ' + (e.response?.data?.message || e.message)); } }} title="파일 다운로드"><Download className="w-3.5 h-3.5 text-green-600" /></Button>}
-              {isEditor && <Button variant="ghost" size="sm" className="h-7 w-7 p-0 flex-shrink-0 text-red-500 hover:text-red-700" onClick={() => handleDeleteDoc(doc.id)}><Trash2 className="w-3.5 h-3.5" /></Button>}
+              <div className="flex items-center gap-1 flex-shrink-0 ml-auto">
+                <Badge variant="outline" className={cn('text-[10px]', doc.type === 'link' ? 'border-blue-300 text-blue-600' : 'border-green-300 text-green-600')}>{doc.type === 'link' ? '링크' : '파일'}</Badge>
+                {doc.type === 'link' && doc.url && <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={() => window.open(doc.url, '_blank')} title="링크 열기"><ExternalLink className="w-3.5 h-3.5 text-muted-foreground" /></Button>}
+                {doc.type === 'file' && <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={async () => { try { const res = await costReductionService.getDocumentDownloadUrl(projectId, task.id, doc.id); const a = document.createElement('a'); a.href = res.downloadUrl; a.download = doc.name || ''; document.body.appendChild(a); a.click(); document.body.removeChild(a); } catch (e) { alert('다운로드 실패: ' + (e.response?.data?.message || e.message)); } }} title="파일 다운로드"><Download className="w-3.5 h-3.5 text-green-600" /></Button>}
+                {isEditor && <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-red-500 hover:text-red-700" onClick={() => handleDeleteDoc(doc.id)} title="삭제"><Trash2 className="w-3.5 h-3.5" /></Button>}
+              </div>
             </div>
             );
           })}
-        </div>
 
-        {/* 링크 추가 인라인 */}
-        {addLinkOpen && (
-          <div className="border rounded-lg p-3 space-y-2 bg-blue-50/50">
-            <Label className="text-xs">URL</Label>
-            <Input value={newLinkUrl} onChange={e => setNewLinkUrl(e.target.value)} placeholder="https://..." className="h-8 text-sm" />
-            <Label className="text-xs">라벨 (선택)</Label>
-            <Input value={newLinkLabel} onChange={e => setNewLinkLabel(e.target.value)} placeholder="링크 설명" className="h-8 text-sm" />
-            <div className="flex gap-2 justify-end">
-              <Button variant="outline" size="sm" onClick={() => { setAddLinkOpen(false); setNewLinkUrl(''); setNewLinkLabel(''); }}>취소</Button>
-              <Button size="sm" onClick={handleAddLink} disabled={!newLinkUrl.trim()}>추가</Button>
+          {/* 링크 추가 인라인 */}
+          {addLinkOpen && (
+            <div className="border rounded-lg p-3 space-y-2 bg-blue-50/50">
+              <Label className="text-xs">URL</Label>
+              <Input value={newLinkUrl} onChange={e => setNewLinkUrl(e.target.value)} placeholder="https://..." className="h-8 text-sm" />
+              <Label className="text-xs">라벨 (선택)</Label>
+              <Input value={newLinkLabel} onChange={e => setNewLinkLabel(e.target.value)} placeholder="링크 설명" className="h-8 text-sm" />
+              <div className="flex gap-2 justify-end">
+                <Button variant="outline" size="sm" onClick={() => { setAddLinkOpen(false); setNewLinkUrl(''); setNewLinkLabel(''); }}>취소</Button>
+                <Button size="sm" onClick={handleAddLink} disabled={!newLinkUrl.trim()}>추가</Button>
+              </div>
             </div>
-          </div>
-        )}
+          )}
+        </div>
 
         <input type="file" ref={fileInputRef} multiple className="hidden" onChange={e => { if (e.target.files?.length) handleUploadFiles([...e.target.files]); e.target.value = ''; }} />
 
-        <DialogFooter>
+        <DialogFooter className="px-6 py-4 border-t flex-shrink-0">
           <div className="flex items-center justify-between w-full">
             <span className="text-xs text-muted-foreground">총 {documents.length}건의 자료</span>
             <div className="flex gap-2">
