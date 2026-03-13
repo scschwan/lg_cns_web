@@ -273,12 +273,19 @@ function PreprocessingPage() {
   // ===== 구분자 핸들러 =====
   const handleAddSeparator = () => {
     if (isViewer) return;
-    if (newSeparator.trim()) {
-      const updated = [...separatorList, { value: newSeparator.trim(), checked: true }];
-      setSeparatorList(updated);
+    // 공백(' ')도 유효한 구분자이므로 trim() 대신 빈 문자열만 체크
+    const value = newSeparator;
+    if (value === '') return;
+    // 중복 방지
+    if (separatorList.some(s => s.value === value)) {
+      alert('이미 존재하는 구분자입니다.');
       setNewSeparator('');
-      saveConfigToServer(updated, stopwordList);
+      return;
     }
+    const updated = [...separatorList, { value, checked: true }];
+    setSeparatorList(updated);
+    setNewSeparator('');
+    saveConfigToServer(updated, stopwordList);
   };
 
   const handleRemoveSeparator = () => {
@@ -300,12 +307,18 @@ function PreprocessingPage() {
   // ===== 불용어 핸들러 =====
   const handleAddStopword = () => {
     if (isViewer) return;
-    if (newStopword.trim()) {
-      const updated = [...stopwordList, { value: newStopword.trim(), checked: true }];
-      setStopwordList(updated);
+    if (!newStopword.trim()) return;
+    const value = newStopword.trim();
+    // 중복 방지
+    if (stopwordList.some(s => s.value === value)) {
+      alert('이미 존재하는 불용어입니다.');
       setNewStopword('');
-      saveConfigToServer(separatorList, updated);
+      return;
     }
+    const updated = [...stopwordList, { value, checked: true }];
+    setStopwordList(updated);
+    setNewStopword('');
+    saveConfigToServer(separatorList, updated);
   };
 
   const handleRemoveStopword = () => {
@@ -680,11 +693,28 @@ function PreprocessingPage() {
                       placeholder="신규 구분자 입력"
                       value={newSeparator}
                       onChange={(e) => setNewSeparator(e.target.value)}
-                      onKeyDown={(e) => { if (e.key === 'Enter') handleAddSeparator(); }}
+                      onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleAddSeparator(); } }}
                       disabled={isViewer}
                     />
                     <Button onClick={handleAddSeparator} className="bg-pink-600 hover:bg-pink-700 h-8 whitespace-nowrap" disabled={isViewer}>
                       <Plus className="h-3 w-3 mr-1" />추가
+                    </Button>
+                    <Button
+                      variant="outline"
+                      className="h-8 whitespace-nowrap text-xs"
+                      onClick={() => {
+                        if (isViewer) return;
+                        if (separatorList.some(s => s.value === ' ')) {
+                          alert('이미 공백 구분자가 존재합니다.');
+                          return;
+                        }
+                        const updated = [...separatorList, { value: ' ', checked: true }];
+                        setSeparatorList(updated);
+                        saveConfigToServer(updated, stopwordList);
+                      }}
+                      disabled={isViewer}
+                    >
+                      공백 추가
                     </Button>
                   </div>
                   <div className="border rounded-md p-2 max-h-[180px] overflow-y-auto bg-white">

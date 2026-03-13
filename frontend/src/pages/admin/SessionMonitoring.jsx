@@ -76,6 +76,8 @@ export default function SessionMonitoring() {
                             <TableHeader className="sticky top-0 bg-background z-10">
                                 <TableRow>
                                     <TableHead>세션명</TableHead>
+                                    <TableHead>프로젝트명</TableHead>
+                                    <TableHead>담당자</TableHead>
                                     <TableHead>프로젝트 ID</TableHead>
                                     <TableHead className="text-center">현재 Step</TableHead>
                                     <TableHead className="text-center">진행률</TableHead>
@@ -93,6 +95,8 @@ export default function SessionMonitoring() {
                                         status === '완료' ? 'bg-sky-50' : status === '진행중' ? 'bg-yellow-50' : ''
                                     }>
                                         <TableCell className="font-medium">{s.sessionName}</TableCell>
+                                        <TableCell className="text-sm">{s.projectName || '-'}</TableCell>
+                                        <TableCell className="text-sm">{s.managerName || '-'}</TableCell>
                                         <TableCell className="text-xs font-mono truncate max-w-[120px]">{s.projectId}</TableCell>
                                         <TableCell className="text-center">
                                             <Badge variant="outline">{getStepLabel(s.currentStep)}</Badge>
@@ -128,7 +132,7 @@ export default function SessionMonitoring() {
                                 })}
                                 {sessions.length === 0 && (
                                     <TableRow>
-                                        <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">
+                                        <TableCell colSpan={10} className="text-center py-8 text-muted-foreground">
                                             세션이 없습니다
                                         </TableCell>
                                     </TableRow>

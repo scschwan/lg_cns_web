@@ -225,9 +225,11 @@ export default function StartAnalysisPage() {
 
   // 데이터 삭제 탭: 로컬 like 필터링
   const filteredVisibleValues = useMemo(() => {
-    if (!deleteFilterKeyword.trim()) return distinctVisible;
+    // __NULL__ 항목은 별도 UI로 표시하므로 리스트에서 제외
+    const nonNullVisible = distinctVisible.filter(v => v.value !== '__NULL__');
+    if (!deleteFilterKeyword.trim()) return nonNullVisible;
     const kw = deleteFilterKeyword.trim().toLowerCase();
-    return distinctVisible.filter(item =>
+    return nonNullVisible.filter(item =>
       item.value.toLowerCase().includes(kw)
     );
   }, [distinctVisible, deleteFilterKeyword]);
@@ -317,7 +319,7 @@ export default function StartAnalysisPage() {
         newCols.supplier = containsMatch(columns, '공급업체');
       }
       if (!newCols.target) {
-        newCols.target = containsMatch(columns, '타겟');
+        newCols.target = containsMatch(columns, '적요') || containsMatch(columns, '타겟');
       }
       return newCols;
     });
@@ -495,7 +497,12 @@ export default function StartAnalysisPage() {
     if (showHiddenItems) {
       setDeleteCheckedSet(checked ? new Set(filteredHiddenValues.map(v => v.value)) : new Set());
     } else {
-      setDeleteCheckedSet(checked ? new Set(filteredVisibleValues.map(v => v.value)) : new Set());
+      const allValues = filteredVisibleValues.map(v => v.value);
+      // null 항목이 있으면 포함
+      if (distinctVisible.some(v => v.value === '__NULL__')) {
+        allValues.push('__NULL__');
+      }
+      setDeleteCheckedSet(checked ? new Set(allValues) : new Set());
     }
   };
 
@@ -580,7 +587,7 @@ export default function StartAnalysisPage() {
       costCenter: '코스트센터 열',
       supplier: '공급업체 열',
       amount: '금액 열',
-      target: '타겟 열',
+      target: '적요 열',
     };
     const missingCols = Object.entries(columnLabels)
       .filter(([key]) => !requiredColumns[key])
@@ -636,9 +643,14 @@ export default function StartAnalysisPage() {
       label: col,
       sortable: true,
       minWidth: 60,
-      render: (row) => (
-        <span className="whitespace-nowrap">{row[col] ?? ''}</span>
-      ),
+      render: (row) => {
+        const val = row[col];
+        if (val == null) return '';
+        if (typeof val === 'number') {
+          return <span className="whitespace-nowrap">{Math.round(val).toLocaleString()}</span>;
+        }
+        return <span className="whitespace-nowrap">{String(val)}</span>;
+      },
     }));
   }, [visibleColumns]);
 
@@ -907,13 +919,33 @@ export default function StartAnalysisPage() {
                       {/* Visible 항목 리스트 */}
                       {!deleteLoading && deleteBaseColumn && !showHiddenItems && (
                         <>
-                          {filteredVisibleValues.length > 0 && (
+                          {(filteredVisibleValues.length > 0 || distinctVisible.some(v => v.value === '__NULL__')) && (
                             <>
+                              {/* null 값 항목 체크박스 */}
+                              {distinctVisible.some(v => v.value === '__NULL__') && (
+                                <div className="flex items-center gap-2 p-2 bg-yellow-50 border border-yellow-200 rounded-md mb-2">
+                                  <Checkbox
+                                    id="select-null-values"
+                                    checked={deleteCheckedSet.has('__NULL__')}
+                                    onCheckedChange={(checked) => {
+                                      const newSet = new Set(deleteCheckedSet);
+                                      if (checked) newSet.add('__NULL__');
+                                      else newSet.delete('__NULL__');
+                                      setDeleteCheckedSet(newSet);
+                                    }}
+                                    disabled={isViewer}
+                                  />
+                                  <label htmlFor="select-null-values" className="text-xs cursor-pointer text-yellow-800 font-medium">
+                                    (null/빈 값) — {distinctVisible.find(v => v.value === '__NULL__')?.count || 0}건
+                                  </label>
+                                </div>
+                              )}
+
                               <div className="flex items-center justify-between">
                                 <div className="flex items-center gap-2">
                                   <Checkbox
                                     id="select-all-visible"
-                                    checked={deleteCheckedSet.size > 0 && deleteCheckedSet.size === filteredVisibleValues.length}
+                                    checked={deleteCheckedSet.size > 0 && deleteCheckedSet.size === filteredVisibleValues.length + (distinctVisible.some(v => v.value === '__NULL__') ? 1 : 0)}
                                     onCheckedChange={handleDeleteSelectAll}
                                     disabled={isViewer}
                                   />
@@ -1134,7 +1166,7 @@ export default function StartAnalysisPage() {
                     { label: '코스트센터 열', key: 'costCenter' },
                     { label: '공급업체 열', key: 'supplier' },
                     { label: '금액 열', key: 'amount' },
-                    { label: '타겟 열', key: 'target' },
+                    { label: '적요 열', key: 'target' },
                   ].map((field) => {
                     const usedCols = getUsedRequiredColumns(field.key);
                     const selectableCols = availableRequiredColumns.filter(

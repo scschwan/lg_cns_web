@@ -20,7 +20,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
 import {
-  Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle,
+  Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from '@/components/ui/dialog';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Progress } from '@/components/ui/progress';
@@ -156,6 +156,7 @@ function DetailClusteringPage() {
   const [unmerging, setUnmerging] = useState(false);
   const [unmergingProgress, setUnmergingProgress] = useState(0);
   const [unmergingClusters, setUnmergingClusters] = useState(new Set());
+  const [autoMergeConfirm, setAutoMergeConfirm] = useState(null); // { type: 'keyword'|'supplier', items: [] }
   const [statistics, setStatistics] = useState({ totalRows: 0, unmergedCount: 0, unmergedTotalAmount: 0, mergedGroupCount: 0, hasSupplier: false });
   const [amountUnit, setAmountUnit] = useState('원');
   const divisor = { '원': 1, '천원': 1000, '백만원': 1000000, '억원': 100000000 };
@@ -570,7 +571,11 @@ function DetailClusteringPage() {
 
   const handleAutoMergeByKeywords = async () => {
     if (kwCheckedSet.size === 0) { alert('키워드를 선택해주세요.'); return; }
-    if (!window.confirm(`선택한 ${kwCheckedSet.size}개 키워드의 클러스터를 자동 세부 병합합니다.`)) return;
+    setAutoMergeConfirm({ type: 'keyword', items: [...kwCheckedSet] });
+  };
+
+  const executeAutoMergeByKeywords = async () => {
+    setAutoMergeConfirm(null);
     setMerging(true); setMergeActiveBlocking(true); setMergingProgress(0);
     const total = kwCheckedSet.size; let done = 0;
     try {
@@ -600,7 +605,11 @@ function DetailClusteringPage() {
 
   const handleAutoMergeBySuppliers = async () => {
     if (supCheckedSet.size === 0) { alert('공급업체를 선택해주세요.'); return; }
-    if (!window.confirm(`선택한 ${supCheckedSet.size}개 공급업체의 클러스터를 자동 세부 병합합니다.`)) return;
+    setAutoMergeConfirm({ type: 'supplier', items: [...supCheckedSet] });
+  };
+
+  const executeAutoMergeBySuppliers = async () => {
+    setAutoMergeConfirm(null);
     setMerging(true); setMergeActiveBlocking(true); setMergingProgress(0);
     const total = supCheckedSet.size; let done = 0;
     try {
@@ -977,7 +986,7 @@ function DetailClusteringPage() {
                 <div className="flex-1 min-h-0 mt-2 relative">
                   <div className={`absolute inset-0 flex flex-col ${activeTab === 'keyword' ? '' : 'hidden'}`}>
                     <Card className="flex-1 flex flex-col min-h-0 overflow-hidden">
-                      <CardHeader className="py-2 px-3 border-b flex-shrink-0"><div className="flex items-center justify-between"><CardTitle className="text-sm font-bold">키워드 통계 ({keywordStats.length}건)</CardTitle><Button variant="ghost" size="sm" className="h-7 px-2" onClick={loadKwStats} disabled={kwLoading}><RefreshCw className={`h-3 w-3 ${kwLoading ? 'animate-spin' : ''}`} /></Button></div></CardHeader>
+                      <CardHeader className="py-2 px-3 border-b flex-shrink-0"><div className="flex items-center justify-between"><CardTitle className="text-sm font-bold">키워드 통계 ({keywordStats.length}건)</CardTitle><div className="flex items-center gap-1">{kwCheckedSet.size > 0 && (<Button variant="outline" size="sm" className="h-7 px-2 text-xs text-red-600" onClick={() => setKwCheckedSet(new Set())}>모두 해제</Button>)}<Button variant="ghost" size="sm" className="h-7 px-2" onClick={loadKwStats} disabled={kwLoading}><RefreshCw className={`h-3 w-3 ${kwLoading ? 'animate-spin' : ''}`} /></Button></div></div></CardHeader>
                       <CardContent className="p-0 flex-1 overflow-auto"><StatsListView items={sortedKwStats} checkedSet={kwCheckedSet} onCheckedChange={setKwCheckedSet} nameKey="keyword" nameLabel="키워드" sortField={kwSortField} sortDir={kwSortDir} onSort={handleKwSort} formatAmount={formatAmount} amountUnit={amountUnit} onDetail={handleKwDetail} isDragging={kwDragging} setIsDragging={setKwDragging} dragStartRef={kwDragRef} /></CardContent>
                     </Card>
                     <Button className="w-full mt-2 bg-purple-600 hover:bg-purple-700 h-8 text-sm font-semibold flex-shrink-0" onClick={handleAutoMergeByKeywords} disabled={kwCheckedSet.size === 0 || merging || isViewer}>{merging && <Loader2 className="h-3 w-3 mr-1 animate-spin" />}<GitMerge className="h-3 w-3 mr-1" />선택항목 자동 세부 클러스터링 ({kwCheckedSet.size})</Button>
@@ -985,7 +994,7 @@ function DetailClusteringPage() {
                   {statistics.hasSupplier && (
                     <div className={`absolute inset-0 flex flex-col ${activeTab === 'supplier' ? '' : 'hidden'}`}>
                       <Card className="flex-1 flex flex-col min-h-0 overflow-hidden">
-                        <CardHeader className="py-2 px-3 border-b flex-shrink-0"><div className="flex items-center justify-between"><CardTitle className="text-sm font-bold">공급업체 통계 ({supplierStats.length}건)</CardTitle><Button variant="ghost" size="sm" className="h-7 px-2" onClick={loadSupStats} disabled={supLoading}><RefreshCw className={`h-3 w-3 ${supLoading ? 'animate-spin' : ''}`} /></Button></div></CardHeader>
+                        <CardHeader className="py-2 px-3 border-b flex-shrink-0"><div className="flex items-center justify-between"><CardTitle className="text-sm font-bold">공급업체 통계 ({supplierStats.length}건)</CardTitle><div className="flex items-center gap-1">{supCheckedSet.size > 0 && (<Button variant="outline" size="sm" className="h-7 px-2 text-xs text-red-600" onClick={() => setSupCheckedSet(new Set())}>모두 해제</Button>)}<Button variant="ghost" size="sm" className="h-7 px-2" onClick={loadSupStats} disabled={supLoading}><RefreshCw className={`h-3 w-3 ${supLoading ? 'animate-spin' : ''}`} /></Button></div></div></CardHeader>
                         <CardContent className="p-0 flex-1 overflow-auto"><StatsListView items={sortedSupStats} checkedSet={supCheckedSet} onCheckedChange={setSupCheckedSet} nameKey="supplier" nameLabel="공급업체" sortField={supSortField} sortDir={supSortDir} onSort={handleSupSort} formatAmount={formatAmount} amountUnit={amountUnit} onDetail={handleSupDetail} isDragging={supDragging} setIsDragging={setSupDragging} dragStartRef={supDragRef} /></CardContent>
                       </Card>
                       <Button className="w-full mt-2 bg-purple-600 hover:bg-purple-700 h-8 text-sm font-semibold flex-shrink-0" onClick={handleAutoMergeBySuppliers} disabled={supCheckedSet.size === 0 || merging || isViewer}>{merging && <Loader2 className="h-3 w-3 mr-1 animate-spin" />}<GitMerge className="h-3 w-3 mr-1" />선택항목 자동 세부 클러스터링 ({supCheckedSet.size})</Button>
@@ -1144,6 +1153,34 @@ function DetailClusteringPage() {
               ));
             })()}
           </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* 자동 병합 확인 다이얼로그 */}
+      <Dialog open={!!autoMergeConfirm} onOpenChange={() => setAutoMergeConfirm(null)}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>
+              {autoMergeConfirm?.type === 'keyword' ? '키워드' : '공급업체'} 자동 세부 클러스터링 확인
+            </DialogTitle>
+            <DialogDescription>
+              선택한 {autoMergeConfirm?.items?.length || 0}개 항목의 클러스터를 자동 세부 병합합니다.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="max-h-[300px] overflow-y-auto border rounded-md p-2 space-y-1">
+            {autoMergeConfirm?.items?.map((item, idx) => (
+              <div key={idx} className="text-sm px-2 py-1 bg-muted rounded">
+                {item}
+              </div>
+            ))}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setAutoMergeConfirm(null)}>취소</Button>
+            <Button onClick={() => {
+              if (autoMergeConfirm?.type === 'keyword') executeAutoMergeByKeywords();
+              else executeAutoMergeBySuppliers();
+            }}>확인</Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>

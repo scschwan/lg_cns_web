@@ -233,11 +233,38 @@ public class AdminService {
                 .filter(s -> !Boolean.TRUE.equals(s.getIsDeleted()))
                 .collect(Collectors.toList());
 
+        // 프로젝트 정보 캐시 (projectId → Project)
+        Map<String, Project> projectCache = new HashMap<>();
+        // 사용자 정보 캐시 (userId → User)
+        Map<String, User> userCache = new HashMap<>();
+
         return sessions.stream().map(s -> {
             Map<String, Object> map = new LinkedHashMap<>();
             map.put("sessionId", s.getSessionId());
             map.put("sessionName", s.getSessionName());
             map.put("projectId", s.getProjectId());
+
+            // 프로젝트명 조회
+            String projectName = "";
+            String managerName = "";
+            if (s.getProjectId() != null) {
+                Project project = projectCache.computeIfAbsent(s.getProjectId(), pid ->
+                        projectRepository.findByProjectId(pid).orElse(null));
+                if (project != null) {
+                    projectName = project.getProjectName() != null ? project.getProjectName() : "";
+                    // 담당자: 프로젝트 생성자
+                    if (project.getCreatedBy() != null) {
+                        User creator = userCache.computeIfAbsent(project.getCreatedBy(), uid ->
+                                userRepository.findById(uid).orElse(null));
+                        if (creator != null) {
+                            managerName = creator.getName() != null ? creator.getName() : creator.getEmail();
+                        }
+                    }
+                }
+            }
+            map.put("projectName", projectName);
+            map.put("managerName", managerName);
+
             map.put("currentStep", s.getCurrentStep());
             map.put("progressPercentage", s.getProgressPercentage());
             map.put("isCompleted", s.getIsCompleted());
