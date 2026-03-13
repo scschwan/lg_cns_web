@@ -7,6 +7,8 @@ import org.springframework.stereotype.Service;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.*;
 import software.amazon.awssdk.services.s3.presigner.S3Presigner;
+import software.amazon.awssdk.services.s3.presigner.model.GetObjectPresignRequest;
+import software.amazon.awssdk.services.s3.presigner.model.PresignedGetObjectRequest;
 import software.amazon.awssdk.services.s3.presigner.model.PresignedPutObjectRequest;
 import software.amazon.awssdk.services.s3.presigner.model.PutObjectPresignRequest;
 
@@ -153,6 +155,33 @@ public class S3Service {
         } catch (Exception e) {
             log.error("S3 파일 임시 다운로드 실패: key={}, error={}", s3Key, e.getMessage(), e);
             throw new RuntimeException("S3 파일 임시 다운로드 실패: " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * Presigned GET URL 생성 (파일 다운로드용)
+     */
+    public String generateDownloadUrl(String s3Key) {
+        log.info("Presigned Download URL 생성: bucket={}, key={}", excelBucket, s3Key);
+
+        try (S3Presigner presigner = S3Presigner.builder()
+                .region(software.amazon.awssdk.regions.Region.of(region))
+                .build()) {
+
+            GetObjectRequest getObjectRequest = GetObjectRequest.builder()
+                    .bucket(excelBucket)
+                    .key(s3Key)
+                    .build();
+
+            GetObjectPresignRequest presignRequest = GetObjectPresignRequest.builder()
+                    .signatureDuration(Duration.ofHours(1))
+                    .getObjectRequest(getObjectRequest)
+                    .build();
+
+            PresignedGetObjectRequest presignedRequest = presigner.presignGetObject(presignRequest);
+            String url = presignedRequest.url().toString();
+            log.info("Presigned Download URL 생성 완료: {}", url);
+            return url;
         }
     }
 

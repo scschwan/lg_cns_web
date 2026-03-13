@@ -269,6 +269,11 @@ const costReductionService = {
     return response.data;
   },
 
+  getDocumentDownloadUrl: async (projectId, taskId, documentId) => {
+    const response = await api.get(`/api/projects/${projectId}/tasks/${taskId}/documents/${documentId}/download-url`);
+    return response.data;
+  },
+
   deleteTaskDocument: async (projectId, taskId, documentId) => {
     const response = await api.delete(`/api/projects/${projectId}/tasks/${taskId}/documents/${documentId}`);
     return response.data;

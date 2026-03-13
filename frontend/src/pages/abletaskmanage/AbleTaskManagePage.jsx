@@ -445,21 +445,24 @@ function TaskDocumentsModal({ open, onClose, task, projectId, isEditor }) {
         </DialogHeader>
         <div className="space-y-2">
           {documents.length === 0 && <div className="text-center text-sm text-muted-foreground py-8">등록된 자료가 없습니다.</div>}
-          {documents.map(doc => (
-            <div key={doc.id} className="flex items-center gap-3 p-3 rounded-lg border bg-muted/30 hover:bg-muted/60">
+          {documents.map(doc => {
+            const truncText = (text, max = 20) => text && text.length > max ? text.slice(0, max) + '...' : text;
+            return (
+            <div key={doc.id} className="flex items-center gap-3 p-3 rounded-lg border bg-muted/30 hover:bg-muted/60" style={{ tableLayout: 'fixed' }}>
               <div className={cn('w-8 h-8 rounded-md flex items-center justify-center flex-shrink-0', doc.type === 'link' ? 'bg-blue-100' : 'bg-green-100')}>
                 {doc.type === 'link' ? <Link2 className="w-4 h-4 text-blue-600" /> : <FileIcon className="w-4 h-4 text-green-600" />}
               </div>
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium truncate" title={doc.label}>{doc.label}</p>
-                <p className="text-xs text-muted-foreground truncate max-w-[500px]" title={doc.url || doc.name}>{doc.url || doc.name}</p>
+              <div className="flex-1 min-w-0" style={{ maxWidth: '600px' }}>
+                <p className="text-sm font-medium" title={doc.label}>{truncText(doc.label, 20)}</p>
+                <p className="text-xs text-muted-foreground" title={doc.url || doc.name}>{truncText(doc.url || doc.name, 20)}</p>
               </div>
               <Badge variant="outline" className={cn('text-[10px] flex-shrink-0', doc.type === 'link' ? 'border-blue-300 text-blue-600' : 'border-green-300 text-green-600')}>{doc.type === 'link' ? '링크' : '파일'}</Badge>
-              {doc.url && <Button variant="ghost" size="sm" className="h-7 w-7 p-0 flex-shrink-0" onClick={() => window.open(doc.url, '_blank')} title="링크 열기"><ExternalLink className="w-3.5 h-3.5 text-muted-foreground" /></Button>}
-              {doc.url && doc.type === 'file' && <Button variant="ghost" size="sm" className="h-7 w-7 p-0 flex-shrink-0" onClick={() => { const a = document.createElement('a'); a.href = doc.url; a.download = doc.name || ''; document.body.appendChild(a); a.click(); document.body.removeChild(a); }} title="파일 다운로드"><Download className="w-3.5 h-3.5 text-green-600" /></Button>}
+              {doc.type === 'link' && doc.url && <Button variant="ghost" size="sm" className="h-7 w-7 p-0 flex-shrink-0" onClick={() => window.open(doc.url, '_blank')} title="링크 열기"><ExternalLink className="w-3.5 h-3.5 text-muted-foreground" /></Button>}
+              {doc.type === 'file' && <Button variant="ghost" size="sm" className="h-7 w-7 p-0 flex-shrink-0" onClick={async () => { try { const res = await costReductionService.getDocumentDownloadUrl(projectId, task.id, doc.id); const a = document.createElement('a'); a.href = res.downloadUrl; a.download = doc.name || ''; document.body.appendChild(a); a.click(); document.body.removeChild(a); } catch (e) { alert('다운로드 실패: ' + (e.response?.data?.message || e.message)); } }} title="파일 다운로드"><Download className="w-3.5 h-3.5 text-green-600" /></Button>}
               {isEditor && <Button variant="ghost" size="sm" className="h-7 w-7 p-0 flex-shrink-0 text-red-500 hover:text-red-700" onClick={() => handleDeleteDoc(doc.id)}><Trash2 className="w-3.5 h-3.5" /></Button>}
             </div>
-          ))}
+            );
+          })}
         </div>
 
         {/* 링크 추가 인라인 */}
