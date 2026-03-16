@@ -35,6 +35,11 @@ const CHART_COLORS = [
   '#e11d48', '#84cc16', '#a855f7', '#0ea5e9', '#d946ef',
 ];
 
+const TOOLTIP_STYLE = {
+  contentStyle: { backgroundColor: '#fff', border: '1px solid #e5e7eb', borderRadius: '8px', opacity: 1, fontFamily: 'Pretendard, sans-serif' },
+  wrapperStyle: { zIndex: 100 },
+};
+
 const formatAmount = (v) => {
   if (v >= 100000000) return (v / 100000000).toFixed(1) + '억';
   if (v >= 10000) return (v / 10000).toFixed(0) + '만';
@@ -277,7 +282,7 @@ function RatioDetailModal({ open, onClose, title, data }) {
                     return <Cell key={idx} fill={CHART_COLORS[origIdx % CHART_COLORS.length]} />;
                   })}
                 </Pie>
-                <Tooltip formatter={(v) => formatAmount(v)} />
+                <Tooltip formatter={(v) => formatAmount(v)} {...TOOLTIP_STYLE} />
               </PieChart>
             </ResponsiveContainer>
             <div className="w-full space-y-2 px-4">
@@ -349,7 +354,7 @@ function TopNSummaryPie({ data, title }) {
                     <Cell key={idx} fill={COLORS[idx]} />
                   ))}
                 </Pie>
-                <Tooltip formatter={(v) => formatAmount(v)} />
+                <Tooltip formatter={(v) => formatAmount(v)} {...TOOLTIP_STYLE} />
               </PieChart>
             </ResponsiveContainer>
             <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
@@ -423,7 +428,7 @@ function ChartPieWithLegend({ data, title }) {
                     return <Cell key={idx} fill={CHART_COLORS[entry.origIdx % CHART_COLORS.length]} />;
                   })}
                 </Pie>
-                <Tooltip formatter={(v) => formatAmount(v)} />
+                <Tooltip formatter={(v) => formatAmount(v)} {...TOOLTIP_STYLE} />
               </PieChart>
             </ResponsiveContainer>
             <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
@@ -466,19 +471,19 @@ function SelectedItemCard({ stats, onRawDataClick }) {
         <CardTitle className="text-sm font-semibold">선택 항목 상세</CardTitle>
       </CardHeader>
       <CardContent className="px-5 pb-4">
-        <div className="grid grid-cols-5 gap-3">
+        <div className="grid grid-cols-5 gap-4">
           {items.map((item, idx) => (
             <div
               key={idx}
-              className={cn('flex items-center gap-2', item.clickable && onRawDataClick && 'cursor-pointer hover:bg-blue-50 rounded-lg p-1 -m-1 transition-colors')}
+              className={cn('flex items-center gap-3', item.clickable && onRawDataClick && 'cursor-pointer hover:bg-blue-50 rounded-lg p-1 -m-1 transition-colors')}
               onClick={item.clickable ? onRawDataClick : undefined}
             >
-              <div className={cn('w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0', item.color)}>
-                <item.icon className="w-3.5 h-3.5 text-white" />
+              <div className={cn('w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0', item.color)}>
+                <item.icon className="w-5 h-5 text-white" />
               </div>
               <div>
-                <p className="text-[10px] font-bold text-muted-foreground">{item.label}</p>
-                <p className="text-sm font-bold tabular-nums">{item.value}</p>
+                <p className="text-xs font-bold text-muted-foreground">{item.label}</p>
+                <p className="text-xl font-bold tabular-nums">{item.value}</p>
               </div>
             </div>
           ))}
@@ -892,55 +897,55 @@ export default function ShortListPage() {
         <div className="p-6 space-y-6">
 
           {/* Stats Row */}
-          <div className="grid grid-cols-4 gap-3">
+          <div className="grid grid-cols-4 gap-4">
             <Card>
-              <CardContent className="p-3">
-                <div className="flex items-center gap-2">
-                  <div className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 bg-blue-500">
-                    <ListChecks className="w-4 h-4 text-white" />
+              <CardContent className="p-4">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0 bg-blue-500">
+                    <ListChecks className="w-5 h-5 text-white" />
                   </div>
                   <div>
                     <p className="text-xs font-bold text-muted-foreground">Long List 항목</p>
-                    <p className="text-lg font-bold tabular-nums">{dynamicStats.checkableItemCount}</p>
+                    <p className="text-xl font-bold tabular-nums">{dynamicStats.checkableItemCount}</p>
                   </div>
                 </div>
               </CardContent>
             </Card>
             <Card>
-              <CardContent className="p-3">
-                <div className="flex items-center gap-2">
-                  <div className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 bg-orange-500">
-                    <DollarSign className="w-4 h-4 text-white" />
+              <CardContent className="p-4">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0 bg-orange-500">
+                    <DollarSign className="w-5 h-5 text-white" />
                   </div>
                   <div>
                     <p className="text-xs font-bold text-muted-foreground">선택 금액 합계</p>
-                    <p className="text-lg font-bold tabular-nums">{formatAmount(dynamicStats.selectedAmount)}</p>
+                    <p className="text-xl font-bold tabular-nums">{formatAmount(dynamicStats.selectedAmount)}</p>
                   </div>
                 </div>
               </CardContent>
             </Card>
             <Card>
-              <CardContent className="p-3">
-                <div className="flex items-center gap-2">
-                  <div className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 bg-emerald-500">
-                    <TrendingUp className="w-4 h-4 text-white" />
+              <CardContent className="p-4">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0 bg-emerald-500">
+                    <TrendingUp className="w-5 h-5 text-white" />
                   </div>
                   <div>
                     <p className="text-xs font-bold text-muted-foreground">전체 대비 비율</p>
-                    <p className="text-lg font-bold tabular-nums text-green-600">{dynamicStats.totalRatio}%</p>
+                    <p className="text-xl font-bold tabular-nums text-green-600">{dynamicStats.totalRatio}%</p>
                   </div>
                 </div>
               </CardContent>
             </Card>
             <Card>
-              <CardContent className="p-3">
-                <div className="flex items-center gap-2">
-                  <div className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 bg-rose-500">
-                    <Layers className="w-4 h-4 text-white" />
+              <CardContent className="p-4">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0 bg-rose-500">
+                    <Layers className="w-5 h-5 text-white" />
                   </div>
                   <div>
                     <p className="text-xs font-bold text-muted-foreground">선택 항목 수</p>
-                    <p className="text-lg font-bold tabular-nums">{dynamicStats.leafCheckedCount}</p>
+                    <p className="text-xl font-bold tabular-nums">{dynamicStats.leafCheckedCount}</p>
                   </div>
                 </div>
               </CardContent>
@@ -1058,7 +1063,7 @@ export default function ShortListPage() {
                               <CartesianGrid strokeDasharray="3 3" />
                               <XAxis type="number" tick={{ fontSize: 10 }} unit="억" />
                               <YAxis type="category" dataKey="name" tick={{ fontSize: 10 }} width={100} />
-                              <Tooltip formatter={(v) => [`${v}억`, '금액']} />
+                              <Tooltip formatter={(v) => [`${v}억`, '금액']} {...TOOLTIP_STYLE} />
                               <Bar dataKey="금액" radius={[0, 4, 4, 0]}>
                                 {[...barData].reverse().map((item, idx) => {
                                   const origIdx = barData.findIndex(d => d.name === item.name);
@@ -1105,7 +1110,7 @@ export default function ShortListPage() {
                               <CartesianGrid strokeDasharray="3 3" />
                               <XAxis type="number" tick={{ fontSize: 10 }} unit="억" />
                               <YAxis type="category" dataKey="name" tick={{ fontSize: 10 }} width={100} />
-                              <Tooltip formatter={(v) => [`${v}억`, '금액']} />
+                              <Tooltip formatter={(v) => [`${v}억`, '금액']} {...TOOLTIP_STYLE} />
                               <Bar dataKey="금액" radius={[0, 4, 4, 0]}>
                                 {[...costCenterBarData].reverse().map((item, idx) => {
                                   const origIdx = costCenterBarData.findIndex(d => d.name === item.name);

@@ -37,6 +37,11 @@ const CHART_COLORS = [
   '#e11d48', '#84cc16', '#a855f7', '#0ea5e9', '#d946ef',
 ];
 
+const TOOLTIP_STYLE = {
+  contentStyle: { backgroundColor: '#fff', border: '1px solid #e5e7eb', borderRadius: '8px', opacity: 1, fontFamily: 'Pretendard, sans-serif' },
+  wrapperStyle: { zIndex: 100 },
+};
+
 /* ============================================================
    헬퍼 함수
    ============================================================ */
@@ -266,7 +271,7 @@ function RatioDetailModal({ open, onClose, title, data }) {
                     return <Cell key={idx} fill={CHART_COLORS[origIdx % CHART_COLORS.length]} />;
                   })}
                 </Pie>
-                <Tooltip formatter={(v) => formatAmount(v)} />
+                <Tooltip formatter={(v) => formatAmount(v)} {...TOOLTIP_STYLE} />
               </PieChart>
             </ResponsiveContainer>
             <div className="w-full space-y-2 px-4">
@@ -340,7 +345,7 @@ function TopNSummaryPie({ data, title }) {
                     <Cell key={idx} fill={COLORS[idx]} />
                   ))}
                 </Pie>
-                <Tooltip formatter={(v) => formatAmount(v)} />
+                <Tooltip formatter={(v) => formatAmount(v)} {...TOOLTIP_STYLE} />
               </PieChart>
             </ResponsiveContainer>
             <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
@@ -851,7 +856,7 @@ export default function LongListPage() {
                               <CartesianGrid strokeDasharray="3 3" />
                               <XAxis type="number" tick={{ fontSize: 10 }} unit="억" />
                               <YAxis type="category" dataKey="name" tick={{ fontSize: 10 }} width={100} />
-                              <Tooltip formatter={(v) => [`${v}억`, '금액']} />
+                              <Tooltip formatter={(v) => [`${v}억`, '금액']} {...TOOLTIP_STYLE} />
                               <Bar dataKey="금액" radius={[0, 4, 4, 0]}>
                                 {[...supplierChartData].reverse().map((item, idx) => {
                                   const origIdx = supplierChartData.findIndex(d => d.name === item.name);
@@ -898,7 +903,7 @@ export default function LongListPage() {
                               <CartesianGrid strokeDasharray="3 3" />
                               <XAxis type="number" tick={{ fontSize: 10 }} unit="억" />
                               <YAxis type="category" dataKey="name" tick={{ fontSize: 10 }} width={100} />
-                              <Tooltip formatter={(v) => [`${v}억`, '금액']} />
+                              <Tooltip formatter={(v) => [`${v}억`, '금액']} {...TOOLTIP_STYLE} />
                               <Bar dataKey="금액" radius={[0, 4, 4, 0]}>
                                 {[...costCenterChartData].reverse().map((item, idx) => {
                                   const origIdx = costCenterChartData.findIndex(d => d.name === item.name);
@@ -996,7 +1001,7 @@ function ChartPieWithLegend({ data }) {
                 return <Cell key={idx} fill={CHART_COLORS[origIdx % CHART_COLORS.length]} />;
               })}
             </Pie>
-            <Tooltip formatter={(v) => formatAmount(v)} />
+            <Tooltip formatter={(v) => formatAmount(v)} {...TOOLTIP_STYLE} />
           </PieChart>
         </ResponsiveContainer>
         <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
