@@ -466,30 +466,30 @@ function SelectedItemCard({ stats, onRawDataClick }) {
     { label: 'Raw List 대비 비율', value: `${stats.ratioToTotal ?? 0}%`, icon: TrendingUp, color: 'bg-emerald-500' },
   ];
   return (
-    <Card>
-      <CardHeader className="pb-2 px-5 pt-4">
-        <CardTitle className="text-sm font-semibold">선택 항목 상세</CardTitle>
-      </CardHeader>
-      <CardContent className="px-5 pb-4">
-        <div className="grid grid-cols-5 gap-4">
-          {items.map((item, idx) => (
-            <div
-              key={idx}
-              className={cn('flex items-center gap-3', item.clickable && onRawDataClick && 'cursor-pointer hover:bg-blue-50 rounded-lg p-1 -m-1 transition-colors')}
-              onClick={item.clickable ? onRawDataClick : undefined}
-            >
-              <div className={cn('w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0', item.color)}>
-                <item.icon className="w-5 h-5 text-white" />
+    <div className="space-y-2">
+      <h3 className="text-sm font-semibold px-1">선택 항목 상세</h3>
+      <div className="grid grid-cols-5 gap-3">
+        {items.map((item, idx) => (
+          <Card
+            key={idx}
+            className={cn('flex-1 min-w-0', item.clickable && onRawDataClick && 'cursor-pointer hover:ring-2 hover:ring-blue-300 transition-shadow')}
+            onClick={item.clickable ? onRawDataClick : undefined}
+          >
+            <CardContent className="p-4">
+              <div className="flex items-center gap-3">
+                <div className={cn('w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0', item.color)}>
+                  <item.icon className="w-5 h-5 text-white" />
+                </div>
+                <div className="min-w-0">
+                  <p className="text-xs font-bold text-muted-foreground truncate">{item.label}</p>
+                  <p className="text-xl font-bold tabular-nums">{item.value}</p>
+                </div>
               </div>
-              <div>
-                <p className="text-xs font-bold text-muted-foreground">{item.label}</p>
-                <p className="text-xl font-bold tabular-nums">{item.value}</p>
-              </div>
-            </div>
-          ))}
-        </div>
-      </CardContent>
-    </Card>
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+    </div>
   );
 }
 

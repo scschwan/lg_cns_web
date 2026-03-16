@@ -64,6 +64,12 @@
   }
 }
 
+/* Select dropdown scrollbar (Firefox) */
+.select-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: #d1d5db #f3f4f6;
+}
+
 @layer base {
   * {
     @apply border-border;
