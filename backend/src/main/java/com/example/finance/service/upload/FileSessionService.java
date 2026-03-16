@@ -1218,11 +1218,18 @@ public class FileSessionService {
         FileSession baseSession = sessions.get(0);
         List<FileSession> otherSessions = new ArrayList<>(sessions.subList(1, sessions.size()));
 
-        // 5. 모든 세션의 파일 합산
-        List<UploadedFileInfo> mergedFiles = new ArrayList<>(baseSession.getUploadedFiles());
-        for (FileSession other : otherSessions) {
-            if (other.getUploadedFiles() != null) {
-                mergedFiles.addAll(other.getUploadedFiles());
+        // 5. 모든 세션의 파일 합산 (fileId 기준 중복 제거 - 같은 파일에서 파티셔닝된 세션 대응)
+        Set<String> seenFileIds = new HashSet<>();
+        List<UploadedFileInfo> mergedFiles = new ArrayList<>();
+        for (FileSession s : sessions) {
+            if (s.getUploadedFiles() != null) {
+                for (UploadedFileInfo file : s.getUploadedFiles()) {
+                    if (file.getFileId() != null && seenFileIds.add(file.getFileId())) {
+                        mergedFiles.add(file);
+                    } else if (file.getFileId() == null) {
+                        mergedFiles.add(file);
+                    }
+                }
             }
         }
 
@@ -1236,19 +1243,12 @@ public class FileSessionService {
                 .sum();
 
 
-        // 7. accountNames 수집 - 세션 레벨 + 파일 레벨 모두에서 수집 (StreamingCell 오염 필터링)
+        // 7. accountNames 수집 - 세션 레벨에서만 수집 (StreamingCell 오염 필터링)
+        // 주의: file.getAccountContents()는 원본 파일의 모든 계정을 포함하므로 사용하지 않음
         Set<String> accountNameSet = new LinkedHashSet<>();
         for (FileSession s : sessions) {
             if (s.getAccountNames() != null) {
                 s.getAccountNames().stream()
-                        .filter(name -> !name.contains("StreamingCell@"))
-                        .forEach(accountNameSet::add);
-            }
-        }
-        // 파일 내 accountContents에서도 수집 (세션 레벨에 없을 경우 대비)
-        for (UploadedFileInfo file : mergedFiles) {
-            if (file.getAccountContents() != null) {
-                file.getAccountContents().stream()
                         .filter(name -> !name.contains("StreamingCell@"))
                         .forEach(accountNameSet::add);
             }
