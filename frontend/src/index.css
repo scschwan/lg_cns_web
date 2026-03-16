@@ -64,10 +64,25 @@
   }
 }
 
-/* Select dropdown scrollbar (Firefox) */
+/* Select dropdown scrollbar — Chrome 121+ 표준 + Firefox */
 .select-scrollbar {
   scrollbar-width: thin;
   scrollbar-color: #d1d5db #f3f4f6;
+}
+/* Chrome 120 이하 및 Safari용 레거시 webkit 스크롤바 */
+.select-scrollbar::-webkit-scrollbar {
+  width: 6px;
+}
+.select-scrollbar::-webkit-scrollbar-track {
+  background: #f3f4f6;
+  border-radius: 3px;
+}
+.select-scrollbar::-webkit-scrollbar-thumb {
+  background: #d1d5db;
+  border-radius: 3px;
+}
+.select-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: #9ca3af;
 }
 
 @layer base {
