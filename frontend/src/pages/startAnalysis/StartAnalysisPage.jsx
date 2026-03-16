@@ -647,7 +647,14 @@ export default function StartAnalysisPage() {
         const val = row[col];
         if (val == null) return '';
         if (typeof val === 'number') {
-          return <span className="whitespace-nowrap">{Math.round(val).toLocaleString()}</span>;
+          if (Number.isInteger(val)) return <span className="whitespace-nowrap">{val.toLocaleString()}</span>;
+          if (val === Math.floor(val)) return <span className="whitespace-nowrap">{Math.round(val).toLocaleString()}</span>;
+          return <span className="whitespace-nowrap">{val.toLocaleString()}</span>;
+        }
+        if (typeof val === 'string' && val.trim() !== '' && !isNaN(Number(val))) {
+          const num = Number(val);
+          if (Number.isInteger(num) || num === Math.floor(num)) return <span className="whitespace-nowrap">{Math.round(num).toLocaleString()}</span>;
+          return <span className="whitespace-nowrap">{num.toLocaleString()}</span>;
         }
         return <span className="whitespace-nowrap">{String(val)}</span>;
       },
