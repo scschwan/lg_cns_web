@@ -1,3 +1,7 @@
+/**
+ * Textarea - 멀티라인 텍스트 입력 컴포넌트 (Shadcn UI)
+ * 기본 HTML textarea를 스타일링한 래퍼
+ */
 import * as React from "react"
 
 import { cn } from "@/lib/utils"

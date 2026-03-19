@@ -1,3 +1,7 @@
+/**
+ * Progress - 진행률 표시 바 컴포넌트 (Radix UI 기반)
+ * value: 0~100 사이의 진행률 값
+ */
 import * as React from "react"
 import * as ProgressPrimitive from "@radix-ui/react-progress"
 

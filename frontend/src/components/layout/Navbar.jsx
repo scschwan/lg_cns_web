@@ -1,3 +1,14 @@
+/**
+ * Navbar - 상단 내비게이션 바 컴포넌트
+ *
+ * 로고, 관리자 메뉴 버튼, 사용자 프로필 드롭다운을 포함한다.
+ *
+ * 주요 기능:
+ * - 로고 클릭 → 프로젝트 목록으로 이동
+ * - 관리자 역할 시 관리자 페이지 이동 버튼 표시
+ * - 사용자 드롭다운: 프로필 설정, 로그아웃
+ * - 프로필 설정 다이얼로그: 이름 변경, 아바타 색상 선택, 비밀번호 변경
+ */
 import React, { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/context/AuthContext';
@@ -11,6 +22,7 @@ import {
 import { LogOut, Shield, User, KeyRound, ChevronDown, CheckCircle2 } from 'lucide-react';
 import authService from '@/services/authService';
 
+/** 프로필 설정에서 선택 가능한 아바타 배경 색상 목록 */
 const AVATAR_COLORS = [
   'bg-primary', 'bg-blue-600', 'bg-emerald-600', 'bg-violet-600',
   'bg-rose-600', 'bg-amber-600', 'bg-cyan-600', 'bg-pink-600',

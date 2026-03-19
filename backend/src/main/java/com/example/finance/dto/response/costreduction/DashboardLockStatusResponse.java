@@ -9,6 +9,7 @@ import lombok.NoArgsConstructor;
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
+/** 대시보드 잠금 상태 응답 DTO (세션 완료 시 사전 체크용) */
 public class DashboardLockStatusResponse {
 
     private Boolean dashboardExists;

@@ -1,3 +1,23 @@
+/**
+ * AuthContext - 전역 인증 상태 관리 Context
+ *
+ * AuthProvider가 제공하는 상태 및 함수:
+ * - user: 현재 로그인한 사용자 정보 ({ userId, email, name, role })
+ * - login(credentials): 로그인 수행
+ * - register(userData): 회원가입 수행
+ * - logout(): 로그아웃 (토큰 제거 + user null)
+ * - updateUser(fields): user 객체 부분 업데이트 (프로필 수정 등)
+ * - isAuthenticated: 인증 여부 (boolean)
+ * - loading: 초기 세션 검증 중 여부
+ * - validateSession(): 서버에 세션 유효성을 검증
+ *
+ * 자동 기능:
+ * - 초기 마운트 시 /api/auth/me 호출로 세션 검증
+ * - 1분마다 주기적 세션 검증
+ * - 탭 복귀/창 포커스/네트워크 복구 시 즉시 세션 검증
+ * - api.js 인터셉터의 session-expired 이벤트 수신 시 React state 동기화
+ * - 클라이언트 측 JWT exp 클레임으로 토큰 만료 즉시 감지
+ */
 import React, { createContext, useState, useContext, useEffect, useCallback, useRef } from 'react';
 import authService from '../services/authService';
 import api from '../services/api';
@@ -5,6 +25,7 @@ import { isAuthTokenExpired, isRefreshTokenExpired } from '../utils/tokenUtils';
 
 const AuthContext = createContext();
 
+/** AuthContext 소비 훅. AuthProvider 내부에서만 사용 가능 */
 export const useAuth = () => {
   const context = useContext(AuthContext);
   if (!context) {

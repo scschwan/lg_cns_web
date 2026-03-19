@@ -1,3 +1,12 @@
+/**
+ * 프로젝트 목록 페이지 컴포넌트
+ *
+ * 사용자가 참여 중인 프로젝트 목록을 카드 형태로 표시한다.
+ * 일반 프로젝트와 대시보드 프로젝트를 구분하여 표시하며,
+ * 프로젝트 생성, 열기, 설정, 비용 절감 대시보드 진입 기능을 제공한다.
+ *
+ * @component
+ */
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import projectService from '../../services/projectService';

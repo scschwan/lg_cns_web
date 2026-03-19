@@ -25,6 +25,14 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
+/**
+ * 클러스터링 서비스 (Step 5~6)
+ *
+ * 전처리된 키워드 데이터를 기반으로 클러스터를 생성하고 관리한다.
+ * 클러스터 생성(키워드 그룹핑), 병합/해제, 부분 해제,
+ * 병합 클러스터 간 합치기, 이름 변경, 통계 조회, 고급 검색,
+ * 키워드 계층(Lv1/Lv2/Lv3) 관리 기능을 포함한다.
+ */
 @Service
 @RequiredArgsConstructor
 @Slf4j

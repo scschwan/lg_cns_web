@@ -17,6 +17,15 @@ import java.util.Map;
 @RestController
 @RequestMapping("/api/projects/{projectId}/shortlist")
 @RequiredArgsConstructor
+/**
+ * Short List 컨트롤러
+ *
+ * 원가절감 Short List 기능을 제공한다.
+ * Long List에서 선택된 항목 기반으로 트리 구조 조회, 통계, 차트 데이터,
+ * 항목 선택/저장, 원본 데이터 조회 등의 API를 포함한다.
+ *
+ * Base Path: /api/projects/{projectId}/shortlist
+ */
 public class ShortListController {
 
     private final ShortListService shortListService;

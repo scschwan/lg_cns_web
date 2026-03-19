@@ -6,6 +6,9 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
+/**
+ * 대시보드 페이즈 전환 요청 DTO
+ */
 @Data
 @Builder
 @NoArgsConstructor

@@ -1,3 +1,11 @@
+/**
+ * 관리자 프로필 페이지 컴포넌트
+ *
+ * 관리자 비밀번호 변경 기능을 제공한다.
+ * 현재 비밀번호 확인 후 새 비밀번호로 변경할 수 있다.
+ *
+ * @component
+ */
 import React, { useState } from 'react';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -17,6 +25,7 @@ export default function AdminProfile() {
     const [success, setSuccess] = useState(false);
     const [loading, setLoading] = useState(false);
 
+    /** 비밀번호 변경 폼 제출 핸들러 - 유효성 검증 후 adminService를 통해 변경 API 호출 */
     const handleSubmit = async (e) => {
         e.preventDefault();
         setError('');

@@ -1,3 +1,11 @@
+/**
+ * transformService - 데이터 변환 단계 API 서비스 (Step 4)
+ *
+ * 키워드 통계, 키워드 검색, 키워드 치환(변환), 원본/검색 데이터 조회 등
+ * 데이터 변환 관련 API를 제공한다.
+ *
+ * 모든 API는 /api/projects/{projectId}/sessions/{sessionId}/transform/ 하위 경로를 사용한다.
+ */
 import api from './api';
 
 const transformService = {

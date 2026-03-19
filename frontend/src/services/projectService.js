@@ -1,3 +1,11 @@
+/**
+ * projectService - 프로젝트 관리 API 서비스
+ *
+ * 프로젝트 CRUD, 멤버 초대/역할변경/삭제, 파일 목록 조회 등
+ * 프로젝트 관련 전반적인 API를 제공한다.
+ *
+ * 모든 API는 /api/projects/ 하위 경로를 사용한다.
+ */
 import api from './api';
 
 /**

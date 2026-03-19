@@ -1,3 +1,7 @@
+/**
+ * Separator - 구분선 컴포넌트 (Radix UI 기반)
+ * orientation: "horizontal" | "vertical"
+ */
 import * as React from "react"
 import * as SeparatorPrimitive from "@radix-ui/react-separator"
 

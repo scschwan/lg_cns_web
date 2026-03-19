@@ -18,9 +18,20 @@ import java.io.IOException;
 /**
  * JWT 인증 필터
  *
- * 모든 요청에서 JWT 토큰을 검증하고 인증 정보를 설정
+ * <p>모든 HTTP 요청에 대해 Authorization 헤더에서 JWT 토큰을 추출하고,
+ * 유효한 토큰인 경우 Spring Security의 SecurityContext에 인증 정보를 설정한다.</p>
  *
- * Phase 0: 인증 및 프로젝트 관리
+ * <p>OncePerRequestFilter를 상속하여 요청당 한 번만 실행되도록 보장한다.</p>
+ *
+ * <p>처리 흐름:</p>
+ * <ol>
+ *   <li>요청 헤더에서 "Bearer {token}" 형식의 JWT 토큰 추출</li>
+ *   <li>JwtTokenProvider를 통한 토큰 유효성 검증</li>
+ *   <li>토큰에서 UserPrincipal 객체 생성</li>
+ *   <li>SecurityContext에 인증 객체 등록</li>
+ * </ol>
+ *
+ * @see JwtTokenProvider 토큰 생성/검증 유틸리티
  */
 @Slf4j
 @Component

@@ -13,6 +13,15 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 
+/**
+ * 원가절감 과제 모델
+ *
+ * MongoDB 컬렉션: able_tasks
+ *
+ * Short List에서 선택된 항목을 기반으로 생성되는 원가절감 과제.
+ * 과제명, 담당 부서/매니저/컨설턴트, 기준금액, 예상 절감률/금액,
+ * 진행률, 상태, 실적 등의 정보를 관리한다.
+ */
 @Document(collection = "able_tasks")
 @Data
 @Builder

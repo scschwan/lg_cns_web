@@ -7,6 +7,11 @@ import lombok.NoArgsConstructor;
 
 import java.util.List;
 
+/**
+ * 차트 데이터 응답 DTO
+ *
+ * 공급업체별/코스트센터별 집계 데이터를 차트 렌더링용으로 반환한다.
+ */
 @Data
 @Builder
 @NoArgsConstructor

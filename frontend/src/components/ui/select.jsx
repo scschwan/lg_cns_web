@@ -1,3 +1,8 @@
+/**
+ * Select - 드롭다운 선택 컴포넌트 (Radix UI 기반)
+ * 하위 컴포넌트: SelectTrigger, SelectValue, SelectContent, SelectGroup,
+ *               SelectItem, SelectLabel, SelectSeparator
+ */
 import * as React from "react"
 import * as SelectPrimitive from "@radix-ui/react-select"
 import { Check, ChevronDown, ChevronUp } from "lucide-react"

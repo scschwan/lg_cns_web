@@ -1,3 +1,12 @@
+/**
+ * Able 과제 등록 페이지 컴포넌트 (비용 절감 대시보드)
+ *
+ * Short List에서 선택된 항목을 Able 과제로 등록하는 페이지이다.
+ * 과제별 상세 정보 입력(절감 금액, 첨부 파일, 링크), 과제 생성/수정,
+ * 대시보드 잠금 관리 기능을 제공한다.
+ *
+ * @component
+ */
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {

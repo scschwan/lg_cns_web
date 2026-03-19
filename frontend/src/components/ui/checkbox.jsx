@@ -1,3 +1,7 @@
+/**
+ * Checkbox - 체크박스 컴포넌트 (Radix UI 기반)
+ * 상태: checked | unchecked | indeterminate (부분 선택)
+ */
 "use client"
 
 import * as React from "react"

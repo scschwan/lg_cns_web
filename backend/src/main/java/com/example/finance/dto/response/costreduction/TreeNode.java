@@ -12,6 +12,7 @@ import java.util.List;
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
+/** 트리 구조 노드 DTO (계정/클러스터/세부클러스터 트리 표현용) */
 public class TreeNode {
 
     private String id;

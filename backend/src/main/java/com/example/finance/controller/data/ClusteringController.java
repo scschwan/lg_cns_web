@@ -16,11 +16,29 @@ import java.util.Map;
 @RestController
 @RequestMapping("/api/projects/{projectId}/sessions/{sessionId}/clustering")
 @RequiredArgsConstructor
+/**
+ * 클러스터링 컨트롤러 (Step 5~6)
+ *
+ * 전처리된 데이터에 대한 클러스터링 관련 기능을 제공한다.
+ * 클러스터 생성, 병합/해제, 이름 변경, 고급 검색,
+ * 키워드 계층(Lv1/Lv2/Lv3) 관리 등의 API를 포함한다.
+ *
+ * Base Path: /api/projects/{projectId}/sessions/{sessionId}/clustering
+ */
 public class ClusteringController {
 
     private final ClusteringService clusteringService;
     private final ProjectService projectService;
 
+    /**
+     * 클러스터 생성 (미병합 클러스터)
+     *
+     * @param projectId 프로젝트 ID
+     * @param sessionId 세션 ID
+     * @param body includeSupplier, includeCostCenter 옵션 포함 (선택)
+     * @param userPrincipal 인증된 사용자 정보
+     * @return 생성 결과 (클러스터 수, 통계 등)
+     */
     @PostMapping("/generate")
     public ResponseEntity<Map<String, Object>> generateClusters(
             @PathVariable String projectId,
@@ -41,6 +59,14 @@ public class ClusteringController {
                 clusteringService.generateUnmergedClusters(sessionId, includeSupplier, includeCostCenter));
     }
 
+    /**
+     * 미병합 클러스터 목록 조회 (페이징, 키워드 검색 지원)
+     *
+     * @param page 페이지 번호
+     * @param size 페이지 크기
+     * @param keyword 검색 키워드 (선택)
+     * @return 미병합 클러스터 페이징 결과
+     */
     @GetMapping("/unmerged")
     public ResponseEntity<Map<String, Object>> getUnmergedClusters(
             @PathVariable String projectId,

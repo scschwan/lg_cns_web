@@ -1,9 +1,21 @@
 package com.example.finance.enums;
 
 /**
- * 프로세스 단계 정의
+ * 데이터 처리 프로세스의 각 단계를 정의하는 열거형
  *
- * 각 단계의 순서, 이름, API 경로를 중앙에서 관리
+ * <p>파일 업로드부터 최종 내보내기까지 7단계의 데이터 분석 파이프라인을
+ * 나타내며, 각 단계의 순서 번호, 표시명, API 경로, 설명을 중앙에서 관리한다.</p>
+ *
+ * <p>단계 흐름:</p>
+ * <ol>
+ *   <li>UPLOAD - 파일 업로드 및 세션 관리</li>
+ *   <li>START_ANALYSIS - 계정 분석 시작 (Lambda 비동기 처리)</li>
+ *   <li>PREPROCESSING - 데이터 전처리 및 검증</li>
+ *   <li>TRANSFORM - 데이터 집계 및 변환</li>
+ *   <li>CLUSTERING - K-Means 클러스터링</li>
+ *   <li>EXPORT - Excel 내보내기 및 세션 완료</li>
+ *   <li>DETAIL_CLUSTERING - 세부 클러스터링</li>
+ * </ol>
  */
 public enum ProcessStep {
     UPLOAD(1, "Multi File Upload", "/api/upload", "파일 업로드 및 세션 관리"),

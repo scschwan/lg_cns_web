@@ -1,3 +1,12 @@
+/**
+ * 완료 과제 관리 페이지 컴포넌트 (비용 절감 대시보드)
+ *
+ * 완료 처리된 Able 과제들을 조회하고 관리하는 페이지이다.
+ * 과제별 상세 정보(평가등급, 절감 금액, 첨부 파일, 링크), 차트 시각화,
+ * 과제 수정/삭제 기능을 제공한다.
+ *
+ * @component
+ */
 import React, { useState, useEffect, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {

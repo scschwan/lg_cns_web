@@ -1,7 +1,21 @@
 // frontend/src/services/uploadService.js
+/**
+ * uploadService - 파일 업로드 및 세션 관리 API 서비스 (Step 1~2)
+ *
+ * S3 Presigned URL 기반 파일 업로드, Lambda 처리 추적,
+ * 세션 CRUD, 컬럼 매핑, 데이터 조회/숨김/표준화 등
+ * 파일 업로드 단계의 모든 API를 제공한다.
+ *
+ * 주요 기능 그룹:
+ * - 파일 업로드: Presigned URL → S3 업로드 → 완료 처리 → Lambda 대기
+ * - 편집자 잠금: 업로드 페이지 잠금 / 세션 잠금 (Redis 기반)
+ * - 세션 관리: 생성/조회/수정/삭제/병합/시작/초기화
+ * - 데이터 관리: 컬럼 매핑, 행 숨김/원복, 표준화, process_data 생성
+ */
 
 import api from './api';
 
+/** API 응답에서 배열 데이터를 안전하게 추출 (Spring Page 응답 등 처리) */
 const extractArray = (data) => {
     if (Array.isArray(data)) return data;
     if (data && typeof data === 'object') {

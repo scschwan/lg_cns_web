@@ -31,6 +31,13 @@ import org.springframework.beans.factory.annotation.Value;
 import software.amazon.awssdk.services.sqs.SqsClient;
 import software.amazon.awssdk.services.sqs.model.SendMessageRequest;
 
+/**
+ * 세션 데이터 서비스 (Step 2: File Load)
+ *
+ * raw_data에서 session_data로의 데이터 복사, 컬럼 매핑 관리,
+ * 데이터 행 숨김/복원, 표준화, process_data 생성 등
+ * 세션 데이터 가공의 핵심 비즈니스 로직을 담당한다.
+ */
 @Slf4j
 @Service
 public class SessionDataService {

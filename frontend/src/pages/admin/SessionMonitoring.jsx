@@ -1,3 +1,12 @@
+/**
+ * 세션 모니터링 페이지 컴포넌트 (관리자 전용)
+ *
+ * 전체 프로젝트의 세션 목록을 표시하며, 각 세션의 진행 단계(Step),
+ * 진행률, 완료 여부, 행 수 등의 정보를 모니터링할 수 있다.
+ * 세션 초기화(session_data 삭제) 기능도 제공한다.
+ *
+ * @component
+ */
 import React, { useState, useEffect } from 'react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';

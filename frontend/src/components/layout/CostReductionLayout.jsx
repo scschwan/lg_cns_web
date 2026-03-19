@@ -1,3 +1,12 @@
+/**
+ * CostReductionLayout - 비용 절감 대시보드 레이아웃 컴포넌트
+ *
+ * 상단 헤더(프로젝트 목록 이동 버튼 + 제목),
+ * 좌측 사이드바(CostReductionSidebar), 우측 메인 콘텐츠 영역으로 구성된다.
+ * 뷰어 모드 사용자는 ViewerModeOverlay에 의해 콘텐츠 영역의 편집이 차단된다.
+ *
+ * @param {React.ReactNode} children - 메인 콘텐츠 영역에 렌더링할 페이지 컴포넌트
+ */
 import React from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import CostReductionSidebar from './CostReductionSidebar';

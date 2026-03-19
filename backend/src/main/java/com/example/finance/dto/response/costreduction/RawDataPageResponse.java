@@ -12,6 +12,7 @@ import java.util.Map;
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
+/** 원본 데이터 페이징 응답 DTO */
 public class RawDataPageResponse {
 
     /**

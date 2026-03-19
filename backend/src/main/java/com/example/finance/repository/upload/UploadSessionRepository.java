@@ -8,6 +8,12 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 
+/**
+ * 업로드 세션 Repository
+ *
+ * S3 파일 업로드 추적을 위한 데이터 접근 계층.
+ * 업로드 ID, 세션 ID, 프로젝트 ID 기준 조회/삭제 기능을 제공한다.
+ */
 @Repository
 public interface UploadSessionRepository extends MongoRepository<UploadSession, String> {
 

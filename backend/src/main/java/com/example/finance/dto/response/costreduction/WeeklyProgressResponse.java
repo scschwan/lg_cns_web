@@ -11,6 +11,7 @@ import java.time.LocalDateTime;
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
+/** 주간 진척 응답 DTO */
 public class WeeklyProgressResponse {
 
     private String id;

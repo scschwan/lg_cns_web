@@ -1,29 +1,41 @@
+# ===========================================================
+# Finance Backend 로컬 개발 환경 Docker Compose 설정
+#
+# 로컬에서 MongoDB와 Redis를 실행하기 위한 구성.
+# 실행: docker-compose up -d
+# 중지: docker-compose down
+# 데이터 초기화: docker-compose down -v
+# ===========================================================
 version: '3.8'
 
 services:
+  # MongoDB 7.x - 로컬 개발용 (프로덕션에서는 AWS DocumentDB 사용)
   mongodb:
     image: mongo:7
     container_name: local-mongodb
     ports:
-      - "27017:27017"
+      - "27017:27017"                   # 기본 MongoDB 포트 매핑
     volumes:
-      - mongodb-data:/data/db
+      - mongodb-data:/data/db           # 데이터 영속화 (컨테이너 재시작 시 유지)
     environment:
-      MONGO_INITDB_DATABASE: finance
+      MONGO_INITDB_DATABASE: finance    # 초기 생성할 데이터베이스명
     networks:
       - finance-network
 
+  # Redis 7.x (Alpine) - 로컬 개발용 (프로덕션에서는 AWS ElastiCache 사용)
   redis:
     image: redis:7-alpine
     container_name: local-redis
     ports:
-      - "6379:6379"
+      - "6379:6379"                     # 기본 Redis 포트 매핑
     networks:
       - finance-network
 
+# 데이터 영속화를 위한 Docker 볼륨
 volumes:
   mongodb-data:
 
+# 서비스 간 통신을 위한 브릿지 네트워크
 networks:
   finance-network:
     driver: bridge

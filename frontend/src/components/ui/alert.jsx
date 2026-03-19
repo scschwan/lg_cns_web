@@ -1,3 +1,8 @@
+/**
+ * Alert - 알림/경고 메시지 컴포넌트 (Shadcn UI)
+ * variant: "default" | "destructive"
+ * 하위 컴포넌트: AlertTitle, AlertDescription
+ */
 import * as React from "react"
 import { cva } from "class-variance-authority";
 

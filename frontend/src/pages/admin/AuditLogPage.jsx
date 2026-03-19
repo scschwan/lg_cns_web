@@ -1,3 +1,11 @@
+/**
+ * 감사 로그 페이지 컴포넌트
+ *
+ * 시스템에서 발생한 모든 관리 활동(사용자 승인, 삭제, 세션 초기화 등)의
+ * 로그를 조회하는 페이지이다. 대상 유형별 필터링 기능을 제공한다.
+ *
+ * @component
+ */
 import React, { useState, useEffect } from 'react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -7,6 +15,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { RefreshCw } from 'lucide-react';
 import adminService from '@/services/adminService';
 
+/** 감사 로그 액션 유형별 라벨 및 색상 매핑 */
 const ACTION_LABELS = {
     APPROVE_USER: { label: '사용자 승인', color: 'bg-green-500' },
     REVOKE_USER: { label: '승인 취소', color: 'bg-yellow-500' },
@@ -30,6 +39,7 @@ const ACTION_LABELS = {
     EXPORT: { label: '내보내기', color: 'bg-emerald-500' },
 };
 
+/** UTC 날짜 문자열을 한국 표준시(KST) 형식으로 변환 */
 function toKSTString(dateStr) {
     if (!dateStr) return '-';
     const d = new Date(dateStr);

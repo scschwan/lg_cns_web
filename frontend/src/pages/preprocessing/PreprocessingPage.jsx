@@ -1,3 +1,13 @@
+/**
+ * 전처리 페이지 컴포넌트 (Step 3: Preprocessing)
+ *
+ * 타겟열 데이터에서 키워드를 추출하는 전처리 단계 페이지이다.
+ * 구분자 변환(구분자 기반 분할), 불용어 제거, 1글자 키워드 제거,
+ * NLP 기반 키워드 추출 등의 기능을 제공한다.
+ * 좌측에는 대상/결과 데이터 테이블, 우측에는 설정 패널이 배치된다.
+ *
+ * @component
+ */
 // frontend/src/pages/preprocessing/PreprocessingPage.jsx
 
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';

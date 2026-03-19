@@ -1,3 +1,7 @@
+/**
+ * Input - 텍스트 입력 컴포넌트 (Shadcn UI)
+ * 기본 HTML input을 스타일링한 래퍼. type, placeholder 등 표준 속성 지원
+ */
 import * as React from "react"
 
 import { cn } from "@/lib/utils"

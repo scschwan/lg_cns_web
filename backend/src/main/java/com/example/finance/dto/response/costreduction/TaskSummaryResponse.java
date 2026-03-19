@@ -9,6 +9,7 @@ import lombok.NoArgsConstructor;
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
+/** 과제 요약 통계 응답 DTO (전체 과제 수, 기준금액/절감액 합계 등) */
 public class TaskSummaryResponse {
 
     private Long totalTasks;

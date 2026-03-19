@@ -1,3 +1,16 @@
+/**
+ * Sidebar - 데이터 처리 7단계 프로세스 사이드바 네비게이션
+ *
+ * 각 단계(Upload → Start Analysis → Preprocessing → Data Transform →
+ * Clustering → Export → Detail Clustering)의 진행 상태를 표시하고,
+ * 단계 간 이동을 제어한다.
+ *
+ * 주요 동작:
+ * - 세션 데이터의 stepHistory를 기반으로 방문/완료/비활성 상태를 판별
+ * - Step 1(Upload) 이동 시 확인 다이얼로그 표시 (세션 이탈 경고)
+ * - Step 7(Detail Clustering)은 사이드바에서 직접 진입 불가
+ * - 현재 세션명을 하단에 표시
+ */
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useParams, useLocation } from 'react-router-dom';
 import uploadService from '../../services/uploadService';
@@ -111,7 +124,7 @@ const Sidebar = () => {
     }
   ];
 
-  // Step ID → backend ProcessStep enum name
+  // Step ID → 백엔드 ProcessStep enum name 매핑 (stepHistory 비교용)
   const stepIdToEnum = {
     2: 'START_ANALYSIS',
     3: 'PREPROCESSING',

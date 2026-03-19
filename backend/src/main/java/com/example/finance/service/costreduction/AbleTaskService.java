@@ -25,6 +25,12 @@ import java.time.LocalDateTime;
 import java.util.*;
 import java.util.stream.Collectors;
 
+/**
+ * Able Task(원가절감 과제) 서비스
+ *
+ * 과제 CRUD, 과제별 문서(링크/파일) 관리, 주간 진척 관리,
+ * 과제 요약 통계, 과제 초기화 등의 비즈니스 로직을 담당한다.
+ */
 @Slf4j
 @Service
 @RequiredArgsConstructor

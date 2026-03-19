@@ -1,3 +1,12 @@
+/**
+ * Short List 페이지 컴포넌트 (비용 절감 대시보드)
+ *
+ * Long List에서 선택된 항목들을 공급업체/코스트센터별로 상세 분석하는 페이지이다.
+ * 트리 구조로 데이터를 표시하며, 차트 시각화와 Raw 데이터 조회 기능을 제공한다.
+ * 선택한 항목을 Able 과제로 등록하는 기능을 지원한다.
+ *
+ * @component
+ */
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {

@@ -1,3 +1,12 @@
+/**
+ * 회원가입 페이지 컴포넌트
+ *
+ * 신규 사용자 등록 폼을 제공한다. 이름, 이메일, 비밀번호를 입력받으며
+ * 비밀번호 강도 체크 및 일치 여부 검증 기능을 포함한다.
+ * 회원가입 성공 후 관리자 승인을 거쳐야 로그인이 가능하다.
+ *
+ * @component
+ */
 import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import authService from '../../services/authService';
@@ -10,6 +19,7 @@ import { Badge } from '@/components/ui/badge';
 import { Loader2, CheckCircle2, XCircle } from 'lucide-react';
 
 export default function RegisterPage() {
+    /** 회원가입 폼 데이터 (이름, 이메일, 비밀번호, 비밀번호 확인) */
     const [formData, setFormData] = useState({
         name: '',
         email: '',
@@ -49,6 +59,7 @@ export default function RegisterPage() {
         });
     };
 
+    /** 회원가입 폼 제출 핸들러 - 비밀번호 유효성 검증 후 authService를 통해 회원가입 API 호출 */
     const handleSubmit = async (e) => {
         e.preventDefault();
         setError('');

@@ -1,3 +1,11 @@
+/**
+ * NewServiceLayout - 신규 서비스 Preview 레이아웃
+ *
+ * 상단 헤더, 좌측 사이드바(NewServiceSidebar), 우측 메인 콘텐츠로 구성된다.
+ * 신규 서비스 마크업 미리보기 용도로 사용된다.
+ *
+ * @param {React.ReactNode} children - 메인 콘텐츠 페이지 컴포넌트
+ */
 import React from 'react';
 import NewServiceSidebar from './NewServiceSidebar';
 

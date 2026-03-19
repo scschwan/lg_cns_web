@@ -1,3 +1,7 @@
+/**
+ * Label - 폼 라벨 컴포넌트 (Radix UI 기반)
+ * input, select 등과 연결되는 접근성 지원 라벨
+ */
 import * as React from "react"
 import * as LabelPrimitive from "@radix-ui/react-label"
 import { cva } from "class-variance-authority";

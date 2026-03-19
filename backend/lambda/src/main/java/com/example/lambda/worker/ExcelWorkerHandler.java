@@ -32,8 +32,28 @@ import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
 
+/**
+ * Excel 데이터 처리 Worker Lambda Handler
+ *
+ * <p>Coordinator가 분할한 청크 단위의 SQS 메시지를 수신하여
+ * S3에서 Excel 파일을 다운로드하고, 지정된 행 범위의 데이터를
+ * MongoDB raw_data 컬렉션에 저장한다.</p>
+ *
+ * <p>주요 특징:</p>
+ * <ul>
+ *   <li>StreamingReader를 사용한 대용량 Excel 스트리밍 처리</li>
+ *   <li>Delete-before-Insert 전략으로 중복 실행 시 데이터 뻥튀기 방지</li>
+ *   <li>Redis를 통한 실시간 진행 상황 추적</li>
+ *   <li>마지막 Worker가 file_sessions의 row_count를 정확하게 업데이트</li>
+ *   <li>셀 값 오염 방어 (객체 참조 문자열, 빈 문자열 등 null 처리)</li>
+ * </ul>
+ *
+ * @see ExcelCoordinatorHandler 청크 분할 및 SQS 발행 담당
+ * @see ProcessingMessage Coordinator로부터 전달받는 메시지 모델
+ */
 public class ExcelWorkerHandler implements RequestHandler<SQSEvent, String> {
 
+    /** MongoDB 배치 삽입 크기 (한 번에 20,000건씩 insertMany) */
     private static final int BATCH_SIZE = 20000;
     private static final String AWS_REGION = System.getenv("AWS_REGION") != null
             ? System.getenv("AWS_REGION")
@@ -55,6 +75,15 @@ public class ExcelWorkerHandler implements RequestHandler<SQSEvent, String> {
         this.dateTimeFormatter = DateTimeFormatter.ISO_LOCAL_DATE_TIME;
     }
 
+    /**
+     * SQS 이벤트를 수신하여 Excel 데이터 청크를 처리한다
+     *
+     * <p>각 SQS 메시지에 대해 Redis 상태 보장 -> 청크 처리 -> 완료 마킹 순서로 실행한다.</p>
+     *
+     * @param sqsEvent SQS 이벤트 (하나 이상의 ProcessingMessage 포함)
+     * @param context  Lambda 실행 컨텍스트
+     * @return "SUCCESS" 문자열
+     */
     @Override
     public String handleRequest(SQSEvent sqsEvent, Context context) {
         context.getLogger().log("=== [20260210-ver]Excel Worker 시작 ===");
@@ -80,6 +109,17 @@ public class ExcelWorkerHandler implements RequestHandler<SQSEvent, String> {
         }
     }
 
+    /**
+     * 하나의 청크를 처리한다: S3 다운로드 -> Excel 파싱 -> MongoDB 저장
+     *
+     * <p>임시 파일에 S3 객체를 다운로드한 뒤, StreamingReader로 지정된 행 범위만
+     * 읽어서 MongoDB raw_data 컬렉션에 배치 삽입한다.
+     * 중복 실행 방지를 위해 삽입 전 해당 범위의 기존 데이터를 삭제한다.</p>
+     *
+     * @param message 처리할 청크 정보 (행 범위, S3 위치 등)
+     * @param context Lambda 실행 컨텍스트
+     * @throws IOException 파일 입출력 예외
+     */
     private void processChunk(ProcessingMessage message, Context context) throws IOException {
         Path tempFile = Files.createTempFile("excel-", ".xlsx");
 
@@ -203,12 +243,29 @@ public class ExcelWorkerHandler implements RequestHandler<SQSEvent, String> {
         }
     }
 
+    /**
+     * Redis에 처리된 행 수를 증분 업데이트한다 (HINCRBY)
+     *
+     * @param uploadId  업로드 ID
+     * @param deltaRows 이번 배치에서 처리한 행 수
+     * @param totalRows 전체 행 수
+     * @param context   Lambda 실행 컨텍스트
+     */
     private void updateProgress(String uploadId, int deltaRows, int totalRows, Context context) {
         try (Jedis jedis = RedisConfig.getJedis()) {
             jedis.hincrBy("upload:status:" + uploadId, "processedRows", deltaRows);
         } catch (Exception e) {}
     }
 
+    /**
+     * 청크 완료를 Redis에 기록하고, 모든 청크 완료 시 최종 처리를 수행한다
+     *
+     * <p>Redis Set에 완료된 청크 번호를 추가하고, 모든 청크가 완료되면
+     * 상태를 COMPLETED로 변경한 뒤 file_sessions의 row_count를 업데이트한다.</p>
+     *
+     * @param message 완료된 청크의 메시지 정보
+     * @param context Lambda 실행 컨텍스트
+     */
     private void markChunkCompleted(ProcessingMessage message, Context context) {
         try (Jedis jedis = RedisConfig.getJedis()) {
             String key = "upload:status:" + message.getUploadId();
@@ -366,7 +423,16 @@ public class ExcelWorkerHandler implements RequestHandler<SQSEvent, String> {
         }
     }
 
-    // ... (Helper 메서드들: extractHeaders, extractRowDataStreaming, getCellValue 등은 그대로 사용)
+    /**
+     * Excel 행에서 헤더에 매핑된 데이터를 추출한다
+     *
+     * <p>오염 방어 로직이 포함되어 StreamingCell 객체 참조 문자열,
+     * 빈 문자열 등을 null로 처리한다.</p>
+     *
+     * @param headers 헤더 목록 (컬럼명)
+     * @param row     Excel 행 데이터
+     * @return 컬럼명-값 쌍의 맵 (순서 보장: LinkedHashMap)
+     */
     private Map<String, Object> extractRowDataStreaming(List<String> headers, Row row) {
         Map<String, Object> data = new LinkedHashMap<>();
         for (int i = 0; i < headers.size(); i++) {
@@ -388,6 +454,12 @@ public class ExcelWorkerHandler implements RequestHandler<SQSEvent, String> {
         return data;
     }
 
+    /**
+     * Excel 첫 번째 행에서 헤더(컬럼명) 목록을 추출한다
+     *
+     * @param headerRow 헤더 행
+     * @return 컬럼명 리스트 (null인 경우 "Column_{인덱스}" 형식으로 대체)
+     */
     private List<String> extractHeaders(Row headerRow) {
         List<String> headers = new ArrayList<>();
         for (Cell cell : headerRow) {
@@ -397,6 +469,16 @@ public class ExcelWorkerHandler implements RequestHandler<SQSEvent, String> {
         return headers;
     }
 
+    /**
+     * Excel 셀의 값을 적절한 Java 타입으로 변환한다
+     *
+     * <p>셀 타입에 따라 문자열, 숫자, 날짜, 불리언 등으로 변환하며,
+     * FORMULA 셀은 캐시된 값을 추출한다. 알 수 없는 셀 타입이나
+     * 빈 값은 null을 반환한다.</p>
+     *
+     * @param cell Excel 셀 (null 가능)
+     * @return 변환된 값 (String, Double, Boolean, 또는 null)
+     */
     private Object getCellValue(Cell cell) {
         if (cell == null) return null;
         switch (cell.getCellType()) {
@@ -436,6 +518,12 @@ public class ExcelWorkerHandler implements RequestHandler<SQSEvent, String> {
         }
     }
 
+    /**
+     * Excel 셀 값을 문자열로 변환한다 (오염된 값은 null 처리)
+     *
+     * @param cell Excel 셀 (null 가능)
+     * @return 문자열 값 또는 null
+     */
     private String getCellValueAsString(Cell cell) {
         Object value = getCellValue(cell);
         if (value == null) return null;

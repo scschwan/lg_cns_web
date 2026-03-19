@@ -26,6 +26,13 @@ import java.time.LocalDateTime;
 import java.util.*;
 import java.util.stream.Collectors;
 
+/**
+ * Short List 서비스
+ *
+ * 원가절감 Short List 기능의 비즈니스 로직을 담당한다.
+ * Long List에서 선택된 항목을 기반으로 트리 구조 조회, 통계,
+ * 차트 데이터, 항목 선택/저장, 원본 데이터 페이징 조회 기능을 포함한다.
+ */
 @Slf4j
 @Service
 @RequiredArgsConstructor

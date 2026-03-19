@@ -1,3 +1,12 @@
+/**
+ * 500 서버 에러 페이지 컴포넌트
+ *
+ * 서버 오류 발생 시 표시되는 에러 페이지이다.
+ * location.state를 통해 전달된 에러 메시지를 표시하며,
+ * 새로고침 및 홈/로그인 이동 버튼을 제공한다.
+ *
+ * @component
+ */
 import React from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
@@ -10,6 +19,7 @@ function ServerErrorPage() {
     const { isAuthenticated, loading } = useAuth();
     const errorMessage = location.state?.message;
 
+    /** 홈 이동 핸들러 - 인증 상태에 따라 프로젝트 목록 또는 로그인 페이지로 이동 */
     const handleGoHome = () => {
         if (isAuthenticated) {
             navigate('/projects');

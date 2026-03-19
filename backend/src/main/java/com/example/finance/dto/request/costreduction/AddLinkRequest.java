@@ -5,6 +5,9 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
+/**
+ * 과제 링크 추가 요청 DTO
+ */
 @Data
 @Builder
 @NoArgsConstructor

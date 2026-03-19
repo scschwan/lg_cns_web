@@ -1,3 +1,9 @@
+/**
+ * 애플리케이션 엔트리 포인트
+ *
+ * React 앱을 DOM에 마운트하고 StrictMode를 활성화한다.
+ * 성능 측정을 위한 reportWebVitals도 초기화한다.
+ */
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import './index.css';

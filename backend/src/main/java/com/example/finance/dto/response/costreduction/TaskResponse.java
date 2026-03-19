@@ -8,6 +8,11 @@ import lombok.NoArgsConstructor;
 import java.time.LocalDateTime;
 import java.util.List;
 
+/**
+ * 과제 응답 DTO
+ *
+ * 원가절감 과제의 상세 정보를 반환한다.
+ */
 @Data
 @Builder
 @NoArgsConstructor

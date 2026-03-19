@@ -1,6 +1,23 @@
+/**
+ * clusteringService - 클러스터링 관련 API 서비스
+ *
+ * Step 5(Clustering) 단계에서 사용하는 API를 제공한다.
+ *
+ * 주요 기능:
+ * - 클러스터 생성(generateClusters), 미병합/병합 클러스터 조회
+ * - 클러스터 병합/해제/부분해제, 3-Phase 배치 병합
+ * - 키워드/공급업체 통계, 고급 검색, 클러스터명 변경
+ * - 키워드 계층(Lv1/Lv2/Lv3) CRUD
+ *
+ * 모든 API는 /api/projects/{projectId}/sessions/{sessionId}/clustering/ 하위 경로를 사용한다.
+ */
 import api from './api';
 
 const clusteringService = {
+    /**
+     * POST .../clustering/generate - AI 기반 클러스터 자동 생성
+     * @param {Object} options - { includeSupplier, includeCostCenter } 포함 여부
+     */
     generateClusters: async (projectId, sessionId, options = {}) => {
         const response = await api.post(
             `/api/projects/${projectId}/sessions/${sessionId}/clustering/generate`,
@@ -9,6 +26,7 @@ const clusteringService = {
         return response.data;
     },
 
+    /** GET .../clustering/unmerged - 미병합 클러스터 페이징 조회 */
     getUnmergedClusters: async (projectId, sessionId, page = 0, size = 20, keyword = null) => {
         const params = { page, size };
         if (keyword) params.keyword = keyword;
@@ -18,6 +36,7 @@ const clusteringService = {
         return response.data;
     },
 
+    /** GET .../clustering/unmerged-ids - 미병합 클러스터 번호 전체 목록 (병합 시 선택용) */
     getAllUnmergedClusterNumbers: async (projectId, sessionId, keyword = null, supplier = null) => {
         const params = {};
         if (keyword) params.keyword = keyword;
@@ -28,6 +47,7 @@ const clusteringService = {
         return response.data;
     },
 
+    /** GET .../clustering/keyword-stats - 키워드별 통계 (건수, 금액) */
     getKeywordStats: async (projectId, sessionId) => {
         const response = await api.get(
             `/api/projects/${projectId}/sessions/${sessionId}/clustering/keyword-stats`
@@ -35,6 +55,7 @@ const clusteringService = {
         return response.data;
     },
 
+    /** GET .../clustering/supplier-stats - 공급업체별 통계 */
     getSupplierStats: async (projectId, sessionId) => {
         const response = await api.get(
             `/api/projects/${projectId}/sessions/${sessionId}/clustering/supplier-stats`
@@ -42,6 +63,7 @@ const clusteringService = {
         return response.data;
     },
 
+    /** GET .../clustering/merged - 병합된 클러스터 목록 조회 */
     getMergedClusters: async (projectId, sessionId) => {
         const response = await api.get(
             `/api/projects/${projectId}/sessions/${sessionId}/clustering/merged`
@@ -49,6 +71,7 @@ const clusteringService = {
         return response.data;
     },
 
+    /** GET .../clustering/merged/{clusterNumber}/children - 병합 클러스터의 자식 목록 (페이징) */
     getMergedClusterChildren: async (projectId, sessionId, clusterNumber, page = 0, size = 50) => {
         const response = await api.get(
             `/api/projects/${projectId}/sessions/${sessionId}/clustering/merged/${clusterNumber}/children`,
@@ -57,6 +80,7 @@ const clusteringService = {
         return response.data;
     },
 
+    /** GET .../clustering/statistics - 클러스터링 전체 통계 */
     getStatistics: async (projectId, sessionId) => {
         const response = await api.get(
             `/api/projects/${projectId}/sessions/${sessionId}/clustering/statistics`
@@ -64,6 +88,7 @@ const clusteringService = {
         return response.data;
     },
 
+    /** POST .../clustering/merge - 선택한 클러스터 번호들을 병합 */
     mergeClusters: async (projectId, sessionId, clusterNumbers) => {
         const response = await api.post(
             `/api/projects/${projectId}/sessions/${sessionId}/clustering/merge`,
@@ -122,6 +147,7 @@ const clusteringService = {
         return response.data;
     },
 
+    /** GET .../clustering/merge/progress/{taskId} - 병합 작업 진행률 조회 */
     getMergeProgress: async (projectId, sessionId, taskId) => {
         const response = await api.get(
             `/api/projects/${projectId}/sessions/${sessionId}/clustering/merge/progress/${taskId}`
@@ -137,6 +163,7 @@ const clusteringService = {
         return response.data;
     },
 
+    /** POST .../clustering/unmerge - 병합 클러스터 전체 해제 */
     unmergeClusters: async (projectId, sessionId, mergedClusterNumber) => {
         const response = await api.post(
             `/api/projects/${projectId}/sessions/${sessionId}/clustering/unmerge`,
@@ -172,6 +199,7 @@ const clusteringService = {
         return response.data;
     },
 
+    /** POST .../clustering/auto-merge-undefined - "미분류" 클러스터 자동 병합 */
     autoMergeUndefined: async (projectId, sessionId) => {
         const response = await api.post(
             `/api/projects/${projectId}/sessions/${sessionId}/clustering/auto-merge-undefined`
@@ -179,6 +207,7 @@ const clusteringService = {
         return response.data;
     },
 
+    /** PUT .../clustering/rename - 클러스터명 변경 */
     renameCluster: async (projectId, sessionId, clusterNumber, newName) => {
         const response = await api.put(
             `/api/projects/${projectId}/sessions/${sessionId}/clustering/rename`,

@@ -11,6 +11,13 @@ import org.springframework.data.mongodb.core.mapping.Field;
 
 import java.time.LocalDateTime;
 
+/**
+ * 주간 진척 모델
+ *
+ * MongoDB 컬렉션: task_weekly_progress
+ *
+ * 과제별 주간 단위 진행 내역, 이슈, 작성자 정보를 관리한다.
+ */
 @Document(collection = "task_weekly_progress")
 @Data
 @Builder

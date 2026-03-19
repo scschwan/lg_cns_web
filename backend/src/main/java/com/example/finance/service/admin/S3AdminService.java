@@ -14,6 +14,13 @@ import software.amazon.awssdk.services.s3.model.*;
 import java.util.*;
 import java.util.stream.Collectors;
 
+/**
+ * S3 관리자 서비스
+ *
+ * 관리자용 S3 파일 관리 기능을 제공한다.
+ * 전체 파일 목록 조회, 고아 파일(세션 미연결 파일) 탐색,
+ * 파일 삭제 및 고아 파일 일괄 정리 기능을 포함한다.
+ */
 @Slf4j
 @Service
 @RequiredArgsConstructor
@@ -26,6 +33,11 @@ public class S3AdminService {
     @Value("${aws.s3.excel-bucket}")
     private String excelBucket;
 
+    /**
+     * S3 버킷 내 전체 파일 목록 조회
+     *
+     * @return 파일 키, 크기, 마지막 수정 시간이 포함된 파일 목록
+     */
     public List<Map<String, Object>> listAllFiles() {
         List<Map<String, Object>> files = new ArrayList<>();
 
@@ -55,6 +67,11 @@ public class S3AdminService {
         return files;
     }
 
+    /**
+     * 고아 파일 탐색 (세션에 연결되지 않은 S3 파일)
+     *
+     * @return 고아 파일 목록
+     */
     public List<Map<String, Object>> findOrphanedFiles() {
         List<Map<String, Object>> allFiles = listAllFiles();
 
@@ -79,6 +96,12 @@ public class S3AdminService {
                 .collect(Collectors.toList());
     }
 
+    /**
+     * S3 파일 일괄 삭제
+     *
+     * @param s3Keys 삭제할 S3 키 목록
+     * @return 삭제 성공한 파일 수
+     */
     public int deleteFiles(List<String> s3Keys) {
         int deleted = 0;
         for (String key : s3Keys) {
@@ -92,6 +115,11 @@ public class S3AdminService {
         return deleted;
     }
 
+    /**
+     * 고아 파일 일괄 정리 (세션 미연결 파일 자동 탐색 후 삭제)
+     *
+     * @return 삭제된 고아 파일 수
+     */
     public int cleanupOrphaned() {
         List<Map<String, Object>> orphaned = findOrphanedFiles();
         List<String> keys = orphaned.stream()

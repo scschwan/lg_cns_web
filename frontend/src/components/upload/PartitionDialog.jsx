@@ -1,4 +1,16 @@
 // frontend/src/components/upload/PartitionDialog.jsx
+/**
+ * PartitionDialog - 파티션 분석 결과 승인 다이얼로그
+ *
+ * 엑셀 파일 업로드 후 계정명별로 자동 그룹핑된 파티션 목록을 표시하며,
+ * 사용자가 세션명, 작업자명을 편집하고 선택적으로 세션을 생성할 수 있다.
+ *
+ * @param {boolean} open - 다이얼로그 표시 여부
+ * @param {Array} partitions - 서버에서 반환한 파티션 분석 결과 배열
+ *   각 파티션: { accountName, sessionName, workerName, fileCount, totalRows, totalAmount }
+ * @param {function} onClose - 닫기 콜백
+ * @param {function} onApprove - 선택한 파티션 승인 콜백 (선택된 파티션 배열 전달)
+ */
 
 import React, { useState, useEffect } from 'react';
 import {

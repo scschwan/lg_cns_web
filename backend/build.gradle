@@ -1,19 +1,25 @@
+// ===========================================================
+// Finance Backend - Gradle 빌드 설정
+// ===========================================================
+
 plugins {
     id 'java'
-    id 'org.springframework.boot' version '3.5.9-SNAPSHOT'
-    id 'io.spring.dependency-management' version '1.1.7'
+    id 'org.springframework.boot' version '3.5.9-SNAPSHOT'   // Spring Boot 플러그인
+    id 'io.spring.dependency-management' version '1.1.7'     // 의존성 버전 관리
 }
 
 group = 'com.example'
 version = '0.0.1-SNAPSHOT'
 description = 'finance-backend'
 
+// Java 21 사용 (Virtual Threads 등 최신 기능 활용)
 java {
     toolchain {
         languageVersion = JavaLanguageVersion.of(21)
     }
 }
 
+// Lombok 등 컴파일 전용 의존성이 어노테이션 프로세서를 상속하도록 설정
 configurations {
     compileOnly {
         extendsFrom annotationProcessor
@@ -22,59 +28,55 @@ configurations {
 
 repositories {
     mavenCentral()
-    maven { url = 'https://repo.spring.io/snapshot' }
+    maven { url = 'https://repo.spring.io/snapshot' }         // Spring Boot 스냅샷 저장소
 }
 
 dependencies {
-    implementation 'org.springframework.boot:spring-boot-starter-actuator'
-    implementation 'org.springframework.boot:spring-boot-starter-validation'
-    implementation 'org.springframework.boot:spring-boot-starter-web'
+    // ── Spring Boot 핵심 스타터 ──
+    implementation 'org.springframework.boot:spring-boot-starter-actuator'     // 모니터링/헬스체크
+    implementation 'org.springframework.boot:spring-boot-starter-validation'   // Bean Validation (@Valid)
+    implementation 'org.springframework.boot:spring-boot-starter-web'         // REST API (Spring MVC)
 
-    // MongoDB (추가)
-    implementation 'org.springframework.boot:spring-boot-starter-data-mongodb'
+    // ── 데이터 저장소 ──
+    implementation 'org.springframework.boot:spring-boot-starter-data-mongodb' // MongoDB/DocumentDB 연동
+    implementation 'org.springframework.boot:spring-boot-starter-data-redis'   // Redis 연동 (캐시, 상태 관리)
 
-    // Redis (추가)
-    implementation 'org.springframework.boot:spring-boot-starter-data-redis'
+    // ── 세션 관리 ──
+    implementation 'org.springframework.session:spring-session-data-mongodb'   // MongoDB 기반 세션 저장
+    implementation 'org.springframework.session:spring-session-data-redis'     // Redis 기반 세션 저장
 
-    implementation 'org.springframework.session:spring-session-data-mongodb'
-    implementation 'org.springframework.session:spring-session-data-redis'
+    // ── 보안 ──
+    implementation 'org.springframework.boot:spring-boot-starter-security'    // Spring Security (인증/인가)
+    implementation 'io.jsonwebtoken:jjwt-api:0.12.3'                         // JWT API
+    runtimeOnly 'io.jsonwebtoken:jjwt-impl:0.12.3'                          // JWT 구현체
+    runtimeOnly 'io.jsonwebtoken:jjwt-jackson:0.12.3'                       // JWT Jackson 직렬화
 
-    // ✅ Spring Security (신규 추가)
-    implementation 'org.springframework.boot:spring-boot-starter-security'
+    // ── API 문서 ──
+    implementation 'org.springdoc:springdoc-openapi-starter-webmvc-ui:2.3.0' // Swagger UI (OpenAPI 3.0)
 
-    // ✅ JWT (신규 추가)
-    implementation 'io.jsonwebtoken:jjwt-api:0.12.3'
-    runtimeOnly 'io.jsonwebtoken:jjwt-impl:0.12.3'
-    runtimeOnly 'io.jsonwebtoken:jjwt-jackson:0.12.3'
+    // ── AWS SDK v2 (BOM 방식) ──
+    implementation platform('software.amazon.awssdk:bom:2.28.11')            // AWS SDK 버전 통합 관리
+    implementation 'software.amazon.awssdk:s3'                               // S3 파일 업로드/다운로드
+    implementation 'software.amazon.awssdk:sqs'                              // SQS 메시지 큐 (Lambda 연동)
 
-    // ⭐ SpringDoc OpenAPI (Swagger) - 신규 추가
-    implementation 'org.springdoc:springdoc-openapi-starter-webmvc-ui:2.3.0'
+    // ── Excel 처리 ──
+    implementation 'org.apache.poi:poi:5.2.5'                                // Apache POI (Excel 기본)
+    implementation 'org.apache.poi:poi-ooxml:5.2.5'                          // Apache POI (xlsx 형식 지원)
 
+    // ── 자연어 처리 ──
+    implementation 'org.openkoreantext:open-korean-text:2.3.1'               // 한국어 형태소 분석 (Okt)
 
-    // AWS SDK ✅ (수동 추가)
-    // AWS SDK - BOM 방식 (변수 사용 안 함)
-    implementation platform('software.amazon.awssdk:bom:2.28.11')
-    implementation 'software.amazon.awssdk:s3'
-    implementation 'software.amazon.awssdk:sqs'
-    // AWS SDK v2
+    // ── 개발 도구 ──
+    compileOnly 'org.projectlombok:lombok'                                   // Lombok (보일러플레이트 코드 제거)
+    annotationProcessor 'org.projectlombok:lombok'                           // Lombok 어노테이션 프로세서
 
-    // Excel 처리 (추가)
-    implementation 'org.apache.poi:poi:5.2.5'
-    implementation 'org.apache.poi:poi-ooxml:5.2.5'
-
-    // 한국어 형태소 분석 (Open Korean Text / Okt)
-    implementation 'org.openkoreantext:open-korean-text:2.3.1'
-
-    compileOnly 'org.projectlombok:lombok'
-    annotationProcessor 'org.projectlombok:lombok'
-    testImplementation 'org.springframework.boot:spring-boot-starter-test'
-    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+    // ── 테스트 ──
+    testImplementation 'org.springframework.boot:spring-boot-starter-test'   // Spring Boot 테스트 지원
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'             // JUnit 5 런처
 }
 
 tasks.named('test') {
-    useJUnitPlatform()
-
-    jvmArgs("-XX:+EnableDynamicAgentLoading")
-    // open-korean-text 사전 로딩에 충분한 힙 메모리 할당
-    maxHeapSize = '1g'
+    useJUnitPlatform()                                // JUnit 5 플랫폼 사용
+    jvmArgs("-XX:+EnableDynamicAgentLoading")          // 동적 에이전트 로딩 활성화 (Mockito 등)
+    maxHeapSize = '1g'                                // open-korean-text 사전 로딩에 충분한 힙 메모리 할당
 }

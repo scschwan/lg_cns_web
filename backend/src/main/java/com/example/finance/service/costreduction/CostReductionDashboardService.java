@@ -22,6 +22,13 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Set;
 
+/**
+ * 원가절감 대시보드 서비스
+ *
+ * 대시보드 초기화, 상태 조회, 편집자 잠금(Redis TTL 기반) 제어,
+ * 페이즈 전환(LONG_LIST -> SHORT_LIST -> TASK),
+ * 리스트 잠금 해제, 대시보드 전체 초기화 등의 비즈니스 로직을 담당한다.
+ */
 @Slf4j
 @Service
 @RequiredArgsConstructor

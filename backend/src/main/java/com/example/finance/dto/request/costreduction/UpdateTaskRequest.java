@@ -5,6 +5,11 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
+/**
+ * 과제 수정 요청 DTO
+ *
+ * 과제의 기본 정보, 진행률, 상태, 실적, 이슈 등을 수정하기 위한 요청.
+ */
 @Data
 @Builder
 @NoArgsConstructor

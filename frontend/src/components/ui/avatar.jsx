@@ -1,3 +1,7 @@
+/**
+ * Avatar - 사용자 아바타 컴포넌트 (Radix UI 기반)
+ * 하위 컴포넌트: AvatarImage(이미지), AvatarFallback(이미지 로드 실패 시 대체 표시)
+ */
 import * as React from "react"
 import * as AvatarPrimitive from "@radix-ui/react-avatar"
 

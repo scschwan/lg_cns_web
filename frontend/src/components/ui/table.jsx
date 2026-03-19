@@ -1,3 +1,7 @@
+/**
+ * Table - 테이블 컴포넌트 (Shadcn UI)
+ * 하위 컴포넌트: TableHeader, TableBody, TableFooter, TableHead, TableRow, TableCell, TableCaption
+ */
 import * as React from "react"
 
 import { cn } from "@/lib/utils"

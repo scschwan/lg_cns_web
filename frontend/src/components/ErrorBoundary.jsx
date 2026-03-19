@@ -1,3 +1,16 @@
+/**
+ * ErrorBoundary - React 에러 경계 컴포넌트
+ *
+ * 하위 컴포넌트 트리에서 발생하는 렌더링 에러를 포착하여
+ * 앱 전체 크래시를 방지하고, 사용자에게 오류 안내 UI를 제공한다.
+ *
+ * 기능:
+ * - getDerivedStateFromError로 에러 상태 캡처
+ * - componentDidCatch로 에러 로깅
+ * - 새로고침 / 프로젝트 목록(로그인 페이지) 이동 버튼 제공
+ *
+ * @usage <ErrorBoundary>{children}</ErrorBoundary>
+ */
 import React from 'react';
 import { ServerCrash, RotateCcw, Home } from 'lucide-react';
 import { Button } from '@/components/ui/button';

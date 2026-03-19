@@ -1,3 +1,8 @@
+/**
+ * Breadcrumb - 경로 탐색 (빵가루) 컴포넌트 (Shadcn UI)
+ * 하위 컴포넌트: BreadcrumbList, BreadcrumbItem, BreadcrumbLink, BreadcrumbPage,
+ *               BreadcrumbSeparator, BreadcrumbEllipsis
+ */
 import * as React from "react"
 import { Slot } from "@radix-ui/react-slot"
 import { ChevronRight, MoreHorizontal } from "lucide-react"

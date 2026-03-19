@@ -1,13 +1,28 @@
+/**
+ * authService - 인증 관련 API 서비스
+ *
+ * 회원가입, 로그인, 로그아웃, 프로필 수정, 비밀번호 변경 등
+ * 사용자 인증과 관련된 모든 API 호출 및 localStorage 토큰 관리를 담당한다.
+ *
+ * 토큰 저장소:
+ * - localStorage.authToken: JWT Access Token
+ * - localStorage.refreshToken: JWT Refresh Token
+ * - localStorage.user: 사용자 정보 JSON
+ */
 import api from './api';
 
 const authService = {
-    // 회원가입
+    /** POST /api/auth/register - 회원가입 */
     register: async (userData) => {
         const response = await api.post('/api/auth/register', userData);
         return response.data;
     },
 
-    // 로그인
+    /**
+     * POST /api/auth/login - 로그인
+     * @param {{ email: string, password: string }} credentials - 로그인 정보
+     * @returns {{ accessToken, refreshToken, userId, email, name, role }} 인증 결과
+     */
     login: async (credentials) => {
         const response = await api.post('/api/auth/login', credentials);
 
@@ -25,14 +40,14 @@ const authService = {
         return response.data;
     },
 
-    // 로그아웃
+    /** 로그아웃 - localStorage에서 토큰 및 사용자 정보 제거 */
     logout: () => {
         localStorage.removeItem('authToken');
         localStorage.removeItem('refreshToken');
         localStorage.removeItem('user');
     },
 
-    // 현재 사용자 정보
+    /** localStorage에서 현재 사용자 정보를 파싱하여 반환 (없으면 null) */
     getCurrentUser: () => {
         try {
             const userStr = localStorage.getItem('user');
@@ -51,7 +66,10 @@ const authService = {
         }
     },
 
-    // 프로필 수정 (이름)
+    /**
+     * PUT /api/auth/profile - 프로필 수정 (이름)
+     * localStorage의 user 정보도 동기화한다.
+     */
     updateProfile: async (name) => {
         const response = await api.put('/api/auth/profile', { name });
         // localStorage 동기화
@@ -63,13 +81,13 @@ const authService = {
         return response.data;
     },
 
-    // 비밀번호 변경
+    /** PUT /api/auth/profile/password - 비밀번호 변경 */
     changePassword: async (currentPassword, newPassword) => {
         const response = await api.put('/api/auth/profile/password', { currentPassword, newPassword });
         return response.data;
     },
 
-    // 인증 여부 확인
+    /** 클라이언트 측 인증 여부 확인 (토큰 존재 여부로 판단) */
     isAuthenticated: () => {
         const token = localStorage.getItem('authToken');
         // ⭐ 방어 코드 추가

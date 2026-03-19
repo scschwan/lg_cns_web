@@ -1,3 +1,11 @@
+/**
+ * 로그인 페이지 컴포넌트
+ *
+ * 사용자 인증을 처리하는 페이지로, 이메일/비밀번호 입력 폼을 제공한다.
+ * 로그인 성공 시 JWT 토큰을 저장하고 역할(ADMIN/USER)에 따라 적절한 페이지로 리다이렉트한다.
+ *
+ * @component
+ */
 import React, { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
@@ -10,9 +18,13 @@ import { Loader2 } from 'lucide-react';
 import SessionExpiredToast from '../../components/SessionExpiredToast';
 
 export default function LoginPage() {
+    /** 이메일 입력값 */
     const [email, setEmail] = useState('');
+    /** 비밀번호 입력값 */
     const [password, setPassword] = useState('');
+    /** 로그인 실패 시 에러 메시지 */
     const [error, setError] = useState('');
+    /** 로그인 API 호출 중 로딩 상태 */
     const [loading, setLoading] = useState(false);
 
     const { login, isAuthenticated, loading: authLoading, user } = useAuth();
@@ -25,6 +37,7 @@ export default function LoginPage() {
         }
     }, [authLoading, isAuthenticated, user, navigate]);
 
+    /** 로그인 폼 제출 핸들러 - AuthContext의 login 함수를 호출하여 인증 처리 */
     const handleSubmit = async (e) => {
         e.preventDefault();
         setError('');

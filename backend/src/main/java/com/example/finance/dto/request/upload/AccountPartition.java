@@ -5,6 +5,12 @@ import lombok.Data;
 
 import java.util.List;
 
+/**
+ * 계정 파티션 DTO
+ *
+ * 파일 분석 결과로 생성되는 계정별 파티션 정보.
+ * 세션 일괄 생성 시 각 파티션의 파일 목록, 계정명, 행 수, 금액 등을 전달한다.
+ */
 @Data
 @Builder
 public class AccountPartition {

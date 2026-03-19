@@ -1,3 +1,9 @@
+/**
+ * Button - 버튼 컴포넌트 (Shadcn UI)
+ * variant: "default" | "destructive" | "outline" | "secondary" | "ghost" | "link"
+ * size: "default" | "sm" | "lg" | "icon"
+ * asChild: true이면 자식 요소에 스타일 위임 (Radix Slot)
+ */
 import * as React from "react"
 import { Slot } from "@radix-ui/react-slot"
 import { cva } from "class-variance-authority";
