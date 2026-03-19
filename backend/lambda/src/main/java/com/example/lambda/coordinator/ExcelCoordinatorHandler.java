@@ -24,16 +24,32 @@ import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 
 /**
- * Excel Coordinator Lambda Handler (StAX Ver - Final Fix v2)
- * - 빈 행(phantom rows) 제외: &lt;v&gt; 또는 &lt;is&gt; 태그가 있는 행만 카운트
- * - 1,000,001건 데이터 정합성 보장
+ * Excel 파일 분할 처리 Coordinator Lambda Handler
+ *
+ * <p>S3에 업로드된 Excel(.xlsx) 파일의 메타데이터(행 수)를 StAX 방식으로 분석한 뒤,
+ * 데이터를 청크 단위로 분할하여 SQS를 통해 Worker Lambda에 작업을 분배한다.</p>
+ *
+ * <p>처리 흐름:</p>
+ * <ol>
+ *   <li>S3 이벤트 수신 (파일 업로드 트리거)</li>
+ *   <li>Excel 파일의 sheet1.xml을 StAX로 파싱하여 실제 데이터 행 수 카운트</li>
+ *   <li>빈 행(phantom rows) 제외 - {@code <v>} 또는 {@code <is>} 태그가 있는 행만 카운트</li>
+ *   <li>청크 크기(50,000행)로 분할하여 SQS에 ProcessingMessage 발행</li>
+ * </ol>
+ *
+ * <p>S3 키 구조: projects/{projectId}/sessions/{sessionId}/uploads/{uploadId}/{fileName}</p>
+ *
+ * @see ExcelWorkerHandler 실제 데이터 처리를 수행하는 Worker Lambda
+ * @see ProcessingMessage Coordinator와 Worker 간 전달 메시지 모델
  */
 public class ExcelCoordinatorHandler implements RequestStreamHandler {
 
+    /** JVM 시간대를 한국 시간(KST)으로 설정 */
     static {
         java.util.TimeZone.setDefault(java.util.TimeZone.getTimeZone("Asia/Seoul"));
     }
 
+    /** 하나의 청크에 포함할 최대 행 수 */
     private static final int CHUNK_SIZE = 50000;
     private static final String SQS_QUEUE_URL = System.getenv("SQS_QUEUE_URL");
     private static final String AWS_REGION = System.getenv("AWS_REGION") != null
@@ -51,6 +67,14 @@ public class ExcelCoordinatorHandler implements RequestStreamHandler {
         this.gson = new Gson();
     }
 
+    /**
+     * S3 이벤트를 수신하여 Excel 파일을 분석하고 청크별 SQS 메시지를 발행한다
+     *
+     * @param input   S3 이벤트 JSON (Records 배열 포함)
+     * @param output  처리 결과 출력 스트림
+     * @param context Lambda 실행 컨텍스트
+     * @throws IOException 입출력 예외
+     */
     @Override
     public void handleRequest(InputStream input, OutputStream output, Context context) throws IOException {
         context.getLogger().log("=== [Fix v2] Excel Coordinator 시작 (Data Rows Only) ===");
@@ -123,6 +147,18 @@ public class ExcelCoordinatorHandler implements RequestStreamHandler {
         }
     }
 
+    /**
+     * Excel 파일의 실제 데이터 행 수를 StAX 방식으로 분석한다
+     *
+     * <p>ZIP 내부의 xl/worksheets/sheet1.xml을 스트리밍 파싱하여
+     * {@code <v>} 또는 {@code <is>} 태그가 있는 행만 카운트한다.
+     * 헤더(1행)를 제외한 순수 데이터 행 수를 반환한다.</p>
+     *
+     * @param bucket S3 버킷명
+     * @param key    S3 객체 키
+     * @param context Lambda 실행 컨텍스트
+     * @return 데이터 행 수 (헤더 제외)
+     */
     private int analyzeExcelMetadata(String bucket, String key, Context context) {
         context.getLogger().log("Excel 행 개수 분석 시작 (값이 있는 행만 카운트)...");
 
@@ -181,6 +217,12 @@ public class ExcelCoordinatorHandler implements RequestStreamHandler {
         throw new RuntimeException("sheet1.xml을 찾을 수 없습니다.");
     }
 
+    /**
+     * 청크 처리 메시지를 SQS 큐에 발행한다
+     *
+     * @param message 처리 메시지 (청크 범위, 파일 정보 포함)
+     * @param context Lambda 실행 컨텍스트
+     */
     private void sendToSQS(ProcessingMessage message, Context context) {
         sqsClient.sendMessage(SendMessageRequest.builder()
                 .queueUrl(SQS_QUEUE_URL)
@@ -188,7 +230,7 @@ public class ExcelCoordinatorHandler implements RequestStreamHandler {
                 .build());
     }
 
-    // DTO 클래스
+    /** S3 이벤트 알림 JSON을 매핑하기 위한 내부 DTO 클래스 */
     private static class S3EventDto {
         @SerializedName("Records")
         public List<S3Record> records;

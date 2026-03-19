@@ -1,3 +1,13 @@
+/**
+ * 클러스터링 페이지 컴포넌트 (Step 5)
+ *
+ * 키워드 기반으로 생성된 클러스터 목록을 관리하는 페이지이다.
+ * 클러스터 병합, 이름 변경, 삭제, 상세 데이터 조회 기능과
+ * 공급업체/코스트센터별 통계, 페이징, 정렬 기능을 제공한다.
+ * 편집자 잠금 및 뷰어 모드를 지원한다.
+ *
+ * @component
+ */
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {

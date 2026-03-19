@@ -22,6 +22,18 @@ public class MongoIndexInitializer {
 
     private final MongoTemplate mongoTemplate;
 
+    /**
+     * 애플리케이션 준비 완료 시 필수 인덱스를 생성한다
+     *
+     * <p>생성되는 인덱스:</p>
+     * <ul>
+     *   <li>session_data: (session_id + raw_data_id) - updateMulti 성능 최적화</li>
+     *   <li>process_data: (session_id + is_hidden) - 페이징 쿼리 성능 최적화</li>
+     *   <li>process_view_data: (process_data_id) - process_data 조인 성능</li>
+     *   <li>process_view_data: (session_id) - 세션 기반 조회 성능</li>
+     *   <li>session_data: (session_id + is_hidden) - 페이징 쿼리 성능 최적화</li>
+     * </ul>
+     */
     @EventListener(ApplicationReadyEvent.class)
     public void ensureIndexes() {
         // session_data: updateMulti 성능을 위한 복합 인덱스
@@ -45,6 +57,16 @@ public class MongoIndexInitializer {
                 new Index().on("session_id", Sort.Direction.ASC).on("is_hidden", Sort.Direction.ASC));
     }
 
+    /**
+     * 지정된 컬렉션에 인덱스를 생성하거나 기존 인덱스를 확인한다
+     *
+     * <p>인덱스가 이미 존재하면 무시하고, 생성 실패 시 에러 로그를 남기되
+     * 애플리케이션 시작을 중단하지 않는다.</p>
+     *
+     * @param collection 대상 컬렉션명
+     * @param indexName  인덱스 이름
+     * @param index      인덱스 정의 객체
+     */
     private void createIndex(String collection, String indexName, Index index) {
         try {
             mongoTemplate.indexOps(collection).ensureIndex(index.named(indexName));

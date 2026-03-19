@@ -9,6 +9,7 @@ import lombok.NoArgsConstructor;
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
+/** 편집자 잠금 응답 DTO */
 public class LockResponse {
 
     private Boolean isEditor;

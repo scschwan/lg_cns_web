@@ -1,3 +1,12 @@
+/**
+ * CostReductionSidebar - 비용 절감 대시보드 사이드바 네비게이션
+ *
+ * 5단계 비용 절감 프로세스(Long List → Short List → Able 과제 등록 →
+ * Able 과제 관리 → 완료 과제 관리)의 메뉴를 제공한다.
+ * 현재 활성 단계를 하이라이트로 표시하며, 각 단계 클릭 시 해당 경로로 이동한다.
+ *
+ * @param {string} projectId - 현재 프로젝트 ID (URL 경로 생성에 사용)
+ */
 import React from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { cn } from '@/lib/utils';
@@ -7,6 +16,7 @@ import {
 } from 'lucide-react';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 
+/** 비용 절감 프로세스 5단계 정의 */
 const steps = [
   {
     id: 1,

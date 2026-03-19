@@ -20,6 +20,14 @@ import java.util.Map;
 @RestController
 @RequestMapping("/api/data")
 @RequiredArgsConstructor
+/**
+ * 데이터 조회 컨트롤러 (개발/테스트용)
+ *
+ * MongoDB 연결 테스트, raw_data 조회 등의 기능을 제공한다.
+ * Redis 캐싱을 통해 반복 조회 성능을 최적화한다.
+ *
+ * Base Path: /api/data
+ */
 public class DataController {
 
     private final RawDataRepository rawDataRepository;

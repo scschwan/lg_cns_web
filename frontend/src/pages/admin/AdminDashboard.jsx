@@ -1,3 +1,12 @@
+/**
+ * 관리자 대시보드 컴포넌트
+ *
+ * 시스템 전체 통계(사용자 수, 프로젝트 수, 세션 수)를 표시하고,
+ * 승인 대기 중인 사용자 목록과 서비스 차단(유지보수) 모드 제어 기능을 제공한다.
+ * Lambda 처리 상태 모니터링 및 강제 초기화 기능도 포함한다.
+ *
+ * @component
+ */
 import React, { useState, useEffect, useCallback } from 'react';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -9,7 +18,9 @@ import adminService from '@/services/adminService';
 import systemService from '@/services/systemService';
 
 export default function AdminDashboard() {
+    /** 시스템 전체 통계 데이터 (전체 사용자, 승인 대기, 프로젝트, 세션 수) */
     const [stats, setStats] = useState(null);
+    /** 승인 대기 중인 사용자 목록 */
     const [pendingUsers, setPendingUsers] = useState([]);
     const navigate = useNavigate();
 
@@ -25,6 +36,7 @@ export default function AdminDashboard() {
         loadMaintenanceStatus();
     }, []);
 
+    /** 대시보드 통계 및 승인 대기 사용자 목록을 병렬로 로드 */
     const loadData = async () => {
         try {
             const [statsRes, usersRes] = await Promise.all([
@@ -52,6 +64,7 @@ export default function AdminDashboard() {
         }
     }, []);
 
+    /** 사용자 빠른 승인 처리 */
     const handleQuickApprove = async (userId) => {
         try {
             await adminService.approveUser(userId);
@@ -61,6 +74,7 @@ export default function AdminDashboard() {
         }
     };
 
+    /** 서비스 차단 모드 토글 - 활성화/해제 전환 */
     const handleToggleMaintenance = async () => {
         const currentEnabled = maintenanceStatus?.isMaintenance ?? false;
         const newEnabled = !currentEnabled;

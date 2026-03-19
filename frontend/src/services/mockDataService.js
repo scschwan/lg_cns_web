@@ -1,15 +1,14 @@
 // frontend/src/services/mockDataService.js
 
 /**
- * Mock 데이터 서비스
- * 서버 연동 전 UI 테스트용 더미 데이터 제공
- * 
- * 추후 실제 API 연동 시 각 화면별 서비스로 분리 예정:
- * - fileLoadService.js
- * - preprocessingService.js
- * - dataTransformService.js
- * - clusteringService.js
- * - exportService.js
+ * mockDataService - Mock 데이터 서비스
+ *
+ * 서버 연동 전 UI 테스트용 더미 데이터를 제공한다.
+ * 각 화면(FileLoad, Preprocessing, DataTransform, Clustering, Export)에
+ * 필요한 샘플 데이터를 생성하여 반환한다.
+ *
+ * 참고: 실제 API 연동 완료 후에는 사용하지 않으며,
+ * 개발/데모 환경에서만 활용한다.
  */
 
 // ============================================

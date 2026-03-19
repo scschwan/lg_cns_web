@@ -17,10 +17,26 @@ import java.util.Map;
 @RestController
 @RequestMapping("/api/projects/{projectId}/longlist")
 @RequiredArgsConstructor
+/**
+ * Long List 컨트롤러
+ *
+ * 원가절감 Long List 기능을 제공한다.
+ * 트리 구조 데이터 조회, 통계, 차트 데이터, 항목 선택/저장,
+ * 원본 데이터(raw_data) 조회 등의 API를 포함한다.
+ *
+ * Base Path: /api/projects/{projectId}/longlist
+ */
 public class LongListController {
 
     private final LongListService longListService;
 
+    /**
+     * Long List 트리 구조 데이터 조회
+     *
+     * @param projectId 프로젝트 ID
+     * @param userPrincipal 인증된 사용자 정보
+     * @return 계정 > 클러스터 > 세부클러스터 트리 구조
+     */
     @GetMapping("/tree")
     public ResponseEntity<LongListTreeResponse> getTreeData(
             @PathVariable String projectId,
@@ -29,6 +45,13 @@ public class LongListController {
         return ResponseEntity.ok(response);
     }
 
+    /**
+     * Long List 전체 통계 조회
+     *
+     * @param projectId 프로젝트 ID
+     * @param userPrincipal 인증된 사용자 정보
+     * @return 전체 건수, 금액, 선택된 항목 수 등
+     */
     @GetMapping("/stats")
     public ResponseEntity<LongListStatsResponse> getStats(
             @PathVariable String projectId,
@@ -37,6 +60,13 @@ public class LongListController {
         return ResponseEntity.ok(response);
     }
 
+    /**
+     * 특정 통계 항목의 차트 데이터 조회 (Top N 공급업체/코스트센터)
+     *
+     * @param statisticsId 통계 ID
+     * @param top 상위 N개 (기본값: 5)
+     * @return 차트용 데이터 (공급업체별/코스트센터별 집계)
+     */
     @GetMapping("/chart/{statisticsId}")
     public ResponseEntity<ChartDataResponse> getChartData(
             @PathVariable String projectId,

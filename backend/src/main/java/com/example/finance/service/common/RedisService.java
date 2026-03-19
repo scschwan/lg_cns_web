@@ -10,6 +10,13 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
 
+/**
+ * Redis 서비스
+ *
+ * Redis 캐시 및 세션 관리를 위한 공통 유틸리티 서비스.
+ * String/Hash/Set 연산, 세션 저장/조회, 업로드 진행률 관리,
+ * 패턴 기반 키 삭제 등의 기능을 제공한다.
+ */
 @Slf4j
 @Service
 @RequiredArgsConstructor

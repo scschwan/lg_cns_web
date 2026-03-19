@@ -11,6 +11,7 @@ import java.time.LocalDateTime;
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
+/** 과제 첨부 문서 응답 DTO */
 public class TaskDocumentResponse {
 
     private String id;

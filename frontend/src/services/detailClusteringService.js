@@ -1,6 +1,21 @@
+/**
+ * detailClusteringService - 상세 클러스터링 API 서비스 (Step 7)
+ *
+ * Step 5에서 생성된 병합 클러스터 내부를 추가로 세분화하는 상세 클러스터링 기능을 제공한다.
+ * clusteringService와 유사한 API 구조이며, clusterId 파라미터를 추가로 받는다.
+ *
+ * 모든 API는 /api/projects/{projectId}/sessions/{sessionId}/detail-clustering/ 하위 경로를 사용한다.
+ *
+ * 주요 기능:
+ * - 미병합/병합 클러스터 조회 (특정 상위 클러스터 내)
+ * - 클러스터 병합/해제/부분해제/추가 병합
+ * - 키워드/공급업체 통계, 고급 검색
+ * - 키워드 계층 CRUD
+ */
 import api from './api';
 
 const detailClusteringService = {
+    /** GET .../detail-clustering/unmerged - 특정 클러스터 내 미병합 항목 페이징 조회 */
     getUnmergedClusters: async (projectId, sessionId, clusterId, page = 0, size = 20, keyword = null) => {
         const params = { clusterId, page, size };
         if (keyword) params.keyword = keyword;

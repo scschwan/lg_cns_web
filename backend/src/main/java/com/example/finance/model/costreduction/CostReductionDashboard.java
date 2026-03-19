@@ -11,6 +11,15 @@ import org.springframework.data.mongodb.core.mapping.Field;
 
 import java.time.LocalDateTime;
 
+/**
+ * 원가절감 대시보드 모델
+ *
+ * MongoDB 컬렉션: cost_reduction_dashboards
+ *
+ * 프로젝트별 대시보드 상태를 관리한다.
+ * 현재 페이즈(LONG_LIST/SHORT_LIST/TASK), 리스트 잠금 여부,
+ * 편집자 정보 등을 포함한다.
+ */
 @Document(collection = "cost_reduction_dashboards")
 @Data
 @Builder

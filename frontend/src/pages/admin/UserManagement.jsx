@@ -1,3 +1,12 @@
+/**
+ * 사용자 관리 페이지 컴포넌트 (관리자 전용)
+ *
+ * 전체 사용자 목록을 조회하고 승인/취소, 정보 수정, 비밀번호 초기화,
+ * 삭제 등의 관리 기능을 제공한다. 필터(전체/승인대기/승인됨)와
+ * 일괄 승인/취소 기능도 포함한다.
+ *
+ * @component
+ */
 import React, { useState, useEffect } from 'react';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';

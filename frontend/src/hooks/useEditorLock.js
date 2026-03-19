@@ -1,3 +1,20 @@
+/**
+ * useEditorLock - 비용 절감 대시보드 편집자 잠금 훅
+ *
+ * Redis 기반 분산 잠금을 사용하여 동시 편집을 방지한다.
+ * 마운트 시 잠금 획득, 30초마다 하트비트 전송, 언마운트 시 잠금 해제.
+ *
+ * 같은 프로젝트 내 페이지 전환 시 release→acquire 경쟁 방지를 위해
+ * 언마운트 시 500ms 지연 후 release하고, 새 페이지가 같은 키로 마운트되면
+ * 지연된 release를 취소하여 잠금을 유지한다.
+ *
+ * @param {string} projectId - 프로젝트 ID
+ * @returns {{
+ *   isEditor: boolean,        // 현재 사용자가 편집자인지 여부
+ *   editorInfo: object|null,  // 편집자 정보 (다른 사용자가 편집 중일 때 해당 정보 포함)
+ *   loading: boolean          // 잠금 상태 확인 중 여부
+ * }}
+ */
 import { useState, useEffect, useCallback } from 'react';
 import costReductionService from '../services/costReductionService';
 

@@ -1,3 +1,11 @@
+/**
+ * shadcn/ui 컴포넌트 테스트 페이지
+ *
+ * Button, Input, Label, Card, Badge 등 shadcn/ui 컴포넌트들이
+ * 정상적으로 렌더링되는지 확인하기 위한 테스트 페이지이다.
+ *
+ * @component
+ */
 import React from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from '@/components/ui/card';

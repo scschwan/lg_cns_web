@@ -1,3 +1,12 @@
+/**
+ * 클러스터링 페이지 (다음 버전 프로토타입)
+ *
+ * Mock 데이터를 사용하는 클러스터링 UI 프로토타입으로,
+ * 클러스터 그리드 뷰, 상세 데이터 미리보기, 병합, 이름 변경, 삭제 등의
+ * 기능을 시연하기 위한 페이지이다.
+ *
+ * @component
+ */
 // frontend/src/pages/clustering/ClusteringPage.jsx
 
 import React, { useState, useEffect } from 'react';

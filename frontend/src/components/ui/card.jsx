@@ -1,3 +1,7 @@
+/**
+ * Card - 카드 레이아웃 컴포넌트 (Shadcn UI)
+ * 하위 컴포넌트: CardHeader, CardTitle, CardDescription, CardContent, CardFooter
+ */
 import * as React from "react"
 
 import { cn } from "@/lib/utils"

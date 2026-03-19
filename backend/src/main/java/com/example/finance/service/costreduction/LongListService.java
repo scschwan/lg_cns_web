@@ -26,6 +26,14 @@ import java.time.LocalDateTime;
 import java.util.*;
 import java.util.stream.Collectors;
 
+/**
+ * Long List 서비스
+ *
+ * 원가절감 Long List 기능의 비즈니스 로직을 담당한다.
+ * 계정 > 클러스터 > 세부클러스터 트리 구조 데이터 조회,
+ * 전체/항목별 통계, 차트 데이터(공급업체/코스트센터 집계),
+ * 항목 선택/저장, 원본 데이터(raw_data) 페이징 조회 기능을 포함한다.
+ */
 @Slf4j
 @Service
 @RequiredArgsConstructor

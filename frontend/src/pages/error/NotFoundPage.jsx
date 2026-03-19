@@ -1,3 +1,11 @@
+/**
+ * 404 Not Found 에러 페이지 컴포넌트
+ *
+ * 존재하지 않는 경로에 접근했을 때 표시되는 에러 페이지이다.
+ * 인증 상태에 따라 프로젝트 목록 또는 로그인 페이지로 이동하는 버튼을 제공한다.
+ *
+ * @component
+ */
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
@@ -8,6 +16,7 @@ function NotFoundPage() {
     const navigate = useNavigate();
     const { isAuthenticated, loading } = useAuth();
 
+    /** 홈 이동 핸들러 - 인증 상태에 따라 프로젝트 목록 또는 로그인 페이지로 이동 */
     const handleGoHome = () => {
         if (isAuthenticated) {
             navigate('/projects');

@@ -1,6 +1,21 @@
+/**
+ * api.js - Axios 인스턴스 및 인터셉터 설정
+ *
+ * JWT 기반 인증을 자동 처리하는 Axios 인스턴스를 제공한다.
+ *
+ * 주요 기능:
+ * - 요청 인터셉터: Authorization 헤더에 JWT 토큰 자동 첨부,
+ *   만료된 access token은 요청 전에 사전 갱신 (refresh token 사용)
+ * - 응답 인터셉터: 401 응답 시 토큰 갱신 후 원래 요청 재시도,
+ *   403 백엔드 인증 에러 감지, CloudFront HTML 응답 감지
+ * - 세션 만료 시 localStorage 정리 후 로그인 페이지로 리다이렉트
+ * - 동시 다발적 토큰 갱신 요청을 큐로 직렬화 (중복 방지)
+ * - 연속 서버 에러 감지 (DB 과부하 보조 경고)
+ */
 import axios from 'axios';
 import { isTokenExpired, isRefreshTokenExpired } from '../utils/tokenUtils';
 
+/** API 기본 URL (환경변수 또는 로컬 기본값) */
 const API_URL = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8080';
 
 const api = axios.create({

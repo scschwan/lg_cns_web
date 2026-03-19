@@ -20,10 +20,25 @@ import java.util.Map;
 @RestController
 @RequestMapping("/api/projects/{projectId}/dashboard")
 @RequiredArgsConstructor
+/**
+ * 원가절감 대시보드 컨트롤러
+ *
+ * 대시보드 초기화, 상태 조회, 편집자 잠금 제어,
+ * 페이즈 전환(Long List / Short List / Task), 대시보드 초기화 등의 기능을 제공한다.
+ *
+ * Base Path: /api/projects/{projectId}/dashboard
+ */
 public class CostReductionDashboardController {
 
     private final CostReductionDashboardService dashboardService;
 
+    /**
+     * 대시보드 초기화 (최초 진입 시)
+     *
+     * @param projectId 프로젝트 ID
+     * @param userPrincipal 인증된 사용자 정보
+     * @return 대시보드 상태 응답
+     */
     @PostMapping("/init")
     public ResponseEntity<DashboardStatusResponse> initDashboard(
             @PathVariable String projectId,
@@ -33,6 +48,13 @@ public class CostReductionDashboardController {
         return ResponseEntity.ok(response);
     }
 
+    /**
+     * 대시보드 상태 조회
+     *
+     * @param projectId 프로젝트 ID
+     * @param userPrincipal 인증된 사용자 정보
+     * @return 현재 페이즈, 잠금 상태 등
+     */
     @GetMapping("/status")
     public ResponseEntity<DashboardStatusResponse> getStatus(
             @PathVariable String projectId,
@@ -42,6 +64,9 @@ public class CostReductionDashboardController {
         return ResponseEntity.ok(response);
     }
 
+    /**
+     * 편집자 잠금 획득
+     */
     @PostMapping("/lock/acquire")
     public ResponseEntity<LockResponse> acquireLock(
             @PathVariable String projectId,
@@ -51,6 +76,9 @@ public class CostReductionDashboardController {
         return ResponseEntity.ok(response);
     }
 
+    /**
+     * 편집자 잠금 하트비트 (TTL 갱신)
+     */
     @PostMapping("/lock/heartbeat")
     public ResponseEntity<Map<String, Boolean>> heartbeat(
             @PathVariable String projectId,
@@ -59,6 +87,9 @@ public class CostReductionDashboardController {
         return ResponseEntity.ok(Map.of("success", true));
     }
 
+    /**
+     * 편집자 잠금 해제
+     */
     @PostMapping("/lock/release")
     public ResponseEntity<Map<String, Boolean>> releaseLock(
             @PathVariable String projectId,
@@ -67,6 +98,14 @@ public class CostReductionDashboardController {
         return ResponseEntity.ok(Map.of("success", true));
     }
 
+    /**
+     * 대시보드 페이즈 전환 (LONG_LIST, SHORT_LIST, TASK 등)
+     *
+     * @param projectId 프로젝트 ID
+     * @param userPrincipal 인증된 사용자 정보
+     * @param request 전환할 대상 페이즈 포함
+     * @return 전환 후 대시보드 상태
+     */
     @PostMapping("/transition")
     public ResponseEntity<DashboardStatusResponse> transitionPhase(
             @PathVariable String projectId,

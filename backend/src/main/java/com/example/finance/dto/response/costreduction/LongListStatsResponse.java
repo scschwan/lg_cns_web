@@ -9,6 +9,7 @@ import lombok.NoArgsConstructor;
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
+/** Long List 전체 통계 응답 DTO */
 public class LongListStatsResponse {
 
     private Long rawDataRows;

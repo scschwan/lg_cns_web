@@ -7,6 +7,12 @@ import lombok.NoArgsConstructor;
 
 import java.util.List;
 
+/**
+ * Long/Short List 저장 요청 DTO
+ *
+ * 사용자가 선택한 Long List / Short List 항목을 저장하기 위한 요청.
+ * 각 항목에는 통계 ID, 세션 ID, 계정명, 클러스터 정보, 금액/건수 등이 포함된다.
+ */
 @Data
 @Builder
 @NoArgsConstructor

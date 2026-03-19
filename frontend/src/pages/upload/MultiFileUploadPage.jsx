@@ -1,3 +1,13 @@
+/**
+ * 다중 파일 업로드 페이지 컴포넌트 (일반 프로젝트용)
+ *
+ * 여러 Excel 파일을 업로드하고 계정명/금액 컬럼을 선택한 후,
+ * 동일 컬럼명 기준으로 세션을 생성하는 Step 1 페이지이다.
+ * 파일 업로드 진행률 폴링, 세션 병합/삭제, 계정 분석 시작,
+ * 편집자 잠금(동시 편집 방지), 뷰어 권한 제한 기능을 포함한다.
+ *
+ * @component
+ */
 // frontend/src/pages/upload/MultiFileUploadPage.jsx
 
 import React, { useState, useEffect, useRef, useMemo } from 'react';

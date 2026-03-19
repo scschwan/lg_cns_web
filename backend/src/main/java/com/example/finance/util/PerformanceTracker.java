@@ -10,14 +10,32 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * 세션 완료 프로세스의 구간별 성능을 추적하는 경량 유틸리티.
+ * 구간별 성능 추적 유틸리티 클래스
  *
- * 사용법:
+ * <p>대량 데이터 처리, 세션 완료 프로세스 등에서 각 단계(Step)의 소요 시간,
+ * 쿼리 성능, 배치 처리량, 메모리 사용량을 추적하고 요약 로그를 출력한다.</p>
+ *
+ * <p>주요 기능:</p>
+ * <ul>
+ *   <li>단계(Step) 시작/종료 시간 측정 및 비율 계산</li>
+ *   <li>세부 구간(Sub-step) 추적</li>
+ *   <li>쿼리 메트릭 (실행 횟수, 문서 수, 평균/최대 소요 시간)</li>
+ *   <li>배치 메트릭 (배치 수, 처리량, 초당 처리 건수)</li>
+ *   <li>JVM 메모리 스냅샷 (시작/종료 시점 사용량, 피크 메모리)</li>
+ *   <li>병목 구간 자동 표시 (30% 이상: 병목, 15% 이상: 주의)</li>
+ * </ul>
+ *
+ * <p>사용 예시:</p>
+ * <pre>
  *   PerformanceTracker tracker = PerformanceTracker.start("sessionId", "세션완료");
  *   tracker.beginStep("1.세션조회");
  *   // ... 작업 ...
  *   tracker.endStep("1.세션조회");
  *   tracker.logSummary();
+ * </pre>
+ *
+ * <p>스레드 안전성: ConcurrentHashMap과 synchronizedList를 사용하여
+ * 멀티스레드 환경에서도 안전하게 사용 가능하다.</p>
  */
 @Slf4j
 public class PerformanceTracker {
@@ -35,16 +53,33 @@ public class PerformanceTracker {
         snapshotMemory("시작");
     }
 
+    /**
+     * 성능 추적을 시작하고 PerformanceTracker 인스턴스를 반환한다
+     *
+     * @param sessionId 추적 대상 세션 ID
+     * @param operation 작업명 (로그 출력에 사용)
+     * @return 새로운 PerformanceTracker 인스턴스
+     */
     public static PerformanceTracker start(String sessionId, String operation) {
         return new PerformanceTracker(sessionId, operation);
     }
 
     // ── Step 시작/종료 ──
 
+    /**
+     * 지정된 이름의 단계 측정을 시작한다
+     *
+     * @param stepName 단계 이름 (예: "1.세션조회", "2.데이터복사")
+     */
     public void beginStep(String stepName) {
         steps.put(stepName, new StepRecord(stepName, System.currentTimeMillis()));
     }
 
+    /**
+     * 지정된 이름의 단계 측정을 종료한다
+     *
+     * @param stepName 종료할 단계 이름
+     */
     public void endStep(String stepName) {
         StepRecord record = steps.get(stepName);
         if (record != null) {
@@ -53,6 +88,12 @@ public class PerformanceTracker {
         }
     }
 
+    /**
+     * 지정된 이름의 단계 측정을 종료하고 상세 정보를 기록한다
+     *
+     * @param stepName 종료할 단계 이름
+     * @param details  추가 상세 정보 (예: "1000건 처리 완료")
+     */
     public void endStep(String stepName, String details) {
         endStep(stepName);
         StepRecord record = steps.get(stepName);
@@ -63,6 +104,14 @@ public class PerformanceTracker {
 
     // ── Sub-step (단계 내부의 세부 구간) ──
 
+    /**
+     * 부모 단계에 세부 구간(Sub-step) 기록을 추가한다
+     *
+     * @param parentStep  부모 단계 이름
+     * @param subStepName 세부 구간 이름
+     * @param elapsedMs   소요 시간 (밀리초)
+     * @param details     추가 상세 정보
+     */
     public void addSubStep(String parentStep, String subStepName, long elapsedMs, String details) {
         StepRecord parent = steps.get(parentStep);
         if (parent != null) {
@@ -72,6 +121,14 @@ public class PerformanceTracker {
 
     // ── 쿼리 메트릭 ──
 
+    /**
+     * 쿼리 실행 메트릭을 기록한다
+     *
+     * @param stepName      쿼리가 속한 단계 이름
+     * @param queryName     쿼리 이름 (예: "findBySessionId")
+     * @param documentCount 반환된 문서 수
+     * @param elapsedMs     쿼리 소요 시간 (밀리초)
+     */
     public void trackQuery(String stepName, String queryName, int documentCount, long elapsedMs) {
         StepRecord record = steps.get(stepName);
         if (record != null) {
@@ -81,6 +138,14 @@ public class PerformanceTracker {
 
     // ── 배치 메트릭 ──
 
+    /**
+     * 배치 처리 메트릭을 기록한다
+     *
+     * @param stepName    배치가 속한 단계 이름
+     * @param batchNumber 배치 번호
+     * @param batchSize   배치 크기 (처리 건수)
+     * @param elapsedMs   배치 소요 시간 (밀리초)
+     */
     public void trackBatch(String stepName, int batchNumber, int batchSize, long elapsedMs) {
         StepRecord record = steps.get(stepName);
         if (record != null) {
@@ -90,6 +155,11 @@ public class PerformanceTracker {
 
     // ── 메모리 스냅샷 ──
 
+    /**
+     * 현재 JVM 메모리 사용량 스냅샷을 기록한다
+     *
+     * @param label 스냅샷 레이블 (예: "시작", "종료", "배치완료후")
+     */
     public void snapshotMemory(String label) {
         Runtime rt = Runtime.getRuntime();
         long total = rt.totalMemory();
@@ -100,6 +170,12 @@ public class PerformanceTracker {
 
     // ── 전체 요약 로그 ──
 
+    /**
+     * 전체 성능 추적 결과를 요약 로그로 출력한다
+     *
+     * <p>각 단계의 소요 시간, 비율, 병목 여부와 함께
+     * 쿼리/배치 메트릭, 메모리 사용량을 정리하여 INFO 레벨로 출력한다.</p>
+     */
     public void logSummary() {
         long totalElapsed = System.currentTimeMillis() - startTime;
         snapshotMemory("종료");
@@ -168,8 +244,9 @@ public class PerformanceTracker {
         log.info(sb.toString());
     }
 
-    // ── 내부 레코드 ──
+    // ── 내부 레코드 (성능 측정 데이터 저장용) ──
 
+    /** 하나의 단계(Step)에 대한 측정 기록 */
     private static class StepRecord {
         final String stepName;
         final long startTime;
@@ -186,6 +263,7 @@ public class PerformanceTracker {
         }
     }
 
+    /** 단계 내부의 세부 구간 기록 */
     private static class SubStepRecord {
         final String name;
         final long elapsedMs;
@@ -198,6 +276,7 @@ public class PerformanceTracker {
         }
     }
 
+    /** 쿼리 실행 성능 메트릭 */
     private static class QueryMetric {
         final String name;
         final int documentCount;
@@ -210,6 +289,7 @@ public class PerformanceTracker {
         }
     }
 
+    /** 배치 처리 성능 메트릭 */
     private static class BatchMetric {
         final int batchNumber;
         final int batchSize;
@@ -222,6 +302,7 @@ public class PerformanceTracker {
         }
     }
 
+    /** JVM 메모리 사용량 스냅샷 */
     private static class MemorySnapshot {
         final String label;
         final long usedBytes;

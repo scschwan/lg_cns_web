@@ -6,9 +6,16 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 /**
- * Excel 처리 메시지 (SQS)
+ * Excel 처리 메시지 모델 (SQS 전달용)
  *
- * Coordinator → Worker 전달
+ * <p>Coordinator Lambda가 Excel 파일을 분석한 뒤, 청크 단위로 분할된
+ * 처리 작업 정보를 Worker Lambda에 전달하기 위한 메시지 객체.</p>
+ *
+ * <p>SQS를 통해 JSON 형태로 직렬화/역직렬화되며,
+ * 각 Worker는 이 메시지의 startRow ~ endRow 범위만 처리한다.</p>
+ *
+ * @see com.example.lambda.coordinator.ExcelCoordinatorHandler 메시지 발행 주체
+ * @see com.example.lambda.worker.ExcelWorkerHandler 메시지 소비 주체
  */
 @Data
 @Builder

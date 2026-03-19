@@ -1,18 +1,36 @@
+/**
+ * costReductionService - 비용 절감 대시보드 API 서비스
+ *
+ * 비용 절감 프로세스 전체의 API를 제공한다.
+ *
+ * 주요 기능 그룹:
+ * - Dashboard: 초기화, 상태 조회, 단계 전환, 잠금, 초기화
+ * - Editor Lock: 편집자 잠금 획득/하트비트/해제 (동시 편집 방지)
+ * - Long List / Short List: 트리 조회, 통계, 차트, 선택 저장/조회, Raw Data
+ * - Clustering Excel Import: 엑셀 파일 업로드를 통한 클러스터 직접 반영
+ * - Able Tasks: 과제 CRUD, 요약, 잠금 통계 ID 조회
+ * - Task Documents: 과제 첨부 문서/링크 관리
+ * - Weekly Progress: 주간 진행률 CRUD
+ * - Dashboard Batch Generation: 대시보드 일괄 생성
+ */
 import api from './api';
 
 const costReductionService = {
-  // ===== Dashboard =====
+  // ===== Dashboard 상태 관리 =====
 
+  /** POST .../dashboard/init - 대시보드 초기화 (최초 1회) */
   initDashboard: async (projectId) => {
     const response = await api.post(`/api/projects/${projectId}/dashboard/init`);
     return response.data;
   },
 
+  /** GET .../dashboard/status - 대시보드 현재 상태(단계, 잠금 등) 조회 */
   getStatus: async (projectId) => {
     const response = await api.get(`/api/projects/${projectId}/dashboard/status`);
     return response.data;
   },
 
+  /** POST .../dashboard/transition - 대시보드 단계 전환 (Long List → Short List 등) */
   transitionPhase: async (projectId, targetPhase) => {
     const response = await api.post(`/api/projects/${projectId}/dashboard/transition`, {
       targetPhase,
@@ -20,6 +38,7 @@ const costReductionService = {
     return response.data;
   },
 
+  /** POST .../dashboard/unlock-list - 리스트 잠금 해제 (편집 재허용) */
   unlockList: async (projectId) => {
     const response = await api.post(`/api/projects/${projectId}/dashboard/unlock-list`);
     return response.data;
@@ -27,11 +46,13 @@ const costReductionService = {
 
   // ===== Dashboard Lock Check (세션 완료 시 사전 체크) =====
 
+  /** GET .../dashboard/lock-status - 대시보드 잠금 상태 사전 체크 */
   checkDashboardLockStatus: async (projectId) => {
     const response = await api.get(`/api/projects/${projectId}/dashboard/lock-status`);
     return response.data;
   },
 
+  /** DELETE .../dashboard/reset - 대시보드 전체 초기화 (데이터 삭제) */
   resetDashboard: async (projectId) => {
     const response = await api.delete(`/api/projects/${projectId}/dashboard/reset`);
     return response.data;
@@ -39,16 +60,19 @@ const costReductionService = {
 
   // ===== Editor Lock =====
 
+  /** POST .../dashboard/lock/acquire - 편집자 잠금 획득 (Redis 기반) */
   acquireLock: async (projectId) => {
     const response = await api.post(`/api/projects/${projectId}/dashboard/lock/acquire`);
     return response.data;
   },
 
+  /** POST .../dashboard/lock/heartbeat - 편집자 잠금 하트비트 (TTL 갱신) */
   heartbeat: async (projectId) => {
     const response = await api.post(`/api/projects/${projectId}/dashboard/lock/heartbeat`);
     return response.data;
   },
 
+  /** POST .../dashboard/lock/release - 편집자 잠금 해제 */
   releaseLock: async (projectId) => {
     const response = await api.post(`/api/projects/${projectId}/dashboard/lock/release`);
     return response.data;

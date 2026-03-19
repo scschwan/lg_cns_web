@@ -1,3 +1,11 @@
+/**
+ * S3 파일 관리 페이지 컴포넌트 (관리자 전용)
+ *
+ * AWS S3에 저장된 파일 목록을 조회하고, 세션에 연결되지 않은
+ * 미사용(orphaned) 파일을 식별하여 선택 삭제 또는 일괄 정리할 수 있다.
+ *
+ * @component
+ */
 import React, { useState, useEffect } from 'react';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -10,6 +18,7 @@ import {
 import { Trash2, RefreshCw } from 'lucide-react';
 import adminService from '@/services/adminService';
 
+/** 바이트 단위의 파일 크기를 사람이 읽기 쉬운 형태(KB, MB, GB)로 변환 */
 function formatFileSize(bytes) {
     if (!bytes) return '0 B';
     const k = 1024;

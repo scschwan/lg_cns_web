@@ -8,6 +8,13 @@ import org.springframework.stereotype.Repository;
 
 import java.util.List;
 
+/**
+ * 세션 데이터 Repository
+ *
+ * session_data 컬렉션에 대한 데이터 접근 계층.
+ * 세션별 데이터 페이징 조회, raw_data ID 기반 조회,
+ * cluster_statistics ID 기반 조회 기능을 제공한다.
+ */
 @Repository
 public interface SessionDataRepository extends MongoRepository<SessionDataDocument, String> {
 

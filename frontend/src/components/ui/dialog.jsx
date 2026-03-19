@@ -1,3 +1,8 @@
+/**
+ * Dialog - 모달 다이얼로그 컴포넌트 (Radix UI 기반)
+ * 하위 컴포넌트: DialogTrigger, DialogContent, DialogHeader, DialogFooter,
+ *               DialogTitle, DialogDescription, DialogClose, DialogOverlay, DialogPortal
+ */
 "use client"
 
 import * as React from "react"

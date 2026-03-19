@@ -1,3 +1,20 @@
+/**
+ * ClusteringImportDialog - 클러스터링 엑셀 Import 다이얼로그
+ *
+ * 이미 클러스터링이 완료된 엑셀 파일을 업로드하여
+ * 비용 절감 대시보드에 직접 반영하는 모달 컴포넌트.
+ *
+ * 주요 기능:
+ * - 엑셀 파일 선택 및 헤더(컬럼) 자동 추출 (XLSX 라이브러리 사용)
+ * - 계정명, 클러스터명, 세부클러스터명, 금액, 공급업체, 코스트센터 컬럼 매핑
+ * - 키워드 기반 자동 매핑 시도 (autoMapColumns)
+ * - costReductionService.importClusteringExcel API 호출로 서버 전송
+ *
+ * @param {boolean} open - 다이얼로그 표시 여부
+ * @param {function} onClose - 닫기 콜백
+ * @param {string} projectId - 프로젝트 ID
+ * @param {function} onImportComplete - Import 성공 후 콜백 (목록 새로고침 등)
+ */
 import React, { useState, useRef } from 'react';
 import * as XLSX from 'xlsx';
 import { Upload, FileSpreadsheet, Loader2, CheckCircle2, AlertCircle } from 'lucide-react';
@@ -13,6 +30,7 @@ import {
 } from '@/components/ui/select';
 import costReductionService from '../../services/costReductionService';
 
+/** Select에서 "없음"을 표현하기 위한 센티널 값 */
 const NONE_VALUE = '__none__';
 
 export default function ClusteringImportDialog({ open, onClose, projectId, onImportComplete }) {

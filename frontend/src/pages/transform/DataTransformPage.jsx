@@ -1,3 +1,13 @@
+/**
+ * 데이터 변환 페이지 컴포넌트 (Step 4: Data Transform)
+ *
+ * 추출된 키워드의 통계 조회, 키워드 변환(유사 키워드 병합) 기능을 제공한다.
+ * 좌측에는 원본 데이터와 검색 결과 데이터 테이블, 우측에는 키워드 통계/변환 탭과
+ * 클러스터링 조건 설정(공급업체/코스트센터 포함 여부) 패널이 배치된다.
+ * 완료 시 자동으로 클러스터를 생성하고 Step 5로 이동한다.
+ *
+ * @component
+ */
 // frontend/src/pages/transform/DataTransformPage.jsx
 
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';

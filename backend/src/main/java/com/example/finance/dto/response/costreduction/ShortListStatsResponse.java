@@ -9,6 +9,7 @@ import lombok.NoArgsConstructor;
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
+/** Short List 전체 통계 응답 DTO */
 public class ShortListStatsResponse {
 
     private Integer longListItemCount;

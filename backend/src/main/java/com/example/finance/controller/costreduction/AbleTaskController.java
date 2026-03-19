@@ -23,10 +23,26 @@ import java.util.Map;
 @RestController
 @RequestMapping("/api/projects/{projectId}/tasks")
 @RequiredArgsConstructor
+/**
+ * Able Task 컨트롤러
+ *
+ * 원가절감 과제(Task) 관리 기능을 제공한다.
+ * 과제 CRUD, 문서 관리(링크/파일), 주간 진척 관리 등의 API를 포함한다.
+ *
+ * Base Path: /api/projects/{projectId}/tasks
+ */
 public class AbleTaskController {
 
     private final AbleTaskService ableTaskService;
 
+    /**
+     * 과제 생성
+     *
+     * @param projectId 프로젝트 ID
+     * @param request 과제 생성 요청 DTO
+     * @param userPrincipal 인증된 사용자 정보
+     * @return 생성된 과제 정보
+     */
     @PostMapping
     public ResponseEntity<TaskResponse> createTask(
             @PathVariable String projectId,
@@ -36,6 +52,13 @@ public class AbleTaskController {
         return ResponseEntity.ok(response);
     }
 
+    /**
+     * 프로젝트 내 과제 목록 조회
+     *
+     * @param projectId 프로젝트 ID
+     * @param userPrincipal 인증된 사용자 정보
+     * @return 과제 목록
+     */
     @GetMapping
     public ResponseEntity<List<TaskResponse>> getTasks(
             @PathVariable String projectId,
@@ -44,6 +67,9 @@ public class AbleTaskController {
         return ResponseEntity.ok(tasks);
     }
 
+    /**
+     * 잠금된 통계 ID 목록 조회 (과제에 연결된 통계)
+     */
     @GetMapping("/locked-statistics")
     public ResponseEntity<List<String>> getLockedStatistics(
             @PathVariable String projectId,
@@ -52,6 +78,9 @@ public class AbleTaskController {
         return ResponseEntity.ok(lockedIds);
     }
 
+    /**
+     * 과제 요약 정보 조회 (상태별 집계)
+     */
     @GetMapping("/summary")
     public ResponseEntity<TaskSummaryResponse> getSummary(
             @PathVariable String projectId,

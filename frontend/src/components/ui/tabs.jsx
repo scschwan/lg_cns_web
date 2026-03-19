@@ -1,3 +1,7 @@
+/**
+ * Tabs - 탭 전환 컴포넌트 (Radix UI 기반)
+ * 하위 컴포넌트: TabsList, TabsTrigger, TabsContent
+ */
 import * as React from "react"
 import * as TabsPrimitive from "@radix-ui/react-tabs"
 

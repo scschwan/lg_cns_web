@@ -24,6 +24,13 @@ import java.time.LocalDateTime;
 import java.util.*;
 import java.util.stream.Collectors;
 
+/**
+ * 관리자 서비스
+ *
+ * 시스템 관리 기능의 비즈니스 로직을 담당한다.
+ * 사용자 관리(승인/취소/삭제/일괄 처리), 프로젝트 관리(멤버 역할/추가/제거),
+ * 세션 모니터링(초기화), 대시보드 통계, 감사 로그 기록/조회 기능을 포함한다.
+ */
 @Slf4j
 @Service
 @RequiredArgsConstructor

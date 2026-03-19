@@ -1,4 +1,17 @@
-/** @type {import('tailwindcss').Config} */
+/**
+ * Tailwind CSS 설정
+ *
+ * - darkMode: 클래스 기반 다크 모드 (현재 미사용, 향후 확장용)
+ * - content: JSX/TSX 파일 스캔 경로 (Purge CSS 대상)
+ * - theme.extend: Shadcn UI 디자인 시스템 CSS 변수 기반 색상 확장
+ * - plugins: tailwindcss-animate (Shadcn UI 애니메이션 유틸리티)
+ *
+ * Shadcn UI 색상 체계:
+ *   primary, secondary, destructive, muted, accent, popover, card 등
+ *   각 색상은 CSS 변수(--primary 등)로 정의되어 globals.css에서 값 설정
+ *
+ * @type {import('tailwindcss').Config}
+ */
 export default {
   darkMode: ["class"],
   content: [
@@ -8,7 +21,7 @@ export default {
   theme: {
     extend: {
       fontFamily: {
-        pretendard: ['Pretendard', 'sans-serif'],
+        pretendard: ['Pretendard', 'sans-serif'], // 프로젝트 기본 폰트
       },
       colors: {
         border: "hsl(var(--border))",

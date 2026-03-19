@@ -1,3 +1,11 @@
+/**
+ * preprocessingService - 전처리 단계 API 서비스 (Step 3)
+ *
+ * 구분자/불용어 설정, 키워드 추출(구분자 기반/NLP 기반),
+ * 1글자 제거, 데이터 조회 등 전처리 관련 API를 제공한다.
+ *
+ * 모든 API는 /api/projects/{projectId}/sessions/{sessionId}/preprocessing/ 하위 경로를 사용한다.
+ */
 import api from './api';
 
 const preprocessingService = {

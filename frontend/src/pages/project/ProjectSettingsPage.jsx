@@ -1,3 +1,12 @@
+/**
+ * 프로젝트 설정 페이지 컴포넌트
+ *
+ * 프로젝트의 기본 정보(이름, 설명) 수정, 업로드된 파일 관리,
+ * 프로젝트 멤버 관리(초대, 역할 변경, 삭제) 기능을 탭 형식으로 제공한다.
+ * 프로젝트 삭제 기능도 포함한다.
+ *
+ * @component
+ */
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';

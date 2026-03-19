@@ -1,3 +1,12 @@
+/**
+ * 프로젝트 생성 다이얼로그 컴포넌트
+ *
+ * 새 프로젝트를 생성하는 모달 다이얼로그로, 프로젝트 유형(일반/대시보드 업로드),
+ * 이름, 설명을 입력받는다. 일반 프로젝트는 7단계 분석 파이프라인을,
+ * 대시보드 프로젝트는 클러스터링된 Excel 업로드 방식을 사용한다.
+ *
+ * @component
+ */
 import React, { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import {

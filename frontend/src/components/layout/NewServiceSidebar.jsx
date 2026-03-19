@@ -1,3 +1,10 @@
+/**
+ * NewServiceSidebar - 신규 서비스 사이드바 네비게이션
+ *
+ * 신규 서비스 Preview 레이아웃에서 사용되는 5단계 프로세스 메뉴.
+ * CostReductionSidebar와 동일한 단계 구조를 사용하지만,
+ * projectId 없이 고정 경로를 사용한다.
+ */
 import React from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { cn } from '@/lib/utils';
@@ -7,6 +14,7 @@ import {
 } from 'lucide-react';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 
+/** 신규 서비스 5단계 프로세스 정의 */
 const steps = [
   {
     id: 1,

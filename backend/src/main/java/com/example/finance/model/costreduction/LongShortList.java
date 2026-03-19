@@ -13,6 +13,14 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 
+/**
+ * Long/Short List 선택 데이터 모델
+ *
+ * MongoDB 컬렉션: long_short_lists
+ *
+ * 프로젝트별 Long List와 Short List에서 사용자가 선택한
+ * 항목(통계 ID, 클러스터 정보 등)을 저장한다.
+ */
 @Document(collection = "long_short_lists")
 @Data
 @Builder

@@ -1,3 +1,12 @@
+/**
+ * 관리자 레이아웃 컴포넌트
+ *
+ * 관리자 페이지의 공통 레이아웃으로, 좌측 사이드바 네비게이션과
+ * 메인 콘텐츠 영역(Outlet)으로 구성된다.
+ * 대시보드, 사용자 관리, 프로젝트 관리 등 관리 메뉴를 제공한다.
+ *
+ * @component
+ */
 import React from 'react';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
@@ -6,6 +15,7 @@ import {
     Monitor, FileText, UserCog
 } from 'lucide-react';
 
+/** 관리자 사이드바 메뉴 탭 설정 */
 const tabs = [
     { path: '/admin', label: '대시보드', icon: LayoutDashboard, exact: true },
     { path: '/admin/users', label: '사용자 관리', icon: Users },

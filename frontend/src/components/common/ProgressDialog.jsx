@@ -1,3 +1,13 @@
+/**
+ * ProgressDialog - 진행률 표시 다이얼로그 컴포넌트
+ *
+ * 비동기 작업(파일 업로드, 데이터 처리 등) 진행 중에 모달로 표시된다.
+ * 닫기 버튼이 숨겨져 있고, 배경 클릭으로 닫을 수 없다.
+ *
+ * @param {boolean} open - 다이얼로그 표시 여부
+ * @param {string} message - 진행 상태 메시지
+ * @param {number} [value] - 진행률 (0~100). 미지정 시 불확정(indeterminate) 상태
+ */
 import React from 'react';
 import {
     Dialog,

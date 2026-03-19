@@ -17,11 +17,24 @@ import java.util.concurrent.Semaphore;
 @RestController
 @RequestMapping("/api")
 @RequiredArgsConstructor
+/**
+ * 헬스 체크 컨트롤러
+ *
+ * API 서버 상태, DB(DocumentDB/MongoDB) 상태, 애플리케이션 정보 조회 등
+ * 시스템 건강 상태 확인을 위한 API를 제공한다.
+ *
+ * Base Path: /api
+ */
 public class HealthController {
 
     private final MongoTemplate mongoTemplate;
     private final Semaphore dbHeavyOperationSemaphore;
 
+    /**
+     * API 서버 헬스 체크
+     *
+     * @return 서버 상태, 타임스탬프, 버전 정보
+     */
     @GetMapping("/health")
     public Map<String, Object> health() {
         Map<String, Object> response = new HashMap<>();
@@ -125,6 +138,11 @@ public class HealthController {
         return response;
     }
 
+    /**
+     * 애플리케이션 정보 조회
+     *
+     * @return 애플리케이션 이름, 설명, Spring Boot 버전
+     */
     @GetMapping("/info")
     public Map<String, Object> info() {
         Map<String, Object> response = new HashMap<>();

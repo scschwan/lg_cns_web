@@ -1,3 +1,13 @@
+/**
+ * Long List 페이지 컴포넌트 (비용 절감 대시보드)
+ *
+ * 클러스터링된 데이터를 트리 구조(대계정 > 클러스터 > 세부클러스터)로 표시하며,
+ * 각 항목의 건수, 금액, 공급업체 수 등의 통계를 차트와 테이블로 시각화한다.
+ * 체크박스로 선택한 항목들을 Short List로 전달하는 기능을 제공한다.
+ * 편집자 잠금 및 뷰어 모드를 지원한다.
+ *
+ * @component
+ */
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {

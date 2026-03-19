@@ -1,79 +1,85 @@
+# ===========================================================
+# Finance Backend 공통 설정
+# ===========================================================
 spring:
   application:
-    name: finance-backend
+    name: finance-backend                      # 애플리케이션 이름
   profiles:
-    active: ${SPRING_PROFILES_ACTIVE:local}
-  # ✅ JSON 파싱 설정 (공통 설정으로 이동)
+    active: ${SPRING_PROFILES_ACTIVE:local}     # 활성 프로파일 (기본: local)
+
+  # JSON 직렬화/역직렬화 설정
   jackson:
     mapper:
-      accept-case-insensitive-enums: true
-    time-zone: Asia/Seoul
+      accept-case-insensitive-enums: true      # Enum 값 대소문자 구분 없이 매핑
+    time-zone: Asia/Seoul                      # JSON 날짜/시간 한국 시간대 적용
 
-  # 기본 데이터 설정 (프로파일 없을 때 fallback)
+  # 데이터 소스 기본 설정 (프로파일 미지정 시 fallback)
   data:
     mongodb:
-      uri: ${MONGODB_URI:mongodb://localhost:27017/finance}
+      uri: ${MONGODB_URI:mongodb://localhost:27017/finance}   # MongoDB 연결 URI
     redis:
-      host: ${REDIS_HOST:localhost}
-      port: 6379
+      host: ${REDIS_HOST:localhost}             # Redis 호스트
+      port: 6379                               # Redis 포트
       ssl:
-        enabled: ${REDIS_SSL_ENABLED:false}
-      timeout: 2000ms
+        enabled: ${REDIS_SSL_ENABLED:false}    # SSL 사용 여부 (프로덕션에서 true)
+      timeout: 2000ms                          # Redis 커맨드 타임아웃
       lettuce:
         pool:
-          max-active: 10
-          max-idle: 5
-          min-idle: 2
+          max-active: 10                       # 최대 활성 커넥션 수
+          max-idle: 5                          # 최대 유휴 커넥션 수
+          min-idle: 2                          # 최소 유휴 커넥션 수
 
+  # 파일 업로드 크기 제한 (대용량 Excel 파일 지원)
   servlet:
     multipart:
-      max-file-size: 1GB
-      max-request-size: 1GB
+      max-file-size: 1GB                       # 단일 파일 최대 크기
+      max-request-size: 1GB                    # 요청 전체 최대 크기
 
-# ✅ JWT 설정
+# JWT 인증 토큰 설정
 jwt:
-  secret: ${JWT_SECRET:your-256-bit-secret-key-change-this-in-production-please-use-environment-variable}
-  access-token-expiration: 3600000      # 1시간
-  refresh-token-expiration: 604800000   # 7일
+  secret: ${JWT_SECRET:your-256-bit-secret-key-change-this-in-production-please-use-environment-variable}  # 서명 비밀 키 (프로덕션에서 반드시 환경 변수로 설정)
+  access-token-expiration: 3600000             # Access Token 만료 시간 (1시간 = 3,600,000ms)
+  refresh-token-expiration: 604800000          # Refresh Token 만료 시간 (7일 = 604,800,000ms)
 
-# ✅ AWS 설정
+# AWS 서비스 설정
 aws:
-  region: ap-northeast-2
+  region: ap-northeast-2                       # AWS 리전 (서울)
   s3:
-    excel-bucket: finance-excel-uploads
-    frontend-bucket: finance-frontend
+    excel-bucket: finance-excel-uploads        # Excel 파일 업로드 S3 버킷
+    frontend-bucket: finance-frontend          # 프론트엔드 정적 파일 S3 버킷
   sqs:
-    excel-queue-url: https://sqs.ap-northeast-2.amazonaws.com/${AWS_ACCOUNT_ID:123456789012}/finance-excel-processing-queue
-    excel-dlq-url: https://sqs.ap-northeast-2.amazonaws.com/${AWS_ACCOUNT_ID:123456789012}/finance-excel-processing-dlq
-    analysis-queue-url: ${ANALYSIS_QUEUE_URL:}
+    excel-queue-url: https://sqs.ap-northeast-2.amazonaws.com/${AWS_ACCOUNT_ID:123456789012}/finance-excel-processing-queue    # Excel 처리 SQS 큐 URL
+    excel-dlq-url: https://sqs.ap-northeast-2.amazonaws.com/${AWS_ACCOUNT_ID:123456789012}/finance-excel-processing-dlq        # Excel 처리 DLQ(Dead Letter Queue) URL
+    analysis-queue-url: ${ANALYSIS_QUEUE_URL:}  # 계정 분석 SQS 큐 URL
 
-# ✅ 로깅 설정
+# 로깅 레벨 설정
 logging:
   level:
-    root: INFO
-    com.example.finance: DEBUG
-    org.springframework.data.mongodb: DEBUG
-    org.springframework.data.redis: DEBUG
+    root: INFO                                 # 기본 로그 레벨
+    com.example.finance: DEBUG                 # 애플리케이션 코드 DEBUG
+    org.springframework.data.mongodb: DEBUG    # MongoDB 쿼리 로그
+    org.springframework.data.redis: DEBUG      # Redis 명령 로그
 
-# ✅ Actuator 설정
+# Spring Boot Actuator 설정 (모니터링/헬스체크)
 management:
   endpoints:
     web:
       exposure:
-        include: health,info,metrics
+        include: health,info,metrics           # 노출할 Actuator 엔드포인트
   endpoint:
     health:
-      show-details: when-authorized
+      show-details: when-authorized            # 인증된 사용자에게만 상세 정보 표시
   health:
     mongo:
-      enabled: false
+      enabled: false                           # MongoDB 헬스체크 비활성화 (자체 헬스체크 사용)
     redis:
-      enabled: false
+      enabled: false                           # Redis 헬스체크 비활성화 (자체 헬스체크 사용)
 
 ---
-# ---------------------------------------------------
-# 🏠 로컬 개발 프로파일 (local)
-# ---------------------------------------------------
+# ===========================================================
+# 로컬 개발 프로파일 (local)
+# docker-compose.yml로 실행한 로컬 MongoDB/Redis에 연결
+# ===========================================================
 spring:
   config:
     activate:
@@ -81,31 +87,34 @@ spring:
 
   data:
     mongodb:
-      uri: mongodb://localhost:27017/finance
+      uri: mongodb://localhost:27017/finance     # 로컬 MongoDB (docker-compose)
 
     redis:
-      host: localhost
+      host: localhost                            # 로컬 Redis (docker-compose)
       port: 6379
       ssl:
-        enabled: false
+        enabled: false                           # 로컬에서는 SSL 불필요
 
 ---
-# ---------------------------------------------------
-# 🚀 AWS 프로덕션 프로파일 (prod)
-# ---------------------------------------------------
+# ===========================================================
+# AWS 프로덕션 프로파일 (prod)
+# AWS DocumentDB, ElastiCache 등 관리형 서비스에 연결
+# ===========================================================
 spring:
   config:
     activate:
       on-profile: prod
   data:
     mongodb:
+      # AWS DocumentDB 클러스터 (secondaryPreferred: 읽기 부하 분산)
       uri: mongodb://dmillion:admin240401!@finance-docdb-cluster.cluster-c1ue6aayyxjn.ap-northeast-2.docdb.amazonaws.com:27017/?replicaSet=rs0&readPreference=secondaryPreferred&retryWrites=false
       database: finance
 
     redis:
+      # AWS ElastiCache Redis 클러스터
       #host: finance-redis2-1kdayr.serverless.apn2.cache.amazonaws.com
       host: finance-redis-cluster.1kdayr.0001.apn2.cache.amazonaws.com
       port: 6379
       ssl:
         enabled: false
-      timeout: 5000ms
+      timeout: 5000ms                            # 프로덕션 타임아웃 (5초)

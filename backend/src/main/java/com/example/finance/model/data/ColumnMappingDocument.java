@@ -30,23 +30,29 @@ public class ColumnMappingDocument {
     @Id
     private String id;
 
+    /** 세션 ID */
     @Field("session_id")
     private String sessionId;
 
+    /** 원본 컬럼명 (Excel 헤더에서 추출) */
     @Field("original_name")
     private String originalName;
 
+    /** 화면 표시용 컬럼명 */
     @Field("display_name")
     private String displayName;
 
+    /** 데이터 타입 (text, number 등) */
     @Field("data_type")
     @Builder.Default
     private String dataType = "text";
 
+    /** 컬럼 가시성 여부 */
     @Field("is_visible")
     @Builder.Default
     private Boolean isVisible = true;
 
+    /** 컬럼 표시 순서 */
     @Field("sequence")
     private Integer sequence;
 }

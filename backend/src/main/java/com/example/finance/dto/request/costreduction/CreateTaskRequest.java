@@ -7,6 +7,12 @@ import lombok.NoArgsConstructor;
 
 import java.util.List;
 
+/**
+ * 원가절감 과제 생성 요청 DTO
+ *
+ * 과제명, 대계정 목록, 연결 클러스터, 담당 부서/매니저/컨설턴트,
+ * 기준금액, 예상 절감률/금액 정보를 포함한다.
+ */
 @Data
 @Builder
 @NoArgsConstructor

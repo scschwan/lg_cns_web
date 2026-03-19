@@ -1,3 +1,12 @@
+/**
+ * 세부 클러스터링 페이지 컴포넌트 (Step 7)
+ *
+ * Export(Step 6)에서 선택한 클러스터의 세부 클러스터링을 수행하는 페이지이다.
+ * 공급업체/코스트센터별 통계 목록, 드래그 선택, 세부 클러스터 병합/해제/이름 변경,
+ * 페이징, 정렬 기능을 제공한다. 편집자 잠금 및 뷰어 모드를 지원한다.
+ *
+ * @component
+ */
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import {

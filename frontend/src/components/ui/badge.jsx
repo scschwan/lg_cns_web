@@ -1,3 +1,7 @@
+/**
+ * Badge - 뱃지/태그 컴포넌트 (Shadcn UI)
+ * variant: "default" | "secondary" | "destructive" | "outline"
+ */
 import * as React from "react"
 import { cva } from "class-variance-authority";
 

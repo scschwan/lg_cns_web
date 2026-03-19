@@ -1,3 +1,13 @@
+/**
+ * 대시보드 프로젝트 전용 업로드 페이지 컴포넌트
+ *
+ * 클러스터링된 Excel 파일을 업로드하면 세션이 자동 생성된다.
+ * 각 세션별로 대계정컬럼, 금액컬럼, 공급업체명, 코스트센터명 등의
+ * 컬럼 매핑을 설정한 후 대시보드 데이터를 생성할 수 있다.
+ * 편집자 잠금(동시 편집 방지), 뷰어 권한 제한, Lambda 처리 폴링 기능을 포함한다.
+ *
+ * @component
+ */
 // frontend/src/pages/upload/DashboardUploadPage.jsx
 
 import React, { useState, useEffect, useRef } from 'react';

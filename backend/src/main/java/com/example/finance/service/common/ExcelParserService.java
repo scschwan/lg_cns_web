@@ -25,6 +25,13 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 
+/**
+ * Excel 파서 서비스
+ *
+ * S3에 업로드된 Excel 파일을 파싱하여 MongoDB(raw_data)에 저장하는 서비스.
+ * Lambda Worker의 백업(Fallback) 역할을 하며,
+ * 임시 파일 다운로드 방식으로 대용량 파일을 메모리 효율적으로 처리한다.
+ */
 @Slf4j
 @Service
 @RequiredArgsConstructor

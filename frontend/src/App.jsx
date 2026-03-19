@@ -1,3 +1,13 @@
+/**
+ * 애플리케이션 루트 컴포넌트
+ *
+ * React Router를 사용하여 전체 라우팅 구조를 정의한다.
+ * 인증(Public/Private) 라우트, 관리자 라우트, 7단계 분석 파이프라인 라우트,
+ * 비용 절감 대시보드 라우트, 에러 페이지 등을 구성한다.
+ * AuthProvider로 인증 컨텍스트를 제공하고, ErrorBoundary로 전역 에러를 처리한다.
+ *
+ * @component
+ */
 // frontend/src/App.jsx
 
 import React from 'react';
@@ -56,7 +66,7 @@ import AuditLogPage from './pages/admin/AuditLogPage';
 import AdminProfile from './pages/admin/AdminProfile';
 import MaintenanceDialog from './components/common/MaintenanceDialog';
 
-// ⭐ Layout Wrapper Component
+/** 공통 레이아웃 래퍼 - Navbar와 메인 콘텐츠 영역을 구성 */
 function LayoutWrapper({ children, showNavbar = true }) {
   return (
     <div className="flex flex-col h-screen overflow-hidden bg-background">

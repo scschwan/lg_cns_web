@@ -1,3 +1,13 @@
+/**
+ * Export 페이지 컴포넌트 (Step 6: Export)
+ *
+ * 클러스터링 결과를 확인하고 Excel로 내보내기(Export)하는 페이지이다.
+ * 전체 데이터 테이블, 클러스터별 세부 항목 테이블, Clustering 결과 목록,
+ * 제거열 설정 기능을 제공한다. 클러스터명/세부클러스터명 수정, 개별/전체 Export,
+ * 세부 클러스터링 수행(Step 7 이동), 세션 완료(fire_and_forget 모드) 기능을 포함한다.
+ *
+ * @component
+ */
 // frontend/src/pages/export/ExportPage.jsx
 
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';

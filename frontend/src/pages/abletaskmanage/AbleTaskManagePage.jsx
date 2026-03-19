@@ -1,3 +1,12 @@
+/**
+ * Able 과제 관리 페이지 컴포넌트 (비용 절감 대시보드)
+ *
+ * 등록된 Able 과제 목록을 조회하고 관리하는 페이지이다.
+ * 과제별 상세 정보 확인, 상태 변경(진행 중/검토 중/보류/완료),
+ * 첨부 파일/링크 관리, 차트 시각화, 검색/정렬 기능을 제공한다.
+ *
+ * @component
+ */
 import React, { useState, useEffect, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {

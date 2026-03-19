@@ -13,6 +13,14 @@ import java.util.Map;
 @RestController
 @RequestMapping("/api/cache")
 @RequiredArgsConstructor
+/**
+ * 캐시(Redis) 테스트 컨트롤러
+ *
+ * Redis 연결 테스트, 세션 저장/조회, 업로드 진행률 테스트 등
+ * 개발 및 디버깅 용도의 API를 제공한다.
+ *
+ * Base Path: /api/cache
+ */
 public class CacheController {
 
     private final RedisService redisService;

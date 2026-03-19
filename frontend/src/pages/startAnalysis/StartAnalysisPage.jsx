@@ -1,3 +1,13 @@
+/**
+ * 분석 시작 페이지 컴포넌트 (Step 2: Start Analysis)
+ *
+ * 업로드된 데이터의 초기 분석 설정을 수행하는 페이지이다.
+ * 제거 열 설정(컬럼 가시성 토글), 데이터 삭제/원복(기준 열 값 기반),
+ * 코스트센터/공급업체 명 표준화, 필수 항목 설정(세목/코스트센터/공급업체/금액/적요 열)
+ * 기능을 제공한다. 완료 시 process_data를 비동기 생성하고 Step 3로 이동한다.
+ *
+ * @component
+ */
 // frontend/src/pages/startAnalysis/StartAnalysisPage.jsx
 
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';

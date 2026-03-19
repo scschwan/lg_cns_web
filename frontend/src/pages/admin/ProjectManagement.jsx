@@ -1,3 +1,11 @@
+/**
+ * 프로젝트 관리 페이지 컴포넌트 (관리자 전용)
+ *
+ * 전체 프로젝트 목록을 테이블로 표시하며, 각 프로젝트의 멤버를
+ * 관리(추가, 제거, 역할 변경)할 수 있는 다이얼로그를 제공한다.
+ *
+ * @component
+ */
 import React, { useState, useEffect } from 'react';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';

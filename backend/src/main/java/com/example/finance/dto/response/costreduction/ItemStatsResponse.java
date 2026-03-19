@@ -9,6 +9,7 @@ import lombok.NoArgsConstructor;
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
+/** 개별 항목 통계 응답 DTO (공급업체/코스트센터 수, 원본 데이터 건수) */
 public class ItemStatsResponse {
 
     private Integer rawDataRows;

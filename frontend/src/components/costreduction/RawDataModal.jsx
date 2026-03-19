@@ -1,3 +1,15 @@
+/**
+ * RawDataModal - Raw Data 조회 모달 컴포넌트
+ *
+ * 비용 절감 대시보드에서 특정 항목의 원본 데이터를 페이지네이션으로 조회한다.
+ * 서버에서 동적으로 컬럼 목록을 받아 테이블 헤더를 생성하며,
+ * 행 번호, 페이지 크기 변경, 이전/다음 페이지 네비게이션을 지원한다.
+ *
+ * @param {boolean} open - 모달 표시 여부
+ * @param {function} onClose - 닫기 콜백
+ * @param {string} title - 모달 제목 (항목명)
+ * @param {function} fetchRawData - (page, size) => Promise<{ columns, rows, totalCount, totalPages }>
+ */
 import React, { useState, useEffect, useCallback } from 'react';
 import { Loader2, ChevronLeft, ChevronRight, FileSpreadsheet } from 'lucide-react';
 import {
@@ -11,16 +23,6 @@ import { Badge } from '@/components/ui/badge';
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
-
-/**
- * Raw Data 조회 모달
- *
- * Props:
- *   open: boolean
- *   onClose: () => void
- *   title: string (항목명)
- *   fetchRawData: (page, size) => Promise<RawDataPageResponse>
- */
 export default function RawDataModal({ open, onClose, title, fetchRawData }) {
   const [loading, setLoading] = useState(false);
   const [data, setData] = useState(null);
@@ -166,6 +168,7 @@ export default function RawDataModal({ open, onClose, title, fetchRawData }) {
   );
 }
 
+/** 셀 값 포맷팅: null → '-', 숫자 → 천단위 콤마, 기타 → 문자열 변환 */
 function formatCellValue(value) {
   if (value == null) return '-';
   if (typeof value === 'number') return value.toLocaleString();
