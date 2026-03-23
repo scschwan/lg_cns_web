@@ -63,6 +63,10 @@ public class ExportService {
     );
 
     private static final int MAX_ROWS_PER_SHEET = 1000000;
+    /** MongoDB 쿼리 타임아웃 (5분) */
+    private static final long QUERY_TIMEOUT_MS = 300_000;
+    /** $in 배치 분할 크기 (10,000 → 5,000) */
+    private static final int DB_BATCH_SIZE = 5_000;
 
     // ============================================================
     // 1. 전체 데이터 조회 (클러스터명 + 세부클러스터명 포함)
@@ -82,12 +86,14 @@ public class ExportService {
         Criteria baseCriteria = Criteria.where("session_id").is(sessionId)
                 .and("is_hidden").ne(true);
         Query countQuery = new Query(baseCriteria);
+        countQuery.maxTimeMsec(QUERY_TIMEOUT_MS);
         long totalCount = mongoTemplate.count(countQuery, "session_data");
 
         Query query = new Query(baseCriteria)
                 .with(Sort.by("row_number"))
                 .skip((long) page * size)
                 .limit(size);
+        query.maxTimeMsec(QUERY_TIMEOUT_MS);
         List<Document> sessionDataList = mongoTemplate.find(query, Document.class, "session_data");
 
         // 4. 데이터에 클러스터 정보 추가
@@ -233,15 +239,15 @@ public class ExportService {
 
         Map<String, Document> dataMap = new HashMap<>(allRawDataIds.size());
         List<String> idList = new ArrayList<>(allRawDataIds);
-        int BATCH_SIZE = 10_000;
         int batchCount = 0;
-        for (int i = 0; i < idList.size(); i += BATCH_SIZE) {
-            List<String> batch = idList.subList(i, Math.min(i + BATCH_SIZE, idList.size()));
+        for (int i = 0; i < idList.size(); i += DB_BATCH_SIZE) {
+            List<String> batch = idList.subList(i, Math.min(i + DB_BATCH_SIZE, idList.size()));
             Query batchQuery = new Query(Criteria.where("session_id").is(sessionId)
                     .and("raw_data_id").in(batch)
                     .and("is_hidden").ne(true));
             // ★ projection 추가: 필요한 필드만 조회 (raw_data_id + data)
             batchQuery.fields().include("raw_data_id").include("data");
+            batchQuery.maxTimeMsec(QUERY_TIMEOUT_MS);
             List<Document> batchResult = mongoTemplate.find(batchQuery, Document.class, "session_data");
             for (Document doc : batchResult) {
                 dataMap.put(doc.getString("raw_data_id"), doc);
@@ -453,6 +459,7 @@ public class ExportService {
         Query dataQuery = new Query(Criteria.where("session_id").is(sessionId)
                 .and("raw_data_id").in(pageIds)
                 .and("is_hidden").ne(true));
+        dataQuery.maxTimeMsec(QUERY_TIMEOUT_MS);
         List<Document> sessionDataList = mongoTemplate.find(dataQuery, Document.class, "session_data");
 
         // 순서 보장을 위해 재정렬
@@ -844,18 +851,18 @@ public class ExportService {
 
         Map<String, Document> dataMap = new HashMap<>(allRawDataIds.size());
         List<String> idList = new ArrayList<>(allRawDataIds);
-        int BATCH_SIZE = 10_000;
         int batchCount = 0;
 
         long batchQueryTotalStart = System.currentTimeMillis();
-        for (int i = 0; i < idList.size(); i += BATCH_SIZE) {
-            List<String> batch = idList.subList(i, Math.min(i + BATCH_SIZE, idList.size()));
+        for (int i = 0; i < idList.size(); i += DB_BATCH_SIZE) {
+            List<String> batch = idList.subList(i, Math.min(i + DB_BATCH_SIZE, idList.size()));
             long batchStart = System.currentTimeMillis();
 
             Query batchQuery = new Query(Criteria.where("session_id").is(sessionId)
                     .and("raw_data_id").in(batch)
                     .and("is_hidden").ne(true));
             batchQuery.fields().include("raw_data_id").include("data");
+            batchQuery.maxTimeMsec(QUERY_TIMEOUT_MS);
             List<Document> batchResult = mongoTemplate.find(batchQuery, Document.class, "session_data");
 
             long batchMs = System.currentTimeMillis() - batchStart;
@@ -1005,13 +1012,13 @@ public class ExportService {
 
         Map<String, Document> dataMap = new HashMap<>(allRawDataIds.size());
         List<String> idList = new ArrayList<>(allRawDataIds);
-        int BATCH_SIZE = 10_000;
         int batchCount = 0;
-        for (int i = 0; i < idList.size(); i += BATCH_SIZE) {
-            List<String> batch = idList.subList(i, Math.min(i + BATCH_SIZE, idList.size()));
+        for (int i = 0; i < idList.size(); i += DB_BATCH_SIZE) {
+            List<String> batch = idList.subList(i, Math.min(i + DB_BATCH_SIZE, idList.size()));
             Query batchQuery = new Query(Criteria.where("session_id").is(sessionId)
                     .and("raw_data_id").in(batch)
                     .and("is_hidden").ne(true));
+            batchQuery.maxTimeMsec(QUERY_TIMEOUT_MS);
             List<Document> batchResult = mongoTemplate.find(batchQuery, Document.class, "session_data");
             for (Document doc : batchResult) {
                 dataMap.put(doc.getString("raw_data_id"), doc);

@@ -55,6 +55,12 @@ public class MongoIndexInitializer {
         // session_data: 페이징 쿼리 성능 (is_hidden 포함)
         createIndex("session_data", "session_hidden_idx",
                 new Index().on("session_id", Sort.Direction.ASC).on("is_hidden", Sort.Direction.ASC));
+
+        // session_data: 3필드 커버링 인덱스 (session_id + is_hidden + raw_data_id 쿼리 최적화)
+        createIndex("session_data", "session_hidden_rawdata_idx",
+                new Index().on("session_id", Sort.Direction.ASC)
+                           .on("is_hidden", Sort.Direction.ASC)
+                           .on("raw_data_id", Sort.Direction.ASC));
     }
 
     /**

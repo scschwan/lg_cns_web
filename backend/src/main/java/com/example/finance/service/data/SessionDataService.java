@@ -57,6 +57,10 @@ public class SessionDataService {
     private static final int BATCH_SIZE = 10_000;
     private static final int THREAD_POOL_SIZE = 4;
     private static final int CURSOR_BATCH_SIZE = 5_000;
+    /** aggregation distinct 결과 안전 한도 (CPU/메모리 보호) */
+    private static final int DISTINCT_SAFE_LIMIT = 50_000;
+    /** MongoDB 쿼리 타임아웃 (5분) */
+    private static final long QUERY_TIMEOUT_MS = 300_000;
     private static final String SESSION_DATA_CACHE_PREFIX = "session_data:";
     private static final Duration SESSION_DATA_CACHE_TTL = Duration.ofMinutes(30);
     private static final String ANALYSIS_STATUS_PREFIX = "analysis:status:";
@@ -647,10 +651,12 @@ public class SessionDataService {
         pipeline.add(new Document("$group", new Document("_id", "$" + fieldPath)
                 .append("count", new Document("$sum", 1))));
         pipeline.add(new Document("$sort", new Document("_id", 1)));
+        pipeline.add(new Document("$limit", DISTINCT_SAFE_LIMIT));
 
         List<Document> results = mongoTemplate.getCollection("session_data")
                 .aggregate(pipeline)
                 .allowDiskUse(true)
+                .maxTime(QUERY_TIMEOUT_MS, java.util.concurrent.TimeUnit.MILLISECONDS)
                 .into(new ArrayList<>());
 
         List<Map<String, Object>> values = new ArrayList<>();
@@ -733,16 +739,19 @@ public class SessionDataService {
     public Map<String, Object> getDistinctValuesWithStatus(String sessionId, String columnName) {
         String fieldPath = "data." + columnName;
 
-        // visible 값 (limit 제거: 모든 고유 값 반환, 누락 방지)
+        // visible 값 (안전 한도 적용: CPU/메모리 보호)
         List<Document> visiblePipeline = new ArrayList<>();
         visiblePipeline.add(new Document("$match", new Document("session_id", sessionId)
                 .append("is_hidden", new Document("$ne", true))));
         visiblePipeline.add(new Document("$group", new Document("_id", "$" + fieldPath)
                 .append("count", new Document("$sum", 1))));
         visiblePipeline.add(new Document("$sort", new Document("count", -1)));
+        visiblePipeline.add(new Document("$limit", DISTINCT_SAFE_LIMIT));
 
         List<Document> visibleResults = mongoTemplate.getCollection("session_data")
-                .aggregate(visiblePipeline).allowDiskUse(true).into(new ArrayList<>());
+                .aggregate(visiblePipeline).allowDiskUse(true)
+                .maxTime(QUERY_TIMEOUT_MS, java.util.concurrent.TimeUnit.MILLISECONDS)
+                .into(new ArrayList<>());
 
         List<Map<String, Object>> visibleValues = new ArrayList<>();
         for (Document doc : visibleResults) {
@@ -759,16 +768,19 @@ public class SessionDataService {
             visibleValues.add(item);
         }
 
-        // hidden 값 (limit 제거: 모든 고유 값 반환, 누락 방지)
+        // hidden 값 (안전 한도 적용: CPU/메모리 보호)
         List<Document> hiddenPipeline = new ArrayList<>();
         hiddenPipeline.add(new Document("$match", new Document("session_id", sessionId)
                 .append("is_hidden", true)));
         hiddenPipeline.add(new Document("$group", new Document("_id", "$" + fieldPath)
                 .append("count", new Document("$sum", 1))));
         hiddenPipeline.add(new Document("$sort", new Document("count", -1)));
+        hiddenPipeline.add(new Document("$limit", DISTINCT_SAFE_LIMIT));
 
         List<Document> hiddenResults = mongoTemplate.getCollection("session_data")
-                .aggregate(hiddenPipeline).allowDiskUse(true).into(new ArrayList<>());
+                .aggregate(hiddenPipeline).allowDiskUse(true)
+                .maxTime(QUERY_TIMEOUT_MS, java.util.concurrent.TimeUnit.MILLISECONDS)
+                .into(new ArrayList<>());
 
         List<Map<String, Object>> hiddenValues = new ArrayList<>();
         for (Document doc : hiddenResults) {
@@ -956,9 +968,12 @@ public class SessionDataService {
                         .append("changeValue", "$" + changePath))
                 .append("count", new Document("$sum", 1))));
         pipeline.add(new Document("$sort", new Document("_id.keyValue", 1).append("count", -1)));
+        pipeline.add(new Document("$limit", DISTINCT_SAFE_LIMIT));
 
         List<Document> results = mongoTemplate.getCollection("session_data")
-                .aggregate(pipeline).allowDiskUse(true).into(new ArrayList<>());
+                .aggregate(pipeline).allowDiskUse(true)
+                .maxTime(QUERY_TIMEOUT_MS, java.util.concurrent.TimeUnit.MILLISECONDS)
+                .into(new ArrayList<>());
 
         List<Map<String, Object>> groupedData = new ArrayList<>();
         for (Document doc : results) {

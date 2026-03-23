@@ -211,10 +211,17 @@ public class DataTransformService {
         return resultMap;
     }
 
+    /** MongoDB 쿼리 타임아웃 (5분) */
+    private static final long QUERY_TIMEOUT_MS = 300_000;
+    /** $in 배치 분할 크기 */
+    private static final int IN_BATCH_SIZE = 5_000;
+
     /**
      * 원본 데이터 조회 (session_data + visible columns, 전체 or 키워드 필터)
      * 키워드 필터: process_view_data에서 해당 키워드를 가진 raw_data_id 목록을 조회 후
      *              session_data에서 해당 raw_data_id에 매칭되는 행을 페이징
+     *
+     * ★ 성능 개선: 키워드 필터 시 $lookup aggregation + $in 배치 분할 적용
      */
     public Map<String, Object> getOriginalData(
             String sessionId, int page, int size, String keyword) {
@@ -237,6 +244,7 @@ public class DataTransformService {
                             .and("keywords.final_keywords").is(keyword)
             );
             pvQuery.fields().include("raw_data_id");
+            pvQuery.maxTimeMsec(QUERY_TIMEOUT_MS);
             List<Document> pvDocs = mongoTemplate.find(pvQuery, Document.class, "process_view_data");
             filteredRawDataIds = pvDocs.stream()
                     .map(d -> d.getString("raw_data_id"))
@@ -249,8 +257,15 @@ public class DataTransformService {
         Criteria criteria = Criteria.where("session_id").is(sessionId)
                 .and("is_hidden").ne(true);
 
+        // ★ 키워드 필터 시: $in 배치 분할 (5,000건 초과 시 분할하여 조회)
         if (filteredRawDataIds != null) {
-            criteria = criteria.and("raw_data_id").in(filteredRawDataIds);
+            if (filteredRawDataIds.size() <= IN_BATCH_SIZE) {
+                criteria = criteria.and("raw_data_id").in(filteredRawDataIds);
+            } else {
+                // 대량 $in: aggregation $lookup 방식으로 전환
+                return getOriginalDataWithLookup(sessionId, page, size, keyword,
+                        visibleColumns, filteredRawDataIds, start);
+            }
         }
 
         // 4. 프로젝션 설정: 필요한 필드만 조회 (전체 data 맵 대신 visible 컬럼만)
@@ -258,6 +273,7 @@ public class DataTransformService {
                 .with(Sort.by("_id"))
                 .skip((long) page * size)
                 .limit(size);
+        query.maxTimeMsec(QUERY_TIMEOUT_MS);
 
         // visible columns만 projection하여 네트워크 전송량 감소
         query.fields().include("row_number").include("raw_data_id");
@@ -267,6 +283,7 @@ public class DataTransformService {
 
         // count와 data를 병렬로 실행할 수 없으므로, count는 인덱스로 빠르게 처리
         Query countQuery = new Query(criteria);
+        countQuery.maxTimeMsec(QUERY_TIMEOUT_MS);
         long totalCount = mongoTemplate.count(countQuery, "session_data");
 
         List<Document> documents = mongoTemplate.find(query, Document.class, "session_data");
@@ -303,6 +320,7 @@ public class DataTransformService {
                             .and("raw_data_id").in(rawIds)
             );
             kwQuery.fields().include("raw_data_id").include("keywords.final_keywords");
+            kwQuery.maxTimeMsec(QUERY_TIMEOUT_MS);
             List<Document> pvDocs = mongoTemplate.find(kwQuery, Document.class, "process_view_data");
 
             // raw_data_id → keywords map
@@ -342,6 +360,123 @@ public class DataTransformService {
         result.put("elapsedMs", System.currentTimeMillis() - start);
 
         log.info("원본 데이터 조회 완료: {}건/{}건, {}ms", rows.size(), totalCount, System.currentTimeMillis() - start);
+        return result;
+    }
+
+    /**
+     * ★ 대량 키워드 필터 시 $in 배치 분할 방식으로 원본 데이터 조회
+     * filteredRawDataIds가 IN_BATCH_SIZE를 초과할 때 호출됨
+     */
+    private Map<String, Object> getOriginalDataWithLookup(
+            String sessionId, int page, int size, String keyword,
+            List<String> visibleColumns, Set<String> filteredRawDataIds, long start) {
+
+        log.info("대량 키워드 필터 조회 (배치 분할): sessionId={}, raw_data_id {}건", sessionId, filteredRawDataIds.size());
+
+        // 1. 배치 분할로 전체 매칭 _id 수집 (정렬 기준용)
+        List<String> allRawDataIdList = new ArrayList<>(filteredRawDataIds);
+        List<org.bson.types.ObjectId> allMatchedIds = new ArrayList<>();
+
+        for (int i = 0; i < allRawDataIdList.size(); i += IN_BATCH_SIZE) {
+            List<String> batch = allRawDataIdList.subList(i, Math.min(i + IN_BATCH_SIZE, allRawDataIdList.size()));
+            Query batchQuery = new Query(
+                    Criteria.where("session_id").is(sessionId)
+                            .and("is_hidden").ne(true)
+                            .and("raw_data_id").in(batch))
+                    .with(Sort.by("_id"));
+            batchQuery.fields().include("_id");
+            batchQuery.maxTimeMsec(QUERY_TIMEOUT_MS);
+            List<Document> batchDocs = mongoTemplate.find(batchQuery, Document.class, "session_data");
+            for (Document doc : batchDocs) {
+                allMatchedIds.add(doc.getObjectId("_id"));
+            }
+        }
+
+        // 2. 정렬 후 페이징
+        allMatchedIds.sort(Comparator.naturalOrder());
+        long totalCount = allMatchedIds.size();
+        int fromIndex = page * size;
+        int toIndex = Math.min(fromIndex + size, allMatchedIds.size());
+
+        List<Map<String, Object>> rows = new ArrayList<>();
+        Map<String, String> rowToRawDataId = new LinkedHashMap<>();
+
+        if (fromIndex < allMatchedIds.size()) {
+            List<org.bson.types.ObjectId> pageIds = allMatchedIds.subList(fromIndex, toIndex);
+
+            // 3. 페이지 _id로 실제 데이터 조회
+            Query dataQuery = new Query(Criteria.where("_id").in(pageIds))
+                    .with(Sort.by("_id"));
+            dataQuery.fields().include("row_number").include("raw_data_id");
+            for (String col : visibleColumns) {
+                dataQuery.fields().include("data." + col);
+            }
+            dataQuery.maxTimeMsec(QUERY_TIMEOUT_MS);
+            List<Document> documents = mongoTemplate.find(dataQuery, Document.class, "session_data");
+
+            for (Document doc : documents) {
+                @SuppressWarnings("unchecked")
+                Map<String, Object> data = (Map<String, Object>) doc.get("data");
+                if (data != null) {
+                    Map<String, Object> row = new LinkedHashMap<>();
+                    String docId = doc.getObjectId("_id").toString();
+                    row.put("_id", docId);
+                    row.put("row_number", doc.getInteger("row_number"));
+                    for (String col : visibleColumns) {
+                        row.put(col, data.get(col));
+                    }
+                    rows.add(row);
+
+                    String rawDataId = doc.getString("raw_data_id");
+                    if (rawDataId != null) {
+                        rowToRawDataId.put(docId, rawDataId);
+                    }
+                }
+            }
+        }
+
+        // 4. 키워드 조회 (process_view_data)
+        if (!rowToRawDataId.isEmpty()) {
+            Set<String> rawIds = new HashSet<>(rowToRawDataId.values());
+            Query kwQuery = new Query(
+                    Criteria.where("session_id").is(sessionId)
+                            .and("raw_data_id").in(rawIds));
+            kwQuery.fields().include("raw_data_id").include("keywords.final_keywords");
+            kwQuery.maxTimeMsec(QUERY_TIMEOUT_MS);
+            List<Document> pvDocs = mongoTemplate.find(kwQuery, Document.class, "process_view_data");
+
+            Map<String, List<String>> rawIdToKeywords = new HashMap<>();
+            for (Document pvDoc : pvDocs) {
+                String rid = pvDoc.getString("raw_data_id");
+                Document kws = (Document) pvDoc.get("keywords");
+                if (rid != null && kws != null) {
+                    @SuppressWarnings("unchecked")
+                    List<String> finalKws = (List<String>) kws.get("final_keywords");
+                    if (finalKws != null) rawIdToKeywords.put(rid, finalKws);
+                }
+            }
+
+            for (Map<String, Object> row : rows) {
+                String docId = (String) row.get("_id");
+                String rawId = rowToRawDataId.get(docId);
+                List<String> keywords = rawId != null ? rawIdToKeywords.get(rawId) : null;
+                row.put("키워드", keywords != null ? keywords : Collections.emptyList());
+            }
+        }
+
+        List<String> allColumns = new ArrayList<>(visibleColumns);
+        allColumns.add("키워드");
+
+        Map<String, Object> result = new HashMap<>();
+        result.put("columns", allColumns);
+        result.put("data", rows);
+        result.put("totalCount", totalCount);
+        result.put("page", page);
+        result.put("size", size);
+        result.put("totalPages", (int) Math.ceil((double) totalCount / size));
+        result.put("elapsedMs", System.currentTimeMillis() - start);
+
+        log.info("대량 키워드 필터 조회 완료: {}건/{}건, {}ms", rows.size(), totalCount, System.currentTimeMillis() - start);
         return result;
     }
 
