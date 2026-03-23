@@ -14,6 +14,7 @@
  */
 import axios from 'axios';
 import { isTokenExpired, isRefreshTokenExpired } from '../utils/tokenUtils';
+import { isUserIdle } from '../utils/idleUtils';
 
 /** API 기본 URL (환경변수 또는 로컬 기본값) */
 const API_URL = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8080';
@@ -115,6 +116,12 @@ api.interceptors.request.use(
 
     // ★ Access token이 만료된 경우: 요청 전에 사전 갱신 시도
     if (isTokenExpired(token)) {
+      // ★ 유휴 시간 초과 시 토큰 갱신하지 않고 로그아웃
+      if (isUserIdle()) {
+        handleSessionExpired();
+        return Promise.reject(new axios.Cancel('15분 이상 미활동으로 세션이 만료되었습니다.'));
+      }
+
       // Refresh token도 만료 → 즉시 로그아웃
       if (isRefreshTokenExpired()) {
         handleSessionExpired();
@@ -206,6 +213,13 @@ api.interceptors.response.use(
       }
 
       originalRequest._retry = true;
+
+      // ★ 유휴 시간 초과 시 토큰 갱신하지 않고 로그아웃
+      if (isUserIdle()) {
+        handleSessionExpired();
+        return Promise.reject(error);
+      }
+
       isRefreshing = true;
 
       try {

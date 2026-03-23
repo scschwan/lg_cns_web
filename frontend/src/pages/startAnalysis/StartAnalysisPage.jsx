@@ -17,6 +17,7 @@ import uploadService from '../../services/uploadService';
 import { useSessionEditorLock } from '../../hooks/useSessionEditorLock';
 import useViewerMode from '../../hooks/useViewerMode';
 import AdvancedTable from '@/components/AdvancedTable';
+import ProgressDialog from '@/components/common/ProgressDialog';
 
 // shadcn/ui components
 import {
@@ -234,13 +235,14 @@ export default function StartAnalysisPage() {
   }, [visibleColumns]);
 
   // 데이터 삭제 탭: 로컬 like 필터링
+  // ★ String() 변환으로 숫자/기타 타입 값도 안전하게 처리
   const filteredVisibleValues = useMemo(() => {
     // __NULL__ 항목은 별도 UI로 표시하므로 리스트에서 제외
     const nonNullVisible = distinctVisible.filter(v => v.value !== '__NULL__');
     if (!deleteFilterKeyword.trim()) return nonNullVisible;
     const kw = deleteFilterKeyword.trim().toLowerCase();
     return nonNullVisible.filter(item =>
-      item.value.toLowerCase().includes(kw)
+      String(item.value).toLowerCase().includes(kw)
     );
   }, [distinctVisible, deleteFilterKeyword]);
 
@@ -248,7 +250,7 @@ export default function StartAnalysisPage() {
     if (!deleteFilterKeyword.trim()) return distinctHidden;
     const kw = deleteFilterKeyword.trim().toLowerCase();
     return distinctHidden.filter(item =>
-      item.value.toLowerCase().includes(kw)
+      String(item.value).toLowerCase().includes(kw)
     );
   }, [distinctHidden, deleteFilterKeyword]);
 
@@ -384,6 +386,7 @@ export default function StartAnalysisPage() {
     );
 
     // 서버 업데이트 (batch 단일 요청)
+    setOperationLoading({ open: true, message: '컬럼 가시성 변경 중...' });
     try {
       await uploadService.updateColumnVisibilityBatch(projectId, sessionId, updates);
       // step_history: 데이터 변경 발생 → 현재 step(2) 저장
@@ -395,6 +398,8 @@ export default function StartAnalysisPage() {
       setColumnMappings(prev =>
         prev.map(m => ({ ...m, isVisible: prevSet.has(m.originalName) }))
       );
+    } finally {
+      setOperationLoading({ open: false, message: '' });
     }
   };
 
@@ -408,8 +413,13 @@ export default function StartAnalysisPage() {
     setDeleteLoading(true);
     try {
       const result = await uploadService.getDistinctValuesWithStatus(projectId, sessionId, colName);
-      setDistinctVisible(result.visible || []);
-      setDistinctHidden(result.hidden || []);
+      // ★ 값을 문자열로 정규화하여 필터링/매칭 오류 방지
+      const normalizeValues = (items) => (items || []).map(item => ({
+        ...item,
+        value: item.value != null ? String(item.value) : '__NULL__',
+      }));
+      setDistinctVisible(normalizeValues(result.visible));
+      setDistinctHidden(normalizeValues(result.hidden));
       setDeleteCheckedSet(new Set());
       setDeleteFilterKeyword('');
       setShowHiddenItems(false);
@@ -432,6 +442,7 @@ export default function StartAnalysisPage() {
       alert('삭제할 항목을 선택해주세요.');
       return;
     }
+    setOperationLoading({ open: true, message: '데이터 삭제 중...' });
     try {
       const values = Array.from(deleteCheckedSet);
       const BATCH_SIZE = 50;
@@ -460,6 +471,8 @@ export default function StartAnalysisPage() {
     } catch (error) {
       console.error('데이터 삭제 실패:', error);
       alert('데이터 삭제에 실패했습니다.');
+    } finally {
+      setOperationLoading({ open: false, message: '' });
     }
   };
 
@@ -470,6 +483,7 @@ export default function StartAnalysisPage() {
       alert('원복할 항목을 선택해주세요.');
       return;
     }
+    setOperationLoading({ open: true, message: '데이터 원복 중...' });
     try {
       const values = Array.from(deleteCheckedSet);
       const BATCH_SIZE = 50;
@@ -499,6 +513,8 @@ export default function StartAnalysisPage() {
     } catch (error) {
       console.error('데이터 원복 실패:', error);
       alert('데이터 원복에 실패했습니다.');
+    } finally {
+      setOperationLoading({ open: false, message: '' });
     }
   };
 
@@ -588,6 +604,9 @@ export default function StartAnalysisPage() {
 
   // 미선택 컬럼 안내 다이얼로그
   const [missingColumnsDialog, setMissingColumnsDialog] = useState({ open: false, missing: [] });
+
+  // 작업 진행 중 로딩 다이얼로그 (데이터 삭제/원복, 컬럼 가시성 변경)
+  const [operationLoading, setOperationLoading] = useState({ open: false, message: '' });
 
   const handleComplete = async () => {
     if (isViewer) return;
@@ -1252,6 +1271,12 @@ export default function StartAnalysisPage() {
 
           </div>
         </div>
+
+        {/* 작업 진행 중 로딩 다이얼로그 (데이터 삭제/원복, 컬럼 가시성 변경) */}
+        <ProgressDialog
+          open={operationLoading.open}
+          message={operationLoading.message}
+        />
 
         {/* 미선택 컬럼 안내 다이얼로그 */}
         <Dialog open={missingColumnsDialog.open} onOpenChange={(open) => setMissingColumnsDialog(prev => ({ ...prev, open }))}>
