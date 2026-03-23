@@ -1123,6 +1123,7 @@ public class DetailClusteringService {
                 Criteria.where("session_id").is(sessionId)
                         .and("raw_data_id").in(rawDataIds));
         query.fields().include("raw_data_id").include("data");
+        query.maxTimeMsec(300_000); // 5분 타임아웃
 
         List<Document> docs = mongoTemplate.find(query, Document.class, "session_data");
 

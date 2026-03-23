@@ -371,6 +371,7 @@ public class ClusterStatisticsService {
                 long updateStart = System.currentTimeMillis();
                 Query query = new Query(Criteria.where("session_id").is(sessionId)
                         .and("raw_data_id").in(batch));
+                query.maxTimeMsec(300_000); // 5분 타임아웃
                 Update update = new Update().set("stats_l2_id", l2StatsId);
                 if (l3StatsId != null) {
                     update.set("stats_l3_id", l3StatsId);
