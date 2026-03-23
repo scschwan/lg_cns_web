@@ -13,8 +13,10 @@
  *
  * 자동 기능:
  * - 초기 마운트 시 /api/auth/me 호출로 세션 검증
- * - 1분마다 주기적 세션 검증
- * - 탭 복귀/창 포커스/네트워크 복구 시 즉시 세션 검증
+ * - 15분마다 주기적 세션 검증 (유휴 시 자동 로그아웃)
+ * - 사용자 활동 추적 (click, keydown, mousemove, scroll, touchstart)
+ * - 15분 이상 미활동 시 토큰 삭제 및 로그아웃
+ * - 탭 복귀/창 포커스/네트워크 복구 시 유휴 시간 확인 후 세션 검증
  * - api.js 인터셉터의 session-expired 이벤트 수신 시 React state 동기화
  * - 클라이언트 측 JWT exp 클레임으로 토큰 만료 즉시 감지
  */
@@ -22,8 +24,12 @@ import React, { createContext, useState, useContext, useEffect, useCallback, use
 import authService from '../services/authService';
 import api from '../services/api';
 import { isAuthTokenExpired, isRefreshTokenExpired } from '../utils/tokenUtils';
+import { isUserIdle, IDLE_TIMEOUT_MS, LAST_ACTIVITY_KEY } from '../utils/idleUtils';
 
 const AuthContext = createContext();
+
+/** 활동 이벤트 쓰로틀: 1분에 한 번만 lastActivityTime 갱신 */
+const ACTIVITY_THROTTLE_MS = 60 * 1000;
 
 /** AuthContext 소비 훅. AuthProvider 내부에서만 사용 가능 */
 export const useAuth = () => {
@@ -38,12 +44,22 @@ export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
   const lastValidatedRef = useRef(0); // 마지막 성공적 검증 타임스탬프
+  const lastActivityUpdateRef = useRef(0); // 활동 이벤트 쓰로틀용
+
+  // ── 마지막 활동 시각 갱신 (쓰로틀 적용: 1분에 1회) ──
+  const updateLastActivity = useCallback(() => {
+    const now = Date.now();
+    if (now - lastActivityUpdateRef.current < ACTIVITY_THROTTLE_MS) return;
+    lastActivityUpdateRef.current = now;
+    localStorage.setItem(LAST_ACTIVITY_KEY, String(now));
+  }, []);
 
   // ── 즉시 로그아웃 (서버 요청 없이 클라이언트만 정리) ──
   const forceLogout = useCallback(() => {
     authService.logout();
     setUser(null);
     setLoading(false);
+    localStorage.removeItem(LAST_ACTIVITY_KEY);
     sessionStorage.setItem('sessionExpired', 'true');
     window.location.href = '/login';
   }, []);
@@ -79,6 +95,13 @@ export const AuthProvider = ({ children }) => {
     if (!token || token === 'undefined' || token === 'null' || !currentUser) {
       setUser(null);
       setLoading(false);
+      return false;
+    }
+
+    // ★ 유휴 시간 초과 확인: 15분 이상 미활동이면 로그아웃
+    if (isUserIdle()) {
+      console.warn('[Auth] 15분 이상 미활동 → 로그아웃');
+      forceLogout();
       return false;
     }
 
@@ -123,21 +146,55 @@ export const AuthProvider = ({ children }) => {
     }
   }, [checkTokenLocally, forceLogout]);
 
-  // ── 초기 세션 검증 ──
+  // ── 초기 세션 검증 (마운트 시 유휴 시간 즉시 체크) ──
   useEffect(() => {
+    // 앱 마운트 시 즉시 유휴 시간 확인
+    const token = localStorage.getItem('authToken');
+    if (token && token !== 'undefined' && token !== 'null') {
+      if (isUserIdle()) {
+        console.warn('[Auth] 앱 마운트 시 15분 이상 미활동 감지 → 로그아웃');
+        forceLogout();
+        return;
+      }
+    }
     validateSession();
-  }, [validateSession]);
+  }, [validateSession, forceLogout]);
 
-  // ── 주기적 세션 검증 (1분마다) ──
+  // ── 주기적 세션 검증 (15분마다) ──
   useEffect(() => {
     if (!user) return;
 
     const interval = setInterval(() => {
-      validateSession();
-    }, 1 * 60 * 1000);
+      // 유휴 시간 초과 시 로그아웃, 활동 중이면 세션 검증
+      if (isUserIdle()) {
+        console.warn('[Auth] 주기적 검사: 15분 이상 미활동 → 로그아웃');
+        forceLogout();
+      } else {
+        validateSession();
+      }
+    }, IDLE_TIMEOUT_MS);
 
     return () => clearInterval(interval);
-  }, [user, validateSession]);
+  }, [user, validateSession, forceLogout]);
+
+  // ── 사용자 활동 추적 (click, keydown, mousemove, scroll, touchstart) ──
+  useEffect(() => {
+    if (!user) return;
+
+    const events = ['click', 'keydown', 'mousemove', 'scroll', 'touchstart'];
+    events.forEach(event => {
+      window.addEventListener(event, updateLastActivity, { passive: true });
+    });
+
+    // 로그인 직후 초기 활동 시각 설정
+    updateLastActivity();
+
+    return () => {
+      events.forEach(event => {
+        window.removeEventListener(event, updateLastActivity);
+      });
+    };
+  }, [user, updateLastActivity]);
 
   // ── ★ 글로벌 세션 만료 이벤트 리스닝 (api.js interceptor에서 발생) ──
   useEffect(() => {
@@ -150,13 +207,18 @@ export const AuthProvider = ({ children }) => {
     return () => window.removeEventListener('session-expired', handleExpired);
   }, []);
 
-  // ── ★ 탭 복귀 / 창 포커스 시 즉시 세션 검증 ──
+  // ── ★ 탭 복귀 / 창 포커스 시 유휴 시간 확인 + 세션 검증 ──
   useEffect(() => {
     if (!user) return;
 
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'visible') {
-        const elapsed = Date.now() - lastValidatedRef.current;
+        // ★ 탭 복귀 시 유휴 시간 초과 확인
+        if (isUserIdle()) {
+          console.warn('[Auth] 탭 복귀 시 15분 이상 미활동 감지 → 즉시 로그아웃');
+          forceLogout();
+          return;
+        }
 
         // ★ 클라이언트 측에서 토큰 만료를 즉시 체크
         const tokenStatus = checkTokenLocally();
@@ -166,14 +228,22 @@ export const AuthProvider = ({ children }) => {
           return;
         }
 
-        // 마지막 검증 이후 1분 이상 지났으면 서버 검증
-        if (elapsed > 60 * 1000) {
+        // 마지막 검증 이후 15분 이상 지났으면 서버 검증
+        const elapsed = Date.now() - lastValidatedRef.current;
+        if (elapsed > IDLE_TIMEOUT_MS) {
           validateSession();
         }
       }
     };
 
     const handleWindowFocus = () => {
+      // ★ 창 포커스 시 유휴 시간 초과 확인
+      if (isUserIdle()) {
+        console.warn('[Auth] 창 포커스 시 15분 이상 미활동 감지 → 즉시 로그아웃');
+        forceLogout();
+        return;
+      }
+
       const tokenStatus = checkTokenLocally();
       if (tokenStatus === 'no_token' || tokenStatus === 'all_expired') {
         console.warn('[Auth] 창 포커스 시 토큰 만료 감지 → 즉시 로그아웃');
@@ -182,13 +252,18 @@ export const AuthProvider = ({ children }) => {
       }
 
       const elapsed = Date.now() - lastValidatedRef.current;
-      if (elapsed > 60 * 1000) {
+      if (elapsed > IDLE_TIMEOUT_MS) {
         validateSession();
       }
     };
 
     // ★ 네트워크 복구 시 세션 검증
     const handleOnline = () => {
+      if (isUserIdle()) {
+        console.warn('[Auth] 네트워크 복구 시 15분 이상 미활동 감지 → 로그아웃');
+        forceLogout();
+        return;
+      }
       console.info('[Auth] 네트워크 복구 → 세션 검증');
       validateSession();
     };
@@ -216,6 +291,8 @@ export const AuthProvider = ({ children }) => {
 
     setUser(loggedInUser);
     lastValidatedRef.current = Date.now();
+    // 로그인 시 활동 시각 초기화
+    localStorage.setItem(LAST_ACTIVITY_KEY, String(Date.now()));
     return data;
   };
 
@@ -226,6 +303,7 @@ export const AuthProvider = ({ children }) => {
 
   const logout = () => {
     authService.logout();
+    localStorage.removeItem(LAST_ACTIVITY_KEY);
     setUser(null);
   };
 

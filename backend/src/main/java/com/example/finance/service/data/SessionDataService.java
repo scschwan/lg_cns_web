@@ -647,18 +647,21 @@ public class SessionDataService {
         pipeline.add(new Document("$group", new Document("_id", "$" + fieldPath)
                 .append("count", new Document("$sum", 1))));
         pipeline.add(new Document("$sort", new Document("_id", 1)));
-        pipeline.add(new Document("$limit", 1000));
 
         List<Document> results = mongoTemplate.getCollection("session_data")
                 .aggregate(pipeline)
+                .allowDiskUse(true)
                 .into(new ArrayList<>());
 
         List<Map<String, Object>> values = new ArrayList<>();
         for (Document doc : results) {
             Object idObj = doc.get("_id");
-            if (idObj == null) continue;
             Map<String, Object> item = new LinkedHashMap<>();
-            item.put("value", idObj.toString());
+            if (idObj == null || idObj.toString().trim().isEmpty()) {
+                item.put("value", "__NULL__");
+            } else {
+                item.put("value", formatValueForDisplay(idObj));
+            }
             Object countObj = doc.get("count");
             item.put("count", countObj instanceof Number ? ((Number) countObj).longValue() : 0L);
             values.add(item);
@@ -730,17 +733,16 @@ public class SessionDataService {
     public Map<String, Object> getDistinctValuesWithStatus(String sessionId, String columnName) {
         String fieldPath = "data." + columnName;
 
-        // visible 값
+        // visible 값 (limit 제거: 모든 고유 값 반환, 누락 방지)
         List<Document> visiblePipeline = new ArrayList<>();
         visiblePipeline.add(new Document("$match", new Document("session_id", sessionId)
                 .append("is_hidden", new Document("$ne", true))));
         visiblePipeline.add(new Document("$group", new Document("_id", "$" + fieldPath)
                 .append("count", new Document("$sum", 1))));
         visiblePipeline.add(new Document("$sort", new Document("count", -1)));
-        visiblePipeline.add(new Document("$limit", 5000));
 
         List<Document> visibleResults = mongoTemplate.getCollection("session_data")
-                .aggregate(visiblePipeline).into(new ArrayList<>());
+                .aggregate(visiblePipeline).allowDiskUse(true).into(new ArrayList<>());
 
         List<Map<String, Object>> visibleValues = new ArrayList<>();
         for (Document doc : visibleResults) {
@@ -757,17 +759,16 @@ public class SessionDataService {
             visibleValues.add(item);
         }
 
-        // hidden 값
+        // hidden 값 (limit 제거: 모든 고유 값 반환, 누락 방지)
         List<Document> hiddenPipeline = new ArrayList<>();
         hiddenPipeline.add(new Document("$match", new Document("session_id", sessionId)
                 .append("is_hidden", true)));
         hiddenPipeline.add(new Document("$group", new Document("_id", "$" + fieldPath)
                 .append("count", new Document("$sum", 1))));
         hiddenPipeline.add(new Document("$sort", new Document("count", -1)));
-        hiddenPipeline.add(new Document("$limit", 5000));
 
         List<Document> hiddenResults = mongoTemplate.getCollection("session_data")
-                .aggregate(hiddenPipeline).into(new ArrayList<>());
+                .aggregate(hiddenPipeline).allowDiskUse(true).into(new ArrayList<>());
 
         List<Map<String, Object>> hiddenValues = new ArrayList<>();
         for (Document doc : hiddenResults) {
@@ -820,17 +821,28 @@ public class SessionDataService {
         List<Object> matchValues = new ArrayList<>();
         for (String v : stringValues) {
             matchValues.add(v); // 문자열 그대로도 포함
-            try {
-                double d = Double.parseDouble(v);
-                matchValues.add(d);
-                if (d == Math.floor(d) && !Double.isInfinite(d)) {
-                    matchValues.add((long) d);
-                    matchValues.add((int) d);
-                }
-            } catch (NumberFormatException ignored) {
+            // 숫자 파싱 시도 (원본 값)
+            tryAddNumericVariants(matchValues, v);
+            // 쉼표 제거 후 숫자 파싱 시도 (콤마 포맷 숫자 대응: "-505,443" → "-505443")
+            String commaStripped = v.replaceAll(",", "");
+            if (!commaStripped.equals(v)) {
+                matchValues.add(commaStripped);
+                tryAddNumericVariants(matchValues, commaStripped);
             }
         }
         return matchValues;
+    }
+
+    private void tryAddNumericVariants(List<Object> matchValues, String v) {
+        try {
+            double d = Double.parseDouble(v);
+            matchValues.add(d);
+            if (d == Math.floor(d) && !Double.isInfinite(d)) {
+                matchValues.add((long) d);
+                matchValues.add((int) d);
+            }
+        } catch (NumberFormatException ignored) {
+        }
     }
 
     /**
@@ -944,10 +956,9 @@ public class SessionDataService {
                         .append("changeValue", "$" + changePath))
                 .append("count", new Document("$sum", 1))));
         pipeline.add(new Document("$sort", new Document("_id.keyValue", 1).append("count", -1)));
-        pipeline.add(new Document("$limit", 10000));
 
         List<Document> results = mongoTemplate.getCollection("session_data")
-                .aggregate(pipeline).into(new ArrayList<>());
+                .aggregate(pipeline).allowDiskUse(true).into(new ArrayList<>());
 
         List<Map<String, Object>> groupedData = new ArrayList<>();
         for (Document doc : results) {
