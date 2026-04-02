@@ -66,7 +66,7 @@ public class PreprocessingController {
             @CurrentUser UserPrincipal userPrincipal) {
 
         projectService.getProject(projectId, userPrincipal.getId());
-        return ResponseEntity.ok(preprocessingService.getOrCreateConfig(sessionId));
+        return ResponseEntity.ok(preprocessingService.getOrCreateConfig(sessionId, userPrincipal.getId()));
     }
 
     /**

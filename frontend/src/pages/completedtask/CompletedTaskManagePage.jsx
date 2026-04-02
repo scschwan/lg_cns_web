@@ -339,6 +339,21 @@ export default function CompletedTaskManagePage() {
     }
   };
 
+  const handleExportExcel = async () => {
+    try {
+      const blob = await costReductionService.exportTasksExcel(projectId, '완료');
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `completed_tasks_${new Date().toISOString().slice(0, 10)}.xlsx`;
+      a.click();
+      window.URL.revokeObjectURL(url);
+    } catch (e) {
+      console.error('Excel 다운로드 실패:', e);
+      alert('Excel 다운로드에 실패했습니다.');
+    }
+  };
+
   const completedSummary = useMemo(() => {
     const totalBaseAmount = tasks.reduce((s, t) => s + (t.baseAmount || 0), 0);
     const totalSavingTarget = tasks.reduce((s, t) => s + (t.expectedSavingAmount || 0), 0);
@@ -410,6 +425,7 @@ export default function CompletedTaskManagePage() {
                 <div className="flex items-center gap-2">
                   <div className="relative"><Search className="absolute left-2.5 top-1/2 transform -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" /><Input placeholder="과제명, 부서 검색..." value={searchKeyword} onChange={e => setSearchKeyword(e.target.value)} className="pl-8 h-8 w-[180px] text-xs" /></div>
                   <Select value={ratingFilter} onValueChange={setRatingFilter}><SelectTrigger className="w-[100px] h-8 text-xs"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">전체 등급</SelectItem><SelectItem value="A+">A+</SelectItem><SelectItem value="A">A</SelectItem><SelectItem value="B+">B+</SelectItem><SelectItem value="B">B</SelectItem></SelectContent></Select>
+                  <Button variant="outline" size="sm" className="h-8 text-xs gap-1" onClick={handleExportExcel}><Download className="w-3.5 h-3.5" />Excel</Button>
                 </div>
               </div>
             </CardHeader>

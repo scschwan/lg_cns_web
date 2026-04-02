@@ -13,6 +13,8 @@ import com.example.finance.security.UserPrincipal;
 import com.example.finance.service.costreduction.AbleTaskService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -87,6 +89,30 @@ public class AbleTaskController {
             @CurrentUser UserPrincipal userPrincipal) {
         TaskSummaryResponse summary = ableTaskService.getSummary(projectId);
         return ResponseEntity.ok(summary);
+    }
+
+    /**
+     * 과제 목록 Excel 다운로드
+     *
+     * @param projectId 프로젝트 ID
+     * @param status 상태 필터 (선택, 예: "완료")
+     * @return Excel 파일 (application/octet-stream)
+     */
+    @GetMapping("/export/excel")
+    public ResponseEntity<byte[]> exportExcel(
+            @PathVariable String projectId,
+            @RequestParam(required = false) String status,
+            @CurrentUser UserPrincipal userPrincipal) {
+        byte[] excelData = ableTaskService.exportTasksToExcel(projectId, status);
+
+        String fileName = status != null && !status.isEmpty()
+                ? "tasks_" + status + ".xlsx"
+                : "tasks.xlsx";
+
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_OCTET_STREAM);
+        headers.setContentDispositionFormData("attachment", fileName);
+        return ResponseEntity.ok().headers(headers).body(excelData);
     }
 
     @GetMapping("/{taskId}")

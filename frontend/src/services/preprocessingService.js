@@ -93,6 +93,24 @@ const preprocessingService = {
         );
         return response.data;
     },
+
+    // ===== 사용자 레벨 기본 설정 =====
+
+    /**
+     * 사용자 레벨 구분자/불용어 설정 조회
+     */
+    getUserConfig: async () => {
+        const response = await api.get('/api/preprocessing/user-config');
+        return response.data;
+    },
+
+    /**
+     * 사용자 레벨 구분자/불용어 설정 저장
+     */
+    saveUserConfig: async ({ separators, stopwords }) => {
+        const response = await api.put('/api/preprocessing/user-config', { separators, stopwords });
+        return response.data;
+    },
 };
 
 export default preprocessingService;

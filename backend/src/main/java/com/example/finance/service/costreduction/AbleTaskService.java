@@ -19,9 +19,14 @@ import com.example.finance.repository.data.ClusterStatisticsRepository;
 import com.example.finance.service.common.S3Service;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.poi.ss.usermodel.*;
+import org.apache.poi.xssf.streaming.SXSSFWorkbook;
 import org.springframework.stereotype.Service;
 
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
 import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -373,6 +378,127 @@ public class AbleTaskService {
     public void deleteWeeklyProgress(String progressId) {
         weeklyProgressRepository.deleteById(progressId);
         log.info("Weekly progress deleted: id={}", progressId);
+    }
+
+    /**
+     * 과제 목록 Excel 내보내기
+     *
+     * @param projectId 프로젝트 ID
+     * @param statusFilter 상태 필터 (null이면 전체)
+     * @return Excel 파일 바이트 배열
+     */
+    public byte[] exportTasksToExcel(String projectId, String statusFilter) {
+        List<AbleTask> tasks = ableTaskRepository.findByProjectId(projectId);
+
+        if (statusFilter != null && !statusFilter.isEmpty()) {
+            tasks = tasks.stream()
+                    .filter(t -> statusFilter.equals(t.getStatus()))
+                    .toList();
+        }
+
+        // 클러스터 통계 및 부모 클러스터명 매핑
+        Map<String, ClusterStatistics> statsMap = buildStatsMap(tasks);
+        Map<String, String> parentNameMap = buildParentNameMap(statsMap);
+
+        DateTimeFormatter dtf = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
+
+        try (SXSSFWorkbook workbook = new SXSSFWorkbook(100)) {
+            Sheet sheet = workbook.createSheet("과제 목록");
+
+            // 헤더 스타일
+            CellStyle headerStyle = workbook.createCellStyle();
+            Font headerFont = workbook.createFont();
+            headerFont.setBold(true);
+            headerStyle.setFont(headerFont);
+            headerStyle.setFillForegroundColor(IndexedColors.GREY_25_PERCENT.getIndex());
+            headerStyle.setFillPattern(FillPatternType.SOLID_FOREGROUND);
+            headerStyle.setBorderBottom(BorderStyle.THIN);
+
+            // 헤더 생성
+            String[] headers = {
+                    "No", "과제명", "대계정", "클러스터명", "세부클러스터명",
+                    "담당부서", "담당자명", "컨설턴트",
+                    "모수금액", "절감액", "실제절감액",
+                    "진척율(%)", "상태", "등급",
+                    "이슈", "진행사항", "고객 후속조치", "실행 항목",
+                    "등록시간", "수정시간"
+            };
+
+            Row headerRow = sheet.createRow(0);
+            for (int i = 0; i < headers.length; i++) {
+                Cell cell = headerRow.createCell(i);
+                cell.setCellValue(headers[i]);
+                cell.setCellStyle(headerStyle);
+            }
+
+            // 데이터 행 생성
+            int rowIdx = 1;
+            for (AbleTask task : tasks) {
+                Row row = sheet.createRow(rowIdx);
+
+                // 클러스터명 / 세부클러스터명 추출
+                String clusterNames = "";
+                String detailClusterNames = "";
+                if (task.getClusters() != null) {
+                    List<String> parentNames = new ArrayList<>();
+                    List<String> childNames = new ArrayList<>();
+                    for (AbleTask.ClusterRef c : task.getClusters()) {
+                        ClusterStatistics stat = statsMap.get(c.getStatisticsId());
+                        if (stat != null && stat.getLevel() != null && stat.getLevel() == 3) {
+                            String parentName = parentNameMap.get(c.getStatisticsId());
+                            if (parentName != null && !parentNames.contains(parentName)) {
+                                parentNames.add(parentName);
+                            }
+                            if (c.getClusterName() != null) {
+                                childNames.add(c.getClusterName());
+                            }
+                        } else if (stat != null && stat.getLevel() != null && stat.getLevel() == 2) {
+                            if (c.getClusterName() != null && !parentNames.contains(c.getClusterName())) {
+                                parentNames.add(c.getClusterName());
+                            }
+                        }
+                    }
+                    clusterNames = String.join(", ", parentNames);
+                    detailClusterNames = String.join(", ", childNames);
+                }
+
+                row.createCell(0).setCellValue(rowIdx);
+                row.createCell(1).setCellValue(nullSafe(task.getTaskName()));
+                row.createCell(2).setCellValue(task.getMajorAccounts() != null ? String.join(", ", task.getMajorAccounts()) : "");
+                row.createCell(3).setCellValue(clusterNames);
+                row.createCell(4).setCellValue(detailClusterNames);
+                row.createCell(5).setCellValue(nullSafe(task.getDepartment()));
+                row.createCell(6).setCellValue(nullSafe(task.getManager()));
+                row.createCell(7).setCellValue(nullSafe(task.getConsultant()));
+                row.createCell(8).setCellValue(task.getBaseAmount() != null ? task.getBaseAmount() : 0);
+                row.createCell(9).setCellValue(task.getExpectedSavingAmount() != null ? task.getExpectedSavingAmount() : 0);
+                row.createCell(10).setCellValue(task.getActualSaving() != null ? task.getActualSaving() : 0);
+                row.createCell(11).setCellValue(task.getProgress() != null ? task.getProgress() : 0);
+                row.createCell(12).setCellValue(nullSafe(task.getStatus()));
+                row.createCell(13).setCellValue(nullSafe(task.getRating()));
+                row.createCell(14).setCellValue(nullSafe(task.getIssues()));
+                row.createCell(15).setCellValue(nullSafe(task.getProgressDetails()));
+                row.createCell(16).setCellValue(nullSafe(task.getCustomerFollowUp()));
+                row.createCell(17).setCellValue(nullSafe(task.getActionItems()));
+                row.createCell(18).setCellValue(task.getCreatedAt() != null ? task.getCreatedAt().format(dtf) : "");
+                row.createCell(19).setCellValue(task.getUpdatedAt() != null ? task.getUpdatedAt().format(dtf) : "");
+
+                rowIdx++;
+            }
+
+            ByteArrayOutputStream out = new ByteArrayOutputStream();
+            workbook.write(out);
+            workbook.dispose();
+            return out.toByteArray();
+
+        } catch (IOException e) {
+            log.error("Excel 생성 실패: projectId={}", projectId, e);
+            throw new RuntimeException("Excel 파일 생성에 실패했습니다.", e);
+        }
+    }
+
+    private String nullSafe(String value) {
+        return value != null ? value : "";
     }
 
     private WeeklyProgressResponse toWeeklyResponse(TaskWeeklyProgress p) {
