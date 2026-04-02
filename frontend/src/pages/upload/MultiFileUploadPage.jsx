@@ -1016,7 +1016,7 @@ function MultiFileUploadPage() {
                             <CardHeader>
                                 <CardTitle className="text-lg">업로드된 파일 목록</CardTitle>
                             </CardHeader>
-                            <CardContent className="p-0" style={{ maxHeight: '30vh', overflow: 'auto' }}>
+                            <CardContent className="p-0 overflow-auto">
                                 {files.length === 0 ? (
                                     <div className="text-center py-12 px-6">
                                         <FileText className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
@@ -1297,7 +1297,7 @@ function MultiFileUploadPage() {
                                         </p>
                                     </div>
                                 ) : (
-                                    <ScrollSyncTable minWidth="1200px" maxHeight="500px">
+                                    <ScrollSyncTable minWidth="1200px" maxHeight="none">
                                         <Table>
                                             <TableHeader className="sticky top-0 bg-background z-10">
                                                 <TableRow>
