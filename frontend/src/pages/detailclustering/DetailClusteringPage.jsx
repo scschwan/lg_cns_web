@@ -167,7 +167,7 @@ function DetailClusteringPage() {
   const [unmergingProgress, setUnmergingProgress] = useState(0);
   const [unmergingClusters, setUnmergingClusters] = useState(new Set());
   const [autoMergeConfirm, setAutoMergeConfirm] = useState(null); // { type: 'keyword'|'supplier', items: [] }
-  const [autoMergeCustomName, setAutoMergeCustomName] = useState('');
+  const [autoMergeCustomNames, setAutoMergeCustomNames] = useState({}); // { [item]: customName }
   const [mergeNameDialog, setMergeNameDialog] = useState({ open: false, clusters: [], suggestedName: '' });
   const [mergeCustomName, setMergeCustomName] = useState('');
   const [statistics, setStatistics] = useState({ totalRows: 0, unmergedCount: 0, unmergedTotalAmount: 0, mergedGroupCount: 0, hasSupplier: false });
@@ -600,18 +600,20 @@ function DetailClusteringPage() {
 
   const handleAutoMergeByKeywords = async () => {
     if (kwCheckedSet.size === 0) { alert('키워드를 선택해주세요.'); return; }
-    const suggested = [...kwCheckedSet].join('_');
-    setAutoMergeCustomName(suggested.length > 50 ? suggested.substring(0, 50) + '...' : suggested);
+    const names = {};
+    [...kwCheckedSet].forEach(kw => { names[kw] = kw; });
+    setAutoMergeCustomNames(names);
     setAutoMergeConfirm({ type: 'keyword', items: [...kwCheckedSet] });
   };
 
   const executeAutoMergeByKeywords = async () => {
-    const customName = autoMergeCustomName.trim() || null;
+    const namesSnapshot = { ...autoMergeCustomNames };
     setAutoMergeConfirm(null);
     setMerging(true); setMergeActiveBlocking(true); setMergingProgress(0);
     const total = kwCheckedSet.size; let done = 0;
     try {
       for (const keyword of kwCheckedSet) {
+        const customName = namesSnapshot[keyword]?.trim() || null;
         setMergingMessage(`키워드 병합 중... (${done + 1}/${total}): ${keyword}`);
         const ids = await detailClusteringService.getAllUnmergedClusterNumbers(projectId, sessionId, clusterId, keyword);
         if (ids.length >= 1) {
@@ -637,18 +639,20 @@ function DetailClusteringPage() {
 
   const handleAutoMergeBySuppliers = async () => {
     if (supCheckedSet.size === 0) { alert('공급업체를 선택해주세요.'); return; }
-    const suggested = [...supCheckedSet].join('_');
-    setAutoMergeCustomName(suggested.length > 50 ? suggested.substring(0, 50) + '...' : suggested);
+    const names = {};
+    [...supCheckedSet].forEach(sup => { names[sup] = sup; });
+    setAutoMergeCustomNames(names);
     setAutoMergeConfirm({ type: 'supplier', items: [...supCheckedSet] });
   };
 
   const executeAutoMergeBySuppliers = async () => {
-    const customName = autoMergeCustomName.trim() || null;
+    const namesSnapshot = { ...autoMergeCustomNames };
     setAutoMergeConfirm(null);
     setMerging(true); setMergeActiveBlocking(true); setMergingProgress(0);
     const total = supCheckedSet.size; let done = 0;
     try {
       for (const supplier of supCheckedSet) {
+        const customName = namesSnapshot[supplier]?.trim() || null;
         setMergingMessage(`공급업체 병합 중... (${done + 1}/${total}): ${supplier}`);
         const ids = await detailClusteringService.getAllUnmergedClusterNumbers(projectId, sessionId, clusterId, null, supplier);
         if (ids.length >= 1) {
@@ -1228,21 +1232,20 @@ function DetailClusteringPage() {
               선택한 {autoMergeConfirm?.items?.length || 0}개 항목의 클러스터를 자동 세부 병합합니다.
             </DialogDescription>
           </DialogHeader>
-          <div className="max-h-[300px] overflow-y-auto border rounded-md p-2 space-y-1">
+          <div className="max-h-[400px] overflow-y-auto border rounded-md p-2 space-y-2">
             {autoMergeConfirm?.items?.map((item, idx) => (
-              <div key={idx} className="text-sm px-2 py-1 bg-muted rounded">
-                {item}
+              <div key={idx} className="flex items-center gap-2 text-sm px-2 py-1.5 bg-muted rounded">
+                <span className="flex-shrink-0 font-medium min-w-[80px] max-w-[150px] truncate" title={item}>{item}</span>
+                <Input
+                  value={autoMergeCustomNames[item] || ''}
+                  onChange={(e) => setAutoMergeCustomNames(prev => ({ ...prev, [item]: e.target.value }))}
+                  placeholder={item}
+                  className="h-7 text-xs flex-1"
+                />
               </div>
             ))}
           </div>
-          <div className="mt-4 space-y-2">
-            <Label>클러스터명</Label>
-            <Input
-              value={autoMergeCustomName}
-              onChange={(e) => setAutoMergeCustomName(e.target.value)}
-              placeholder="클러스터명을 입력하세요"
-            />
-          </div>
+          <p className="text-xs text-muted-foreground">각 항목별 클러스터명을 입력하세요. 비워두면 항목명이 클러스터명으로 사용됩니다.</p>
           <DialogFooter>
             <Button variant="outline" onClick={() => setAutoMergeConfirm(null)}>취소</Button>
             <Button onClick={() => {

@@ -259,9 +259,9 @@ export default function StartAnalysisPage() {
   useEffect(() => {
     if (originalPanelRef.current) {
       if (isOriginalCollapsed) {
-        originalPanelRef.current.collapse();
+        originalPanelRef.current.resize(8);
       } else {
-        originalPanelRef.current.expand();
+        originalPanelRef.current.resize(50);
       }
     }
   }, [isOriginalCollapsed]);
@@ -791,9 +791,9 @@ export default function StartAnalysisPage() {
           <div className="xl:col-span-8 min-h-[50vh] xl:min-h-0 xl:h-full flex flex-col">
 
             <PanelGroup orientation="vertical" className="flex-1 min-h-0">
-              <Panel panelRef={originalPanelRef} defaultSize={50} minSize={5} collapsible={true} collapsedSize={5}>
+              <Panel panelRef={originalPanelRef} defaultSize={50} minSize={8}>
                 {/* 1. 원본 테이블 */}
-                <Card className="h-full overflow-hidden transition-all duration-300 shadow-sm flex flex-col">
+                <Card className="h-full overflow-hidden transition-all duration-300 shadow-sm flex flex-col min-w-0">
                   <CardHeader
                     className="py-3 px-4 border-b bg-white cursor-pointer hover:bg-gray-50 transition-colors flex-shrink-0"
                     onClick={() => setIsOriginalCollapsed(!isOriginalCollapsed)}
