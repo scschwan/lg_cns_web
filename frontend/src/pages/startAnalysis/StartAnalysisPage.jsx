@@ -18,6 +18,7 @@ import { useSessionEditorLock } from '../../hooks/useSessionEditorLock';
 import useViewerMode from '../../hooks/useViewerMode';
 import AdvancedTable from '@/components/AdvancedTable';
 import ProgressDialog from '@/components/common/ProgressDialog';
+import { Panel, Group as PanelGroup, Separator as PanelResizeHandle } from 'react-resizable-panels';
 
 // shadcn/ui components
 import {
@@ -776,37 +777,44 @@ export default function StartAnalysisPage() {
         <div className="flex-1 min-h-0 grid grid-cols-1 xl:grid-cols-12 xl:grid-rows-[1fr] gap-4 overflow-y-auto xl:overflow-visible">
 
           {/* 좌측: 테이블 영역 (8/12) */}
-          <div className="xl:col-span-8 min-h-[50vh] xl:min-h-0 xl:h-full flex flex-col gap-4">
+          <div className="xl:col-span-8 min-h-[50vh] xl:min-h-0 xl:h-full flex flex-col">
 
-            {/* 1. 원본 테이블 */}
-            <Card className="flex-shrink-0 transition-all duration-300 shadow-sm">
-              <CardHeader
-                className="py-3 px-4 border-b bg-white cursor-pointer hover:bg-gray-50 transition-colors"
-                onClick={() => setIsOriginalCollapsed(!isOriginalCollapsed)}
-              >
-                <CardTitle className="text-base flex items-center justify-between">
-                  <span>원본 데이터 <span className="text-xs font-normal text-gray-500 ml-2">(클릭하여 {isOriginalCollapsed ? '펼치기' : '접기'})</span></span>
-                  {isOriginalCollapsed ? <ChevronDown className="h-4 w-4" /> : <ChevronUp className="h-4 w-4" />}
-                </CardTitle>
-              </CardHeader>
+            <PanelGroup orientation="vertical">
+              <Panel defaultSize={50} minSize={20}>
+                {/* 1. 원본 테이블 */}
+                <Card className="h-full overflow-hidden transition-all duration-300 shadow-sm flex flex-col">
+                  <CardHeader
+                    className="py-3 px-4 border-b bg-white cursor-pointer hover:bg-gray-50 transition-colors flex-shrink-0"
+                    onClick={() => setIsOriginalCollapsed(!isOriginalCollapsed)}
+                  >
+                    <CardTitle className="text-base flex items-center justify-between">
+                      <span>원본 데이터 <span className="text-xs font-normal text-gray-500 ml-2">(클릭하여 {isOriginalCollapsed ? '펼치기' : '접기'})</span></span>
+                      {isOriginalCollapsed ? <ChevronDown className="h-4 w-4" /> : <ChevronUp className="h-4 w-4" />}
+                    </CardTitle>
+                  </CardHeader>
 
-              {!isOriginalCollapsed && (
-                <CardContent className="p-0">
-                  <AdvancedTable
-                    columns={tableColumns}
-                    data={sortedOriginalData}
-                    rowKey={(row, idx) => row._id || idx}
-                    sort={origSort}
-                    onSortChange={(field, direction) => setOrigSort({ field, direction })}
-                    maxHeight="250px"
-                    loading={loading}
-                  />
-                </CardContent>
-              )}
-            </Card>
+                  {!isOriginalCollapsed && (
+                    <CardContent className="p-0 flex-1 min-h-0">
+                      <AdvancedTable
+                        columns={tableColumns}
+                        data={sortedOriginalData}
+                        rowKey={(row, idx) => row._id || idx}
+                        sort={origSort}
+                        onSortChange={(field, direction) => setOrigSort({ field, direction })}
+                        loading={loading}
+                      />
+                    </CardContent>
+                  )}
+                </Card>
+              </Panel>
 
-            {/* 2. 가공 데이터 테이블 */}
-            <Card className="flex-1 flex flex-col min-h-0 shadow-sm">
+              <PanelResizeHandle className="h-2 flex items-center justify-center group cursor-row-resize">
+                <div className="w-12 h-1 rounded-full bg-border group-hover:bg-primary/50 transition-colors" />
+              </PanelResizeHandle>
+
+              <Panel defaultSize={50} minSize={20}>
+                {/* 2. 가공 데이터 테이블 */}
+                <Card className="h-full overflow-hidden flex flex-col min-h-0 shadow-sm">
               <CardHeader className="py-3 px-4 border-b bg-white flex-shrink-0">
                 <CardTitle className="text-base">가공 데이터</CardTitle>
               </CardHeader>
@@ -877,7 +885,9 @@ export default function StartAnalysisPage() {
                   </div>
                 </div>
               </div>
-            </Card>
+                </Card>
+              </Panel>
+            </PanelGroup>
           </div>
 
           {/* 우측: 설정 패널 (4/12) */}

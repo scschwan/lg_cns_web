@@ -14,6 +14,7 @@ import {
   TrendingUp, DollarSign, ClipboardList, CheckCircle2, Clock,
   AlertCircle, FileText, Link2, FileIcon, ExternalLink, X, Save, Loader2,
   ArrowRight, ArrowUpDown, ArrowUp, ArrowDown, Plus, Pencil, Download,
+  ListFilter, FilePlus, Settings,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -519,67 +520,60 @@ function TaskDocumentsModal({ open, onClose, task, projectId, isEditor }) {
 function PhaseNavigationBar({ stats, summary, currentPhase, projectId, navigate }) {
   const phases = [
     {
-      key: 'LONG_LIST', label: 'Raw List',
-      line1: stats ? <><b>대계정</b> : {stats.rawAccountCount ?? '-'} / <b>클러스터</b> : {stats.rawClusterCount ?? '-'} / <b>세부</b> : {stats.rawSubClusterCount ?? '-'}</> : null,
-      line2: stats ? <><b>합산금액</b> : {formatAmount(stats.rawTotalAmount ?? 0)}</> : null,
+      key: 'LONG_LIST', label: 'Raw List', icon: ClipboardList,
+      count: stats ? (stats.rawSubClusterCount ?? 0) : 0,
       path: `/projects/${projectId}/longlist`,
     },
     {
-      key: 'SHORT_LIST', label: 'Long List',
-      line1: stats ? <><b>대계정</b> : {stats.longListAccountCount ?? '-'} / <b>클러스터</b> : {stats.longListClusterCount ?? '-'} / <b>세부</b> : {stats.longListSubClusterCount ?? '-'}</> : null,
-      line2: stats ? <><b>합산금액</b> : {formatAmount(stats.totalAmount ?? 0)}</> : null,
+      key: 'SHORT_LIST', label: 'Long List', icon: ListFilter,
+      count: stats ? (stats.longListSubClusterCount ?? 0) : 0,
       path: `/projects/${projectId}/shortlist`,
     },
     {
-      key: 'ABLE_REGISTER', label: 'Short List',
-      line1: stats ? <><b>대계정</b> : {stats.shortListAccountCount ?? '-'} / <b>클러스터</b> : {stats.shortListClusterCount ?? '-'} / <b>세부</b> : {stats.shortListSubClusterCount ?? '-'}</> : null,
-      line2: stats ? <><b>합산금액</b> : {formatAmount(stats.shortListTotalAmount ?? 0)}</> : null,
+      key: 'ABLE_REGISTER', label: 'Short List', icon: FilePlus,
+      count: stats ? (stats.shortListSubClusterCount ?? 0) : 0,
       path: `/projects/${projectId}/able-register`,
     },
     {
-      key: 'ABLE_MANAGE', label: 'Able 과제',
-      line1: summary ? <><b>과제수</b> : {summary.totalTasks ?? 0}건</> : null,
-      line2: summary ? <><b>합산금액</b> : {formatAmount(summary.totalBaseAmount ?? 0)}</> : null,
+      key: 'ABLE_MANAGE', label: 'Able 과제', icon: Settings,
+      count: summary ? (summary.totalTasks ?? 0) : 0,
       path: `/projects/${projectId}/able-manage`,
     },
   ];
-  const TOTAL_SLOTS = 5;
   const currentIdx = phases.findIndex(p => p.key === currentPhase);
-  const emptySlots = TOTAL_SLOTS - phases.length;
   return (
-    <div className="flex items-center gap-1.5 py-3 font-pretendard w-full">
+    <div className="grid grid-cols-4 gap-4 py-3 font-pretendard w-full">
       {phases.map((phase, idx) => {
         const isActive = phase.key === currentPhase;
         const isPast = idx < currentIdx;
         return (
-          <React.Fragment key={phase.key}>
-            {idx > 0 && <ArrowRight className="w-4 h-4 text-muted-foreground/40 flex-shrink-0" />}
-            <button
-              onClick={() => navigate(phase.path)}
-              className={cn(
-                'flex-1 basis-0 flex flex-col items-center gap-1.5 px-3 py-3.5 rounded-lg font-pretendard transition-colors min-w-0',
-                isActive && 'bg-blue-600 text-white',
-                isPast && 'bg-blue-50 text-blue-700 hover:bg-blue-100',
-                !isActive && !isPast && 'bg-muted/50 text-muted-foreground hover:bg-muted',
-              )}
-            >
-              <div className="flex items-center gap-1.5">
-                {isPast && <CheckCircle2 className="w-5 h-5 flex-shrink-0" />}
-                <span className="font-bold text-xl whitespace-nowrap">{phase.label}</span>
-              </div>
-              {phase.line1 != null && (
-                <div className={cn('text-[19px] leading-snug text-center font-medium', isActive ? 'text-white/90' : 'text-black')}>
-                  <div>{phase.line1}</div>
-                  <div>{phase.line2}</div>
+          <Card
+            key={phase.key}
+            className={cn(
+              'cursor-pointer transition-all hover:shadow-md',
+              isActive && 'ring-2 ring-blue-500 bg-blue-50',
+              isPast && 'bg-muted/30 hover:bg-muted/50',
+              !isActive && !isPast && 'bg-muted/10',
+            )}
+            onClick={() => navigate(phase.path)}
+          >
+            <CardContent className="p-4">
+              <div className="flex items-center gap-3">
+                <div className={cn(
+                  'w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0',
+                  isActive ? 'bg-blue-500' : isPast ? 'bg-blue-400' : 'bg-muted',
+                )}>
+                  <phase.icon className="w-5 h-5 text-white" />
                 </div>
-              )}
-            </button>
-          </React.Fragment>
+                <div>
+                  <p className="text-xs font-bold text-muted-foreground">{phase.label}</p>
+                  <p className="text-lg font-bold tabular-nums">{phase.count}<span className="text-sm font-normal ml-0.5">건</span></p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
         );
       })}
-      {emptySlots > 0 && Array.from({ length: emptySlots }).map((_, i) => (
-        <div key={`empty-${i}`} className="flex-1 basis-0 min-w-0" />
-      ))}
     </div>
   );
 }
@@ -775,8 +769,8 @@ export default function AbleTaskManagePage() {
                   <TableHeader>
                     <TableRow className="bg-muted/50">
                       <TableHead className="w-[50px] text-center">No</TableHead>
-                      <TableHead className="cursor-pointer select-none" onClick={() => handleSort('taskName')}>과제명<SortIcon colKey="taskName" /></TableHead>
-                      <TableHead>대계정</TableHead><TableHead className="max-w-[120px]">클러스터명</TableHead><TableHead className="max-w-[120px]">세부클러스터명</TableHead><TableHead>담당부서</TableHead><TableHead>담당자명</TableHead><TableHead>컨설턴트</TableHead>
+                      <TableHead className="w-[50%] cursor-pointer select-none" onClick={() => handleSort('taskName')}>과제명<SortIcon colKey="taskName" /></TableHead>
+                      <TableHead>대계정</TableHead><TableHead className="max-w-[80px]">클러스터명</TableHead><TableHead className="max-w-[80px]">세부클러스터명</TableHead><TableHead>담당부서</TableHead><TableHead>담당자명</TableHead><TableHead>컨설턴트</TableHead>
                       <TableHead className="text-right cursor-pointer select-none" onClick={() => handleSort('baseAmount')}>모수 금액<SortIcon colKey="baseAmount" /></TableHead>
                       <TableHead className="text-right cursor-pointer select-none" onClick={() => handleSort('savingAmount')}>절감액<SortIcon colKey="savingAmount" /></TableHead>
                       <TableHead className="w-[120px] cursor-pointer select-none" onClick={() => handleSort('progress')}>진척율<SortIcon colKey="progress" /></TableHead>
@@ -789,10 +783,10 @@ export default function AbleTaskManagePage() {
                     {sortedTasks.map((task, idx) => (
                       <TableRow key={task.id} className="hover:bg-muted/30">
                         <TableCell className="text-center text-xs tabular-nums">{idx + 1}</TableCell>
-                        <TableCell className="text-sm font-medium">{task.taskName}</TableCell>
+                        <TableCell className="w-[50%] text-sm font-medium">{task.taskName}</TableCell>
                         <TableCell className="text-xs">{task.majorAccounts?.join(', ') || '-'}</TableCell>
-                        <TableCell className="text-xs max-w-[120px]"><ClusterNames clusters={task.clusters} level={2} /></TableCell>
-                        <TableCell className="text-xs max-w-[120px]"><ClusterNames clusters={task.clusters} level={3} /></TableCell>
+                        <TableCell className="text-xs max-w-[80px]"><ClusterNames clusters={task.clusters} level={2} /></TableCell>
+                        <TableCell className="text-xs max-w-[80px]"><ClusterNames clusters={task.clusters} level={3} /></TableCell>
                         <TableCell className="text-xs">{task.department || '-'}</TableCell>
                         <TableCell className="text-xs">{task.manager || '-'}</TableCell>
                         <TableCell className="text-xs">{task.consultant || '-'}</TableCell>
