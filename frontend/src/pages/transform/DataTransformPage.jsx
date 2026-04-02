@@ -150,16 +150,6 @@ function MultiSelectCheckList({ items, checkedSet, onCheckedChange, renderLabel,
     return () => window.removeEventListener('mouseup', handleGlobalMouseUp);
   }, []);
 
-  useEffect(() => {
-    if (originalPanelRef.current) {
-      if (isOriginalCollapsed) {
-        originalPanelRef.current.collapse();
-      } else {
-        originalPanelRef.current.expand();
-      }
-    }
-  }, [isOriginalCollapsed]);
-
   const handleCheckToggle = (key) => {
     if (cursorSet.size > 0 && cursorSet.has(key)) {
       const isCurrentlyChecked = checkedSet.has(key);
@@ -254,6 +244,16 @@ function DataTransformPage() {
   const [isOriginalCollapsed, setIsOriginalCollapsed] = useState(false);
   const originalPanelRef = useRef(null);
   const [origSort, setOrigSort] = useState(null);
+
+  useEffect(() => {
+    if (originalPanelRef.current) {
+      if (isOriginalCollapsed) {
+        originalPanelRef.current.resize(8);
+      } else {
+        originalPanelRef.current.resize(50);
+      }
+    }
+  }, [isOriginalCollapsed]);
 
   // ===== 검색 결과 데이터 테이블 =====
   const [searchResultData, setSearchResultData] = useState({ columns: [], data: [], totalCount: 0, totalPages: 0 });
@@ -664,9 +664,9 @@ function DataTransformPage() {
           <div className="xl:col-span-8 h-full flex flex-col min-h-0">
 
             <PanelGroup orientation="vertical" className="flex-1 min-h-0">
-              <Panel panelRef={originalPanelRef} defaultSize={50} minSize={5} collapsible={true} collapsedSize={5}>
+              <Panel panelRef={originalPanelRef} defaultSize={50} minSize={8}>
                 {/* 1. 원본 데이터 테이블 */}
-                <Card className="h-full overflow-hidden transition-all duration-300 shadow-sm flex flex-col">
+                <Card className="h-full overflow-hidden transition-all duration-300 shadow-sm flex flex-col min-w-0">
                   <CardHeader
                     className="py-3 px-4 border-b bg-white cursor-pointer hover:bg-gray-50 transition-colors flex-shrink-0"
                     onClick={() => setIsOriginalCollapsed(!isOriginalCollapsed)}
