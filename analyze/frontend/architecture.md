@@ -1,4 +1,4 @@
-최종 수정일: 2026-03-19 (Phase 4 피드백 반영 완료)
+최종 수정일: 2026-04-03 (서비스 개선 반영)
 
 # Finance Tool - 프론트엔드 아키텍처 문서
 
@@ -23,6 +23,7 @@
 | **파일 업로드** | react-dropzone | 14.3 | 드래그 앤 드롭 파일 업로드 |
 | **CSS 후처리** | PostCSS + Autoprefixer | 최신 | CSS 호환성 |
 | **애니메이션** | tailwindcss-animate | 1.0 | CSS 애니메이션 유틸리티 |
+| **패널 리사이즈** | react-resizable-panels | 4.8 | 수직 드래그 리사이즈 패널 (StartAnalysis, DataTransform) |
 
 ### 1.2 프로젝트 구조
 
