@@ -167,6 +167,7 @@ function DetailClusteringPage() {
   const [unmergingProgress, setUnmergingProgress] = useState(0);
   const [unmergingClusters, setUnmergingClusters] = useState(new Set());
   const [autoMergeConfirm, setAutoMergeConfirm] = useState(null); // { type: 'keyword'|'supplier', items: [] }
+  const [autoMergeCustomName, setAutoMergeCustomName] = useState('');
   const [mergeNameDialog, setMergeNameDialog] = useState({ open: false, clusters: [], suggestedName: '' });
   const [mergeCustomName, setMergeCustomName] = useState('');
   const [statistics, setStatistics] = useState({ totalRows: 0, unmergedCount: 0, unmergedTotalAmount: 0, mergedGroupCount: 0, hasSupplier: false });
@@ -304,8 +305,8 @@ function DetailClusteringPage() {
 
   const loadKeywordHierarchy = useCallback(async () => {
     setKwHierarchyLoading(true);
-    try { setKeywordHierarchy(await detailClusteringService.getKeywordHierarchy(projectId) || []); } catch (e) { console.error(e); } finally { setKwHierarchyLoading(false); }
-  }, [projectId]);
+    try { setKeywordHierarchy(await detailClusteringService.getKeywordHierarchy(projectId, sessionId) || []); } catch (e) { console.error(e); } finally { setKwHierarchyLoading(false); }
+  }, [projectId, sessionId]);
 
   const loadAll = useCallback(async () => {
     // Phase 1: 핵심 데이터 (통계 + 미병합 목록)
@@ -435,12 +436,12 @@ function DetailClusteringPage() {
 
   const handleAddKeyword = async (level, parentId, keyword) => {
     if (!keyword.trim()) return;
-    try { await detailClusteringService.addKeywordHierarchy(projectId, level, parentId, keyword.trim()); await loadKeywordHierarchy(); setNewKeywordInput({ level: 0, parentId: null, value: '' }); }
+    try { await detailClusteringService.addKeywordHierarchy(projectId, sessionId, level, parentId, keyword.trim()); await loadKeywordHierarchy(); setNewKeywordInput({ level: 0, parentId: null, value: '' }); }
     catch (e) { alert('키워드 추가 실패: ' + (e.response?.data?.message || e.message)); }
   };
   const handleDeleteKeyword = async (id) => {
     if (!window.confirm('키워드를 삭제하시겠습니까? 하위 키워드도 함께 삭제됩니다.')) return;
-    try { await detailClusteringService.deleteKeywordHierarchy(projectId, id); await loadKeywordHierarchy(); }
+    try { await detailClusteringService.deleteKeywordHierarchy(projectId, sessionId, id); await loadKeywordHierarchy(); }
     catch (e) { alert('키워드 삭제 실패: ' + (e.response?.data?.message || e.message)); }
   };
 
@@ -599,10 +600,13 @@ function DetailClusteringPage() {
 
   const handleAutoMergeByKeywords = async () => {
     if (kwCheckedSet.size === 0) { alert('키워드를 선택해주세요.'); return; }
+    const suggested = [...kwCheckedSet].join('_');
+    setAutoMergeCustomName(suggested.length > 50 ? suggested.substring(0, 50) + '...' : suggested);
     setAutoMergeConfirm({ type: 'keyword', items: [...kwCheckedSet] });
   };
 
   const executeAutoMergeByKeywords = async () => {
+    const customName = autoMergeCustomName.trim() || null;
     setAutoMergeConfirm(null);
     setMerging(true); setMergeActiveBlocking(true); setMergingProgress(0);
     const total = kwCheckedSet.size; let done = 0;
@@ -612,11 +616,11 @@ function DetailClusteringPage() {
         const ids = await detailClusteringService.getAllUnmergedClusterNumbers(projectId, sessionId, clusterId, keyword);
         if (ids.length >= 1) {
           if (ids.length <= DETAIL_BATCH_THRESHOLD) {
-            await detailClusteringService.mergeClusters(projectId, sessionId, clusterId, ids);
+            await detailClusteringService.mergeClusters(projectId, sessionId, clusterId, ids, customName);
           } else {
             const chunks = [];
             for (let j = 0; j < ids.length; j += DETAIL_BATCH_CHUNK_SIZE) chunks.push(ids.slice(j, j + DETAIL_BATCH_CHUNK_SIZE));
-            const firstResult = await detailClusteringService.mergeClusters(projectId, sessionId, clusterId, chunks[0]);
+            const firstResult = await detailClusteringService.mergeClusters(projectId, sessionId, clusterId, chunks[0], customName);
             const mn = firstResult.mergedClusterNumber;
             for (let j = 1; j < chunks.length; j++) await detailClusteringService.addToMergedCluster(projectId, sessionId, clusterId, mn, chunks[j]);
           }
@@ -633,10 +637,13 @@ function DetailClusteringPage() {
 
   const handleAutoMergeBySuppliers = async () => {
     if (supCheckedSet.size === 0) { alert('공급업체를 선택해주세요.'); return; }
+    const suggested = [...supCheckedSet].join('_');
+    setAutoMergeCustomName(suggested.length > 50 ? suggested.substring(0, 50) + '...' : suggested);
     setAutoMergeConfirm({ type: 'supplier', items: [...supCheckedSet] });
   };
 
   const executeAutoMergeBySuppliers = async () => {
+    const customName = autoMergeCustomName.trim() || null;
     setAutoMergeConfirm(null);
     setMerging(true); setMergeActiveBlocking(true); setMergingProgress(0);
     const total = supCheckedSet.size; let done = 0;
@@ -646,11 +653,11 @@ function DetailClusteringPage() {
         const ids = await detailClusteringService.getAllUnmergedClusterNumbers(projectId, sessionId, clusterId, null, supplier);
         if (ids.length >= 1) {
           if (ids.length <= DETAIL_BATCH_THRESHOLD) {
-            await detailClusteringService.mergeClusters(projectId, sessionId, clusterId, ids);
+            await detailClusteringService.mergeClusters(projectId, sessionId, clusterId, ids, customName);
           } else {
             const chunks = [];
             for (let j = 0; j < ids.length; j += DETAIL_BATCH_CHUNK_SIZE) chunks.push(ids.slice(j, j + DETAIL_BATCH_CHUNK_SIZE));
-            const firstResult = await detailClusteringService.mergeClusters(projectId, sessionId, clusterId, chunks[0]);
+            const firstResult = await detailClusteringService.mergeClusters(projectId, sessionId, clusterId, chunks[0], customName);
             const mn = firstResult.mergedClusterNumber;
             for (let j = 1; j < chunks.length; j++) await detailClusteringService.addToMergedCluster(projectId, sessionId, clusterId, mn, chunks[j]);
           }
@@ -1227,6 +1234,14 @@ function DetailClusteringPage() {
                 {item}
               </div>
             ))}
+          </div>
+          <div className="mt-4 space-y-2">
+            <Label>클러스터명</Label>
+            <Input
+              value={autoMergeCustomName}
+              onChange={(e) => setAutoMergeCustomName(e.target.value)}
+              placeholder="클러스터명을 입력하세요"
+            />
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setAutoMergeConfirm(null)}>취소</Button>

@@ -273,6 +273,7 @@ function ClusteringPage() {
   const [unmerging, setUnmerging] = useState(false); // 해제 진행 중
   const [unmergingProgress, setUnmergingProgress] = useState(0); // 해제 진행률
   const [autoMergeConfirm, setAutoMergeConfirm] = useState(null); // { type: 'keyword'|'supplier', items: [] }
+  const [autoMergeCustomName, setAutoMergeCustomName] = useState('');
   const [mergeNameDialog, setMergeNameDialog] = useState({ open: false, clusters: [], suggestedName: '' });
   const [mergeCustomName, setMergeCustomName] = useState('');
   const [unmergingClusters, setUnmergingClusters] = useState(new Set()); // 현재 해제 중인 클러스터 번호들
@@ -447,11 +448,11 @@ function ClusteringPage() {
   const loadKeywordHierarchy = useCallback(async () => {
     setKwHierarchyLoading(true);
     try {
-      const hierarchy = await clusteringService.getKeywordHierarchy(projectId);
+      const hierarchy = await clusteringService.getKeywordHierarchy(projectId, sessionId);
       setKeywordHierarchy(hierarchy || []);
     } catch (e) { console.error(e); }
     finally { setKwHierarchyLoading(false); }
-  }, [projectId]);
+  }, [projectId, sessionId]);
 
   const loadAll = useCallback(async () => {
     // Phase 1: 핵심 데이터 (통계 + 미병합 목록)
@@ -706,7 +707,7 @@ function ClusteringPage() {
     if (isViewer) return;
     if (!keyword.trim()) return;
     try {
-      await clusteringService.addKeywordHierarchy(projectId, level, parentId, keyword.trim());
+      await clusteringService.addKeywordHierarchy(projectId, sessionId, level, parentId, keyword.trim());
       await loadKeywordHierarchy();
       setNewKeywordInput({ level: 0, parentId: null, value: '' });
     } catch (e) {
@@ -718,7 +719,7 @@ function ClusteringPage() {
     if (isViewer) return;
     if (!window.confirm('키워드를 삭제하시겠습니까? 하위 키워드도 함께 삭제됩니다.')) return;
     try {
-      await clusteringService.deleteKeywordHierarchy(projectId, id);
+      await clusteringService.deleteKeywordHierarchy(projectId, sessionId, id);
       await loadKeywordHierarchy();
     } catch (e) {
       alert('키워드 삭제 실패: ' + (e.response?.data?.message || e.message));
@@ -1080,10 +1081,13 @@ function ClusteringPage() {
   const handleAutoMergeByKeywords = async () => {
     if (isViewer) return;
     if (kwCheckedSet.size === 0) { alert('키워드를 선택해주세요.'); return; }
+    const suggested = [...kwCheckedSet].join('_');
+    setAutoMergeCustomName(suggested.length > 50 ? suggested.substring(0, 50) + '...' : suggested);
     setAutoMergeConfirm({ type: 'keyword', items: [...kwCheckedSet] });
   };
 
   const executeAutoMergeByKeywords = async () => {
+    const customName = autoMergeCustomName.trim() || null;
     setAutoMergeConfirm(null);
     setMerging(true); setMergeOverlay(true); mergingProgressRef.current = 0;
     const total = kwCheckedSet.size; let done = 0;
@@ -1091,7 +1095,7 @@ function ClusteringPage() {
       for (const keyword of kwCheckedSet) {
         mergingMessageRef.current = `키워드 병합 중... (${done + 1}/${total}): ${keyword}`;
         const ids = await clusteringService.getAllUnmergedClusterNumbers(projectId, sessionId, keyword);
-        if (ids.length >= 1) await clusteringService.mergeClusters(projectId, sessionId, ids);
+        if (ids.length >= 1) await clusteringService.mergeClusters(projectId, sessionId, ids, customName);
         done++;
         mergingProgressRef.current = Math.round((done / total * 80));
       }
@@ -1106,10 +1110,13 @@ function ClusteringPage() {
   const handleAutoMergeBySuppliers = async () => {
     if (isViewer) return;
     if (supCheckedSet.size === 0) { alert('공급업체를 선택해주세요.'); return; }
+    const suggested = [...supCheckedSet].join('_');
+    setAutoMergeCustomName(suggested.length > 50 ? suggested.substring(0, 50) + '...' : suggested);
     setAutoMergeConfirm({ type: 'supplier', items: [...supCheckedSet] });
   };
 
   const executeAutoMergeBySuppliers = async () => {
+    const customName = autoMergeCustomName.trim() || null;
     setAutoMergeConfirm(null);
     setMerging(true); setMergeOverlay(true); mergingProgressRef.current = 0;
     const total = supCheckedSet.size; let done = 0;
@@ -1117,7 +1124,7 @@ function ClusteringPage() {
       for (const supplier of supCheckedSet) {
         mergingMessageRef.current = `공급업체 병합 중... (${done + 1}/${total}): ${supplier}`;
         const ids = await clusteringService.getAllUnmergedClusterNumbers(projectId, sessionId, null, supplier);
-        if (ids.length >= 1) await clusteringService.mergeClusters(projectId, sessionId, ids);
+        if (ids.length >= 1) await clusteringService.mergeClusters(projectId, sessionId, ids, customName);
         done++;
         mergingProgressRef.current = Math.round((done / total * 80));
       }
@@ -2329,6 +2336,14 @@ function ClusteringPage() {
                 {item}
               </div>
             ))}
+          </div>
+          <div className="mt-4 space-y-2">
+            <Label>클러스터명</Label>
+            <Input
+              value={autoMergeCustomName}
+              onChange={(e) => setAutoMergeCustomName(e.target.value)}
+              placeholder="클러스터명을 입력하세요"
+            />
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setAutoMergeConfirm(null)}>취소</Button>
