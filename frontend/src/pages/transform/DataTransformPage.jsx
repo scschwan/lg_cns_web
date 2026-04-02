@@ -46,6 +46,7 @@ import { Badge } from '@/components/ui/badge';
 import { Label } from '@/components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
+import { Panel, Group as PanelGroup, Separator as PanelResizeHandle } from 'react-resizable-panels';
 import AdvancedTable from '@/components/AdvancedTable';
 import transformService from '../../services/transformService';
 import uploadService from '../../services/uploadService';
@@ -649,58 +650,65 @@ function DataTransformPage() {
         <div className="flex-1 min-h-0 grid grid-cols-1 xl:grid-cols-12 gap-4">
 
           {/* 좌측: 테이블 영역 (8/12) */}
-          <div className="xl:col-span-8 h-full flex flex-col min-h-0 gap-4">
+          <div className="xl:col-span-8 h-full flex flex-col min-h-0">
 
-            {/* 1. 원본 데이터 테이블 */}
-            <Card className="flex-shrink-0 transition-all duration-300 shadow-sm">
-              <CardHeader
-                className="py-3 px-4 border-b bg-white cursor-pointer hover:bg-gray-50 transition-colors"
-                onClick={() => setIsOriginalCollapsed(!isOriginalCollapsed)}
-              >
-                <CardTitle className="text-base flex items-center justify-between">
-                  <span>
-                    원본 데이터
-                    {origKeywordFilter && (
-                      <Badge variant="secondary" className="ml-2 text-[10px]">
-                        필터: {origKeywordFilter}
-                      </Badge>
-                    )}
-                    <span className="text-xs font-normal text-gray-500 ml-2">
-                      ({originalData.totalCount?.toLocaleString()}건, 클릭하여 {isOriginalCollapsed ? '펼치기' : '접기'})
-                    </span>
-                  </span>
-                  {isOriginalCollapsed ? <ChevronDown className="h-4 w-4" /> : <ChevronUp className="h-4 w-4" />}
-                </CardTitle>
-              </CardHeader>
+            <PanelGroup orientation="vertical">
+              <Panel defaultSize={50} minSize={20}>
+                {/* 1. 원본 데이터 테이블 */}
+                <Card className="h-full overflow-hidden transition-all duration-300 shadow-sm flex flex-col">
+                  <CardHeader
+                    className="py-3 px-4 border-b bg-white cursor-pointer hover:bg-gray-50 transition-colors flex-shrink-0"
+                    onClick={() => setIsOriginalCollapsed(!isOriginalCollapsed)}
+                  >
+                    <CardTitle className="text-base flex items-center justify-between">
+                      <span>
+                        원본 데이터
+                        {origKeywordFilter && (
+                          <Badge variant="secondary" className="ml-2 text-[10px]">
+                            필터: {origKeywordFilter}
+                          </Badge>
+                        )}
+                        <span className="text-xs font-normal text-gray-500 ml-2">
+                          ({originalData.totalCount?.toLocaleString()}건, 클릭하여 {isOriginalCollapsed ? '펼치기' : '접기'})
+                        </span>
+                      </span>
+                      {isOriginalCollapsed ? <ChevronDown className="h-4 w-4" /> : <ChevronUp className="h-4 w-4" />}
+                    </CardTitle>
+                  </CardHeader>
 
-              {!isOriginalCollapsed && (
-                <>
-                  <CardContent className="p-0">
-                    <AdvancedTable
-                      columns={origColumns}
-                      data={sortedOrigData}
-                      rowKey={(row, idx) => row._id || idx}
-                      sort={origSort}
-                      onSortChange={(field, direction) => setOrigSort({ field, direction })}
-                      maxHeight="250px"
-                      loading={origLoading}
-                      emptyMessage="데이터가 없습니다"
-                    />
-                  </CardContent>
-                  <Pagination
-                    currentPage={origPage}
-                    totalPages={originalData.totalPages}
-                    totalCount={originalData.totalCount}
-                    pageSize={origPageSize}
-                    onPageChange={handleOrigPageChange}
-                    onPageSizeChange={handleOrigPageSizeChange}
-                  />
-                </>
-              )}
-            </Card>
+                  {!isOriginalCollapsed && (
+                    <>
+                      <CardContent className="p-0 flex-1 min-h-0">
+                        <AdvancedTable
+                          columns={origColumns}
+                          data={sortedOrigData}
+                          rowKey={(row, idx) => row._id || idx}
+                          sort={origSort}
+                          onSortChange={(field, direction) => setOrigSort({ field, direction })}
+                          loading={origLoading}
+                          emptyMessage="데이터가 없습니다"
+                        />
+                      </CardContent>
+                      <Pagination
+                        currentPage={origPage}
+                        totalPages={originalData.totalPages}
+                        totalCount={originalData.totalCount}
+                        pageSize={origPageSize}
+                        onPageChange={handleOrigPageChange}
+                        onPageSizeChange={handleOrigPageSizeChange}
+                      />
+                    </>
+                  )}
+                </Card>
+              </Panel>
 
-            {/* 2. 검색 결과 데이터 테이블 */}
-            <Card className="flex-1 flex flex-col min-h-0 shadow-sm overflow-hidden">
+              <PanelResizeHandle className="h-2 flex items-center justify-center group cursor-row-resize">
+                <div className="w-12 h-1 rounded-full bg-border group-hover:bg-primary/50 transition-colors" />
+              </PanelResizeHandle>
+
+              <Panel defaultSize={50} minSize={20}>
+                {/* 2. 검색 결과 데이터 테이블 */}
+                <Card className="h-full overflow-hidden flex flex-col min-h-0 shadow-sm">
               <CardHeader className="py-3 px-4 border-b bg-white flex-shrink-0">
                 <CardTitle className="text-base">
                   검색 결과 데이터
@@ -741,7 +749,9 @@ function DataTransformPage() {
                   onPageSizeChange={handleSearchPageSizeChange}
                 />
               )}
-            </Card>
+                </Card>
+              </Panel>
+            </PanelGroup>
           </div>
 
           {/* 우측: 키워드 통계 + 변환 패널 (4/12) */}
