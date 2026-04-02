@@ -319,13 +319,12 @@ export default function StartAnalysisPage() {
 
     setRequiredColumns(prev => {
       const newCols = { ...prev };
-      if (!newCols.category) {
-        if (fileInfo.accountColumnName) {
-          newCols.category = trimMatch(columns, fileInfo.accountColumnName);
-        }
-        if (!newCols.category) {
-          newCols.category = trimMatch(columns, '세목') || containsMatch(columns, '세목');
-        }
+      // 세목 열: '세목' 컬럼명 우선 매핑 (fileInfo.accountColumnName보다 우선)
+      const semokMatch = trimMatch(columns, '세목') || containsMatch(columns, '세목');
+      if (semokMatch) {
+        newCols.category = semokMatch;
+      } else if (!newCols.category && fileInfo.accountColumnName) {
+        newCols.category = trimMatch(columns, fileInfo.accountColumnName);
       }
       if (!newCols.amount && fileInfo.amountColumnName) {
         newCols.amount = trimMatch(columns, fileInfo.amountColumnName);
