@@ -259,9 +259,9 @@ export default function StartAnalysisPage() {
   useEffect(() => {
     if (originalPanelRef.current) {
       if (isOriginalCollapsed) {
-        originalPanelRef.current.resize(5);
+        originalPanelRef.current.collapse();
       } else {
-        originalPanelRef.current.resize(50);
+        originalPanelRef.current.expand();
       }
     }
   }, [isOriginalCollapsed]);
@@ -785,13 +785,13 @@ export default function StartAnalysisPage() {
         </div>
 
         {/* 메인 콘텐츠 그리드 */}
-        <div className="flex-1 min-h-0 grid grid-cols-1 xl:grid-cols-12 xl:grid-rows-[1fr] gap-4 overflow-y-auto xl:overflow-visible">
+        <div className="flex-1 min-h-0 grid grid-cols-1 xl:grid-cols-12 xl:grid-rows-[1fr] gap-4 overflow-y-auto xl:overflow-hidden">
 
           {/* 좌측: 테이블 영역 (8/12) */}
           <div className="xl:col-span-8 min-h-[50vh] xl:min-h-0 xl:h-full flex flex-col">
 
             <PanelGroup orientation="vertical" className="flex-1 min-h-0">
-              <Panel ref={originalPanelRef} defaultSize={50} minSize={5} collapsible={true} collapsedSize={5}>
+              <Panel panelRef={originalPanelRef} defaultSize={50} minSize={5} collapsible={true} collapsedSize={5}>
                 {/* 1. 원본 테이블 */}
                 <Card className="h-full overflow-hidden transition-all duration-300 shadow-sm flex flex-col">
                   <CardHeader

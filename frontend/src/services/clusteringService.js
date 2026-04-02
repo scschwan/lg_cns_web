@@ -257,36 +257,36 @@ const clusteringService = {
     // 키워드 계층 API (Lv1/Lv2/Lv3)
     // ============================================================
 
-    /** 키워드 계층 전체 조회 (프로젝트 단위) */
-    getKeywordHierarchy: async (projectId) => {
+    /** 키워드 계층 전체 조회 (프로젝트 단위, URL은 sessionId 포함) */
+    getKeywordHierarchy: async (projectId, sessionId) => {
         const response = await api.get(
-            `/api/projects/${projectId}/clustering/keyword-hierarchy`
+            `/api/projects/${projectId}/sessions/${sessionId}/clustering/keyword-hierarchy`
         );
         return response.data;
     },
 
-    /** 키워드 추가 (프로젝트 단위) */
-    addKeywordHierarchy: async (projectId, level, parentId, keyword) => {
+    /** 키워드 추가 (프로젝트 단위, URL은 sessionId 포함) */
+    addKeywordHierarchy: async (projectId, sessionId, level, parentId, keyword) => {
         const response = await api.post(
-            `/api/projects/${projectId}/clustering/keyword-hierarchy`,
+            `/api/projects/${projectId}/sessions/${sessionId}/clustering/keyword-hierarchy`,
             { level, parentId, keyword }
         );
         return response.data;
     },
 
-    /** 키워드 수정 (프로젝트 단위) */
-    updateKeywordHierarchy: async (projectId, id, keyword) => {
+    /** 키워드 수정 (프로젝트 단위, URL은 sessionId 포함) */
+    updateKeywordHierarchy: async (projectId, sessionId, id, keyword) => {
         const response = await api.put(
-            `/api/projects/${projectId}/clustering/keyword-hierarchy/${id}`,
+            `/api/projects/${projectId}/sessions/${sessionId}/clustering/keyword-hierarchy/${id}`,
             { keyword }
         );
         return response.data;
     },
 
-    /** 키워드 삭제 (프로젝트 단위) */
-    deleteKeywordHierarchy: async (projectId, id) => {
+    /** 키워드 삭제 (프로젝트 단위, URL은 sessionId 포함) */
+    deleteKeywordHierarchy: async (projectId, sessionId, id) => {
         const response = await api.delete(
-            `/api/projects/${projectId}/clustering/keyword-hierarchy/${id}`
+            `/api/projects/${projectId}/sessions/${sessionId}/clustering/keyword-hierarchy/${id}`
         );
         return response.data;
     },

@@ -164,32 +164,32 @@ const detailClusteringService = {
         return response.data;
     },
 
-    getKeywordHierarchy: async (projectId) => {
+    getKeywordHierarchy: async (projectId, sessionId) => {
         const response = await api.get(
-            `/api/projects/${projectId}/clustering/keyword-hierarchy`
+            `/api/projects/${projectId}/sessions/${sessionId}/clustering/keyword-hierarchy`
         );
         return response.data;
     },
 
-    addKeywordHierarchy: async (projectId, level, parentId, keyword) => {
+    addKeywordHierarchy: async (projectId, sessionId, level, parentId, keyword) => {
         const response = await api.post(
-            `/api/projects/${projectId}/clustering/keyword-hierarchy`,
+            `/api/projects/${projectId}/sessions/${sessionId}/clustering/keyword-hierarchy`,
             { level, parentId, keyword }
         );
         return response.data;
     },
 
-    updateKeywordHierarchy: async (projectId, id, keyword) => {
+    updateKeywordHierarchy: async (projectId, sessionId, id, keyword) => {
         const response = await api.put(
-            `/api/projects/${projectId}/clustering/keyword-hierarchy/${id}`,
+            `/api/projects/${projectId}/sessions/${sessionId}/clustering/keyword-hierarchy/${id}`,
             { keyword }
         );
         return response.data;
     },
 
-    deleteKeywordHierarchy: async (projectId, id) => {
+    deleteKeywordHierarchy: async (projectId, sessionId, id) => {
         const response = await api.delete(
-            `/api/projects/${projectId}/clustering/keyword-hierarchy/${id}`
+            `/api/projects/${projectId}/sessions/${sessionId}/clustering/keyword-hierarchy/${id}`
         );
         return response.data;
     },
