@@ -12,7 +12,7 @@
 
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ChevronRight, Home, Plus, Trash2, Lock } from 'lucide-react';
+import { ChevronRight, Home, Plus, Trash2, Lock, Save } from 'lucide-react';
 import preprocessingService from '../../services/preprocessingService';
 import { useSessionEditorLock } from '../../hooks/useSessionEditorLock';
 import uploadService from '../../services/uploadService';
@@ -187,6 +187,9 @@ function PreprocessingPage() {
   const [singleCharProgress, setSingleCharProgress] = useState(0);
   const [savingConfig, setSavingConfig] = useState(false);
 
+  // 사용자 기본 설정 저장
+  const [savingUserConfig, setSavingUserConfig] = useState(false);
+
   // NLP 설정
   const [minKeywordLength, setMinKeywordLength] = useState(4);
   const [nlpExtracting, setNlpExtracting] = useState(false);
@@ -279,6 +282,29 @@ function PreprocessingPage() {
       setSavingConfig(false);
     }
   }, [projectId, sessionId]);
+
+  // ===== 사용자 기본값 저장 핸들러 =====
+  const handleSaveUserConfig = async () => {
+    if (isViewer) return;
+    setSavingUserConfig(true);
+    try {
+      const separators = separatorList.map(s => ({
+        value: s.value,
+        checked: true,
+      }));
+      const stopwords = stopwordList.map(s => ({
+        value: s.value,
+        checked: true,
+      }));
+      await preprocessingService.saveUserConfig({ separators, stopwords });
+      alert('현재 설정이 사용자 기본값으로 저장되었습니다.\n새 세션 생성 시 이 설정이 자동으로 적용됩니다.');
+    } catch (error) {
+      console.error('사용자 기본값 저장 실패:', error);
+      alert('사용자 기본값 저장에 실패했습니다.');
+    } finally {
+      setSavingUserConfig(false);
+    }
+  };
 
   // ===== 구분자 핸들러 =====
   const handleAddSeparator = () => {
@@ -810,6 +836,27 @@ function PreprocessingPage() {
                   </Button>
                 </CardContent>
               </Card>
+
+              {/* 사용자 기본값 저장 */}
+              <Button
+                variant="outline"
+                size="sm"
+                className="w-full h-9 text-xs border-blue-300 text-blue-700 hover:bg-blue-50 hover:text-blue-800"
+                onClick={handleSaveUserConfig}
+                disabled={savingUserConfig || isViewer}
+              >
+                {savingUserConfig ? (
+                  <div className="flex items-center gap-1">
+                    <div className="animate-spin h-3 w-3 border-2 border-blue-500 border-t-transparent rounded-full" />
+                    저장 중...
+                  </div>
+                ) : (
+                  <>
+                    <Save className="h-3 w-3 mr-1" />
+                    현재 설정을 사용자 기본값으로 저장
+                  </>
+                )}
+              </Button>
 
               {/* 구분자 기반 키워드 추출 */}
               <Card>

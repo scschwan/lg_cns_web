@@ -3,8 +3,10 @@ package com.example.finance.service.data;
 import com.example.finance.exception.BusinessException;
 import com.example.finance.model.data.PreprocessingConfigDocument;
 import com.example.finance.model.data.PreprocessingConfigDocument.ConfigItem;
+import com.example.finance.model.data.UserPreprocessingConfigDocument;
 import com.example.finance.model.session.FileSession;
 import com.example.finance.repository.data.PreprocessingConfigRepository;
+import com.example.finance.repository.data.UserPreprocessingConfigRepository;
 import com.example.finance.repository.session.FileSessionRepository;
 import com.example.finance.service.common.RedisService;
 import lombok.RequiredArgsConstructor;
@@ -45,6 +47,7 @@ public class PreprocessingService {
     private final MongoTemplate mongoTemplate;
     private final FileSessionRepository fileSessionRepository;
     private final PreprocessingConfigRepository configRepository;
+    private final UserPreprocessingConfigRepository userConfigRepository;
     private final RedisService redisService;
 
     private static final String EXTRACT_PROGRESS_KEY = "preprocessing:extract:";
@@ -273,17 +276,46 @@ public class PreprocessingService {
 
     /**
      * 구분자/불용어 설정 조회 (없으면 기본값 생성)
+     *
+     * 세션 config가 없을 때 우선순위:
+     * 1. 사용자 레벨 기본 설정 (user_preprocessing_config)
+     * 2. 시스템 기본값 (DEFAULT_SEPARATORS / DEFAULT_STOPWORDS)
      */
     public PreprocessingConfigDocument getOrCreateConfig(String sessionId) {
+        return getOrCreateConfig(sessionId, null);
+    }
+
+    /**
+     * 구분자/불용어 설정 조회 (없으면 기본값 생성, userId로 사용자 기본 설정 우선 적용)
+     */
+    public PreprocessingConfigDocument getOrCreateConfig(String sessionId, String userId) {
         return configRepository.findBySessionId(sessionId)
                 .orElseGet(() -> {
-                    List<ConfigItem> separators = DEFAULT_SEPARATORS.stream()
-                            .map(s -> ConfigItem.builder().value(s).checked(true).build())
-                            .collect(Collectors.toList());
+                    List<ConfigItem> separators;
+                    List<ConfigItem> stopwords;
 
-                    List<ConfigItem> stopwords = DEFAULT_STOPWORDS.stream()
-                            .map(s -> ConfigItem.builder().value(s).checked(true).build())
-                            .collect(Collectors.toList());
+                    // 사용자 레벨 기본 설정이 있으면 우선 사용
+                    UserPreprocessingConfigDocument userConfig = null;
+                    if (userId != null) {
+                        userConfig = userConfigRepository.findByUserId(userId).orElse(null);
+                    }
+
+                    if (userConfig != null && userConfig.getSeparators() != null && userConfig.getStopwords() != null) {
+                        log.info("사용자 기본 설정 적용 (userId={})", userId);
+                        separators = userConfig.getSeparators().stream()
+                                .map(s -> ConfigItem.builder().value(s.getValue()).checked(s.getChecked()).build())
+                                .collect(Collectors.toList());
+                        stopwords = userConfig.getStopwords().stream()
+                                .map(s -> ConfigItem.builder().value(s.getValue()).checked(s.getChecked()).build())
+                                .collect(Collectors.toList());
+                    } else {
+                        separators = DEFAULT_SEPARATORS.stream()
+                                .map(s -> ConfigItem.builder().value(s).checked(true).build())
+                                .collect(Collectors.toList());
+                        stopwords = DEFAULT_STOPWORDS.stream()
+                                .map(s -> ConfigItem.builder().value(s).checked(true).build())
+                                .collect(Collectors.toList());
+                    }
 
                     PreprocessingConfigDocument config = PreprocessingConfigDocument.builder()
                             .sessionId(sessionId)
@@ -295,6 +327,38 @@ public class PreprocessingService {
 
                     return configRepository.save(config);
                 });
+    }
+
+    // ========== 사용자 레벨 전처리 설정 관리 ==========
+
+    /**
+     * 사용자 레벨 구분자/불용어 설정 조회
+     * @return 설정이 없으면 null
+     */
+    public UserPreprocessingConfigDocument getUserConfig(String userId) {
+        return userConfigRepository.findByUserId(userId).orElse(null);
+    }
+
+    /**
+     * 사용자 레벨 구분자/불용어 설정 저장
+     */
+    public UserPreprocessingConfigDocument saveUserConfig(String userId,
+                                                          List<ConfigItem> separators,
+                                                          List<ConfigItem> stopwords) {
+        UserPreprocessingConfigDocument config = userConfigRepository.findByUserId(userId)
+                .orElse(UserPreprocessingConfigDocument.builder()
+                        .userId(userId)
+                        .createdAt(LocalDateTime.now())
+                        .build());
+
+        if (separators != null) {
+            config.setSeparators(separators);
+        }
+        if (stopwords != null) {
+            config.setStopwords(stopwords);
+        }
+        config.setUpdatedAt(LocalDateTime.now());
+        return userConfigRepository.save(config);
     }
 
     /**

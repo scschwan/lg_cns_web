@@ -274,6 +274,16 @@ const costReductionService = {
     return response.data;
   },
 
+  /** GET .../tasks/export/excel - 과제 목록 Excel 다운로드 */
+  exportTasksExcel: async (projectId, status) => {
+    const params = status ? { status } : {};
+    const response = await api.get(`/api/projects/${projectId}/tasks/export/excel`, {
+      params,
+      responseType: 'blob',
+    });
+    return response.data;
+  },
+
   // ===== Task Documents =====
 
   getTaskDocuments: async (projectId, taskId) => {

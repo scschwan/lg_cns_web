@@ -639,6 +639,21 @@ export default function AbleTaskManagePage() {
     }
   };
 
+  const handleExportExcel = async () => {
+    try {
+      const blob = await costReductionService.exportTasksExcel(projectId);
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `able_tasks_${new Date().toISOString().slice(0, 10)}.xlsx`;
+      a.click();
+      window.URL.revokeObjectURL(url);
+    } catch (e) {
+      console.error('Excel 다운로드 실패:', e);
+      alert('Excel 다운로드에 실패했습니다.');
+    }
+  };
+
   const statusChartData = useMemo(() => {
     const map = {}; STATUS_OPTIONS.forEach(s => { map[s] = 0; }); tasks.forEach(t => { if (map[t.status] !== undefined) map[t.status]++; });
     return Object.entries(map).map(([name, value]) => ({ name, value })).filter(d => d.value > 0);
@@ -760,6 +775,7 @@ export default function AbleTaskManagePage() {
                 <div className="flex items-center gap-2">
                   <div className="relative"><Search className="absolute left-2.5 top-1/2 transform -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" /><Input placeholder="과제명, 부서, 담당자 검색..." value={searchKeyword} onChange={e => setSearchKeyword(e.target.value)} className="pl-8 h-8 w-[200px] text-xs" /></div>
                   <Select value={statusFilter} onValueChange={setStatusFilter}><SelectTrigger className="w-[120px] h-8 text-xs"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">전체 상태</SelectItem>{STATUS_OPTIONS.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}</SelectContent></Select>
+                  <Button variant="outline" size="sm" className="h-8 text-xs gap-1" onClick={handleExportExcel}><Download className="w-3.5 h-3.5" />Excel</Button>
                 </div>
               </div>
             </CardHeader>
