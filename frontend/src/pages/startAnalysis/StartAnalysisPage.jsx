@@ -868,8 +868,8 @@ export default function StartAnalysisPage() {
               /* 펼친 상태: PanelGroup 드래그 리사이즈 */
               <PanelGroup orientation="vertical" className="flex-1 min-h-0">
                 <Panel defaultSize={50} minSize={15}>
-                  <Card className="h-full overflow-hidden flex flex-col min-w-0 min-h-0 shadow-sm">
-                    <CardContent className="p-0 flex-1 min-h-0">
+                  <Card className="h-full flex flex-col min-w-0 min-h-0 shadow-sm overflow-hidden">
+                    <CardContent className="p-0 flex-1 min-h-0 flex flex-col overflow-auto">
                       <AdvancedTable
                         columns={tableColumns}
                         data={sortedOriginalData}
