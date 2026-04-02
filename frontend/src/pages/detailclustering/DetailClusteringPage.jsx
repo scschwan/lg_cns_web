@@ -25,6 +25,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
@@ -166,6 +167,8 @@ function DetailClusteringPage() {
   const [unmergingProgress, setUnmergingProgress] = useState(0);
   const [unmergingClusters, setUnmergingClusters] = useState(new Set());
   const [autoMergeConfirm, setAutoMergeConfirm] = useState(null); // { type: 'keyword'|'supplier', items: [] }
+  const [mergeNameDialog, setMergeNameDialog] = useState({ open: false, clusters: [], suggestedName: '' });
+  const [mergeCustomName, setMergeCustomName] = useState('');
   const [statistics, setStatistics] = useState({ totalRows: 0, unmergedCount: 0, unmergedTotalAmount: 0, mergedGroupCount: 0, hasSupplier: false });
   const [amountUnit, setAmountUnit] = useState('원');
   const divisor = { '원': 1, '천원': 1000, '백만원': 1000000, '억원': 100000000 };
@@ -301,8 +304,8 @@ function DetailClusteringPage() {
 
   const loadKeywordHierarchy = useCallback(async () => {
     setKwHierarchyLoading(true);
-    try { setKeywordHierarchy(await detailClusteringService.getKeywordHierarchy(projectId, sessionId) || []); } catch (e) { console.error(e); } finally { setKwHierarchyLoading(false); }
-  }, [projectId, sessionId]);
+    try { setKeywordHierarchy(await detailClusteringService.getKeywordHierarchy(projectId) || []); } catch (e) { console.error(e); } finally { setKwHierarchyLoading(false); }
+  }, [projectId]);
 
   const loadAll = useCallback(async () => {
     // Phase 1: 핵심 데이터 (통계 + 미병합 목록)
@@ -432,12 +435,12 @@ function DetailClusteringPage() {
 
   const handleAddKeyword = async (level, parentId, keyword) => {
     if (!keyword.trim()) return;
-    try { await detailClusteringService.addKeywordHierarchy(projectId, sessionId, level, parentId, keyword.trim()); await loadKeywordHierarchy(); setNewKeywordInput({ level: 0, parentId: null, value: '' }); }
+    try { await detailClusteringService.addKeywordHierarchy(projectId, level, parentId, keyword.trim()); await loadKeywordHierarchy(); setNewKeywordInput({ level: 0, parentId: null, value: '' }); }
     catch (e) { alert('키워드 추가 실패: ' + (e.response?.data?.message || e.message)); }
   };
   const handleDeleteKeyword = async (id) => {
     if (!window.confirm('키워드를 삭제하시겠습니까? 하위 키워드도 함께 삭제됩니다.')) return;
-    try { await detailClusteringService.deleteKeywordHierarchy(projectId, sessionId, id); await loadKeywordHierarchy(); }
+    try { await detailClusteringService.deleteKeywordHierarchy(projectId, id); await loadKeywordHierarchy(); }
     catch (e) { alert('키워드 삭제 실패: ' + (e.response?.data?.message || e.message)); }
   };
 
@@ -488,9 +491,25 @@ function DetailClusteringPage() {
   const DETAIL_BATCH_THRESHOLD = 100;
   const DETAIL_BATCH_CHUNK_SIZE = 100;
 
-  const handleMerge = async () => {
+  const handleMerge = () => {
     if (selectedCount < 1) { alert('1개 이상의 클러스터를 선택하세요.'); return; }
-    if (!window.confirm(`선택한 ${selectedCount}개 클러스터를 세부 병합하시겠습니까?`)) return;
+
+    const selectedKeywords = [];
+    if (!selectAllMode) {
+      for (const cn of exceptions) {
+        const row = clusterData.find(r => r.clusterNumber === cn);
+        if (row?.keyword) selectedKeywords.push(row.keyword);
+      }
+    }
+    const unique = [...new Set(selectedKeywords)];
+    const suggested = unique.length > 0 ? unique.slice(0, 3).join(' + ') + (unique.length > 3 ? ` (+${unique.length - 3})` : '') : '';
+    setMergeCustomName(suggested);
+    setMergeNameDialog({ open: true, clusters: [], suggestedName: suggested });
+  };
+
+  const executeMerge = async () => {
+    const customName = mergeCustomName.trim() || null;
+    setMergeNameDialog({ open: false, clusters: [], suggestedName: '' });
     setMerging(true); setMergingProgress(0); setMergeActiveBlocking(true); setMergingMessage('병합 요청 중...');
     try {
       setMergingProgress(5); setMergingMessage('선택 클러스터 조회 중...');
@@ -498,14 +517,14 @@ function DetailClusteringPage() {
 
       if (nums.length <= DETAIL_BATCH_THRESHOLD) {
         setMergingProgress(30); setMergingMessage(`${nums.length}개 클러스터 병합 중...`);
-        await detailClusteringService.mergeClusters(projectId, sessionId, clusterId, nums);
+        await detailClusteringService.mergeClusters(projectId, sessionId, clusterId, nums, customName);
       } else {
         const chunks = [];
         for (let i = 0; i < nums.length; i += DETAIL_BATCH_CHUNK_SIZE) {
           chunks.push(nums.slice(i, i + DETAIL_BATCH_CHUNK_SIZE));
         }
         setMergingProgress(10); setMergingMessage(`배치 전송 중... (1/${chunks.length})`);
-        const firstResult = await detailClusteringService.mergeClusters(projectId, sessionId, clusterId, chunks[0]);
+        const firstResult = await detailClusteringService.mergeClusters(projectId, sessionId, clusterId, chunks[0], customName);
         const mergedClusterNumber = firstResult.mergedClusterNumber;
         for (let i = 1; i < chunks.length; i++) {
           const pct = 10 + Math.round((i / chunks.length) * 70);
@@ -1161,6 +1180,33 @@ function DetailClusteringPage() {
               ));
             })()}
           </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* 병합 클러스터명 입력 다이얼로그 */}
+      <Dialog open={mergeNameDialog.open} onOpenChange={() => setMergeNameDialog({ open: false, clusters: [], suggestedName: '' })}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>세부 클러스터 병합</DialogTitle>
+            <DialogDescription>병합될 클러스터의 이름을 입력하세요.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label>클러스터명</Label>
+              <Input
+                value={mergeCustomName}
+                onChange={(e) => setMergeCustomName(e.target.value)}
+                placeholder="클러스터명을 입력하세요"
+              />
+            </div>
+            <p className="text-sm text-muted-foreground">
+              병합 대상: {selectedCount}개 클러스터
+            </p>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setMergeNameDialog({ open: false, clusters: [], suggestedName: '' })}>취소</Button>
+            <Button onClick={executeMerge}>병합</Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 

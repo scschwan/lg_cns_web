@@ -25,6 +25,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
@@ -272,6 +273,8 @@ function ClusteringPage() {
   const [unmerging, setUnmerging] = useState(false); // 해제 진행 중
   const [unmergingProgress, setUnmergingProgress] = useState(0); // 해제 진행률
   const [autoMergeConfirm, setAutoMergeConfirm] = useState(null); // { type: 'keyword'|'supplier', items: [] }
+  const [mergeNameDialog, setMergeNameDialog] = useState({ open: false, clusters: [], suggestedName: '' });
+  const [mergeCustomName, setMergeCustomName] = useState('');
   const [unmergingClusters, setUnmergingClusters] = useState(new Set()); // 현재 해제 중인 클러스터 번호들
   const [statistics, setStatistics] = useState({ totalRows: 0, unmergedCount: 0, unmergedTotalAmount: 0, mergedGroupCount: 0, hasSupplier: false });
   const [amountUnit, setAmountUnit] = useState('원');
@@ -444,11 +447,11 @@ function ClusteringPage() {
   const loadKeywordHierarchy = useCallback(async () => {
     setKwHierarchyLoading(true);
     try {
-      const hierarchy = await clusteringService.getKeywordHierarchy(projectId, sessionId);
+      const hierarchy = await clusteringService.getKeywordHierarchy(projectId);
       setKeywordHierarchy(hierarchy || []);
     } catch (e) { console.error(e); }
     finally { setKwHierarchyLoading(false); }
-  }, [projectId, sessionId]);
+  }, [projectId]);
 
   const loadAll = useCallback(async () => {
     // Phase 1: 핵심 데이터 (통계 + 미병합 목록)
@@ -703,7 +706,7 @@ function ClusteringPage() {
     if (isViewer) return;
     if (!keyword.trim()) return;
     try {
-      await clusteringService.addKeywordHierarchy(projectId, sessionId, level, parentId, keyword.trim());
+      await clusteringService.addKeywordHierarchy(projectId, level, parentId, keyword.trim());
       await loadKeywordHierarchy();
       setNewKeywordInput({ level: 0, parentId: null, value: '' });
     } catch (e) {
@@ -715,7 +718,7 @@ function ClusteringPage() {
     if (isViewer) return;
     if (!window.confirm('키워드를 삭제하시겠습니까? 하위 키워드도 함께 삭제됩니다.')) return;
     try {
-      await clusteringService.deleteKeywordHierarchy(projectId, sessionId, id);
+      await clusteringService.deleteKeywordHierarchy(projectId, id);
       await loadKeywordHierarchy();
     } catch (e) {
       alert('키워드 삭제 실패: ' + (e.response?.data?.message || e.message));
@@ -829,17 +832,32 @@ function ClusteringPage() {
   const BATCH_CHUNK_SIZE = 100;
   const BATCH_PARALLEL_LIMIT = 3;
 
-  const handleMerge = async () => {
+  const handleMerge = () => {
     if (isViewer) return;
     if (selectedCount < 1) { alert('1개 이상의 클러스터를 선택하세요.'); return; }
-    if (!window.confirm(`선택한 ${selectedCount}개 클러스터를 병합하시겠습니까?`)) return;
+
+    const selectedKeywords = [];
+    if (!selectAllMode) {
+      for (const cn of exceptions) {
+        const row = clusterData.find(r => r.clusterNumber === cn);
+        if (row?.keyword) selectedKeywords.push(row.keyword);
+      }
+    }
+    const unique = [...new Set(selectedKeywords)];
+    const suggested = unique.length > 0 ? unique.slice(0, 3).join(' + ') + (unique.length > 3 ? ` (+${unique.length - 3})` : '') : '';
+    setMergeCustomName(suggested);
+    setMergeNameDialog({ open: true, clusters: [], suggestedName: suggested });
+  };
+
+  const executeMerge = async () => {
+    const customName = mergeCustomName.trim() || null;
+    setMergeNameDialog({ open: false, clusters: [], suggestedName: '' });
     setMerging(true);
     mergingProgressRef.current = 0;
     mergingMessageRef.current = '병합 처리 중...';
     setMergeOverlay(true);
     try {
       if (selectAllMode) {
-        // ★ selectAll: 검색 조건에 맞는 전체 clusterNumber 조회 후 병합
         mergingProgressRef.current = 5;
         mergingMessageRef.current = '선택 클러스터 조회 중...';
         const nums = await getSelectedClusterNumbers();
@@ -852,12 +870,11 @@ function ClusteringPage() {
         if (nums.length <= BATCH_MERGE_THRESHOLD) {
           mergingProgressRef.current = 10;
           mergingMessageRef.current = `${nums.length}개 클러스터 병합 중...`;
-          await clusteringService.mergeClusters(projectId, sessionId, nums);
+          await clusteringService.mergeClusters(projectId, sessionId, nums, customName);
         } else {
-          // 대량: 3-Phase 배치 병합
           mergingProgressRef.current = 3;
           mergingMessageRef.current = '병합 클러스터 생성 중...';
-          const startRes = await clusteringService.mergeStart(projectId, sessionId);
+          const startRes = await clusteringService.mergeStart(projectId, sessionId, customName);
           const mergedClusterNumber = startRes.mergedClusterNumber;
           mergingProgressRef.current = 5;
 
@@ -882,25 +899,20 @@ function ClusteringPage() {
 
           mergingProgressRef.current = 92;
           mergingMessageRef.current = '병합 마무리 중...';
-          await clusteringService.mergeFinalize(projectId, sessionId, mergedClusterNumber);
+          await clusteringService.mergeFinalize(projectId, sessionId, mergedClusterNumber, customName);
         }
       } else {
         const nums = Array.from(exceptions);
 
         if (nums.length <= BATCH_MERGE_THRESHOLD) {
-          // ★ Branch 2: 개별 선택 — 동기 처리 (완료된 결과 직접 반환)
-          await clusteringService.mergeClusters(projectId, sessionId, nums);
+          await clusteringService.mergeClusters(projectId, sessionId, nums, customName);
         } else {
-          // ★ Branch 3: 대량 개별 선택 → 3-Phase 배치 병합
-
-          // Phase 1: 빈 부모 생성
           mergingProgressRef.current = 3;
           mergingMessageRef.current = '병합 클러스터 생성 중...';
-          const startRes = await clusteringService.mergeStart(projectId, sessionId);
+          const startRes = await clusteringService.mergeStart(projectId, sessionId, customName);
           const mergedClusterNumber = startRes.mergedClusterNumber;
           mergingProgressRef.current = 5;
 
-          // Phase 2: 배치 분할 + 병렬 전송
           const chunks = [];
           for (let i = 0; i < nums.length; i += BATCH_CHUNK_SIZE) {
             chunks.push(nums.slice(i, i + BATCH_CHUNK_SIZE));
@@ -920,10 +932,9 @@ function ClusteringPage() {
           );
           await parallelLimit(batchTasks, BATCH_PARALLEL_LIMIT);
 
-          // Phase 3: 부모 재계산
           mergingProgressRef.current = 92;
           mergingMessageRef.current = '병합 마무리 중...';
-          await clusteringService.mergeFinalize(projectId, sessionId, mergedClusterNumber);
+          await clusteringService.mergeFinalize(projectId, sessionId, mergedClusterNumber, customName);
         }
       }
 
@@ -2271,6 +2282,33 @@ function ClusteringPage() {
               {undefinedMerging ? <><Loader2 className="h-4 w-4 mr-1 animate-spin" />병합 중...</> : '일괄 병합'}
             </Button>
           </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* 병합 클러스터명 입력 다이얼로그 */}
+      <Dialog open={mergeNameDialog.open} onOpenChange={() => setMergeNameDialog({ open: false, clusters: [], suggestedName: '' })}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>클러스터 병합</DialogTitle>
+            <DialogDescription>병합될 클러스터의 이름을 입력하세요.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label>클러스터명</Label>
+              <Input
+                value={mergeCustomName}
+                onChange={(e) => setMergeCustomName(e.target.value)}
+                placeholder="클러스터명을 입력하세요"
+              />
+            </div>
+            <p className="text-sm text-muted-foreground">
+              병합 대상: {selectedCount}개 클러스터
+            </p>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setMergeNameDialog({ open: false, clusters: [], suggestedName: '' })}>취소</Button>
+            <Button onClick={executeMerge}>병합</Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 

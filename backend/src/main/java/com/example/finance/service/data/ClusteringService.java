@@ -675,7 +675,8 @@ public class ClusteringService {
      * 백엔드에서 직접 클러스터 번호를 해석한다.
      */
     public Map<String, Object> mergeClustersWithFilter(String sessionId, List<Integer> exceptions,
-                                                        String keyword, String supplier, boolean exactMatch) {
+                                                        String keyword, String supplier, boolean exactMatch,
+                                                        String customMergeName) {
         log.info("클러스터 병합(selectAll): sessionId={}, exceptions={}, keyword={}, supplier={}, exactMatch={}",
                 sessionId, exceptions != null ? exceptions.size() : 0, keyword, supplier, exactMatch);
 
@@ -686,13 +687,13 @@ public class ClusteringService {
         }
 
         log.info("클러스터 병합(selectAll): 해석된 클러스터 수={}", allNumbers.size());
-        return mergeClusters(sessionId, allNumbers);
+        return mergeClusters(sessionId, allNumbers, customMergeName);
     }
 
     /**
      * 병합: 동기 처리 (CloudFront Response completion timeout 360초 활용)
      */
-    public Map<String, Object> mergeClusters(String sessionId, List<Integer> clusterNumbers) {
+    public Map<String, Object> mergeClusters(String sessionId, List<Integer> clusterNumbers, String customMergeName) {
         log.info("[MERGE] 시작: sessionId={}, count={}", sessionId,
                 clusterNumbers == null ? 0 : clusterNumbers.size());
 
@@ -703,11 +704,11 @@ public class ClusteringService {
 
         // ★ 동기 처리 — 완료된 결과를 직접 반환
         log.info("[MERGE] 동기 처리: count={}", clusterNumbers.size());
-        return doMergeClusters(sessionId, clusterNumbers, null);
+        return doMergeClusters(sessionId, clusterNumbers, null, customMergeName);
     }
 
     private Map<String, Object> doMergeClusters(String sessionId, List<Integer> clusterNumbers,
-                                                 MergeProgress progress) {
+                                                 MergeProgress progress, String customMergeName) {
         long startTime = System.currentTimeMillis();
         log.info("[MERGE-EXEC] 실행 시작: sessionId={}, count={}", sessionId, clusterNumbers.size());
         clusterStatisticsService.cancelSessionCompletionIfNeeded(sessionId);
@@ -817,8 +818,13 @@ public class ClusteringService {
         log.info("[MERGE-EXEC] Phase3 시작: 병합 문서 저장 (keywords={}, dataIndices={}, totalCount={}, ~{}MB)",
                 allKeywords.size(), allDataIndices.size(), totalCount, estimatedDataIndicesBytes / 1_000_000);
         updateProgress(progress, 60, "병합 클러스터 저장 중...");
-        String mergedName = String.join("_", allKeywords);
-        if (mergedName.length() > 100) mergedName = mergedName.substring(0, 100) + "...";
+        String mergedName;
+        if (customMergeName != null && !customMergeName.isBlank()) {
+            mergedName = customMergeName;
+        } else {
+            mergedName = String.join("_", allKeywords);
+            if (mergedName.length() > 100) mergedName = mergedName.substring(0, 100) + "...";
+        }
 
         ClusteringResult merged = ClusteringResult.builder()
                 .sessionId(sessionId)
@@ -826,6 +832,7 @@ public class ClusteringService {
                 .clusterId(newClusterNumber)
                 .clusterSubId(-1)
                 .clusterName(mergedName)
+                .customName(customMergeName != null && !customMergeName.isBlank() ? customMergeName : null)
                 .keywords(new ArrayList<>(allKeywords))
                 .count(totalCount)
                 .totalAmount(totalAmount)
@@ -1018,7 +1025,7 @@ public class ClusteringService {
     /**
      * Phase 3: 부모 재계산 (모든 배치 완료 후 1회만 호출)
      */
-    public Map<String, Object> mergeFinalize(String sessionId, Integer mergedClusterNumber) {
+    public Map<String, Object> mergeFinalize(String sessionId, Integer mergedClusterNumber, String customMergeName) {
         log.info("[MERGE-BATCH] mergeFinalize: sessionId={}, parent={}", sessionId, mergedClusterNumber);
 
         try {
@@ -1085,11 +1092,20 @@ public class ClusteringService {
                 }
             }
 
-            String mergedName = String.join("_", allKeywords);
-            if (mergedName.length() > 100) mergedName = mergedName.substring(0, 100) + "...";
+            String effectiveCustomName = (customMergeName != null && !customMergeName.isBlank())
+                    ? customMergeName : parent.getCustomName();
+
+            String mergedName;
+            if (effectiveCustomName != null && !effectiveCustomName.isBlank()) {
+                mergedName = effectiveCustomName;
+            } else {
+                mergedName = String.join("_", allKeywords);
+                if (mergedName.length() > 100) mergedName = mergedName.substring(0, 100) + "...";
+            }
 
             parent.setKeywords(new ArrayList<>(allKeywords));
             parent.setClusterName(mergedName);
+            parent.setCustomName(effectiveCustomName);
             parent.setCount(totalCount);
             parent.setTotalAmount(totalAmount);
             parent.setDataIndices(allDataIndices);
@@ -1287,9 +1303,13 @@ public class ClusteringService {
                 totalAmount += child.getTotalAmount();
             }
             merged.setKeywords(new ArrayList<>(allKeywords));
-            String updatedName = String.join("_", allKeywords);
-            if (updatedName.length() > 100) updatedName = updatedName.substring(0, 100) + "...";
-            merged.setClusterName(updatedName);
+            if (merged.getCustomName() != null && !merged.getCustomName().isBlank()) {
+                // Preserve user-defined name
+            } else {
+                String updatedName = String.join("_", allKeywords);
+                if (updatedName.length() > 100) updatedName = updatedName.substring(0, 100) + "...";
+                merged.setClusterName(updatedName);
+            }
             merged.setCount(totalCount);
             merged.setTotalAmount(totalAmount);
             merged.setDataIndices(allDataIndices);
@@ -1307,7 +1327,7 @@ public class ClusteringService {
     // 10. 병합 클러스터끼리 병합
     // ============================================================
 
-    public Map<String, Object> mergeMergedClusters(String sessionId, List<Integer> mergedClusterNumbers) {
+    public Map<String, Object> mergeMergedClusters(String sessionId, List<Integer> mergedClusterNumbers, String customMergeName) {
         log.info("병합 클러스터 merge: sessionId={}, targets={}", sessionId, mergedClusterNumbers);
         clusterStatisticsService.cancelSessionCompletionIfNeeded(sessionId);
 
@@ -1348,8 +1368,13 @@ public class ClusteringService {
             totalAmount += child.getTotalAmount();
         }
 
-        String mergedName = String.join("_", allKeywords);
-        if (mergedName.length() > 100) mergedName = mergedName.substring(0, 100) + "...";
+        String mergedName;
+        if (customMergeName != null && !customMergeName.isBlank()) {
+            mergedName = customMergeName;
+        } else {
+            mergedName = String.join("_", allKeywords);
+            if (mergedName.length() > 100) mergedName = mergedName.substring(0, 100) + "...";
+        }
 
         ClusteringResult newParent = ClusteringResult.builder()
                 .sessionId(sessionId)
@@ -1357,6 +1382,7 @@ public class ClusteringService {
                 .clusterId(newClusterNumber)    // 자기 자신의 cluster_number
                 .clusterSubId(-1)
                 .clusterName(mergedName)
+                .customName(customMergeName != null && !customMergeName.isBlank() ? customMergeName : null)
                 .keywords(new ArrayList<>(allKeywords))
                 .count(totalCount)
                 .totalAmount(totalAmount)
@@ -1440,9 +1466,13 @@ public class ClusteringService {
         }
 
         parent.setKeywords(new ArrayList<>(allKeywords));
-        String parentName = String.join("_", allKeywords);
-        if (parentName.length() > 100) parentName = parentName.substring(0, 100) + "...";
-        parent.setClusterName(parentName);
+        if (parent.getCustomName() != null && !parent.getCustomName().isBlank()) {
+            // Preserve user-defined name
+        } else {
+            String parentName = String.join("_", allKeywords);
+            if (parentName.length() > 100) parentName = parentName.substring(0, 100) + "...";
+            parent.setClusterName(parentName);
+        }
         parent.setCount(totalCount);
         parent.setTotalAmount(totalAmount);
         parent.setDataIndices(allDataIndices);
@@ -1466,7 +1496,7 @@ public class ClusteringService {
         var result = mongoTemplate.updateMulti(
                 new Query(Criteria.where("session_id").is(sessionId)
                         .and("cluster_number").is(clusterNumber)),
-                new Update().set("cluster_name", newName),
+                new Update().set("cluster_name", newName).set("custom_name", newName),
                 "clustering_results");
         if (result.getMatchedCount() == 0) {
             throw new BusinessException("CLUSTER_NOT_FOUND",
@@ -2019,10 +2049,11 @@ public class ClusteringService {
 
     /**
      * 키워드 계층 전체 조회 (트리 구조로 반환)
+     * Scoped by projectId (shared across sessions within a project).
      */
-    public List<Map<String, Object>> getKeywordHierarchy(String sessionId) {
+    public List<Map<String, Object>> getKeywordHierarchy(String projectId) {
         List<SearchKeywordHierarchy> all = keywordHierarchyRepository
-                .findBySessionIdOrderByLevelAscDisplayOrderAsc(sessionId);
+                .findByProjectIdOrderByLevelAscDisplayOrderAsc(projectId);
 
         // 레벨별 그룹핑
         Map<Integer, List<SearchKeywordHierarchy>> byLevel = all.stream()
@@ -2067,10 +2098,10 @@ public class ClusteringService {
     }
 
     /**
-     * 키워드 추가
+     * 키워드 추가 (project-scoped)
      */
     public Map<String, Object> addKeywordHierarchy(
-            String sessionId, Integer level, String parentId, String keyword) {
+            String projectId, Integer level, String parentId, String keyword) {
 
         if (level < 1 || level > 3) {
             throw new BusinessException("INVALID_LEVEL", "레벨은 1, 2, 3 중 하나여야 합니다.");
@@ -2082,16 +2113,15 @@ public class ClusteringService {
             throw new BusinessException("KEYWORD_REQUIRED", "키워드는 필수입니다.");
         }
 
-        // 같은 레벨에서 최대 order 조회
         int maxOrder = keywordHierarchyRepository
-                .findBySessionIdAndLevelOrderByDisplayOrderAsc(sessionId, level)
+                .findByProjectIdAndLevelOrderByDisplayOrderAsc(projectId, level)
                 .stream()
                 .mapToInt(SearchKeywordHierarchy::getDisplayOrder)
                 .max()
                 .orElse(0);
 
         SearchKeywordHierarchy newKw = SearchKeywordHierarchy.builder()
-                .sessionId(sessionId)
+                .projectId(projectId)
                 .level(level)
                 .parentId(level > 1 ? parentId : null)
                 .keyword(keyword)
@@ -2128,16 +2158,15 @@ public class ClusteringService {
     }
 
     /**
-     * 키워드 삭제 (하위 키워드도 함께 삭제)
+     * 키워드 삭제 (하위 키워드도 함께 삭제, project-scoped)
      */
-    public Map<String, Object> deleteKeywordHierarchy(String sessionId, String id) {
+    public Map<String, Object> deleteKeywordHierarchy(String projectId, String id) {
         SearchKeywordHierarchy kw = keywordHierarchyRepository.findById(id)
                 .orElseThrow(() -> new BusinessException("KEYWORD_NOT_FOUND", "키워드를 찾을 수 없습니다."));
 
         int deletedCount = 1;
 
-        // 하위 키워드 삭제 (재귀적)
-        deletedCount += deleteChildKeywords(sessionId, id);
+        deletedCount += deleteChildKeywords(projectId, id);
 
         keywordHierarchyRepository.delete(kw);
 
@@ -2147,13 +2176,13 @@ public class ClusteringService {
         return result;
     }
 
-    private int deleteChildKeywords(String sessionId, String parentId) {
+    private int deleteChildKeywords(String projectId, String parentId) {
         List<SearchKeywordHierarchy> children = keywordHierarchyRepository
-                .findBySessionIdAndParentIdOrderByDisplayOrderAsc(sessionId, parentId);
+                .findByProjectIdAndParentIdOrderByDisplayOrderAsc(projectId, parentId);
 
         int count = 0;
         for (SearchKeywordHierarchy child : children) {
-            count += deleteChildKeywords(sessionId, child.getId());
+            count += deleteChildKeywords(projectId, child.getId());
             keywordHierarchyRepository.delete(child);
             count++;
         }

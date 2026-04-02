@@ -25,7 +25,9 @@ import java.time.LocalDateTime;
 @Document(collection = "search_keyword_hierarchy")
 @CompoundIndexes({
         @CompoundIndex(name = "session_level_idx", def = "{'session_id': 1, 'level': 1}"),
-        @CompoundIndex(name = "session_parent_idx", def = "{'session_id': 1, 'parent_id': 1}")
+        @CompoundIndex(name = "session_parent_idx", def = "{'session_id': 1, 'parent_id': 1}"),
+        @CompoundIndex(name = "project_level_idx", def = "{'project_id': 1, 'level': 1}"),
+        @CompoundIndex(name = "project_parent_idx", def = "{'project_id': 1, 'parent_id': 1}")
 })
 public class SearchKeywordHierarchy {
 
@@ -34,6 +36,9 @@ public class SearchKeywordHierarchy {
 
     @Field("session_id")
     private String sessionId;
+
+    @Field("project_id")
+    private String projectId;
 
     @Field("level")
     private Integer level; // 1, 2, 3

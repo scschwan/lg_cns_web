@@ -42,6 +42,7 @@ public class ClusteringResult {
         this.count = 0;
         this.totalAmount = 0.0;
         this.dataIndices = new ArrayList<>();
+        this.customName = null;
     }
 
     @Id
@@ -120,6 +121,15 @@ public class ClusteringResult {
      */
     @Field("department")
     private String department;
+
+    /**
+     * User-defined cluster name (set via rename or customMergeName).
+     * null = auto-generated name (keyword join).
+     * When non-null, merge/addToMerged operations preserve this value
+     * instead of regenerating from keywords.
+     */
+    @Field("custom_name")
+    private String customName;
 
     /**
      * 병합 처리 상태 (부모 클러스터 전용):

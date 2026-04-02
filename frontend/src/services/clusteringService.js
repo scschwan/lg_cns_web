@@ -89,10 +89,12 @@ const clusteringService = {
     },
 
     /** POST .../clustering/merge - 선택한 클러스터 번호들을 병합 */
-    mergeClusters: async (projectId, sessionId, clusterNumbers) => {
+    mergeClusters: async (projectId, sessionId, clusterNumbers, customMergeName = null) => {
+        const body = { clusterNumbers };
+        if (customMergeName) body.customMergeName = customMergeName;
         const response = await api.post(
             `/api/projects/${projectId}/sessions/${sessionId}/clustering/merge`,
-            { clusterNumbers }
+            body
         );
         if (typeof response.data === 'string' && response.data.includes('<!DOCTYPE')) {
             throw new Error('서버 응답 시간이 초과되었습니다. 잠시 후 새로고침해주세요.');
@@ -113,9 +115,12 @@ const clusteringService = {
     },
 
     /** 3-Phase 배치 병합: Phase 1 - 빈 부모 생성 */
-    mergeStart: async (projectId, sessionId) => {
+    mergeStart: async (projectId, sessionId, customMergeName = null) => {
+        const body = {};
+        if (customMergeName) body.customMergeName = customMergeName;
         const response = await api.post(
-            `/api/projects/${projectId}/sessions/${sessionId}/clustering/merge/start`
+            `/api/projects/${projectId}/sessions/${sessionId}/clustering/merge/start`,
+            body
         );
         if (typeof response.data === 'string' && response.data.includes('<!DOCTYPE')) {
             throw new Error('서버 응답 시간이 초과되었습니다. 잠시 후 새로고침해주세요.');
@@ -136,10 +141,12 @@ const clusteringService = {
     },
 
     /** 3-Phase 배치 병합: Phase 3 - 부모 재계산 */
-    mergeFinalize: async (projectId, sessionId, mergedClusterNumber) => {
+    mergeFinalize: async (projectId, sessionId, mergedClusterNumber, customMergeName = null) => {
+        const body = { mergedClusterNumber };
+        if (customMergeName) body.customMergeName = customMergeName;
         const response = await api.post(
             `/api/projects/${projectId}/sessions/${sessionId}/clustering/merge/finalize`,
-            { mergedClusterNumber }
+            body
         );
         if (typeof response.data === 'string' && response.data.includes('<!DOCTYPE')) {
             throw new Error('서버 응답 시간이 초과되었습니다. 잠시 후 새로고침해주세요.');
@@ -250,36 +257,36 @@ const clusteringService = {
     // 키워드 계층 API (Lv1/Lv2/Lv3)
     // ============================================================
 
-    /** 키워드 계층 전체 조회 */
-    getKeywordHierarchy: async (projectId, sessionId) => {
+    /** 키워드 계층 전체 조회 (프로젝트 단위) */
+    getKeywordHierarchy: async (projectId) => {
         const response = await api.get(
-            `/api/projects/${projectId}/sessions/${sessionId}/clustering/keyword-hierarchy`
+            `/api/projects/${projectId}/clustering/keyword-hierarchy`
         );
         return response.data;
     },
 
-    /** 키워드 추가 */
-    addKeywordHierarchy: async (projectId, sessionId, level, parentId, keyword) => {
+    /** 키워드 추가 (프로젝트 단위) */
+    addKeywordHierarchy: async (projectId, level, parentId, keyword) => {
         const response = await api.post(
-            `/api/projects/${projectId}/sessions/${sessionId}/clustering/keyword-hierarchy`,
+            `/api/projects/${projectId}/clustering/keyword-hierarchy`,
             { level, parentId, keyword }
         );
         return response.data;
     },
 
-    /** 키워드 수정 */
-    updateKeywordHierarchy: async (projectId, sessionId, id, keyword) => {
+    /** 키워드 수정 (프로젝트 단위) */
+    updateKeywordHierarchy: async (projectId, id, keyword) => {
         const response = await api.put(
-            `/api/projects/${projectId}/sessions/${sessionId}/clustering/keyword-hierarchy/${id}`,
+            `/api/projects/${projectId}/clustering/keyword-hierarchy/${id}`,
             { keyword }
         );
         return response.data;
     },
 
-    /** 키워드 삭제 */
-    deleteKeywordHierarchy: async (projectId, sessionId, id) => {
+    /** 키워드 삭제 (프로젝트 단위) */
+    deleteKeywordHierarchy: async (projectId, id) => {
         const response = await api.delete(
-            `/api/projects/${projectId}/sessions/${sessionId}/clustering/keyword-hierarchy/${id}`
+            `/api/projects/${projectId}/clustering/keyword-hierarchy/${id}`
         );
         return response.data;
     },
