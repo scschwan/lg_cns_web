@@ -154,6 +154,8 @@ public class ClusteringController {
 
         projectService.getProject(projectId, userPrincipal.getId());
 
+        String customMergeName = (String) body.get("customMergeName");
+
         // ★ selectAll 필터 방식: POST body 크기를 줄이기 위해 백엔드에서 번호 해석
         if (Boolean.TRUE.equals(body.get("selectAll"))) {
             @SuppressWarnings("unchecked")
@@ -162,12 +164,12 @@ public class ClusteringController {
             String supplier = (String) body.get("supplier");
             boolean exactMatch = body.get("exactMatch") == null || Boolean.TRUE.equals(body.get("exactMatch"));
             return ResponseEntity.ok(
-                    clusteringService.mergeClustersWithFilter(sessionId, exceptions, keyword, supplier, exactMatch));
+                    clusteringService.mergeClustersWithFilter(sessionId, exceptions, keyword, supplier, exactMatch, customMergeName));
         }
 
         @SuppressWarnings("unchecked")
         List<Integer> clusterNumbers = (List<Integer>) body.get("clusterNumbers");
-        return ResponseEntity.ok(clusteringService.mergeClusters(sessionId, clusterNumbers));
+        return ResponseEntity.ok(clusteringService.mergeClusters(sessionId, clusterNumbers, customMergeName));
     }
 
     @PostMapping("/merge/start")
@@ -203,7 +205,8 @@ public class ClusteringController {
 
         projectService.getProject(projectId, userPrincipal.getId());
         Integer mergedClusterNumber = ((Number) body.get("mergedClusterNumber")).intValue();
-        return ResponseEntity.ok(clusteringService.mergeFinalize(sessionId, mergedClusterNumber));
+        String customMergeName = (String) body.get("customMergeName");
+        return ResponseEntity.ok(clusteringService.mergeFinalize(sessionId, mergedClusterNumber, customMergeName));
     }
 
     @GetMapping("/merge/active")
@@ -264,7 +267,8 @@ public class ClusteringController {
         projectService.getProject(projectId, userPrincipal.getId());
         @SuppressWarnings("unchecked")
         List<Integer> mergedClusterNumbers = (List<Integer>) body.get("mergedClusterNumbers");
-        return ResponseEntity.ok(clusteringService.mergeMergedClusters(sessionId, mergedClusterNumbers));
+        String customMergeName = (String) body.get("customMergeName");
+        return ResponseEntity.ok(clusteringService.mergeMergedClusters(sessionId, mergedClusterNumbers, customMergeName));
     }
 
     @PostMapping("/add-to-merged")
@@ -383,7 +387,7 @@ public class ClusteringController {
             @CurrentUser UserPrincipal userPrincipal) {
 
         projectService.getProject(projectId, userPrincipal.getId());
-        return ResponseEntity.ok(clusteringService.getKeywordHierarchy(sessionId));
+        return ResponseEntity.ok(clusteringService.getKeywordHierarchy(projectId));
     }
 
     @PostMapping("/keyword-hierarchy")
@@ -399,7 +403,7 @@ public class ClusteringController {
         String parentId = (String) body.get("parentId");
         String keyword = (String) body.get("keyword");
 
-        return ResponseEntity.ok(clusteringService.addKeywordHierarchy(sessionId, level, parentId, keyword));
+        return ResponseEntity.ok(clusteringService.addKeywordHierarchy(projectId, level, parentId, keyword));
     }
 
     @PutMapping("/keyword-hierarchy/{id}")
@@ -423,6 +427,6 @@ public class ClusteringController {
             @CurrentUser UserPrincipal userPrincipal) {
 
         projectService.getProject(projectId, userPrincipal.getId());
-        return ResponseEntity.ok(clusteringService.deleteKeywordHierarchy(sessionId, id));
+        return ResponseEntity.ok(clusteringService.deleteKeywordHierarchy(projectId, id));
     }
 }

@@ -663,7 +663,7 @@ function DataTransformPage() {
           {/* 좌측: 테이블 영역 (8/12) */}
           <div className="xl:col-span-8 h-full flex flex-col min-h-0">
 
-            <PanelGroup orientation="vertical">
+            <PanelGroup orientation="vertical" className="flex-1 min-h-0">
               <Panel ref={originalPanelRef} defaultSize={50} minSize={5} collapsible={true} collapsedSize={5}>
                 {/* 1. 원본 데이터 테이블 */}
                 <Card className="h-full overflow-hidden transition-all duration-300 shadow-sm flex flex-col">

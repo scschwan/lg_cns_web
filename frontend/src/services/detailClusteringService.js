@@ -75,10 +75,12 @@ const detailClusteringService = {
         return response.data;
     },
 
-    mergeClusters: async (projectId, sessionId, clusterId, clusterNumbers) => {
+    mergeClusters: async (projectId, sessionId, clusterId, clusterNumbers, customMergeName = null) => {
+        const body = { clusterId, clusterNumbers };
+        if (customMergeName) body.customMergeName = customMergeName;
         const response = await api.post(
             `/api/projects/${projectId}/sessions/${sessionId}/detail-clustering/merge`,
-            { clusterId, clusterNumbers }
+            body
         );
         if (typeof response.data === 'string' && response.data.includes('<!DOCTYPE')) {
             throw new Error('서버 응답 시간이 초과되었습니다. 잠시 후 새로고침해주세요.');
@@ -162,32 +164,32 @@ const detailClusteringService = {
         return response.data;
     },
 
-    getKeywordHierarchy: async (projectId, sessionId) => {
+    getKeywordHierarchy: async (projectId) => {
         const response = await api.get(
-            `/api/projects/${projectId}/sessions/${sessionId}/detail-clustering/keyword-hierarchy`
+            `/api/projects/${projectId}/clustering/keyword-hierarchy`
         );
         return response.data;
     },
 
-    addKeywordHierarchy: async (projectId, sessionId, level, parentId, keyword) => {
+    addKeywordHierarchy: async (projectId, level, parentId, keyword) => {
         const response = await api.post(
-            `/api/projects/${projectId}/sessions/${sessionId}/detail-clustering/keyword-hierarchy`,
+            `/api/projects/${projectId}/clustering/keyword-hierarchy`,
             { level, parentId, keyword }
         );
         return response.data;
     },
 
-    updateKeywordHierarchy: async (projectId, sessionId, id, keyword) => {
+    updateKeywordHierarchy: async (projectId, id, keyword) => {
         const response = await api.put(
-            `/api/projects/${projectId}/sessions/${sessionId}/detail-clustering/keyword-hierarchy/${id}`,
+            `/api/projects/${projectId}/clustering/keyword-hierarchy/${id}`,
             { keyword }
         );
         return response.data;
     },
 
-    deleteKeywordHierarchy: async (projectId, sessionId, id) => {
+    deleteKeywordHierarchy: async (projectId, id) => {
         const response = await api.delete(
-            `/api/projects/${projectId}/sessions/${sessionId}/detail-clustering/keyword-hierarchy/${id}`
+            `/api/projects/${projectId}/clustering/keyword-hierarchy/${id}`
         );
         return response.data;
     },

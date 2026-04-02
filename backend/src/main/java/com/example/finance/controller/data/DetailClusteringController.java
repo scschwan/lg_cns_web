@@ -122,7 +122,8 @@ public class DetailClusteringController {
         Integer clusterId = ((Number) body.get("clusterId")).intValue();
         @SuppressWarnings("unchecked")
         List<Integer> clusterNumbers = (List<Integer>) body.get("clusterNumbers");
-        return ResponseEntity.ok(detailClusteringService.mergeClusters(sessionId, clusterId, clusterNumbers));
+        String customMergeName = (String) body.get("customMergeName");
+        return ResponseEntity.ok(detailClusteringService.mergeClusters(sessionId, clusterId, clusterNumbers, customMergeName));
     }
 
     @PostMapping("/unmerge")
@@ -165,7 +166,8 @@ public class DetailClusteringController {
         Integer clusterId = ((Number) body.get("clusterId")).intValue();
         @SuppressWarnings("unchecked")
         List<Integer> mergedClusterNumbers = (List<Integer>) body.get("mergedClusterNumbers");
-        return ResponseEntity.ok(detailClusteringService.mergeMergedClusters(sessionId, clusterId, mergedClusterNumbers));
+        String customMergeName = (String) body.get("customMergeName");
+        return ResponseEntity.ok(detailClusteringService.mergeMergedClusters(sessionId, clusterId, mergedClusterNumbers, customMergeName));
     }
 
     @PostMapping("/add-to-merged")
@@ -278,7 +280,7 @@ public class DetailClusteringController {
             @CurrentUser UserPrincipal userPrincipal) {
 
         projectService.getProject(projectId, userPrincipal.getId());
-        return ResponseEntity.ok(detailClusteringService.getKeywordHierarchy(sessionId));
+        return ResponseEntity.ok(detailClusteringService.getKeywordHierarchy(projectId));
     }
 
     @PostMapping("/keyword-hierarchy")
@@ -292,7 +294,7 @@ public class DetailClusteringController {
         Integer level = ((Number) body.get("level")).intValue();
         String parentId = (String) body.get("parentId");
         String keyword = (String) body.get("keyword");
-        return ResponseEntity.ok(detailClusteringService.addKeywordHierarchy(sessionId, level, parentId, keyword));
+        return ResponseEntity.ok(detailClusteringService.addKeywordHierarchy(projectId, level, parentId, keyword));
     }
 
     @PutMapping("/keyword-hierarchy/{id}")
@@ -316,6 +318,6 @@ public class DetailClusteringController {
             @CurrentUser UserPrincipal userPrincipal) {
 
         projectService.getProject(projectId, userPrincipal.getId());
-        return ResponseEntity.ok(detailClusteringService.deleteKeywordHierarchy(sessionId, id));
+        return ResponseEntity.ok(detailClusteringService.deleteKeywordHierarchy(projectId, id));
     }
 }

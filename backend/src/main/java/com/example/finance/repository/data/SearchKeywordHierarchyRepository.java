@@ -47,4 +47,20 @@ public interface SearchKeywordHierarchyRepository extends MongoRepository<Search
      * 특정 레벨의 키워드 수 카운트
      */
     long countBySessionIdAndLevel(String sessionId, Integer level);
+
+    // ============================================================
+    // Project-scoped queries (shared across sessions)
+    // ============================================================
+
+    List<SearchKeywordHierarchy> findByProjectIdOrderByLevelAscDisplayOrderAsc(String projectId);
+
+    List<SearchKeywordHierarchy> findByProjectIdAndLevelOrderByDisplayOrderAsc(String projectId, Integer level);
+
+    List<SearchKeywordHierarchy> findByProjectIdAndParentIdOrderByDisplayOrderAsc(String projectId, String parentId);
+
+    void deleteByProjectId(String projectId);
+
+    long countByProjectId(String projectId);
+
+    long countByProjectIdAndLevel(String projectId, Integer level);
 }
