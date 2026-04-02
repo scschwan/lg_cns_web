@@ -182,7 +182,6 @@ export default function StartAnalysisPage() {
 
   // 원본 테이블 접힘
   const [isOriginalCollapsed, setIsOriginalCollapsed] = useState(false);
-  const originalPanelRef = useRef(null);
 
   // 페이지네이션
   const [currentPage, setCurrentPage] = useState(0);
@@ -255,16 +254,6 @@ export default function StartAnalysisPage() {
       String(item.value).toLowerCase().includes(kw)
     );
   }, [distinctHidden, deleteFilterKeyword]);
-
-  useEffect(() => {
-    if (originalPanelRef.current) {
-      if (isOriginalCollapsed) {
-        originalPanelRef.current.resize(8);
-      } else {
-        originalPanelRef.current.resize(50);
-      }
-    }
-  }, [isOriginalCollapsed]);
 
   // ===== useEffect - 세션 정보 + 파일 정보 로드 =====
   useEffect(() => {
@@ -790,21 +779,96 @@ export default function StartAnalysisPage() {
           {/* 좌측: 테이블 영역 (8/12) */}
           <div className="xl:col-span-8 min-h-[50vh] xl:min-h-0 xl:h-full flex flex-col">
 
-            <PanelGroup orientation="vertical" className="flex-1 min-h-0">
-              <Panel panelRef={originalPanelRef} defaultSize={50} minSize={8}>
-                {/* 1. 원본 테이블 */}
-                <Card className="h-full overflow-hidden transition-all duration-300 shadow-sm flex flex-col min-w-0">
-                  <CardHeader
-                    className="py-3 px-4 border-b bg-white cursor-pointer hover:bg-gray-50 transition-colors flex-shrink-0"
-                    onClick={() => setIsOriginalCollapsed(!isOriginalCollapsed)}
-                  >
-                    <CardTitle className="text-base flex items-center justify-between">
-                      <span>원본 데이터 <span className="text-xs font-normal text-gray-500 ml-2">(클릭하여 {isOriginalCollapsed ? '펼치기' : '접기'})</span></span>
-                      {isOriginalCollapsed ? <ChevronDown className="h-4 w-4" /> : <ChevronUp className="h-4 w-4" />}
-                    </CardTitle>
-                  </CardHeader>
+            {/* 원본 데이터 헤더 - 항상 보임, PanelGroup 바깥 */}
+            <div
+              className="py-3 px-4 border rounded-t-lg bg-white cursor-pointer hover:bg-gray-50 transition-colors flex-shrink-0"
+              onClick={() => setIsOriginalCollapsed(!isOriginalCollapsed)}
+            >
+              <h3 className="text-base font-semibold leading-none tracking-tight flex items-center justify-between">
+                <span>원본 데이터 <span className="text-xs font-normal text-gray-500 ml-2">(클릭하여 {isOriginalCollapsed ? '펼치기' : '접기'})</span></span>
+                {isOriginalCollapsed ? <ChevronDown className="h-4 w-4" /> : <ChevronUp className="h-4 w-4" />}
+              </h3>
+            </div>
 
-                  {!isOriginalCollapsed && (
+            {isOriginalCollapsed ? (
+              /* 접힌 상태: 가공 데이터만 전체 높이 */
+              <Card className="flex-1 min-h-0 overflow-hidden flex flex-col shadow-sm">
+                <CardHeader className="py-3 px-4 border-b bg-white flex-shrink-0">
+                  <CardTitle className="text-base">가공 데이터</CardTitle>
+                </CardHeader>
+
+                <CardContent className="flex-1 p-0 min-h-0 flex flex-col">
+                  <AdvancedTable
+                    columns={tableColumns}
+                    data={sortedSessionData}
+                    rowKey={(row, idx) => row._id || idx}
+                    sort={processedSort}
+                    onSortChange={(field, direction) => setProcessedSort({ field, direction })}
+                    loading={loading}
+                    rowClassName={(row) => row._isHidden ? 'bg-gray-100 opacity-50 line-through' : ''}
+                  />
+                </CardContent>
+
+                {/* 페이지네이션 */}
+                <div className="p-3 border-t bg-white flex-shrink-0">
+                  <div className="flex items-center justify-between text-xs">
+                    <div className="text-muted-foreground hidden sm:block">
+                      {(currentPage * pageSize + 1).toLocaleString()} - {Math.min((currentPage + 1) * pageSize, totalRows).toLocaleString()} / 총 {totalRows.toLocaleString()}건
+                    </div>
+
+                    <div className="flex items-center gap-2 w-full sm:w-auto justify-between sm:justify-end">
+                      <Select
+                        value={pageSize.toString()}
+                        onValueChange={(value) => {
+                          setPageSize(Number(value));
+                          setCurrentPage(0);
+                        }}
+                      >
+                        <SelectTrigger className="w-[100px] h-8 text-xs">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="100">100개씩</SelectItem>
+                          <SelectItem value="500">500개씩</SelectItem>
+                          <SelectItem value="1000">1000개씩</SelectItem>
+                          <SelectItem value="5000">5000개씩</SelectItem>
+                        </SelectContent>
+                      </Select>
+
+                      <div className="flex gap-1">
+                        <Button variant="outline" size="sm" className="h-8 px-2" onClick={() => setCurrentPage(0)} disabled={currentPage === 0}>
+                          처음
+                        </Button>
+                        <Button
+                          variant="outline" size="sm"
+                          onClick={() => setCurrentPage(prev => Math.max(0, prev - 1))}
+                          disabled={currentPage === 0}
+                        >
+                          이전
+                        </Button>
+                        <span className="flex items-center px-2 text-xs font-medium">
+                          {currentPage + 1} / {totalPages || 1}
+                        </span>
+                        <Button
+                          variant="outline" size="sm"
+                          onClick={() => setCurrentPage(prev => Math.min(totalPages - 1, prev + 1))}
+                          disabled={currentPage >= totalPages - 1}
+                        >
+                          다음
+                        </Button>
+                        <Button variant="outline" size="sm" className="h-8 px-2" onClick={() => setCurrentPage(totalPages - 1)} disabled={currentPage >= totalPages - 1}>
+                          마지막
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </Card>
+            ) : (
+              /* 펼친 상태: PanelGroup 드래그 리사이즈 */
+              <PanelGroup orientation="vertical" className="flex-1 min-h-0">
+                <Panel defaultSize={50} minSize={15}>
+                  <Card className="h-full overflow-hidden flex flex-col min-w-0 min-h-0 shadow-sm">
                     <CardContent className="p-0 flex-1 min-h-0">
                       <AdvancedTable
                         columns={tableColumns}
@@ -815,90 +879,89 @@ export default function StartAnalysisPage() {
                         loading={loading}
                       />
                     </CardContent>
-                  )}
-                </Card>
-              </Panel>
+                  </Card>
+                </Panel>
 
-              <PanelResizeHandle className="h-2 flex items-center justify-center group cursor-row-resize">
-                <div className="w-12 h-1 rounded-full bg-border group-hover:bg-primary/50 transition-colors" />
-              </PanelResizeHandle>
+                <PanelResizeHandle className="h-2 flex items-center justify-center group cursor-row-resize">
+                  <div className="w-12 h-1 rounded-full bg-border group-hover:bg-primary/50 transition-colors" />
+                </PanelResizeHandle>
 
-              <Panel defaultSize={50} minSize={20}>
-                {/* 2. 가공 데이터 테이블 */}
-                <Card className="h-full overflow-hidden flex flex-col min-h-0 shadow-sm">
-              <CardHeader className="py-3 px-4 border-b bg-white flex-shrink-0">
-                <CardTitle className="text-base">가공 데이터</CardTitle>
-              </CardHeader>
+                <Panel defaultSize={50} minSize={20}>
+                  <Card className="h-full overflow-hidden flex flex-col min-h-0 shadow-sm">
+                    <CardHeader className="py-3 px-4 border-b bg-white flex-shrink-0">
+                      <CardTitle className="text-base">가공 데이터</CardTitle>
+                    </CardHeader>
 
-              <CardContent className="flex-1 p-0 min-h-0 flex flex-col">
-                  <AdvancedTable
-                    columns={tableColumns}
-                    data={sortedSessionData}
-                    rowKey={(row, idx) => row._id || idx}
-                    sort={processedSort}
-                    onSortChange={(field, direction) => setProcessedSort({ field, direction })}
-                    loading={loading}
-                    rowClassName={(row) => row._isHidden ? 'bg-gray-100 opacity-50 line-through' : ''}
-                  />
-              </CardContent>
+                    <CardContent className="flex-1 p-0 min-h-0 flex flex-col">
+                      <AdvancedTable
+                        columns={tableColumns}
+                        data={sortedSessionData}
+                        rowKey={(row, idx) => row._id || idx}
+                        sort={processedSort}
+                        onSortChange={(field, direction) => setProcessedSort({ field, direction })}
+                        loading={loading}
+                        rowClassName={(row) => row._isHidden ? 'bg-gray-100 opacity-50 line-through' : ''}
+                      />
+                    </CardContent>
 
-              {/* 페이지네이션 */}
-              <div className="p-3 border-t bg-white flex-shrink-0">
-                <div className="flex items-center justify-between text-xs">
-                  <div className="text-muted-foreground hidden sm:block">
-                    {(currentPage * pageSize + 1).toLocaleString()} - {Math.min((currentPage + 1) * pageSize, totalRows).toLocaleString()} / 총 {totalRows.toLocaleString()}건
-                  </div>
+                    {/* 페이지네이션 */}
+                    <div className="p-3 border-t bg-white flex-shrink-0">
+                      <div className="flex items-center justify-between text-xs">
+                        <div className="text-muted-foreground hidden sm:block">
+                          {(currentPage * pageSize + 1).toLocaleString()} - {Math.min((currentPage + 1) * pageSize, totalRows).toLocaleString()} / 총 {totalRows.toLocaleString()}건
+                        </div>
 
-                  <div className="flex items-center gap-2 w-full sm:w-auto justify-between sm:justify-end">
-                    <Select
-                      value={pageSize.toString()}
-                      onValueChange={(value) => {
-                        setPageSize(Number(value));
-                        setCurrentPage(0);
-                      }}
-                    >
-                      <SelectTrigger className="w-[100px] h-8 text-xs">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="100">100개씩</SelectItem>
-                        <SelectItem value="500">500개씩</SelectItem>
-                        <SelectItem value="1000">1000개씩</SelectItem>
-                        <SelectItem value="5000">5000개씩</SelectItem>
-                      </SelectContent>
-                    </Select>
+                        <div className="flex items-center gap-2 w-full sm:w-auto justify-between sm:justify-end">
+                          <Select
+                            value={pageSize.toString()}
+                            onValueChange={(value) => {
+                              setPageSize(Number(value));
+                              setCurrentPage(0);
+                            }}
+                          >
+                            <SelectTrigger className="w-[100px] h-8 text-xs">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="100">100개씩</SelectItem>
+                              <SelectItem value="500">500개씩</SelectItem>
+                              <SelectItem value="1000">1000개씩</SelectItem>
+                              <SelectItem value="5000">5000개씩</SelectItem>
+                            </SelectContent>
+                          </Select>
 
-                    <div className="flex gap-1">
-                      <Button variant="outline" size="sm" className="h-8 px-2" onClick={() => setCurrentPage(0)} disabled={currentPage === 0}>
-                        처음
-                      </Button>
-                      <Button
-                        variant="outline" size="sm"
-                        onClick={() => setCurrentPage(prev => Math.max(0, prev - 1))}
-                        disabled={currentPage === 0}
-                      >
-                        이전
-                      </Button>
-                      <span className="flex items-center px-2 text-xs font-medium">
-                        {currentPage + 1} / {totalPages || 1}
-                      </span>
-                      <Button
-                        variant="outline" size="sm"
-                        onClick={() => setCurrentPage(prev => Math.min(totalPages - 1, prev + 1))}
-                        disabled={currentPage >= totalPages - 1}
-                      >
-                        다음
-                      </Button>
-                      <Button variant="outline" size="sm" className="h-8 px-2" onClick={() => setCurrentPage(totalPages - 1)} disabled={currentPage >= totalPages - 1}>
-                        마지막
-                      </Button>
+                          <div className="flex gap-1">
+                            <Button variant="outline" size="sm" className="h-8 px-2" onClick={() => setCurrentPage(0)} disabled={currentPage === 0}>
+                              처음
+                            </Button>
+                            <Button
+                              variant="outline" size="sm"
+                              onClick={() => setCurrentPage(prev => Math.max(0, prev - 1))}
+                              disabled={currentPage === 0}
+                            >
+                              이전
+                            </Button>
+                            <span className="flex items-center px-2 text-xs font-medium">
+                              {currentPage + 1} / {totalPages || 1}
+                            </span>
+                            <Button
+                              variant="outline" size="sm"
+                              onClick={() => setCurrentPage(prev => Math.min(totalPages - 1, prev + 1))}
+                              disabled={currentPage >= totalPages - 1}
+                            >
+                              다음
+                            </Button>
+                            <Button variant="outline" size="sm" className="h-8 px-2" onClick={() => setCurrentPage(totalPages - 1)} disabled={currentPage >= totalPages - 1}>
+                              마지막
+                            </Button>
+                          </div>
+                        </div>
+                      </div>
                     </div>
-                  </div>
-                </div>
-              </div>
-                </Card>
-              </Panel>
-            </PanelGroup>
+                  </Card>
+                </Panel>
+              </PanelGroup>
+            )}
           </div>
 
           {/* 우측: 설정 패널 (4/12) */}

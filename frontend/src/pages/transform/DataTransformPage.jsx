@@ -242,18 +242,7 @@ function DataTransformPage() {
   const [origKeywordFilter, setOrigKeywordFilter] = useState(null);
   const [origLoading, setOrigLoading] = useState(false);
   const [isOriginalCollapsed, setIsOriginalCollapsed] = useState(false);
-  const originalPanelRef = useRef(null);
   const [origSort, setOrigSort] = useState(null);
-
-  useEffect(() => {
-    if (originalPanelRef.current) {
-      if (isOriginalCollapsed) {
-        originalPanelRef.current.resize(8);
-      } else {
-        originalPanelRef.current.resize(50);
-      }
-    }
-  }, [isOriginalCollapsed]);
 
   // ===== 검색 결과 데이터 테이블 =====
   const [searchResultData, setSearchResultData] = useState({ columns: [], data: [], totalCount: 0, totalPages: 0 });
@@ -663,106 +652,150 @@ function DataTransformPage() {
           {/* 좌측: 테이블 영역 (8/12) */}
           <div className="xl:col-span-8 h-full flex flex-col min-h-0">
 
-            <PanelGroup orientation="vertical" className="flex-1 min-h-0">
-              <Panel panelRef={originalPanelRef} defaultSize={50} minSize={8}>
-                {/* 1. 원본 데이터 테이블 */}
-                <Card className="h-full overflow-hidden transition-all duration-300 shadow-sm flex flex-col min-w-0">
-                  <CardHeader
-                    className="py-3 px-4 border-b bg-white cursor-pointer hover:bg-gray-50 transition-colors flex-shrink-0"
-                    onClick={() => setIsOriginalCollapsed(!isOriginalCollapsed)}
-                  >
-                    <CardTitle className="text-base flex items-center justify-between">
-                      <span>
-                        원본 데이터
-                        {origKeywordFilter && (
-                          <Badge variant="secondary" className="ml-2 text-[10px]">
-                            필터: {origKeywordFilter}
-                          </Badge>
-                        )}
-                        <span className="text-xs font-normal text-gray-500 ml-2">
-                          ({originalData.totalCount?.toLocaleString()}건, 클릭하여 {isOriginalCollapsed ? '펼치기' : '접기'})
-                        </span>
+            {/* 원본 데이터 헤더 - 항상 보임, PanelGroup 바깥 */}
+            <div
+              className="py-3 px-4 border rounded-t-lg bg-white cursor-pointer hover:bg-gray-50 transition-colors flex-shrink-0"
+              onClick={() => setIsOriginalCollapsed(!isOriginalCollapsed)}
+            >
+              <h3 className="text-base font-semibold leading-none tracking-tight flex items-center justify-between">
+                <span>
+                  원본 데이터
+                  {origKeywordFilter && (
+                    <Badge variant="secondary" className="ml-2 text-[10px]">
+                      필터: {origKeywordFilter}
+                    </Badge>
+                  )}
+                  <span className="text-xs font-normal text-gray-500 ml-2">
+                    ({originalData.totalCount?.toLocaleString()}건, 클릭하여 {isOriginalCollapsed ? '펼치기' : '접기'})
+                  </span>
+                </span>
+                {isOriginalCollapsed ? <ChevronDown className="h-4 w-4" /> : <ChevronUp className="h-4 w-4" />}
+              </h3>
+            </div>
+
+            {isOriginalCollapsed ? (
+              /* 접힌 상태: 검색 결과 데이터만 전체 높이 */
+              <Card className="flex-1 min-h-0 overflow-hidden flex flex-col shadow-sm">
+                <CardHeader className="py-3 px-4 border-b bg-white flex-shrink-0">
+                  <CardTitle className="text-base">
+                    검색 결과 데이터
+                    {searchKeywordFilter && (
+                      <span className="text-xs font-normal text-muted-foreground ml-2">
+                        (키워드: <Badge variant="outline" className="text-[10px]">{searchKeywordFilter}</Badge>
+                        , {searchResultData.totalCount?.toLocaleString()}건)
                       </span>
-                      {isOriginalCollapsed ? <ChevronDown className="h-4 w-4" /> : <ChevronUp className="h-4 w-4" />}
-                    </CardTitle>
-                  </CardHeader>
+                    )}
+                  </CardTitle>
+                </CardHeader>
 
-                  {!isOriginalCollapsed && (
-                    <>
-                      <CardContent className="p-0 flex-1 min-h-0">
-                        <AdvancedTable
-                          columns={origColumns}
-                          data={sortedOrigData}
-                          rowKey={(row, idx) => row._id || idx}
-                          sort={origSort}
-                          onSortChange={(field, direction) => setOrigSort({ field, direction })}
-                          loading={origLoading}
-                          emptyMessage="데이터가 없습니다"
-                        />
-                      </CardContent>
-                      <Pagination
-                        currentPage={origPage}
-                        totalPages={originalData.totalPages}
-                        totalCount={originalData.totalCount}
-                        pageSize={origPageSize}
-                        onPageChange={handleOrigPageChange}
-                        onPageSizeChange={handleOrigPageSizeChange}
-                      />
-                    </>
+                <CardContent className="p-0 flex-1 min-h-0 flex flex-col">
+                  {searchResultData.data.length === 0 && !searchDataLoading ? (
+                    <div className="flex items-center justify-center h-full text-sm text-muted-foreground min-h-[120px]">
+                      우측 키워드 변환에서 키워드를 검색하고 결과를 선택해주세요
+                    </div>
+                  ) : (
+                    <AdvancedTable
+                      columns={searchColumns}
+                      data={sortedSearchData}
+                      rowKey={(row, idx) => row._id || idx}
+                      sort={searchSort}
+                      onSortChange={(field, direction) => setSearchSort({ field, direction })}
+                      loading={searchDataLoading}
+                      emptyMessage="검색 결과가 없습니다"
+                    />
                   )}
-                </Card>
-              </Panel>
+                </CardContent>
 
-              <PanelResizeHandle className="h-2 flex items-center justify-center group cursor-row-resize">
-                <div className="w-12 h-1 rounded-full bg-border group-hover:bg-primary/50 transition-colors" />
-              </PanelResizeHandle>
-
-              <Panel defaultSize={50} minSize={20}>
-                {/* 2. 검색 결과 데이터 테이블 */}
-                <Card className="h-full overflow-hidden flex flex-col min-h-0 shadow-sm">
-              <CardHeader className="py-3 px-4 border-b bg-white flex-shrink-0">
-                <CardTitle className="text-base">
-                  검색 결과 데이터
-                  {searchKeywordFilter && (
-                    <span className="text-xs font-normal text-muted-foreground ml-2">
-                      (키워드: <Badge variant="outline" className="text-[10px]">{searchKeywordFilter}</Badge>
-                      , {searchResultData.totalCount?.toLocaleString()}건)
-                    </span>
-                  )}
-                </CardTitle>
-              </CardHeader>
-
-              <CardContent className="p-0 flex-1 min-h-0 flex flex-col">
-                {searchResultData.data.length === 0 && !searchDataLoading ? (
-                  <div className="flex items-center justify-center h-full text-sm text-muted-foreground min-h-[120px]">
-                    우측 키워드 변환에서 키워드를 검색하고 결과를 선택해주세요
-                  </div>
-                ) : (
-                  <AdvancedTable
-                    columns={searchColumns}
-                    data={sortedSearchData}
-                    rowKey={(row, idx) => row._id || idx}
-                    sort={searchSort}
-                    onSortChange={(field, direction) => setSearchSort({ field, direction })}
-                    loading={searchDataLoading}
-                    emptyMessage="검색 결과가 없습니다"
+                {searchResultData.totalCount > 0 && (
+                  <Pagination
+                    currentPage={searchPage}
+                    totalPages={searchResultData.totalPages}
+                    totalCount={searchResultData.totalCount}
+                    pageSize={searchPageSize}
+                    onPageChange={handleSearchPageChange}
+                    onPageSizeChange={handleSearchPageSizeChange}
                   />
                 )}
-              </CardContent>
+              </Card>
+            ) : (
+              /* 펼친 상태: PanelGroup 드래그 리사이즈 */
+              <PanelGroup orientation="vertical" className="flex-1 min-h-0">
+                <Panel defaultSize={50} minSize={15}>
+                  {/* 1. 원본 데이터 테이블 */}
+                  <Card className="h-full overflow-hidden flex flex-col min-w-0 min-h-0 shadow-sm">
+                    <CardContent className="p-0 flex-1 min-h-0">
+                      <AdvancedTable
+                        columns={origColumns}
+                        data={sortedOrigData}
+                        rowKey={(row, idx) => row._id || idx}
+                        sort={origSort}
+                        onSortChange={(field, direction) => setOrigSort({ field, direction })}
+                        loading={origLoading}
+                        emptyMessage="데이터가 없습니다"
+                      />
+                    </CardContent>
+                    <Pagination
+                      currentPage={origPage}
+                      totalPages={originalData.totalPages}
+                      totalCount={originalData.totalCount}
+                      pageSize={origPageSize}
+                      onPageChange={handleOrigPageChange}
+                      onPageSizeChange={handleOrigPageSizeChange}
+                    />
+                  </Card>
+                </Panel>
 
-              {searchResultData.totalCount > 0 && (
-                <Pagination
-                  currentPage={searchPage}
-                  totalPages={searchResultData.totalPages}
-                  totalCount={searchResultData.totalCount}
-                  pageSize={searchPageSize}
-                  onPageChange={handleSearchPageChange}
-                  onPageSizeChange={handleSearchPageSizeChange}
-                />
-              )}
-                </Card>
-              </Panel>
-            </PanelGroup>
+                <PanelResizeHandle className="h-2 flex items-center justify-center group cursor-row-resize">
+                  <div className="w-12 h-1 rounded-full bg-border group-hover:bg-primary/50 transition-colors" />
+                </PanelResizeHandle>
+
+                <Panel defaultSize={50} minSize={20}>
+                  {/* 2. 검색 결과 데이터 테이블 */}
+                  <Card className="h-full overflow-hidden flex flex-col min-h-0 shadow-sm">
+                    <CardHeader className="py-3 px-4 border-b bg-white flex-shrink-0">
+                      <CardTitle className="text-base">
+                        검색 결과 데이터
+                        {searchKeywordFilter && (
+                          <span className="text-xs font-normal text-muted-foreground ml-2">
+                            (키워드: <Badge variant="outline" className="text-[10px]">{searchKeywordFilter}</Badge>
+                            , {searchResultData.totalCount?.toLocaleString()}건)
+                          </span>
+                        )}
+                      </CardTitle>
+                    </CardHeader>
+
+                    <CardContent className="p-0 flex-1 min-h-0 flex flex-col">
+                      {searchResultData.data.length === 0 && !searchDataLoading ? (
+                        <div className="flex items-center justify-center h-full text-sm text-muted-foreground min-h-[120px]">
+                          우측 키워드 변환에서 키워드를 검색하고 결과를 선택해주세요
+                        </div>
+                      ) : (
+                        <AdvancedTable
+                          columns={searchColumns}
+                          data={sortedSearchData}
+                          rowKey={(row, idx) => row._id || idx}
+                          sort={searchSort}
+                          onSortChange={(field, direction) => setSearchSort({ field, direction })}
+                          loading={searchDataLoading}
+                          emptyMessage="검색 결과가 없습니다"
+                        />
+                      )}
+                    </CardContent>
+
+                    {searchResultData.totalCount > 0 && (
+                      <Pagination
+                        currentPage={searchPage}
+                        totalPages={searchResultData.totalPages}
+                        totalCount={searchResultData.totalCount}
+                        pageSize={searchPageSize}
+                        onPageChange={handleSearchPageChange}
+                        onPageSizeChange={handleSearchPageSizeChange}
+                      />
+                    )}
+                  </Card>
+                </Panel>
+              </PanelGroup>
+            )}
           </div>
 
           {/* 우측: 키워드 통계 + 변환 패널 (4/12) */}
