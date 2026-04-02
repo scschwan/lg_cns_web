@@ -182,6 +182,7 @@ export default function StartAnalysisPage() {
 
   // 원본 테이블 접힘
   const [isOriginalCollapsed, setIsOriginalCollapsed] = useState(false);
+  const originalPanelRef = useRef(null);
 
   // 페이지네이션
   const [currentPage, setCurrentPage] = useState(0);
@@ -254,6 +255,16 @@ export default function StartAnalysisPage() {
       String(item.value).toLowerCase().includes(kw)
     );
   }, [distinctHidden, deleteFilterKeyword]);
+
+  useEffect(() => {
+    if (originalPanelRef.current) {
+      if (isOriginalCollapsed) {
+        originalPanelRef.current.resize(5);
+      } else {
+        originalPanelRef.current.resize(50);
+      }
+    }
+  }, [isOriginalCollapsed]);
 
   // ===== useEffect - 세션 정보 + 파일 정보 로드 =====
   useEffect(() => {
@@ -780,7 +791,7 @@ export default function StartAnalysisPage() {
           <div className="xl:col-span-8 min-h-[50vh] xl:min-h-0 xl:h-full flex flex-col">
 
             <PanelGroup orientation="vertical">
-              <Panel defaultSize={50} minSize={20}>
+              <Panel ref={originalPanelRef} defaultSize={50} minSize={5} collapsible={true} collapsedSize={5}>
                 {/* 1. 원본 테이블 */}
                 <Card className="h-full overflow-hidden transition-all duration-300 shadow-sm flex flex-col">
                   <CardHeader

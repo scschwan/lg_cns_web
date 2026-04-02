@@ -769,8 +769,8 @@ export default function AbleTaskManagePage() {
                   <TableHeader>
                     <TableRow className="bg-muted/50">
                       <TableHead className="w-[50px] text-center">No</TableHead>
-                      <TableHead className="w-[50%] cursor-pointer select-none" onClick={() => handleSort('taskName')}>과제명<SortIcon colKey="taskName" /></TableHead>
-                      <TableHead>대계정</TableHead><TableHead className="max-w-[80px]">클러스터명</TableHead><TableHead className="max-w-[80px]">세부클러스터명</TableHead><TableHead>담당부서</TableHead><TableHead>담당자명</TableHead><TableHead>컨설턴트</TableHead>
+                      <TableHead className="cursor-pointer select-none" onClick={() => handleSort('taskName')}>과제명<SortIcon colKey="taskName" /></TableHead>
+                      <TableHead>대계정</TableHead><TableHead className="max-w-[120px]">클러스터명</TableHead><TableHead className="max-w-[120px]">세부클러스터명</TableHead><TableHead>담당부서</TableHead><TableHead>담당자명</TableHead><TableHead>컨설턴트</TableHead>
                       <TableHead className="text-right cursor-pointer select-none" onClick={() => handleSort('baseAmount')}>모수 금액<SortIcon colKey="baseAmount" /></TableHead>
                       <TableHead className="text-right cursor-pointer select-none" onClick={() => handleSort('savingAmount')}>절감액<SortIcon colKey="savingAmount" /></TableHead>
                       <TableHead className="w-[120px] cursor-pointer select-none" onClick={() => handleSort('progress')}>진척율<SortIcon colKey="progress" /></TableHead>
@@ -783,10 +783,10 @@ export default function AbleTaskManagePage() {
                     {sortedTasks.map((task, idx) => (
                       <TableRow key={task.id} className="hover:bg-muted/30">
                         <TableCell className="text-center text-xs tabular-nums">{idx + 1}</TableCell>
-                        <TableCell className="w-[50%] text-sm font-medium">{task.taskName}</TableCell>
+                        <TableCell className="text-sm font-medium">{task.taskName}</TableCell>
                         <TableCell className="text-xs">{task.majorAccounts?.join(', ') || '-'}</TableCell>
-                        <TableCell className="text-xs max-w-[80px]"><ClusterNames clusters={task.clusters} level={2} /></TableCell>
-                        <TableCell className="text-xs max-w-[80px]"><ClusterNames clusters={task.clusters} level={3} /></TableCell>
+                        <TableCell className="text-xs max-w-[120px]"><ClusterNames clusters={task.clusters} level={2} /></TableCell>
+                        <TableCell className="text-xs max-w-[120px]"><ClusterNames clusters={task.clusters} level={3} /></TableCell>
                         <TableCell className="text-xs">{task.department || '-'}</TableCell>
                         <TableCell className="text-xs">{task.manager || '-'}</TableCell>
                         <TableCell className="text-xs">{task.consultant || '-'}</TableCell>

@@ -13,6 +13,7 @@ import {
   ChevronRight, ChevronDown, FilePlus, FileSpreadsheet,
   Link2, FileIcon, Plus, Trash2, Upload, ExternalLink, X, Loader2,
   ArrowRight, Unlock, CheckCircle2,
+  ClipboardList, ListFilter, Settings,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -204,61 +205,55 @@ function TreeRow({ item, level = 0, expandedIds, toggleExpand, checkedIds, onChe
 function PhaseNavigationBar({ stats, currentPhase, projectId, navigate }) {
   const phases = [
     {
-      key: 'LONG_LIST', label: 'Raw List',
-      line1: stats ? <><b>대계정</b> : {stats.rawAccountCount ?? '-'} / <b>클러스터</b> : {stats.rawClusterCount ?? '-'} / <b>세부</b> : {stats.rawSubClusterCount ?? '-'}</> : null,
-      line2: stats ? <><b>합산금액</b> : {formatAmount(stats.rawTotalAmount ?? 0)}</> : null,
+      key: 'LONG_LIST', label: 'Raw List', icon: ClipboardList,
+      count: stats ? (stats.rawSubClusterCount ?? 0) : 0,
       path: `/projects/${projectId}/longlist`,
     },
     {
-      key: 'SHORT_LIST', label: 'Long List',
-      line1: stats ? <><b>대계정</b> : {stats.longListAccountCount ?? '-'} / <b>클러스터</b> : {stats.longListClusterCount ?? '-'} / <b>세부</b> : {stats.longListSubClusterCount ?? '-'}</> : null,
-      line2: stats ? <><b>합산금액</b> : {formatAmount(stats.totalAmount ?? 0)}</> : null,
+      key: 'SHORT_LIST', label: 'Long List', icon: ListFilter,
+      count: stats ? (stats.longListSubClusterCount ?? 0) : 0,
       path: `/projects/${projectId}/shortlist`,
     },
     {
-      key: 'ABLE_REGISTER', label: 'Short List',
-      line1: stats ? <><b>대계정</b> : {stats.shortListAccountCount ?? '-'} / <b>클러스터</b> : {stats.shortListClusterCount ?? '-'} / <b>세부</b> : {stats.shortListSubClusterCount ?? '-'}</> : null,
-      line2: stats ? <><b>합산금액</b> : {formatAmount(stats.shortListTotalAmount ?? 0)}</> : null,
+      key: 'ABLE_REGISTER', label: 'Short List', icon: FilePlus,
+      count: stats ? (stats.shortListSubClusterCount ?? 0) : 0,
       path: `/projects/${projectId}/able-register`,
     },
   ];
-  const TOTAL_SLOTS = 5;
   const currentIdx = phases.findIndex(p => p.key === currentPhase);
-  const emptySlots = TOTAL_SLOTS - phases.length;
   return (
-    <div className="flex items-center gap-1.5 py-3 font-pretendard w-full">
+    <div className="grid grid-cols-3 gap-4 py-3 font-pretendard w-full">
       {phases.map((phase, idx) => {
         const isActive = phase.key === currentPhase;
         const isPast = idx < currentIdx;
         return (
-          <React.Fragment key={phase.key}>
-            {idx > 0 && <ArrowRight className="w-4 h-4 text-muted-foreground/40 flex-shrink-0" />}
-            <button
-              onClick={() => navigate(phase.path)}
-              className={cn(
-                'flex-1 basis-0 flex flex-col items-center gap-1.5 px-3 py-3.5 rounded-lg font-pretendard transition-colors min-w-0',
-                isActive && 'bg-blue-600 text-white',
-                isPast && 'bg-blue-50 text-blue-700 hover:bg-blue-100',
-                !isActive && !isPast && 'bg-muted/50 text-muted-foreground hover:bg-muted',
-              )}
-            >
-              <div className="flex items-center gap-1.5">
-                {isPast && <CheckCircle2 className="w-5 h-5 flex-shrink-0" />}
-                <span className="font-bold text-xl whitespace-nowrap">{phase.label}</span>
-              </div>
-              {phase.line1 != null && (
-                <div className={cn('text-[19px] leading-snug text-center font-medium', isActive ? 'text-white/90' : 'text-black')}>
-                  <div>{phase.line1}</div>
-                  <div>{phase.line2}</div>
+          <Card
+            key={phase.key}
+            className={cn(
+              'cursor-pointer transition-all hover:shadow-md',
+              isActive && 'ring-2 ring-blue-500 bg-blue-50',
+              isPast && 'bg-muted/30 hover:bg-muted/50',
+              !isActive && !isPast && 'bg-muted/10',
+            )}
+            onClick={() => navigate(phase.path)}
+          >
+            <CardContent className="p-4">
+              <div className="flex items-center gap-3">
+                <div className={cn(
+                  'w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0',
+                  isActive ? 'bg-blue-500' : isPast ? 'bg-blue-400' : 'bg-muted',
+                )}>
+                  <phase.icon className="w-5 h-5 text-white" />
                 </div>
-              )}
-            </button>
-          </React.Fragment>
+                <div>
+                  <p className="text-xs font-bold text-muted-foreground">{phase.label}</p>
+                  <p className="text-lg font-bold tabular-nums">{phase.count}<span className="text-sm font-normal ml-0.5">건</span></p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
         );
       })}
-      {emptySlots > 0 && Array.from({ length: emptySlots }).map((_, i) => (
-        <div key={`empty-${i}`} className="flex-1 basis-0 min-w-0" />
-      ))}
     </div>
   );
 }
@@ -513,7 +508,7 @@ export default function AbleTaskRegisterPage() {
                   <TableHeader>
                     <TableRow className="bg-muted/50">
                       <TableHead className="w-[40px] text-center" />
-                      <TableHead className="pl-2">데이터 (비용유형분류)</TableHead>
+                      <TableHead className="pl-2 w-[50%]">데이터 (비용유형분류)</TableHead>
                       <TableHead className="text-right w-[110px]">코스트센터 수</TableHead>
                       <TableHead className="text-right w-[110px]">공급업체 수</TableHead>
                       <TableHead className="text-right w-[130px]">합계 금액</TableHead>

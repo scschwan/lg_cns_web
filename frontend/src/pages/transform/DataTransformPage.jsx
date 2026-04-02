@@ -150,6 +150,16 @@ function MultiSelectCheckList({ items, checkedSet, onCheckedChange, renderLabel,
     return () => window.removeEventListener('mouseup', handleGlobalMouseUp);
   }, []);
 
+  useEffect(() => {
+    if (originalPanelRef.current) {
+      if (isOriginalCollapsed) {
+        originalPanelRef.current.resize(5);
+      } else {
+        originalPanelRef.current.resize(50);
+      }
+    }
+  }, [isOriginalCollapsed]);
+
   const handleCheckToggle = (key) => {
     if (cursorSet.size > 0 && cursorSet.has(key)) {
       const isCurrentlyChecked = checkedSet.has(key);
@@ -242,6 +252,7 @@ function DataTransformPage() {
   const [origKeywordFilter, setOrigKeywordFilter] = useState(null);
   const [origLoading, setOrigLoading] = useState(false);
   const [isOriginalCollapsed, setIsOriginalCollapsed] = useState(false);
+  const originalPanelRef = useRef(null);
   const [origSort, setOrigSort] = useState(null);
 
   // ===== 검색 결과 데이터 테이블 =====
@@ -653,7 +664,7 @@ function DataTransformPage() {
           <div className="xl:col-span-8 h-full flex flex-col min-h-0">
 
             <PanelGroup orientation="vertical">
-              <Panel defaultSize={50} minSize={20}>
+              <Panel ref={originalPanelRef} defaultSize={50} minSize={5} collapsible={true} collapsedSize={5}>
                 {/* 1. 원본 데이터 테이블 */}
                 <Card className="h-full overflow-hidden transition-all duration-300 shadow-sm flex flex-col">
                   <CardHeader
