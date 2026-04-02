@@ -780,7 +780,7 @@ export default function LongListPage() {
                   <TableHeader>
                     <TableRow className="bg-muted/50">
                       <TableHead className="w-[40px] text-center" />
-                      <TableHead className="pl-2">데이터 (비용유형분류)</TableHead>
+                      <TableHead className="pl-2 w-[50%]">데이터 (비용유형분류)</TableHead>
                       <TableHead className="text-right w-[120px]">코스트센터 수</TableHead>
                       <TableHead className="text-right w-[120px]">공급업체 수</TableHead>
                       <TableHead className="text-right w-[140px]">합계 금액</TableHead>
