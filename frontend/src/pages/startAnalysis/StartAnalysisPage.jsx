@@ -319,8 +319,13 @@ export default function StartAnalysisPage() {
 
     setRequiredColumns(prev => {
       const newCols = { ...prev };
-      if (!newCols.category && fileInfo.accountColumnName) {
-        newCols.category = trimMatch(columns, fileInfo.accountColumnName);
+      if (!newCols.category) {
+        if (fileInfo.accountColumnName) {
+          newCols.category = trimMatch(columns, fileInfo.accountColumnName);
+        }
+        if (!newCols.category) {
+          newCols.category = trimMatch(columns, '세목') || containsMatch(columns, '세목');
+        }
       }
       if (!newCols.amount && fileInfo.amountColumnName) {
         newCols.amount = trimMatch(columns, fileInfo.amountColumnName);
