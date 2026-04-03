@@ -521,23 +521,35 @@ function PhaseNavigationBar({ stats, summary, currentPhase, projectId, navigate 
   const phases = [
     {
       key: 'LONG_LIST', label: 'Raw List', icon: ClipboardList,
-      count: stats ? (stats.rawSubClusterCount ?? 0) : 0,
+      accountCount: stats?.rawAccountCount ?? 0,
+      clusterCount: stats?.rawClusterCount ?? 0,
+      subClusterCount: stats?.rawSubClusterCount ?? 0,
+      amount: stats?.rawTotalAmount ?? 0,
       path: `/projects/${projectId}/longlist`,
     },
     {
       key: 'SHORT_LIST', label: 'Long List', icon: ListFilter,
-      count: stats ? (stats.longListSubClusterCount ?? 0) : 0,
+      accountCount: stats?.longListAccountCount ?? 0,
+      clusterCount: stats?.longListClusterCount ?? 0,
+      subClusterCount: stats?.longListSubClusterCount ?? 0,
+      amount: stats?.totalAmount ?? 0,
       path: `/projects/${projectId}/shortlist`,
     },
     {
       key: 'ABLE_REGISTER', label: 'Short List', icon: FilePlus,
-      count: stats ? (stats.shortListSubClusterCount ?? 0) : 0,
+      accountCount: stats?.shortListAccountCount ?? 0,
+      clusterCount: stats?.shortListClusterCount ?? 0,
+      subClusterCount: stats?.shortListSubClusterCount ?? 0,
+      amount: stats?.shortListTotalAmount ?? 0,
       path: `/projects/${projectId}/able-register`,
     },
     {
       key: 'ABLE_MANAGE', label: 'Able 과제', icon: Settings,
-      count: summary ? (summary.totalTasks ?? 0) : 0,
+      taskCount: summary?.totalTasks ?? 0,
+      amount: summary?.totalBaseAmount ?? 0,
+      savingAmount: summary?.totalSavingAmount ?? 0,
       path: `/projects/${projectId}/able-manage`,
+      isTask: true,
     },
   ];
   const currentIdx = phases.findIndex(p => p.key === currentPhase);
@@ -565,9 +577,29 @@ function PhaseNavigationBar({ stats, summary, currentPhase, projectId, navigate 
                 )}>
                   <phase.icon className="w-5 h-5 text-white" />
                 </div>
-                <div>
+                <div className="min-w-0">
                   <p className="text-xs font-bold text-muted-foreground">{phase.label}</p>
-                  <p className="text-lg font-bold tabular-nums">{phase.count}<span className="text-sm font-normal ml-0.5">건</span></p>
+                  {phase.isTask ? (
+                    <>
+                      <p className="text-sm font-semibold tabular-nums">{phase.taskCount}<span className="text-xs font-normal ml-0.5">건</span></p>
+                      <p className="text-xs text-muted-foreground tabular-nums truncate" title={`모수 ${(phase.amount || 0).toLocaleString()}원 / 절감 ${(phase.savingAmount || 0).toLocaleString()}원`}>
+                        모수 {formatAmount(phase.amount)} / 절감 {formatAmount(phase.savingAmount)}
+                      </p>
+                    </>
+                  ) : (
+                    <>
+                      <p className="text-xs tabular-nums">
+                        <span className="font-semibold">{phase.accountCount}</span><span className="text-muted-foreground">목</span>
+                        <span className="text-muted-foreground mx-0.5">/</span>
+                        <span className="font-semibold">{phase.clusterCount}</span><span className="text-muted-foreground">클러스터</span>
+                        <span className="text-muted-foreground mx-0.5">/</span>
+                        <span className="font-semibold">{phase.subClusterCount}</span><span className="text-muted-foreground">세부</span>
+                      </p>
+                      <p className="text-xs text-muted-foreground tabular-nums truncate" title={`${(phase.amount || 0).toLocaleString()}원`}>
+                        {formatAmount(phase.amount)}원
+                      </p>
+                    </>
+                  )}
                 </div>
               </div>
             </CardContent>
