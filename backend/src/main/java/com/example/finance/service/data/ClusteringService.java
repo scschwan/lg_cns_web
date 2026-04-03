@@ -43,6 +43,9 @@ public class ClusteringService {
     private final SearchKeywordHierarchyRepository keywordHierarchyRepository;
     private final ClusterStatisticsService clusterStatisticsService;
 
+    /** 키워드 계층은 시스템 전역(모든 프로젝트 공유) */
+    private static final String GLOBAL_KEYWORD_SCOPE = "GLOBAL";
+
     private static final ExecutorService EXECUTOR = Executors.newFixedThreadPool(
             Math.max(2, Runtime.getRuntime().availableProcessors()));
 
@@ -2049,11 +2052,11 @@ public class ClusteringService {
 
     /**
      * 키워드 계층 전체 조회 (트리 구조로 반환)
-     * Scoped by projectId (shared across sessions within a project).
+     * 시스템 전역 (모든 프로젝트/세션에서 동일한 키워드 계층 공유)
      */
     public List<Map<String, Object>> getKeywordHierarchy(String projectId) {
         List<SearchKeywordHierarchy> all = keywordHierarchyRepository
-                .findByProjectIdOrderByLevelAscDisplayOrderAsc(projectId);
+                .findByProjectIdOrderByLevelAscDisplayOrderAsc(GLOBAL_KEYWORD_SCOPE);
 
         // 레벨별 그룹핑
         Map<Integer, List<SearchKeywordHierarchy>> byLevel = all.stream()
@@ -2098,7 +2101,7 @@ public class ClusteringService {
     }
 
     /**
-     * 키워드 추가 (project-scoped)
+     * 키워드 추가 (시스템 전역)
      */
     public Map<String, Object> addKeywordHierarchy(
             String projectId, Integer level, String parentId, String keyword) {
@@ -2114,14 +2117,14 @@ public class ClusteringService {
         }
 
         int maxOrder = keywordHierarchyRepository
-                .findByProjectIdAndLevelOrderByDisplayOrderAsc(projectId, level)
+                .findByProjectIdAndLevelOrderByDisplayOrderAsc(GLOBAL_KEYWORD_SCOPE, level)
                 .stream()
                 .mapToInt(SearchKeywordHierarchy::getDisplayOrder)
                 .max()
                 .orElse(0);
 
         SearchKeywordHierarchy newKw = SearchKeywordHierarchy.builder()
-                .projectId(projectId)
+                .projectId(GLOBAL_KEYWORD_SCOPE)
                 .level(level)
                 .parentId(level > 1 ? parentId : null)
                 .keyword(keyword)
@@ -2158,7 +2161,7 @@ public class ClusteringService {
     }
 
     /**
-     * 키워드 삭제 (하위 키워드도 함께 삭제, project-scoped)
+     * 키워드 삭제 (하위 키워드도 함께 삭제, 시스템 전역)
      */
     public Map<String, Object> deleteKeywordHierarchy(String projectId, String id) {
         SearchKeywordHierarchy kw = keywordHierarchyRepository.findById(id)
@@ -2166,7 +2169,7 @@ public class ClusteringService {
 
         int deletedCount = 1;
 
-        deletedCount += deleteChildKeywords(projectId, id);
+        deletedCount += deleteChildKeywords(GLOBAL_KEYWORD_SCOPE, id);
 
         keywordHierarchyRepository.delete(kw);
 

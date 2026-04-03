@@ -38,6 +38,9 @@ public class DetailClusteringService {
     private final SearchKeywordHierarchyRepository keywordHierarchyRepository;
     private final ClusterStatisticsService clusterStatisticsService;
 
+    /** 키워드 계층은 시스템 전역(모든 프로젝트 공유) */
+    private static final String GLOBAL_KEYWORD_SCOPE = "GLOBAL";
+
     private static final ExecutorService EXECUTOR = Executors.newFixedThreadPool(
             Math.max(2, Runtime.getRuntime().availableProcessors()));
 
@@ -983,7 +986,7 @@ public class DetailClusteringService {
 
     public List<Map<String, Object>> getKeywordHierarchy(String projectId) {
         List<SearchKeywordHierarchy> all = keywordHierarchyRepository
-                .findByProjectIdOrderByLevelAscDisplayOrderAsc(projectId);
+                .findByProjectIdOrderByLevelAscDisplayOrderAsc(GLOBAL_KEYWORD_SCOPE);
 
         Map<String, List<SearchKeywordHierarchy>> byParent = all.stream()
                 .filter(k -> k.getParentId() != null)
@@ -1032,14 +1035,14 @@ public class DetailClusteringService {
         }
 
         int maxOrder = keywordHierarchyRepository
-                .findByProjectIdAndLevelOrderByDisplayOrderAsc(projectId, level)
+                .findByProjectIdAndLevelOrderByDisplayOrderAsc(GLOBAL_KEYWORD_SCOPE, level)
                 .stream()
                 .mapToInt(SearchKeywordHierarchy::getDisplayOrder)
                 .max()
                 .orElse(0);
 
         SearchKeywordHierarchy newKw = SearchKeywordHierarchy.builder()
-                .projectId(projectId)
+                .projectId(GLOBAL_KEYWORD_SCOPE)
                 .level(level)
                 .parentId(level > 1 ? parentId : null)
                 .keyword(keyword)
@@ -1076,7 +1079,7 @@ public class DetailClusteringService {
                 .orElseThrow(() -> new BusinessException("KEYWORD_NOT_FOUND", "키워드를 찾을 수 없습니다."));
 
         int deletedCount = 1;
-        deletedCount += deleteChildKeywords(projectId, id);
+        deletedCount += deleteChildKeywords(GLOBAL_KEYWORD_SCOPE, id);
         keywordHierarchyRepository.delete(kw);
 
         Map<String, Object> result = new HashMap<>();

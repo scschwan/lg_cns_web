@@ -834,7 +834,10 @@ function MultiFileUploadPage() {
         }
     };
 
+    const [isCompleting, setIsCompleting] = useState(false);
+
     const handleProjectComplete = async () => {
+        setIsCompleting(true);
         try {
             await projectService.completeProject(projectId);
             setCompleteDialogOpen(false);
@@ -845,6 +848,8 @@ function MultiFileUploadPage() {
         } catch (error) {
             console.error('프로젝트 완료 실패:', error);
             showError('완료 처리 실패', getErrorMsg(error, '프로젝트 완료 처리에 실패했습니다.'));
+        } finally {
+            setIsCompleting(false);
         }
     };
 
@@ -1567,8 +1572,11 @@ function MultiFileUploadPage() {
                             </DialogDescription>
                         </DialogHeader>
                         <DialogFooter>
-                            <Button variant="outline" onClick={() => setCompleteDialogOpen(false)}>취소</Button>
-                            <Button onClick={handleProjectComplete} className="bg-sky-500 hover:bg-sky-600">프로젝트 완료</Button>
+                            <Button variant="outline" onClick={() => setCompleteDialogOpen(false)} disabled={isCompleting}>취소</Button>
+                            <Button onClick={handleProjectComplete} disabled={isCompleting} className="bg-sky-500 hover:bg-sky-600">
+                                {isCompleting && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
+                                {isCompleting ? '완료 처리 중...' : '프로젝트 완료'}
+                            </Button>
                         </DialogFooter>
                     </DialogContent>
                 </Dialog>
