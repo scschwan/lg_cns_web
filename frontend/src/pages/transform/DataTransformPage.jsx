@@ -723,7 +723,7 @@ function DataTransformPage() {
                 <Panel defaultSize={50} minSize={15}>
                   {/* 1. 원본 데이터 테이블 */}
                   <Card className="h-full flex flex-col min-w-0 min-h-0 shadow-sm overflow-hidden">
-                    <CardContent className="p-0 flex-1 min-h-0 flex flex-col overflow-auto">
+                    <CardContent className="p-0 flex-1 min-h-0 flex flex-col overflow-hidden">
                       <AdvancedTable
                         columns={origColumns}
                         data={sortedOrigData}
