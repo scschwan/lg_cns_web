@@ -1,4 +1,4 @@
-최종 수정일: 2026-03-19 (Phase 4 피드백 반영 완료)
+최종 수정일: 2026-04-03 (서비스 개선 반영)
 
 # Finance Tool - REST API 엔드포인트 목록
 
@@ -252,6 +252,17 @@
 | POST | `.../preprocessing/remove-single-char` | 1글자 키워드 제거 | O |
 | POST | `.../preprocessing/extract-keywords-nlp` | NLP 기반 키워드 추출 (형태소 분석) | O |
 
+### 사용자 레벨 전처리 설정 (2026-04-03 추가)
+
+**Base Path**: `/api/preprocessing`
+
+| Method | URL | 설명 | 인증 |
+|--------|-----|------|------|
+| GET | `/api/preprocessing/user-config` | 사용자 기본 구분자/불용어 설정 조회 | O |
+| PUT | `/api/preprocessing/user-config` | 사용자 기본 구분자/불용어 설정 저장 | O |
+
+> 세션과 무관하게 사용자 계정 단위로 구분자/불용어 설정을 저장한다. 새 세션 생성 시 사용자 설정이 기본값으로 자동 적용된다.
+
 ---
 
 ## 8. Transform (데이터 변환 - Step 4)
@@ -464,6 +475,14 @@
 | PUT | `.../tasks/{taskId}` | Task 수정 | O |
 | POST | `.../tasks/{taskId}/reset` | Task 초기화 | O |
 | DELETE | `.../tasks/{taskId}` | Task 삭제 | O |
+
+### Excel 내보내기 (2026-04-03 추가)
+
+| Method | URL | 설명 | 인증 |
+|--------|-----|------|------|
+| GET | `.../tasks/export/excel` | Task 목록 Excel 다운로드 (?status= 필터) | O |
+
+> `status` 파라미터: 미지정=전체, `진행중`=Able과제, `완료`=완료과제. 이슈(issues), 진행사항(progressDetails) 컬럼 포함.
 
 ### 문서/링크 관리
 

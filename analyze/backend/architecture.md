@@ -1,4 +1,4 @@
-최종 수정일: 2026-03-19 (Phase 4 피드백 반영 완료)
+최종 수정일: 2026-04-03 (서비스 개선 반영)
 
 # Finance Tool - Spring Boot 백엔드 아키텍처 문서
 
@@ -30,16 +30,16 @@ backend/
     FinanceBackendApplication.java          # 메인 애플리케이션
     config/                                 # 설정 클래스 (5개)
     security/                               # JWT 인증 (4개)
-    controller/                             # REST 컨트롤러 (20개)
+    controller/                             # REST 컨트롤러 (21개, UserPreprocessingConfigController 추가)
       auth/   admin/   project/   upload/
       fileload/   data/   costreduction/   common/
     service/                                # 비즈니스 로직 (26개)
       auth/   admin/   project/   upload/
       data/   costreduction/   common/
-    repository/                             # 데이터 접근 (21개)
+    repository/                             # 데이터 접근 (22개, UserPreprocessingConfigRepository 추가)
       auth/   admin/   project/   session/
       upload/   data/   costreduction/
-    model/                                  # 도메인 모델 (23개)
+    model/                                  # 도메인 모델 (24개, UserPreprocessingConfigDocument 추가)
       auth/   admin/   project/   session/
       upload/   data/   costreduction/
     dto/                                    # Request/Response DTO
