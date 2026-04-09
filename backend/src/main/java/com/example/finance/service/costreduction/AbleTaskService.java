@@ -101,8 +101,26 @@ public class AbleTaskService {
         Map<String, ClusterStatistics> statsMap = buildStatsMap(tasks);
         Map<String, String> parentNameMap = buildParentNameMap(statsMap);
 
+        // 과제별 최신 주차별 진척사항 매핑
+        Map<String, TaskWeeklyProgress> latestWeeklyMap = new HashMap<>();
+        for (AbleTask task : tasks) {
+            List<TaskWeeklyProgress> weeklyList = weeklyProgressRepository.findByTaskIdOrderByCreatedAtDesc(task.getId());
+            if (!weeklyList.isEmpty()) {
+                latestWeeklyMap.put(task.getId(), weeklyList.get(0));
+            }
+        }
+
         return tasks.stream()
-                .map(t -> toResponse(t, docCounts.getOrDefault(t.getId(), 0L).intValue(), statsMap, parentNameMap))
+                .map(t -> {
+                    TaskResponse resp = toResponse(t, docCounts.getOrDefault(t.getId(), 0L).intValue(), statsMap, parentNameMap);
+                    TaskWeeklyProgress latest = latestWeeklyMap.get(t.getId());
+                    if (latest != null) {
+                        resp.setLatestWeekNumber(latest.getWeekNumber());
+                        resp.setLatestProgressDetails(latest.getProgressDetails());
+                        resp.setLatestIssues(latest.getIssues());
+                    }
+                    return resp;
+                })
                 .toList();
     }
 
@@ -400,6 +418,15 @@ public class AbleTaskService {
         Map<String, ClusterStatistics> statsMap = buildStatsMap(tasks);
         Map<String, String> parentNameMap = buildParentNameMap(statsMap);
 
+        // 과제별 최신 주차별 진척사항 매핑
+        Map<String, TaskWeeklyProgress> latestWeeklyMap = new java.util.HashMap<>();
+        for (AbleTask task : tasks) {
+            List<TaskWeeklyProgress> weeklyList = weeklyProgressRepository.findByTaskIdOrderByCreatedAtDesc(task.getId());
+            if (!weeklyList.isEmpty()) {
+                latestWeeklyMap.put(task.getId(), weeklyList.get(0));
+            }
+        }
+
         DateTimeFormatter dtf = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
 
         try (SXSSFWorkbook workbook = new SXSSFWorkbook(100)) {
@@ -476,8 +503,13 @@ public class AbleTaskService {
                 row.createCell(11).setCellValue(task.getProgress() != null ? task.getProgress() : 0);
                 row.createCell(12).setCellValue(nullSafe(task.getStatus()));
                 row.createCell(13).setCellValue(nullSafe(task.getRating()));
-                row.createCell(14).setCellValue(nullSafe(task.getIssues()));
-                row.createCell(15).setCellValue(nullSafe(task.getProgressDetails()));
+                TaskWeeklyProgress latestWeekly = latestWeeklyMap.get(task.getId());
+                String issuesValue = latestWeekly != null && latestWeekly.getIssues() != null && !latestWeekly.getIssues().isEmpty()
+                        ? latestWeekly.getIssues() : nullSafe(task.getIssues());
+                String progressValue = latestWeekly != null && latestWeekly.getProgressDetails() != null && !latestWeekly.getProgressDetails().isEmpty()
+                        ? latestWeekly.getProgressDetails() : nullSafe(task.getProgressDetails());
+                row.createCell(14).setCellValue(issuesValue);
+                row.createCell(15).setCellValue(progressValue);
                 row.createCell(16).setCellValue(nullSafe(task.getCustomerFollowUp()));
                 row.createCell(17).setCellValue(nullSafe(task.getActionItems()));
                 row.createCell(18).setCellValue(task.getCreatedAt() != null ? task.getCreatedAt().format(dtf) : "");

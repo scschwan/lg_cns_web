@@ -54,9 +54,9 @@ const RATING_COLORS = {
 };
 
 const formatAmount = (v) => {
-  if (v >= 100000000) return (v / 100000000).toFixed(1) + '억';
-  if (v >= 10000000) return (v / 10000000).toFixed(1) + '천만';
-  if (v >= 10000) return (v / 10000).toFixed(0) + '만';
+  if (v >= 100000000) return Number((v / 100000000).toFixed(1)).toLocaleString() + '억';
+  if (v >= 10000000) return Number((v / 10000000).toFixed(1)).toLocaleString() + '천만';
+  if (v >= 10000) return Number((v / 10000).toFixed(0)).toLocaleString() + '만';
   return v?.toLocaleString() ?? '0';
 };
 
@@ -281,24 +281,24 @@ function PhaseNavigationBar({ stats, summary, completedSummary, currentPhase, pr
                   <phase.icon className="w-5 h-5 text-white" />
                 </div>
                 <div className="min-w-0">
-                  <p className="text-xs font-bold text-muted-foreground">{phase.label}</p>
+                  <p className="text-sm font-bold text-muted-foreground">{phase.label}</p>
                   {phase.isTask ? (
                     <>
-                      <p className="text-sm font-semibold tabular-nums">{phase.taskCount}<span className="text-xs font-normal ml-0.5">건</span></p>
-                      <p className="text-xs text-muted-foreground tabular-nums truncate" title={`모수 ${(phase.amount || 0).toLocaleString()}원 / 절감 ${(phase.savingAmount || 0).toLocaleString()}원`}>
+                      <p className="text-base font-semibold tabular-nums">{phase.taskCount}<span className="text-sm font-normal ml-0.5">건</span></p>
+                      <p className="text-sm text-muted-foreground tabular-nums truncate" title={`모수 ${(phase.amount || 0).toLocaleString()}원 / 절감 ${(phase.savingAmount || 0).toLocaleString()}원`}>
                         모수 {formatAmount(phase.amount)} / 절감 {formatAmount(phase.savingAmount)}
                       </p>
                     </>
                   ) : (
                     <>
-                      <p className="text-xs tabular-nums">
+                      <p className="text-sm tabular-nums">
                         <span className="font-semibold">{phase.accountCount}</span><span className="text-muted-foreground">목</span>
                         <span className="text-muted-foreground mx-0.5">/</span>
                         <span className="font-semibold">{phase.clusterCount}</span><span className="text-muted-foreground">클러스터</span>
                         <span className="text-muted-foreground mx-0.5">/</span>
                         <span className="font-semibold">{phase.subClusterCount}</span><span className="text-muted-foreground">세부</span>
                       </p>
-                      <p className="text-xs text-muted-foreground tabular-nums truncate" title={`${(phase.amount || 0).toLocaleString()}원`}>
+                      <p className="text-sm text-muted-foreground tabular-nums truncate" title={`${(phase.amount || 0).toLocaleString()}원`}>
                         {formatAmount(phase.amount)}원
                       </p>
                     </>

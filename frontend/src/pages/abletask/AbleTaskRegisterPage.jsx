@@ -37,8 +37,8 @@ import { useEditorLock } from '@/hooks/useEditorLock';
 import { useDashboardStatus } from '@/hooks/useDashboardStatus';
 
 const formatAmount = (v) => {
-  if (v >= 100000000) return (v / 100000000).toFixed(1) + '억';
-  if (v >= 10000) return (v / 10000).toFixed(0) + '만';
+  if (v >= 100000000) return Number((v / 100000000).toFixed(1)).toLocaleString() + '억';
+  if (v >= 10000) return Number((v / 10000).toFixed(0)).toLocaleString() + '만';
   return v?.toLocaleString() ?? '0';
 };
 
@@ -137,7 +137,7 @@ function FileUploadDialog({ open, onClose, onUpload }) {
 }
 
 /* ====== Tree Row ====== */
-function TreeRow({ item, level = 0, expandedIds, toggleExpand, checkedIds, onCheckChange }) {
+function TreeRow({ item, level = 0, expandedIds, toggleExpand, checkedIds, onCheckChange, lockedIds }) {
   const hasChildren = item.children && item.children.length > 0;
   const isExpanded = expandedIds.has(item.id);
   const paddingLeft = 16 + level * 24;
@@ -188,6 +188,7 @@ function TreeRow({ item, level = 0, expandedIds, toggleExpand, checkedIds, onChe
             ) : <span className="w-4 h-4 flex-shrink-0" />}
             <span className={cn(level === 0 ? 'font-semibold' : 'text-foreground')}>{displayName}</span>
             {level === 0 && hasChildren && <Badge variant="secondary" className="text-[10px] ml-1 px-1.5 py-0">{item.children.length}</Badge>}
+            {!hasChildren && lockedIds?.has(item.statisticsId || item.id) && <Badge className="text-[10px] ml-1 px-1.5 py-0 bg-green-100 text-green-700 border-green-300">과제등록됨</Badge>}
           </div>
         </TableCell>
         <TableCell className="text-right tabular-nums py-2.5">{costCenterCount.toLocaleString()}</TableCell>
@@ -195,7 +196,7 @@ function TreeRow({ item, level = 0, expandedIds, toggleExpand, checkedIds, onChe
         <TableCell className="text-right tabular-nums py-2.5 font-medium">{formatAmount(item.totalAmount)}</TableCell>
       </TableRow>
       {isExpanded && hasChildren && item.children.map(child => (
-        <TreeRow key={child.id} item={child} level={level + 1} expandedIds={expandedIds} toggleExpand={toggleExpand} checkedIds={checkedIds} onCheckChange={onCheckChange} />
+        <TreeRow key={child.id} item={child} level={level + 1} expandedIds={expandedIds} toggleExpand={toggleExpand} checkedIds={checkedIds} onCheckChange={onCheckChange} lockedIds={lockedIds} />
       ))}
     </>
   );
@@ -255,15 +256,15 @@ function PhaseNavigationBar({ stats, currentPhase, projectId, navigate }) {
                   <phase.icon className="w-5 h-5 text-white" />
                 </div>
                 <div className="min-w-0">
-                  <p className="text-xs font-bold text-muted-foreground">{phase.label}</p>
-                  <p className="text-xs tabular-nums">
+                  <p className="text-sm font-bold text-muted-foreground">{phase.label}</p>
+                  <p className="text-sm tabular-nums">
                     <span className="font-semibold">{phase.accountCount}</span><span className="text-muted-foreground">목</span>
                     <span className="text-muted-foreground mx-0.5">/</span>
                     <span className="font-semibold">{phase.clusterCount}</span><span className="text-muted-foreground">클러스터</span>
                     <span className="text-muted-foreground mx-0.5">/</span>
                     <span className="font-semibold">{phase.subClusterCount}</span><span className="text-muted-foreground">세부</span>
                   </p>
-                  <p className="text-xs text-muted-foreground tabular-nums truncate" title={`${(phase.amount || 0).toLocaleString()}원`}>
+                  <p className="text-sm text-muted-foreground tabular-nums truncate" title={`${(phase.amount || 0).toLocaleString()}원`}>
                     {formatAmount(phase.amount)}원
                   </p>
                 </div>
@@ -288,6 +289,7 @@ export default function AbleTaskRegisterPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [unlocking, setUnlocking] = useState(false);
+  const [lockedIds, setLockedIds] = useState(new Set());
 
   const [expandedIds, setExpandedIds] = useState(new Set());
   const [checkedIds, setCheckedIds] = useState(new Set());
@@ -315,10 +317,12 @@ export default function AbleTaskRegisterPage() {
     const load = async () => {
       try {
         setLoading(true);
-        const [treeRes, statsRes] = await Promise.all([
+        const [treeRes, statsRes, lockedRes] = await Promise.all([
           costReductionService.getShortListSelectionTree(projectId),
           costReductionService.getShortListStats(projectId),
+          costReductionService.getLockedStatisticsIds(projectId).catch(() => []),
         ]);
+        setLockedIds(new Set(lockedRes));
         const tree = treeRes.tree || [];
         setTreeData(tree);
         setPhaseStats(statsRes);
@@ -513,7 +517,7 @@ export default function AbleTaskRegisterPage() {
           <Card>
             <CardHeader className="pb-3 px-5 pt-5">
               <div className="flex items-center justify-between">
-                <CardTitle className="text-sm font-semibold">비용 유형 분류 (Long List 기반)</CardTitle>
+                <CardTitle className="text-sm font-semibold">비용 유형 분류 (Short List 기반)</CardTitle>
                 <div className="flex items-center gap-2">
                   <Button variant="ghost" size="sm" className="text-xs h-7 px-2" onClick={() => { const ids = new Set(); const t = (nodes) => { nodes.forEach(n => { ids.add(n.id); if (n.children?.length) t(n.children); }); }; t(treeData); setExpandedIds(ids); }}>모두 펼치기</Button>
                   <Button variant="ghost" size="sm" className="text-xs h-7 px-2" onClick={() => setExpandedIds(new Set())}>모두 접기</Button>
@@ -534,7 +538,7 @@ export default function AbleTaskRegisterPage() {
                   </TableHeader>
                   <TableBody>
                     {treeData.map(item => (
-                      <TreeRow key={item.id} item={item} expandedIds={expandedIds} toggleExpand={toggleExpand} checkedIds={checkedIds} onCheckChange={onCheckChange} />
+                      <TreeRow key={item.id} item={item} expandedIds={expandedIds} toggleExpand={toggleExpand} checkedIds={checkedIds} onCheckChange={onCheckChange} lockedIds={lockedIds} />
                     ))}
                     {treeData.length > 0 && (
                       <TableRow className="bg-primary/5 font-bold border-t-2">

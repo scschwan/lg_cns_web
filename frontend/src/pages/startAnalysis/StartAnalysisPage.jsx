@@ -671,6 +671,8 @@ export default function StartAnalysisPage() {
   };
 
   // ===== AdvancedTable 컬럼 빌드 =====
+  const NO_COMMA_COLUMNS = useMemo(() => new Set(['회계연도', '공급업체코드', '회사코드']), []);
+
   const tableColumns = useMemo(() => {
     return visibleColumns.map(col => ({
       key: col,
@@ -680,12 +682,15 @@ export default function StartAnalysisPage() {
       render: (row) => {
         const val = row[col];
         if (val == null) return '';
+        const noComma = NO_COMMA_COLUMNS.has(col);
         if (typeof val === 'number') {
+          if (noComma) return <span className="whitespace-nowrap">{Number.isInteger(val) ? val : Math.round(val)}</span>;
           if (Number.isInteger(val)) return <span className="whitespace-nowrap">{val.toLocaleString()}</span>;
           if (val === Math.floor(val)) return <span className="whitespace-nowrap">{Math.round(val).toLocaleString()}</span>;
           return <span className="whitespace-nowrap">{val.toLocaleString()}</span>;
         }
         if (typeof val === 'string' && val.trim() !== '' && !isNaN(Number(val))) {
+          if (noComma) return <span className="whitespace-nowrap">{val}</span>;
           const num = Number(val);
           if (Number.isInteger(num) || num === Math.floor(num)) return <span className="whitespace-nowrap">{Math.round(num).toLocaleString()}</span>;
           return <span className="whitespace-nowrap">{num.toLocaleString()}</span>;
@@ -693,7 +698,7 @@ export default function StartAnalysisPage() {
         return <span className="whitespace-nowrap">{String(val)}</span>;
       },
     }));
-  }, [visibleColumns]);
+  }, [visibleColumns, NO_COMMA_COLUMNS]);
 
   // ===== 프론트 정렬 =====
   const sortDataFn = useCallback((data, sort) => {

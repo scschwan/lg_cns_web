@@ -56,9 +56,9 @@ const STATUS_COLORS = {
 };
 
 const formatAmount = (v) => {
-  if (v >= 100000000) return (v / 100000000).toFixed(1) + '억';
-  if (v >= 10000000) return (v / 10000000).toFixed(1) + '천만';
-  if (v >= 10000) return (v / 10000).toFixed(0) + '만';
+  if (v >= 100000000) return Number((v / 100000000).toFixed(1)).toLocaleString() + '억';
+  if (v >= 10000000) return Number((v / 10000000).toFixed(1)).toLocaleString() + '천만';
+  if (v >= 10000) return Number((v / 10000).toFixed(0)).toLocaleString() + '만';
   return v?.toLocaleString() ?? '0';
 };
 
@@ -578,24 +578,24 @@ function PhaseNavigationBar({ stats, summary, currentPhase, projectId, navigate 
                   <phase.icon className="w-5 h-5 text-white" />
                 </div>
                 <div className="min-w-0">
-                  <p className="text-xs font-bold text-muted-foreground">{phase.label}</p>
+                  <p className="text-sm font-bold text-muted-foreground">{phase.label}</p>
                   {phase.isTask ? (
                     <>
-                      <p className="text-sm font-semibold tabular-nums">{phase.taskCount}<span className="text-xs font-normal ml-0.5">건</span></p>
-                      <p className="text-xs text-muted-foreground tabular-nums truncate" title={`모수 ${(phase.amount || 0).toLocaleString()}원 / 절감 ${(phase.savingAmount || 0).toLocaleString()}원`}>
+                      <p className="text-base font-semibold tabular-nums">{phase.taskCount}<span className="text-sm font-normal ml-0.5">건</span></p>
+                      <p className="text-sm text-muted-foreground tabular-nums truncate" title={`모수 ${(phase.amount || 0).toLocaleString()}원 / 절감 ${(phase.savingAmount || 0).toLocaleString()}원`}>
                         모수 {formatAmount(phase.amount)} / 절감 {formatAmount(phase.savingAmount)}
                       </p>
                     </>
                   ) : (
                     <>
-                      <p className="text-xs tabular-nums">
+                      <p className="text-sm tabular-nums">
                         <span className="font-semibold">{phase.accountCount}</span><span className="text-muted-foreground">목</span>
                         <span className="text-muted-foreground mx-0.5">/</span>
                         <span className="font-semibold">{phase.clusterCount}</span><span className="text-muted-foreground">클러스터</span>
                         <span className="text-muted-foreground mx-0.5">/</span>
                         <span className="font-semibold">{phase.subClusterCount}</span><span className="text-muted-foreground">세부</span>
                       </p>
-                      <p className="text-xs text-muted-foreground tabular-nums truncate" title={`${(phase.amount || 0).toLocaleString()}원`}>
+                      <p className="text-sm text-muted-foreground tabular-nums truncate" title={`${(phase.amount || 0).toLocaleString()}원`}>
                         {formatAmount(phase.amount)}원
                       </p>
                     </>
@@ -823,6 +823,7 @@ export default function AbleTaskManagePage() {
                       <TableHead className="text-right cursor-pointer select-none" onClick={() => handleSort('savingAmount')}>절감액<SortIcon colKey="savingAmount" /></TableHead>
                       <TableHead className="w-[120px] cursor-pointer select-none" onClick={() => handleSort('progress')}>진척율<SortIcon colKey="progress" /></TableHead>
                       <TableHead className="text-center cursor-pointer select-none" onClick={() => handleSort('status')}>상태<SortIcon colKey="status" /></TableHead>
+                      <TableHead className="text-center">최근 주차</TableHead><TableHead className="max-w-[150px]">최근 진행사항</TableHead><TableHead className="max-w-[150px]">최근 이슈</TableHead>
                       <TableHead className="text-center">등록시간</TableHead><TableHead className="text-center">수정시간</TableHead>
                       <TableHead className="text-center w-[130px]">관리</TableHead>
                     </TableRow>
@@ -842,6 +843,9 @@ export default function AbleTaskManagePage() {
                         <TableCell className="text-right text-xs tabular-nums text-green-600 font-medium">{formatAmount(task.expectedSavingAmount ?? 0)}</TableCell>
                         <TableCell><div className="flex items-center gap-2"><Progress value={task.progress ?? 0} className="h-1.5 flex-1" /><span className="text-[10px] tabular-nums w-8 text-right">{task.progress ?? 0}%</span></div></TableCell>
                         <TableCell className="text-center"><Badge className={cn('text-[10px] px-1.5', STATUS_MAP[task.status]?.color)}>{task.status}</Badge></TableCell>
+                        <TableCell className="text-center text-xs">{task.latestWeekNumber || '-'}</TableCell>
+                        <TableCell className="text-xs max-w-[150px] truncate" title={task.latestProgressDetails || ''}>{task.latestProgressDetails || '-'}</TableCell>
+                        <TableCell className="text-xs max-w-[150px] truncate" title={task.latestIssues || ''}>{task.latestIssues || '-'}</TableCell>
                         <TableCell className="text-center text-[10px] tabular-nums text-muted-foreground">{task.createdAt ? new Date(task.createdAt).toLocaleString('ko-KR', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }) : '-'}</TableCell>
                         <TableCell className="text-center text-[10px] tabular-nums text-muted-foreground">{task.updatedAt ? new Date(task.updatedAt).toLocaleString('ko-KR', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }) : '-'}</TableCell>
                         <TableCell className="text-center">
@@ -854,7 +858,7 @@ export default function AbleTaskManagePage() {
                         </TableCell>
                       </TableRow>
                     ))}
-                    {sortedTasks.length === 0 && <TableRow><TableCell colSpan={15} className="text-center text-sm text-muted-foreground py-8">{tasks.length === 0 ? '등록된 과제가 없습니다.' : '검색 결과가 없습니다.'}</TableCell></TableRow>}
+                    {sortedTasks.length === 0 && <TableRow><TableCell colSpan={18} className="text-center text-sm text-muted-foreground py-8">{tasks.length === 0 ? '등록된 과제가 없습니다.' : '검색 결과가 없습니다.'}</TableCell></TableRow>}
                   </TableBody>
                 </Table>
               </div>
