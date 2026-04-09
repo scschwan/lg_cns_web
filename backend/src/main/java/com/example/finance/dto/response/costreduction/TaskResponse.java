@@ -43,6 +43,11 @@ public class TaskResponse {
     private LocalDateTime updatedAt;
     private Integer documentCount;
 
+    // 최신 주차별 진척사항
+    private String latestWeekNumber;
+    private String latestProgressDetails;
+    private String latestIssues;
+
     @Data
     @Builder
     @NoArgsConstructor

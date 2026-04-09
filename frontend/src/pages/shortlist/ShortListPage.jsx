@@ -51,8 +51,8 @@ const TOOLTIP_STYLE = {
 };
 
 const formatAmount = (v) => {
-  if (v >= 100000000) return (v / 100000000).toFixed(1) + '억';
-  if (v >= 10000) return (v / 10000).toFixed(0) + '만';
+  if (v >= 100000000) return Number((v / 100000000).toFixed(1)).toLocaleString() + '억';
+  if (v >= 10000) return Number((v / 10000).toFixed(0)).toLocaleString() + '만';
   return v?.toLocaleString() ?? '0';
 };
 
@@ -549,15 +549,15 @@ function PhaseNavigationBar({ stats, currentPhase, projectId, navigate }) {
                   <phase.icon className="w-5 h-5 text-white" />
                 </div>
                 <div className="min-w-0">
-                  <p className="text-xs font-bold text-muted-foreground">{phase.label}</p>
-                  <p className="text-xs tabular-nums">
+                  <p className="text-sm font-bold text-muted-foreground">{phase.label}</p>
+                  <p className="text-sm tabular-nums">
                     <span className="font-semibold">{phase.accountCount}</span><span className="text-muted-foreground">목</span>
                     <span className="text-muted-foreground mx-0.5">/</span>
                     <span className="font-semibold">{phase.clusterCount}</span><span className="text-muted-foreground">클러스터</span>
                     <span className="text-muted-foreground mx-0.5">/</span>
                     <span className="font-semibold">{phase.subClusterCount}</span><span className="text-muted-foreground">세부</span>
                   </p>
-                  <p className="text-xs text-muted-foreground tabular-nums truncate" title={`${(phase.amount || 0).toLocaleString()}원`}>
+                  <p className="text-sm text-muted-foreground tabular-nums truncate" title={`${(phase.amount || 0).toLocaleString()}원`}>
                     {formatAmount(phase.amount)}원
                   </p>
                 </div>
@@ -984,7 +984,7 @@ export default function ShortListPage() {
               )}
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3">
-                  <CardTitle className="text-sm font-semibold">비용 유형 분류 (Raw List 기반)</CardTitle>
+                  <CardTitle className="text-sm font-semibold">비용 유형 분류 (Long List 기반)</CardTitle>
                   <Badge variant="outline" className="text-[10px]">{checkedIds.size}개 선택</Badge>
                 </div>
                 <div className="flex items-center gap-2">

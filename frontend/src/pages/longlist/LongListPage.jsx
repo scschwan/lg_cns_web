@@ -82,8 +82,8 @@ function getNodeName(node) {
 
 const formatAmount = (v) => {
   if (v == null) return '0';
-  if (Math.abs(v) >= 100000000) return (v / 100000000).toFixed(1) + '억';
-  if (Math.abs(v) >= 10000) return (v / 10000).toFixed(0) + '만';
+  if (Math.abs(v) >= 100000000) return Number((v / 100000000).toFixed(1)).toLocaleString() + '억';
+  if (Math.abs(v) >= 10000) return Number((v / 10000).toFixed(0)).toLocaleString() + '만';
   return v.toLocaleString();
 };
 

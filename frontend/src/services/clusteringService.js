@@ -189,10 +189,10 @@ const clusteringService = {
     },
 
     /** 병합 클러스터끼리 병합 */
-    mergeMergedClusters: async (projectId, sessionId, mergedClusterNumbers) => {
+    mergeMergedClusters: async (projectId, sessionId, mergedClusterNumbers, customMergeName) => {
         const response = await api.post(
             `/api/projects/${projectId}/sessions/${sessionId}/clustering/merge-merged`,
-            { mergedClusterNumbers }
+            { mergedClusterNumbers, customMergeName }
         );
         return response.data;
     },

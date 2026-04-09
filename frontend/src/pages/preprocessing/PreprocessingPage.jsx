@@ -443,6 +443,10 @@ function PreprocessingPage() {
 
   // ===== 완료 =====
   const handleComplete = async () => {
+    if (maxKeywordCols === 0 && resultData.length === 0) {
+      alert('키워드 추출을 먼저 수행해야 합니다.');
+      return;
+    }
     try {
       // step_history: 완료 → 다음 step(4) 저장
       await uploadService.updateStepHistory(projectId, sessionId, 4);
