@@ -48,6 +48,9 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
+import {
+  Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
+} from '@/components/ui/dialog';
 
 // ===== 멀티셀렉트 체크박스 리스트 컴포넌트 (StartAnalysis와 동일) =====
 function MultiSelectCheckList({ items, checkedSet, onCheckedChange, renderLabel, getKey, className = '', disabled = false }) {
@@ -194,6 +197,7 @@ function PreprocessingPage() {
   const [minKeywordLength, setMinKeywordLength] = useState(4);
   const [nlpExtracting, setNlpExtracting] = useState(false);
   const [nlpProgress, setNlpProgress] = useState(0);
+  const [keywordAlertOpen, setKeywordAlertOpen] = useState(false);
 
   // 테이블 정렬
   const [targetSort, setTargetSort] = useState(null);
@@ -441,10 +445,16 @@ function PreprocessingPage() {
     }
   };
 
+  // ===== 키워드 추출 여부 판별 =====
+  const hasKeywordExtracted = useMemo(() => {
+    if (maxKeywordCols > 0) return true;
+    return resultData.some(row => Object.keys(row).some(k => /^c\d+$/.test(k)));
+  }, [maxKeywordCols, resultData]);
+
   // ===== 완료 =====
   const handleComplete = async () => {
-    if (maxKeywordCols === 0 && resultData.length === 0) {
-      alert('키워드 추출을 먼저 수행해야 합니다.');
+    if (!hasKeywordExtracted) {
+      setKeywordAlertOpen(true);
       return;
     }
     try {
@@ -969,6 +979,21 @@ function PreprocessingPage() {
           </div>
         </div>
       </div>
+
+      {/* 키워드 추출 미수행 경고 다이얼로그 */}
+      <Dialog open={keywordAlertOpen} onOpenChange={setKeywordAlertOpen}>
+        <DialogContent className="max-w-[400px]">
+          <DialogHeader>
+            <DialogTitle>키워드 추출 필요</DialogTitle>
+            <DialogDescription>
+              키워드 추출을 수행해야 합니다.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button onClick={() => setKeywordAlertOpen(false)}>확인</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
