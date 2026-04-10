@@ -280,25 +280,25 @@ function PhaseNavigationBar({ stats, summary, completedSummary, currentPhase, pr
                 )}>
                   <phase.icon className="w-5 h-5 text-white" />
                 </div>
-                <div className="min-w-0">
-                  <p className="text-sm font-bold text-muted-foreground">{phase.label}</p>
+                <div className="min-w-0 flex-1">
+                  <p className="text-lg font-extrabold text-foreground leading-tight">{phase.label}</p>
                   {phase.isTask ? (
                     <>
-                      <p className="text-base font-semibold tabular-nums">{phase.taskCount}<span className="text-sm font-normal ml-0.5">건</span></p>
-                      <p className="text-sm text-muted-foreground tabular-nums truncate" title={`모수 ${(phase.amount || 0).toLocaleString()}원 / 절감 ${(phase.savingAmount || 0).toLocaleString()}원`}>
+                      <p className="text-xl font-bold tabular-nums leading-tight">{phase.taskCount}<span className="text-base font-semibold ml-0.5">건</span></p>
+                      <p className="text-base text-muted-foreground font-semibold tabular-nums truncate" title={`모수 ${(phase.amount || 0).toLocaleString()}원 / 절감 ${(phase.savingAmount || 0).toLocaleString()}원`}>
                         모수 {formatAmount(phase.amount)} / 절감 {formatAmount(phase.savingAmount)}
                       </p>
                     </>
                   ) : (
                     <>
-                      <p className="text-sm tabular-nums">
-                        <span className="font-semibold">{phase.accountCount}</span><span className="text-muted-foreground">목</span>
-                        <span className="text-muted-foreground mx-0.5">/</span>
-                        <span className="font-semibold">{phase.clusterCount}</span><span className="text-muted-foreground">클러스터</span>
-                        <span className="text-muted-foreground mx-0.5">/</span>
-                        <span className="font-semibold">{phase.subClusterCount}</span><span className="text-muted-foreground">세부</span>
+                      <p className="text-base font-semibold tabular-nums leading-tight">
+                        대계정 <span className="font-bold">{phase.accountCount}</span>
+                        <span className="text-muted-foreground mx-1">/</span>
+                        메인 <span className="font-bold">{phase.clusterCount}</span>
+                        <span className="text-muted-foreground mx-1">/</span>
+                        서브 <span className="font-bold">{phase.subClusterCount}</span>
                       </p>
-                      <p className="text-sm text-muted-foreground tabular-nums truncate" title={`${(phase.amount || 0).toLocaleString()}원`}>
+                      <p className="text-lg font-bold tabular-nums truncate" title={`${(phase.amount || 0).toLocaleString()}원`}>
                         {formatAmount(phase.amount)}원
                       </p>
                     </>

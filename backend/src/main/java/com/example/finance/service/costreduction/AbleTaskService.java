@@ -447,7 +447,7 @@ public class AbleTaskService {
                     "담당부서", "담당자명", "컨설턴트",
                     "모수금액", "절감액", "실제절감액",
                     "진척율(%)", "상태", "등급",
-                    "이슈", "진행사항", "고객 후속조치", "실행 항목",
+                    "최근 주차", "최근 이슈", "최근 진행사항",
                     "등록시간", "수정시간"
             };
 
@@ -504,16 +504,17 @@ public class AbleTaskService {
                 row.createCell(12).setCellValue(nullSafe(task.getStatus()));
                 row.createCell(13).setCellValue(nullSafe(task.getRating()));
                 TaskWeeklyProgress latestWeekly = latestWeeklyMap.get(task.getId());
+                String weekNumberValue = latestWeekly != null && latestWeekly.getWeekNumber() != null && !latestWeekly.getWeekNumber().isEmpty()
+                        ? latestWeekly.getWeekNumber() : "";
                 String issuesValue = latestWeekly != null && latestWeekly.getIssues() != null && !latestWeekly.getIssues().isEmpty()
                         ? latestWeekly.getIssues() : nullSafe(task.getIssues());
                 String progressValue = latestWeekly != null && latestWeekly.getProgressDetails() != null && !latestWeekly.getProgressDetails().isEmpty()
                         ? latestWeekly.getProgressDetails() : nullSafe(task.getProgressDetails());
-                row.createCell(14).setCellValue(issuesValue);
-                row.createCell(15).setCellValue(progressValue);
-                row.createCell(16).setCellValue(nullSafe(task.getCustomerFollowUp()));
-                row.createCell(17).setCellValue(nullSafe(task.getActionItems()));
-                row.createCell(18).setCellValue(task.getCreatedAt() != null ? task.getCreatedAt().format(dtf) : "");
-                row.createCell(19).setCellValue(task.getUpdatedAt() != null ? task.getUpdatedAt().format(dtf) : "");
+                row.createCell(14).setCellValue(weekNumberValue);
+                row.createCell(15).setCellValue(issuesValue);
+                row.createCell(16).setCellValue(progressValue);
+                row.createCell(17).setCellValue(task.getCreatedAt() != null ? task.getCreatedAt().format(dtf) : "");
+                row.createCell(18).setCellValue(task.getUpdatedAt() != null ? task.getUpdatedAt().format(dtf) : "");
 
                 rowIdx++;
             }
