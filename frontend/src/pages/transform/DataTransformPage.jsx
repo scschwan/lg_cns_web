@@ -551,6 +551,7 @@ function DataTransformPage() {
           render: (row) => renderKeywordBadges(row[col]),
         });
       } else {
+        const useComma = /금액|비용|단가|원가|매출|잔액|합계|수량/.test(col);
         cols.push({
           key: col,
           label: col,
@@ -560,7 +561,12 @@ function DataTransformPage() {
             const val = row[col];
             if (val == null) return '';
             if (typeof val === 'number') {
-              return <span className="whitespace-nowrap">{val.toLocaleString()}</span>;
+              if (useComma) return <span className="whitespace-nowrap">{val.toLocaleString()}</span>;
+              return <span className="whitespace-nowrap">{Number.isInteger(val) ? String(val) : String(val)}</span>;
+            }
+            if (typeof val === 'string' && val.trim() !== '' && !isNaN(Number(val))) {
+              if (useComma) return <span className="whitespace-nowrap">{Number(val).toLocaleString()}</span>;
+              return <span className="whitespace-nowrap">{val}</span>;
             }
             return <span className="whitespace-nowrap">{String(val)}</span>;
           },
