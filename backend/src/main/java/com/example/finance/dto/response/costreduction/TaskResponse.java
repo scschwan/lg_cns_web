@@ -42,6 +42,9 @@ public class TaskResponse {
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
     private Integer documentCount;
+    private String latestWeekNumber;
+    private String latestProgressDetails;
+    private String latestIssues;
 
     @Data
     @Builder

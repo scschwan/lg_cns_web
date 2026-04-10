@@ -249,6 +249,13 @@ const costReductionService = {
     return response.data;
   },
 
+  exportTasksExcel: async (projectId) => {
+    const response = await api.get(`/api/projects/${projectId}/tasks/export-excel`, {
+      responseType: 'blob',
+    });
+    return response.data;
+  },
+
   getTask: async (projectId, taskId) => {
     const response = await api.get(`/api/projects/${projectId}/tasks/${taskId}`);
     return response.data;

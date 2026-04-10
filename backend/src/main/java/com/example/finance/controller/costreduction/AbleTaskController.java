@@ -13,6 +13,8 @@ import com.example.finance.security.UserPrincipal;
 import com.example.finance.service.costreduction.AbleTaskService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -124,6 +126,21 @@ public class AbleTaskController {
             @CurrentUser UserPrincipal userPrincipal) {
         ableTaskService.deleteTask(taskId);
         return ResponseEntity.noContent().build();
+    }
+
+    /**
+     * 과제 목록 Excel 내보내기
+     */
+    @GetMapping("/export-excel")
+    public ResponseEntity<byte[]> exportTasksExcel(
+            @PathVariable String projectId,
+            @RequestParam(required = false) String status,
+            @CurrentUser UserPrincipal userPrincipal) {
+        byte[] excelBytes = ableTaskService.exportTasksToExcel(projectId, status);
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.parseMediaType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"));
+        headers.setContentDispositionFormData("attachment", "able_tasks.xlsx");
+        return ResponseEntity.ok().headers(headers).body(excelBytes);
     }
 
     // ===== Document Management =====

@@ -666,28 +666,31 @@ export default function StartAnalysisPage() {
   };
 
   // ===== AdvancedTable 컬럼 빌드 =====
+  // 금액 관련 컬럼만 쉼표 포맷 적용 (문자열/int값에는 쉼표 금지)
+  const AMOUNT_KEYWORDS = /금액|비용|단가|원가|매출|잔액|합계|수량/;
   const tableColumns = useMemo(() => {
-    return visibleColumns.map(col => ({
-      key: col,
-      label: col,
-      sortable: true,
-      minWidth: 60,
-      render: (row) => {
-        const val = row[col];
-        if (val == null) return '';
-        if (typeof val === 'number') {
-          if (Number.isInteger(val)) return <span className="whitespace-nowrap">{val.toLocaleString()}</span>;
-          if (val === Math.floor(val)) return <span className="whitespace-nowrap">{Math.round(val).toLocaleString()}</span>;
-          return <span className="whitespace-nowrap">{val.toLocaleString()}</span>;
-        }
-        if (typeof val === 'string' && val.trim() !== '' && !isNaN(Number(val))) {
-          const num = Number(val);
-          if (Number.isInteger(num) || num === Math.floor(num)) return <span className="whitespace-nowrap">{Math.round(num).toLocaleString()}</span>;
-          return <span className="whitespace-nowrap">{num.toLocaleString()}</span>;
-        }
-        return <span className="whitespace-nowrap">{String(val)}</span>;
-      },
-    }));
+    return visibleColumns.map(col => {
+      const useComma = AMOUNT_KEYWORDS.test(col);
+      return {
+        key: col,
+        label: col,
+        sortable: true,
+        minWidth: 60,
+        render: (row) => {
+          const val = row[col];
+          if (val == null) return '';
+          if (typeof val === 'number') {
+            if (useComma) return <span className="whitespace-nowrap">{val.toLocaleString()}</span>;
+            return <span className="whitespace-nowrap">{Number.isInteger(val) ? String(val) : String(val)}</span>;
+          }
+          if (typeof val === 'string' && val.trim() !== '' && !isNaN(Number(val))) {
+            if (useComma) return <span className="whitespace-nowrap">{Number(val).toLocaleString()}</span>;
+            return <span className="whitespace-nowrap">{val}</span>;
+          }
+          return <span className="whitespace-nowrap">{String(val)}</span>;
+        },
+      };
+    });
   }, [visibleColumns]);
 
   // ===== 프론트 정렬 =====

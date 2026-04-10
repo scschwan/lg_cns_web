@@ -244,10 +244,10 @@ function PhaseNavigationBar({ stats, currentPhase, projectId, navigate }) {
             >
               <div className="flex items-center gap-1.5">
                 {isPast && <CheckCircle2 className="w-5 h-5 flex-shrink-0" />}
-                <span className="font-bold text-xl whitespace-nowrap">{phase.label}</span>
+                <span className="font-extrabold text-2xl whitespace-nowrap">{phase.label}</span>
               </div>
               {phase.line1 != null && (
-                <div className={cn('text-[19px] leading-snug text-center font-medium', isActive ? 'text-white/90' : 'text-black')}>
+                <div className={cn('text-xl leading-snug text-center font-semibold', isActive ? 'text-white/90' : 'text-black')}>
                   <div>{phase.line1}</div>
                   <div>{phase.line2}</div>
                 </div>

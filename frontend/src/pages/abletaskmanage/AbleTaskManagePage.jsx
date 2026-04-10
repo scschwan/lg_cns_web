@@ -565,10 +565,10 @@ function PhaseNavigationBar({ stats, summary, currentPhase, projectId, navigate 
             >
               <div className="flex items-center gap-1.5">
                 {isPast && <CheckCircle2 className="w-5 h-5 flex-shrink-0" />}
-                <span className="font-bold text-xl whitespace-nowrap">{phase.label}</span>
+                <span className="font-extrabold text-2xl whitespace-nowrap">{phase.label}</span>
               </div>
               {phase.line1 != null && (
-                <div className={cn('text-[19px] leading-snug text-center font-medium', isActive ? 'text-white/90' : 'text-black')}>
+                <div className={cn('text-xl leading-snug text-center font-semibold', isActive ? 'text-white/90' : 'text-black')}>
                   <div>{phase.line1}</div>
                   <div>{phase.line2}</div>
                 </div>
@@ -642,6 +642,21 @@ export default function AbleTaskManagePage() {
       console.error('Failed to delete task:', error);
     } finally {
       setDeleting(false);
+    }
+  };
+
+  const handleExportExcel = async () => {
+    try {
+      const blob = await costReductionService.exportTasksExcel(projectId);
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `able_tasks_${new Date().toISOString().slice(0, 10)}.xlsx`;
+      a.click();
+      window.URL.revokeObjectURL(url);
+    } catch (e) {
+      console.error('Excel 다운로드 실패:', e);
+      alert('Excel 다운로드에 실패했습니다.');
     }
   };
 
@@ -766,6 +781,7 @@ export default function AbleTaskManagePage() {
                 <div className="flex items-center gap-2">
                   <div className="relative"><Search className="absolute left-2.5 top-1/2 transform -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" /><Input placeholder="과제명, 부서, 담당자 검색..." value={searchKeyword} onChange={e => setSearchKeyword(e.target.value)} className="pl-8 h-8 w-[200px] text-xs" /></div>
                   <Select value={statusFilter} onValueChange={setStatusFilter}><SelectTrigger className="w-[120px] h-8 text-xs"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">전체 상태</SelectItem>{STATUS_OPTIONS.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}</SelectContent></Select>
+                  <Button variant="outline" size="sm" className="h-8 text-xs gap-1" onClick={handleExportExcel}><Download className="w-3.5 h-3.5" />Excel</Button>
                 </div>
               </div>
             </CardHeader>
@@ -823,7 +839,7 @@ export default function AbleTaskManagePage() {
       </div>
 
       <TaskDetailModal open={!!detailTask} onClose={() => setDetailTask(null)} task={detailTask} projectId={projectId} />
-      <TaskEditModal open={!!editTask} onClose={() => setEditTask(null)} task={editTask} onSave={handleEditSave} projectId={projectId} />
+      <TaskEditModal open={!!editTask} onClose={() => { setEditTask(null); loadData(); }} task={editTask} onSave={handleEditSave} projectId={projectId} />
       <TaskDocumentsModal open={!!docsTask} onClose={() => setDocsTask(null)} task={docsTask} projectId={projectId} isEditor={isEditor} />
 
       {/* Delete Confirmation Dialog */}
