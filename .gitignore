@@ -60,3 +60,20 @@
 
 ### Claude Code ###
 .claude/
+
+
+
+### Manual ###
+/manual/
+/maintanance/
+/analyze/
+/analyze.zip
+*.md
+*.xlsx
+
+### 예외 (Claude 작업 규칙 및 유지보수 로그는 추적) ###
+!CLAUDE.md
+!maintanance/
+maintanance/*
+!maintanance/LG_CNS_수정사항_정리.md
+
