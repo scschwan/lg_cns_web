@@ -902,7 +902,7 @@ function MultiFileUploadPage() {
     // 잠금 로딩 중 표시
     if (lockLoading) {
         return (
-            <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+            <div className="h-full overflow-y-auto bg-gray-50 flex items-center justify-center">
                 <div className="text-center">
                     <Loader2 className="h-8 w-8 animate-spin mx-auto mb-4 text-muted-foreground" />
                     <p className="text-muted-foreground">접속 확인 중...</p>
@@ -914,7 +914,7 @@ function MultiFileUploadPage() {
     // 다른 편집자가 사용 중 → 진입 차단
     if (!isPageEditor) {
         return (
-            <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+            <div className="h-full overflow-y-auto bg-gray-50 flex items-center justify-center">
                 <Card className="w-full max-w-md">
                     <CardHeader className="text-center">
                         <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-amber-100">
@@ -947,7 +947,7 @@ function MultiFileUploadPage() {
     }
 
     return (
-        <div className="min-h-screen bg-gray-50">
+        <div className="h-full overflow-y-auto bg-gray-50">
             <div className="container mx-auto px-4 py-6 max-w-[98vw]">
                 {/* Breadcrumb */}
                 <Breadcrumb className="mb-6">
@@ -1302,7 +1302,7 @@ function MultiFileUploadPage() {
                                         </p>
                                     </div>
                                 ) : (
-                                    <ScrollSyncTable minWidth="1200px" maxHeight="500px">
+                                    <ScrollSyncTable minWidth="1200px" maxHeight="40vh">
                                         <Table>
                                             <TableHeader className="sticky top-0 bg-background z-10">
                                                 <TableRow>

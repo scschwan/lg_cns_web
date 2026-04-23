@@ -303,29 +303,63 @@ public class ShortListService {
 
     /**
      * 항목별 상세 통계
+     *
+     * Level 2(클러스터) 클릭 시: 선택된 Level 3(세부클러스터)만 합산한 값을 반환한다.
+     * 세부클러스터가 일부만 Long List에 포함된 경우 전체 클러스터 합계가 아니라
+     * 포함된 세부클러스터만의 합계가 카드에 표시되어야 표(비용유형 분류 테이블)와 일치한다.
+     * 비율은 Long List 총액(Level 2 재계산) 대비 선택 금액 비율이다.
      */
     public ItemStatsResponse getItemStats(String projectId, String statisticsId) {
         ClusterStatistics stats = clusterStatisticsRepository.findById(statisticsId)
                 .orElseThrow(() -> new RuntimeException("통계 데이터를 찾을 수 없습니다: " + statisticsId));
 
-        // Long List 전체 금액 기준 비율 계산
         LongShortList list = longShortListRepository.findFirstByProjectId(projectId).orElse(null);
-        double longListTotal = 0.0;
-        if (list != null && list.getLongListItems() != null) {
-            longListTotal = list.getLongListItems().stream()
-                    .mapToDouble(i -> i.getTotalAmount() != null ? i.getTotalAmount() : 0.0)
-                    .sum();
+        List<LongShortList.ListItem> longListItems = (list != null && list.getLongListItems() != null)
+                ? list.getLongListItems() : Collections.emptyList();
+
+        int rawDataRows = stats.getTotalCount() != null ? stats.getTotalCount() : 0;
+        int supplierCount = stats.getSupplierCount() != null ? stats.getSupplierCount() : 0;
+        int costCenterCount = stats.getCostCenterCount() != null ? stats.getCostCenterCount() : 0;
+        double totalAmount = stats.getTotalAmount() != null ? stats.getTotalAmount() : 0.0;
+
+        // Level 2 클러스터에 Long List에 포함된 Level 3 세부클러스터가 존재하면
+        // 포함된 세부클러스터만 합산하여 재계산 (표와 카드 값을 일치시키기 위함)
+        LongShortList.ListItem matchedItem = longListItems.stream()
+                .filter(i -> statisticsId.equals(i.getStatisticsId()))
+                .findFirst().orElse(null);
+
+        if (matchedItem != null && matchedItem.getLevel() != null && matchedItem.getLevel() == 2) {
+            String parentKey = matchedItem.getSessionId() + ":" + matchedItem.getClusterNumber();
+            List<LongShortList.ListItem> subItems = longListItems.stream()
+                    .filter(i -> i.getLevel() != null && i.getLevel() == 3)
+                    .filter(i -> parentKey.equals(i.getSessionId() + ":" + i.getParentClusterNumber()))
+                    .toList();
+
+            if (!subItems.isEmpty()) {
+                Set<String> subStatsIds = subItems.stream()
+                        .map(LongShortList.ListItem::getStatisticsId)
+                        .filter(Objects::nonNull)
+                        .collect(Collectors.toSet());
+                List<ClusterStatistics> subStatsList =
+                        clusterStatisticsRepository.findAllById(subStatsIds).stream().toList();
+
+                rawDataRows = subStatsList.stream()
+                        .mapToInt(s -> s.getTotalCount() != null ? s.getTotalCount() : 0).sum();
+                totalAmount = subItems.stream()
+                        .mapToDouble(s -> s.getTotalAmount() != null ? s.getTotalAmount() : 0.0).sum();
+                // supplierCount / costCenterCount 는 Level 2 원본 유지 (표 컬럼과 일관)
+            }
         }
 
-        double ratio = longListTotal > 0
-                ? (stats.getTotalAmount() != null ? stats.getTotalAmount() : 0.0) / longListTotal * 100
-                : 0.0;
+        // Long List 전체 금액 기준 비율 (Level 2 합산, Level 3 선택 반영 재계산)
+        double longListTotal = recalculateLevel2Total(longListItems);
+        double ratio = longListTotal > 0 ? totalAmount / longListTotal * 100 : 0.0;
 
         return ItemStatsResponse.builder()
-                .rawDataRows(stats.getTotalCount())
-                .supplierCount(stats.getSupplierCount())
-                .costCenterCount(stats.getCostCenterCount())
-                .totalAmount(stats.getTotalAmount())
+                .rawDataRows(rawDataRows)
+                .supplierCount(supplierCount)
+                .costCenterCount(costCenterCount)
+                .totalAmount(totalAmount)
                 .ratioToTotal(Math.round(ratio * 100.0) / 100.0)
                 .build();
     }
@@ -408,6 +442,10 @@ public class ShortListService {
 
     /**
      * 계정명(Account) 수준 상세 통계
+     *
+     * 해당 계정의 Level 2 클러스터들을 순회하며, 선택된 Level 3 세부클러스터가 있으면
+     * 그 합산으로 재계산하여 카드에 표시한다. (표의 클러스터 합계와 일관)
+     * 비율은 Long List 총액(Level 2 재계산) 대비 계정 합계의 비율이다.
      */
     public ItemStatsResponse getAccountItemStats(String projectId, String accountName) {
         LongShortList list = longShortListRepository.findFirstByProjectId(projectId)
@@ -419,25 +457,55 @@ public class ShortListService {
 
         List<LongShortList.ListItem> longListItems = list.getLongListItems();
 
-        // 해당 계정명의 Level 2 항목들
-        Set<String> statsIds = longListItems.stream()
-                .filter(i -> accountName.equals(i.getAccountName()) && i.getLevel() != null && i.getLevel() == 2)
-                .map(LongShortList.ListItem::getStatisticsId)
-                .filter(Objects::nonNull)
-                .collect(Collectors.toSet());
+        List<LongShortList.ListItem> level2Items = longListItems.stream()
+                .filter(i -> accountName.equals(i.getAccountName())
+                        && i.getLevel() != null && i.getLevel() == 2)
+                .toList();
+        List<LongShortList.ListItem> level3Items = longListItems.stream()
+                .filter(i -> accountName.equals(i.getAccountName())
+                        && i.getLevel() != null && i.getLevel() == 3)
+                .toList();
 
-        List<ClusterStatistics> statsList = clusterStatisticsRepository.findAllById(statsIds).stream().toList();
+        // Level 3을 부모 키 기준 그룹핑
+        Map<String, List<LongShortList.ListItem>> level3ByParent = level3Items.stream()
+                .collect(Collectors.groupingBy(
+                        i -> i.getSessionId() + ":" + i.getParentClusterNumber()));
 
-        int rawDataRows = statsList.stream().mapToInt(s -> s.getTotalCount() != null ? s.getTotalCount() : 0).sum();
-        int supplierCount = statsList.stream().mapToInt(s -> s.getSupplierCount() != null ? s.getSupplierCount() : 0).sum();
-        int costCenterCount = statsList.stream().mapToInt(s -> s.getCostCenterCount() != null ? s.getCostCenterCount() : 0).sum();
-        double totalAmount = statsList.stream().mapToDouble(s -> s.getTotalAmount() != null ? s.getTotalAmount() : 0.0).sum();
+        // 필요한 statisticsId 일괄 조회 (N+1 방지)
+        Set<String> allStatsIds = new HashSet<>();
+        level2Items.forEach(i -> { if (i.getStatisticsId() != null) allStatsIds.add(i.getStatisticsId()); });
+        level3Items.forEach(i -> { if (i.getStatisticsId() != null) allStatsIds.add(i.getStatisticsId()); });
+        Map<String, ClusterStatistics> statsMap = clusterStatisticsRepository.findAllById(allStatsIds).stream()
+                .collect(Collectors.toMap(ClusterStatistics::getId, s -> s));
 
-        // 전체 Long List 금액 대비 비율
-        double longListTotal = longListItems.stream()
-                .filter(i -> i.getLevel() != null && i.getLevel() == 2)
-                .mapToDouble(i -> i.getTotalAmount() != null ? i.getTotalAmount() : 0.0)
-                .sum();
+        int rawDataRows = 0;
+        int supplierCount = 0;
+        int costCenterCount = 0;
+        double totalAmount = 0.0;
+
+        for (LongShortList.ListItem l2 : level2Items) {
+            String parentKey = l2.getSessionId() + ":" + l2.getClusterNumber();
+            List<LongShortList.ListItem> subs = level3ByParent.getOrDefault(parentKey, Collections.emptyList());
+
+            ClusterStatistics l2Stats = statsMap.get(l2.getStatisticsId());
+            supplierCount += (l2Stats != null && l2Stats.getSupplierCount() != null) ? l2Stats.getSupplierCount() : 0;
+            costCenterCount += (l2Stats != null && l2Stats.getCostCenterCount() != null) ? l2Stats.getCostCenterCount() : 0;
+
+            if (!subs.isEmpty()) {
+                rawDataRows += subs.stream()
+                        .map(s -> statsMap.get(s.getStatisticsId()))
+                        .filter(Objects::nonNull)
+                        .mapToInt(s -> s.getTotalCount() != null ? s.getTotalCount() : 0).sum();
+                totalAmount += subs.stream()
+                        .mapToDouble(s -> s.getTotalAmount() != null ? s.getTotalAmount() : 0.0).sum();
+            } else {
+                rawDataRows += (l2Stats != null && l2Stats.getTotalCount() != null) ? l2Stats.getTotalCount() : 0;
+                totalAmount += l2.getTotalAmount() != null ? l2.getTotalAmount() : 0.0;
+            }
+        }
+
+        // Long List 전체 금액(재계산) 대비 비율
+        double longListTotal = recalculateLevel2Total(longListItems);
         double ratio = longListTotal > 0 ? totalAmount / longListTotal * 100 : 0.0;
 
         return ItemStatsResponse.builder()
