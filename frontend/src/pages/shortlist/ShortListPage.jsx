@@ -473,7 +473,7 @@ function SelectedItemCard({ stats, onRawDataClick }) {
     { label: '공급업체', value: stats.supplierCount?.toLocaleString() ?? '-', icon: Building2, color: 'bg-purple-500' },
     { label: '코스트센터', value: stats.costCenterCount?.toLocaleString() ?? '-', icon: MapPin, color: 'bg-green-500' },
     { label: '합계 금액', value: formatAmount(stats.totalAmount ?? 0), icon: DollarSign, color: 'bg-orange-500' },
-    { label: 'Raw List 대비 비율', value: `${stats.ratioToTotal ?? 0}%`, icon: TrendingUp, color: 'bg-emerald-500' },
+    { label: 'Long List 대비 비율', value: `${stats.ratioToTotal ?? 0}%`, icon: TrendingUp, color: 'bg-emerald-500' },
   ];
   return (
     <div className="space-y-2">
