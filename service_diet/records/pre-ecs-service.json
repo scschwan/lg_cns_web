@@ -1,0 +1,25 @@
+{
+    "Desired": 2,
+    "Running": 2,
+    "TaskDef": "arn:aws:ecs:ap-northeast-2:659002796326:task-definition/finance-backend-task:264",
+    "Net": {
+        "subnets": [
+            "subnet-08cdb7f10fd2f72f4",
+            "subnet-0bfa6431b2de4c627"
+        ],
+        "securityGroups": [
+            "sg-0b2f80b067408e320"
+        ],
+        "assignPublicIp": "DISABLED"
+    },
+    "DeployCfg": {
+        "deploymentCircuitBreaker": {
+            "enable": true,
+            "rollback": true
+        },
+        "maximumPercent": 200,
+        "minimumHealthyPercent": 100,
+        "strategy": "ROLLING",
+        "bakeTimeInMinutes": 0
+    }
+}

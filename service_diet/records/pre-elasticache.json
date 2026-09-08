@@ -1,0 +1,6 @@
+{
+    "Id": "finance-redis-cluster",
+    "Node": "cache.t4g.small",
+    "Ver": "7.1.0",
+    "Ep": "finance-redis-cluster.1kdayr.0001.apn2.cache.amazonaws.com"
+}

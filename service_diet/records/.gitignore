@@ -1,0 +1,4 @@
+# 평문 자격증명(DocumentDB 비밀번호) 포함 — 커밋 금지
+pre-taskdef-*.json
+pre-lambda-env-*.json
+lambda-env-*.json
