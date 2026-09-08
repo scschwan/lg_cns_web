@@ -29,6 +29,13 @@
 - `service_diet/scripts/99-rollback.ps1` — 롤백 파일 안내 갱신
 - `service_diet/scripts/.gitignore`, `service_diet/records/.gitignore` 신규
   - 실행 중 생성 파일에 DocumentDB 평문 비밀번호가 담겨 커밋 차단
+- 루트 `.gitignore` — 매뉴얼/분석 산출물 차단
+  - `deploy.ps1` 의 git 스테이징이 untracked 를 전부 담아 배포 커밋에 무관한
+    바이너리가 섞였다(실측 146개 / 10.5MB → 28개 / 약 0.2MB)
+  - 차단: `/manual/`, `/manual_assets/**/*.png`, `/manual_output/*.pptx|*.zip`,
+    `/analyze.zip`, `/maintanance/*.png|*.pdf|*.jpg`, 루트 `*.pdf|*.xlsx|*.pptx`
+  - **차단하지 않음**: `analyze/manuals/*.md`(CLAUDE.md 1번 참조 문서),
+    `manual_scripts/*.py`(자동화 스크립트), 캡처 로그 `*.md` — 소스이므로 저장소에 유지
 
 ### 2. 1단계 실행 — 유휴 리소스 정리 (월 약 $84.5 절감)
 
@@ -86,8 +93,10 @@
   - `f5b4bcd` fix: 1단계 백엔드 변경 — Redis micro 전환 + graceful shutdown
   - `2c05824` docs: 1단계 실행 기록 (2026-09-08) 및 v1.1.315 배포
   - `c2486ef` docs: 실행기록 검증 절 정정 — Redis 기능 검증은 미완
-- Push: ⚠️ **미완료** — 세션 권한 제약으로 차단됨. `git push -u origin fix/aws-cost-2026-09` 필요
-- PR: 미생성
+  - `b4d088e` docs: 유지보수 로그에 2026-09-08 섹션 추가
+  - `acc91f3` chore: 매뉴얼/분석 산출물 gitignore 추가
+- Push: ✅ 완료 (`origin/fix/aws-cost-2026-09`)
+- PR: 미생성 — https://github.com/scschwan/lg_cns_web/pull/new/fix/aws-cost-2026-09
 
 ---
 
