@@ -39,8 +39,11 @@
         {"name": "AWS_ACCOUNT_ID", "value": "659002796326"},
         {"name": "S3_BUCKET", "value": "finance-excel-uploads"},
         {"name": "REDIS_HOST", "value": "finance-redis-micro.1kdayr.0001.apn2.cache.amazonaws.com"},
-        {"name": "REDIS_PORT", "value": "6379"},
-        {"name": "MONGODB_URI", "value": "mongodb://dmillion:admin240401!@finance-docdb-cluster.cluster-c1ue6aayyxjn.ap-northeast-2.docdb.amazonaws.com:27017/?replicaSet=rs0&readPreference=secondaryPreferred&retryWrites=false"}
+        {"name": "REDIS_PORT", "value": "6379"}
+      ],
+      "secrets": [
+        {"name": "JWT_SECRET", "valueFrom": "arn:aws:secretsmanager:ap-northeast-2:659002796326:secret:finance/jwt-secret-che0Ei"},
+        {"name": "MONGODB_URI", "valueFrom": "arn:aws:secretsmanager:ap-northeast-2:659002796326:secret:finance/docdb-uri-dI66BL"}
       ],
       "logConfiguration": {
         "logDriver": "awslogs",
