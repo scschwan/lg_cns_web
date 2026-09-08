@@ -1,0 +1,211 @@
+# LG CNS 수정사항 정리
+
+> 각 날짜별 유지보수 작업 기록. 최신 작업일이 상단에 위치.
+
+---
+
+## 2026-09-08 AWS 비용절감 1단계 (브랜치: `fix/aws-cost-2026-09`)
+
+> 출처: `service_diet/AWS_비용절감_개선보고서_20260811.docx` (A안 — 유휴 리소스 정리)
+> 상세 실행 기록·원복 절차: `service_diet/실행기록_2026-09-08.md`
+
+### 1. 실행 스크립트 사전 점검 (DryRun 전수 검증)
+
+| # | 수정사항 | 상세 | 처리 영역 |
+|---|---------|------|:-:|
+| C-1 | Lambda 환경변수 파괴 위험 | `aws.exe` 는 네이티브 실행 파일이라 조회 실패해도 `ErrorActionPreference=Stop` 이 걸리지 않음 → 신규 Redis 엔드포인트 조회 실패 시 `REDIS_HOST` 를 **빈 값으로 덮어써** Lambda 2개가 Redis 를 잃음. DryRun 에서 실제 재현 | INFRA |
+| C-2 | AWS CLI `file://` JSON 파싱 실패 | Windows PowerShell 5.1 의 `Out-File -Encoding utf8` 은 BOM 을 붙이는데, BOM 이 있으면 `aws` 가 JSON 을 못 읽음 (3곳) | INFRA |
+| C-3 | 환경변수 개수 검증 무의미 | PSCustomObject 의 `PSObject.Properties.Count` 는 멤버 열거로 `1 1 1 1 1 1` 출력 | INFRA |
+
+**조치**
+- `service_diet/scripts/01-step1-scale-and-cache.ps1`
+  - 신규 엔드포인트 형식 검증 후 미충족 시 `exit 1` 가드 추가
+  - `Write-JsonNoBom` 헬퍼 도입 (BOM 없이 기록)
+  - `@($vars.PSObject.Properties).Count` 로 실제 개수 출력
+  - 롤백용 `lambda-env-rollback-*.json` 을 래핑된 형태로 함께 생성
+- `service_diet/scripts/02-step2-secrets.ps1`
+  - 동일 3건 + Secrets Manager 조회 실패 가드
+  - task-def `valueFrom` 안내를 `create-secret` 반환 ARN(끝 6자 접미사 포함) 기준으로 변경
+- `service_diet/scripts/99-rollback.ps1` — 롤백 파일 안내 갱신
+- `service_diet/scripts/.gitignore`, `service_diet/records/.gitignore` 신규
+  - 실행 중 생성 파일에 DocumentDB 평문 비밀번호가 담겨 커밋 차단
+
+### 2. 1단계 실행 — 유휴 리소스 정리 (월 약 $84.5 절감)
+
+| # | 수정사항 | 상세 | 처리 영역 |
+|---|---------|------|:-:|
+| C-4 | ECS 태스크 2대 → 1대 | CPU 평균 0.13%, 하루 정상 요청 12건. 무중단 확인 | INFRA |
+| C-5 | ElastiCache `t4g.small` → `t4g.micro` | 메모리 사용률 0.88%. 신규 `finance-redis-micro` 생성, 구 클러스터는 1주 존치 | INFRA |
+| C-6 | `REDIS_HOST` 3곳 동시 교체 | task-def + Lambda 2개. 백엔드만 바꾸면 엑셀 진행률이 깨짐 | BE/INFRA |
+| C-7 | graceful shutdown 미동작 | 태스크가 1대가 되어 배포 중 요청을 흡수할 여유가 없어짐. daemon 스레드는 SIGTERM 에 즉사 | BE |
+
+**조치**
+- `backend/task-def-template.json`
+  - `REDIS_HOST` → `finance-redis-micro.1kdayr.0001.apn2.cache.amazonaws.com`
+  - `"stopTimeout": 120` 추가
+  - `healthCheck.startPeriod` 120 → 45 (실측 기동 17~23초, 금일 실측 12.3초)
+- `backend/src/main/resources/application.yml`
+  - `server.shutdown: graceful` 추가
+  - `spring.lifecycle.timeout-per-shutdown-phase: 110s` (stopTimeout 120 보다 짧게)
+- `backend/src/main/java/.../costreduction/DashboardGenerationService.java`
+  - `dashboard-gen` 스레드 `setDaemon(true)` → `false`
+- Lambda `ExcelCoordinator` / `ExcelWorker` 환경변수 `REDIS_HOST` 교체 (개수 6/7 전부 보존)
+
+**배포**
+- `v1.1.314` → `v1.1.315`, task definition **revision 265**
+- `deploy.ps1` 은 **사용하지 않음** — 1단계의 git 스테이징 범위가 넓어 무관한 untracked
+  파일(PDF, `manual*/`, `analyze.zip` 등)이 전부 커밋·푸시됨. 빌드~배포만 동일 명령으로 수동 실행
+- ⚠️ Windows PowerShell 5.1 에서 `aws ecr get-login-password | docker login --password-stdin`
+  이 **400 Bad Request** 로 실패. `--password` 방식으로 우회. `backend/deploy.ps1:78` 도 동일 문제
+
+**검증**
+- deployment `PRIMARY`/`COMPLETED`, ALB 타겟 healthy 1개, HTTP 중단 없음
+- 백엔드 기동 12.343초, ERROR/Exception 0건, DocumentDB 연결 정상
+- `GET /actuator/health` → 200 `{"status":"UP"}`
+- ⚠️ **Redis 실제 읽기/쓰기는 미검증** — `POST /api/cache/test` 가 401(인증 필요).
+  엑셀 업로드 1건으로 진행률 표시를 확인해야 최종 검증
+
+### 3. 보고서 7장 "실행 전 확정 필요 사항" 확인 결과
+
+| # | 항목 | 결과 |
+|---|------|------|
+| 1 | ALB idle timeout ≥ 360초 | ❌ **실측 300초**. `ClusteringService.mergeClusters` 주석은 "CloudFront 360초 활용"이나 ALB 가 먼저 끊음 → 5분 초과 병합은 **현행에서도 504**. 이번 작업과 무관한 기존 결함, 별도 판단 필요 |
+| 2 | `ExcelWorker` 가 DocDB 를 직접 쓰는지 | ✅ 사실. `MongoDBConfig` + `S3Client` 만 사용하고 `SqsClient` 없음(수신 전용) → NAT 제거 후 Worker 경로는 기존 S3 Gateway Endpoint 로 전부 커버 |
+
+### 남은 작업
+
+- 구 캐시 `finance-redis-cluster` 삭제 (2026-09-15 이후) — 삭제 전까지 월 $17.5 미실현
+- 2단계 보안 조치(JWT 키·DocDB 비밀번호·AWS 액세스 키) — 전체 사용자 강제 로그아웃, 사전 공지 필요
+- 3단계 NAT 제거 — SQS Endpoint 단일 AZ 여부 확인 필요
+- `backend/deploy.ps1` ECR 로그인 방식 수정
+
+### 커밋/푸시
+- Branch: `fix/aws-cost-2026-09` (base: `origin/master` `5fe74d7`)
+- Commits:
+  - `1e5d259` fix: AWS 비용절감 실행 스크립트 사전 점검 및 결함 수정
+  - `f5b4bcd` fix: 1단계 백엔드 변경 — Redis micro 전환 + graceful shutdown
+  - `2c05824` docs: 1단계 실행 기록 (2026-09-08) 및 v1.1.315 배포
+  - `c2486ef` docs: 실행기록 검증 절 정정 — Redis 기능 검증은 미완
+- Push: ⚠️ **미완료** — 세션 권한 제약으로 차단됨. `git push -u origin fix/aws-cost-2026-09` 필요
+- PR: 미생성
+
+---
+
+## 2026-04-23 유지보수 (브랜치: `fix/maintenance-2026-04-23`)
+
+> 출처: `maintanance/2026-04-23_01.png`, `2026-04-23_02.png`, `2026-04-23_03.png`
+
+### 1. 다중 파일 업로드 화면 반응형 스크롤 개선
+
+| # | 수정사항 | 상세 | 처리 영역 |
+|---|---------|------|:-:|
+| A-1 | 페이지 세로 스크롤 미노출 | DashboardLayout의 `main`이 `overflow-hidden`이라 자식 페이지 자체 스크롤 발생 불가 → 테이블이 길어지면 '프로젝트 완료' 버튼이 하단에 가려짐 | FE |
+| A-2 | 브라우저 높이 축소 시 반응형 미대응 | 너비 반응형은 있으나 높이 반응형이 없음 → 윈도우 축소 시에도 스크롤 불가 | FE |
+
+**조치**
+- `frontend/src/pages/upload/MultiFileUploadPage.jsx`
+  - 루트 `<div>` 클래스: `min-h-screen bg-gray-50` → `h-full overflow-y-auto bg-gray-50`
+  - 잠금 로딩/편집자 차단 화면도 동일하게 `h-full overflow-y-auto`로 변경
+  - 세션 테이블 `ScrollSyncTable maxHeight="500px"` (고정) → `maxHeight="40vh"` (뷰포트 비례)
+  - 파일 테이블은 기존 `30vh` 유지 → 두 테이블 합계 70vh로 제한, 헤더+완료 버튼 영역 확보
+
+### 2. Short List 비용유형 분류 카드 합계/비율 오류
+
+| # | 수정사항 | 상세 | 처리 영역 |
+|---|---------|------|:-:|
+| B-1 | 서브 클러스터 부분선택 시 카드 합계 금액이 전체 클러스터 값으로 표시됨 | 예: '도급비' 클러스터 A/B만 선택(230.1억) → 표는 230.1억이나 카드는 398.6억(A+B+C+D 전체) 표시 | BE |
+| B-2 | 카드 라벨 '`Raw List 대비 비율`'이 Short List 단계에서는 부적절 | Short List 도출 단계에서는 Long List 대비 비율이 의미상 맞음 | FE |
+| B-3 | 비율 계산식 오류 | 분모를 `sum(all longListItems.totalAmount)`로 계산 → Level 1/2/3 중복 합산으로 부풀려짐 | BE |
+
+**조치**
+- `backend/.../service/costreduction/ShortListService.java`
+  - `getItemStats(projectId, statisticsId)`: 클릭한 항목이 Level 2 클러스터이고 longListItems에 포함된 Level 3 세부클러스터가 존재하면, 해당 세부클러스터들만 합산하여 `rawDataRows`/`totalAmount` 재계산 (`supplierCount`/`costCenterCount`는 표 컬럼과 일관되도록 Level 2 원본 유지)
+  - `getAccountItemStats(projectId, accountName)`: 계정 수준도 각 Level 2 클러스터에 대해 Level 3 선택 반영 로직 적용 (N+1 방지 위해 `findAllById`로 일괄 조회)
+  - 비율 분모: 모든 레벨 단순 합 → `recalculateLevel2Total(longListItems)` 기반으로 변경 (중복 합산 제거)
+- `frontend/src/pages/shortlist/ShortListPage.jsx`
+  - `SelectedItemCard` 라벨: `Raw List 대비 비율` → `Long List 대비 비율`
+
+### 커밋/푸시
+- Branch: `fix/maintenance-2026-04-23`
+- Commit: `fix: 2026-04-23 유지보수 2건 반영 - 업로드 스크롤, Short List 카드 합계/비율`
+- PR: https://github.com/scschwan/lg_cns_web/pull/new/fix/maintenance-2026-04-23
+
+---
+
+## 2026-04-09 수정사항
+
+> 출처: `lg cns 수정사항.pdf`
+
+---
+
+## 1. 대시보드 - 완료 과제 관리 카드
+
+| # | 수정사항 | 상세 | 프론트엔드 처리 가능 |
+|---|---------|------|:-:|
+| 1-1 | 단계별 카드 폰트 크기 확대 | Raw List / Long List / Short List 등 단계별 카드의 폰트 크기를 키워야 함 | O |
+| 1-2 | 금액 1000단위 쉼표 표시 | 대시보드 카드 금액, 합계금액에 1000단위 콤마(,) 필요 (예: 5,212.2억원) | O |
+| 1-3 | 표시명 변경 | "2단계 비용유형분류(Raw List 기반)" -> "2단계 비용유형분류(Long List 기반)" | O |
+| 1-4 | 표시명 변경 | "3단계 비용유형분류(Long List 기반)" -> "2단계 비용유형분류(Short List 기반)" | O |
+| 1-5 | Able 과제 등록 항목 표시 | 등록된 항목에 "과제등록됨" 표시 필요 | O |
+| 1-6 | Able 과제 엑셀 다운로드 | 엑셀 다운로드 시 이슈사항 등이 표기되지 않는 문제 | O |
+| 1-7 | 가장 최근 주차 데이터 표시 | 대시보드에서 가장 최근 주차 데이터를 기본 표시 | O |
+
+---
+
+## 2. 원본 데이터 테이블 (Step 2: Start Analysis)
+
+| # | 수정사항 | 상세 | 프론트엔드 처리 가능 |
+|---|---------|------|:-:|
+| 2-1 | 회계연도 쉼표 제거 | 회계연도 컬럼에 불필요한 쉼표 표시됨 (예: 2,024 -> 2024) | O |
+| 2-2 | 공급업체코드 쉼표 제거 | 공급업체코드 컬럼에 불필요한 쉼표 표시됨 | O |
+
+---
+
+## 3. Preprocessing (전처리) 페이지
+
+| # | 수정사항 | 상세 | 프론트엔드 처리 가능 |
+|---|---------|------|:-:|
+| 3-1 | 키워드 추출 미수행 시 다음단계 차단 | Preprocessing에서 다음 페이지 이동 시 '키워드 추출'이 수행되지 않았다면 "키워드 추출을 수행해야 합니다" 다이얼로그 팝업 출력 후 return (다음 페이지 이동 차단) | O |
+
+---
+
+## 4. 5단계 클러스터링
+
+| # | 수정사항 | 상세 | 프론트엔드 처리 가능 |
+|---|---------|------|:-:|
+| 4-1 | 자동클러스터링 403 오류 | 키워드/공급업체 선택 후 자동클러스터링 시 "자동클러스터링 실패 request failed with status code 403" 오류 발생. 한번 발생 시 지속 발생 | ? (백엔드 확인 필요) |
+| 4-2 | 클러스터 재병합 시 이름 등록 | 병합한 클러스터끼리 재병합(merge) 시에도 클러스터명 등록 후 병합해야 함. 현재는 이름 선택 없이 병합됨 | O |
+| 4-3 | 클러스터링 테이블 정렬 | 클러스터링 단계에서 오름차순/내림차순 정렬이 안되는 열이 있음 | O |
+
+---
+
+## 요약
+
+| 영역 | 항목 수 | 프론트엔드 처리 가능 | 백엔드 확인 필요 |
+|------|:------:|:------:|:------:|
+| 대시보드 | 7 | 7 | 0 |
+| 원본 데이터 테이블 | 2 | 2 | 0 |
+| Preprocessing | 1 | 1 | 0 |
+| 클러스터링 | 3 | 2 | 1 |
+| **합계** | **13** | **12** | **1** |
+
+---
+
+## 우선순위 제안
+
+### 높음 (기능 오류/차단)
+- 4-1: 자동클러스터링 403 오류 (기능 불가)
+- 3-1: 키워드 추출 미수행 시 다음단계 차단 (데이터 무결성)
+
+### 중간 (표시 오류)
+- 2-1, 2-2: 회계연도/공급업체코드 쉼표 제거 (데이터 오표시)
+- 1-2: 금액 1000단위 쉼표 표시
+- 1-3, 1-4: 표시명 변경
+
+### 낮음 (UI 개선)
+- 1-1: 카드 폰트 크기 확대
+- 1-5: Able 과제 등록 표시
+- 1-6: 엑셀 다운로드 이슈사항 누락
+- 1-7: 최근 주차 데이터 기본 표시
+- 4-2: 클러스터 재병합 시 이름 등록
+- 4-3: 클러스터링 테이블 정렬
