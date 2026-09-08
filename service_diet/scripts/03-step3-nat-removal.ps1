@@ -29,6 +29,7 @@ $CLUSTER        = "finance-cluster"
 $SERVICE        = "finance-api"
 $ECS_SG         = "sg-0b2f80b067408e320"
 $LAMBDA_SG      = "sg-03f87eab294fd8eb8"
+$VPCE_SG        = "sg-053116132c7392b56"   # SQS 엔드포인트 전용 (443 인바운드: Lambda + ECS)
 $PRIVATE_SUB_1A = "subnet-0bfa6431b2de4c627"
 $PUBLIC_SUB_1A  = "subnet-0439ae6345851cb05"
 $PUBLIC_SUB_1C  = "subnet-0d871ae82bab584e3"
@@ -36,20 +37,41 @@ $PUBLIC_SUB_1C  = "subnet-0d871ae82bab584e3"
 # -----------------------------------------------------------------------------
 if ($Phase -eq "A") {
     Write-Host "=== 3-A. SQS Interface Endpoint 생성 (약 9.2 USD/월) ===" -ForegroundColor Green
-    Write-Host "용도: Lambda ExcelCoordinatorHandler:227 의 sendMessage 경로 확보" -ForegroundColor DarkGray
+    Write-Host "용도: Lambda ExcelCoordinatorHandler:227 과 백엔드 4곳의 sendMessage 경로 확보" -ForegroundColor DarkGray
     Write-Host "참고: S3 Gateway Endpoint 는 생성 완료 (vpce-0fdf46f2c2ce0a2b9)" -ForegroundColor DarkGray
+
+    # private DNS 는 VPC 전체의 sqs.<region>.amazonaws.com 해석을 엔드포인트로 바꾼다.
+    # 백엔드도 SqsClient.sendMessage 를 쓰므로(FileSessionService:538/1789/2152,
+    # SessionDataService:235) ECS 가 퍼블릭 서브넷으로 가더라도 이 엔드포인트를 탄다.
+    # 따라서 엔드포인트 SG 는 Lambda 와 ECS 양쪽의 443 인바운드를 허용해야 한다.
+    # finance-lambda-sg 는 인바운드 규칙이 비어 있어 그대로 쓰면 Lambda 조차 붙지 못한다.
+    Write-Host ""
+    Write-Host "[사전 검증 1] 엔드포인트 SG 인바운드 443" -ForegroundColor Cyan
+    aws ec2 describe-security-groups --group-ids $VPCE_SG --query "SecurityGroups[0].IpPermissions[].{Port:FromPort,From:UserIdGroupPairs[].GroupId}" --output json
+
+    # private DNS 는 VPC 의 enableDnsHostnames 가 켜져 있어야 생성이 된다.
+    Write-Host ""
+    Write-Host "[사전 검증 2] VPC enableDnsHostnames" -ForegroundColor Cyan
+    $dnsHost = aws ec2 describe-vpc-attribute --vpc-id $VPC --attribute enableDnsHostnames --query "EnableDnsHostnames.Value" --output text
+    Write-Host "  enableDnsHostnames = $dnsHost"
+    if ($dnsHost -ne "True") {
+        Write-Host "  -> 비활성 상태. 아래를 먼저 실행해야 엔드포인트 생성이 가능하다:" -ForegroundColor Yellow
+        Write-Host "     aws ec2 modify-vpc-attribute --vpc-id $VPC --enable-dns-hostnames" -ForegroundColor Yellow
+        if (-not $DryRun) { exit 1 }
+    }
 
     if ($DryRun) {
         Write-Host ""
         Write-Host "(DryRun) 실행될 명령:" -ForegroundColor Yellow
-        Write-Host "  aws ec2 create-vpc-endpoint --vpc-id $VPC --service-name com.amazonaws.ap-northeast-2.sqs --vpc-endpoint-type Interface --subnet-ids $PRIVATE_SUB_1A --security-group-ids $LAMBDA_SG --private-dns-enabled" -ForegroundColor DarkGray
+        Write-Host "  aws ec2 create-vpc-endpoint --vpc-id $VPC --service-name com.amazonaws.ap-northeast-2.sqs --vpc-endpoint-type Interface --subnet-ids $PRIVATE_SUB_1A --security-group-ids $VPCE_SG --private-dns-enabled" -ForegroundColor DarkGray
         return
     }
 
-    aws ec2 create-vpc-endpoint --vpc-id $VPC --service-name com.amazonaws.ap-northeast-2.sqs --vpc-endpoint-type Interface --subnet-ids $PRIVATE_SUB_1A --security-group-ids $LAMBDA_SG --private-dns-enabled --query "VpcEndpoint.{Id:VpcEndpointId,State:State}" --output json
+    aws ec2 create-vpc-endpoint --vpc-id $VPC --service-name com.amazonaws.ap-northeast-2.sqs --vpc-endpoint-type Interface --subnet-ids $PRIVATE_SUB_1A --security-group-ids $VPCE_SG --private-dns-enabled --query "VpcEndpoint.{Id:VpcEndpointId,State:State}" --output json
 
     Write-Host ""
     Write-Host "[검증] 엑셀 업로드 1건 수행 -> SQS 메시지 정상 발행 확인" -ForegroundColor Yellow
+    Write-Host "        백엔드(업로드 요청)와 Lambda(Coordinator) 양쪽 경로를 모두 확인할 것" -ForegroundColor Yellow
 }
 
 # -----------------------------------------------------------------------------
