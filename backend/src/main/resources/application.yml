@@ -35,6 +35,18 @@ spring:
       max-file-size: 1GB                       # 단일 파일 최대 크기
       max-request-size: 1GB                    # 요청 전체 최대 크기
 
+  # 종료 단계 최대 대기 시간 (server.shutdown: graceful 과 한 쌍)
+  # ECS stopTimeout 120초보다 짧게 잡아, 컨테이너가 강제 종료되기 전에
+  # 진행 중인 요청과 대시보드 생성 작업이 스스로 끝날 여유를 준다.
+  lifecycle:
+    timeout-per-shutdown-phase: 110s
+
+# 서버 종료 방식
+# 재배포로 SIGTERM 을 받았을 때 즉시 끊지 않고 진행 중인 요청을 마친 뒤 종료한다.
+# 태스크가 1대뿐이라 배포 중 요청 유실을 막으려면 필수다.
+server:
+  shutdown: graceful
+
 # JWT 인증 토큰 설정
 jwt:
   secret: ${JWT_SECRET:your-256-bit-secret-key-change-this-in-production-please-use-environment-variable}  # 서명 비밀 키 (프로덕션에서 반드시 환경 변수로 설정)
