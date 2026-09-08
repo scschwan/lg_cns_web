@@ -50,9 +50,12 @@ public class DashboardGenerationService {
     private final ConcurrentHashMap<String, GenerationStatus> statusMap = new ConcurrentHashMap<>();
 
     // 대시보드 생성 전용 쓰레드풀 (기본 ForkJoinPool 점유 방지)
+    // daemon=false: daemon 스레드는 SIGTERM 수신 시 JVM 과 함께 즉시 종료되어
+    // graceful shutdown 설정이 무의미해진다. ECS 재배포 중 생성 작업을 지키려면
+    // non-daemon 이어야 timeout-per-shutdown-phase(110s) 동안 완료를 기다린다.
     private static final ExecutorService GENERATION_EXECUTOR = Executors.newFixedThreadPool(
             Math.max(2, Runtime.getRuntime().availableProcessors()),
-            r -> { Thread t = new Thread(r, "dashboard-gen"); t.setDaemon(true); return t; }
+            r -> { Thread t = new Thread(r, "dashboard-gen"); t.setDaemon(false); return t; }
     );
 
     public static class GenerationStatus {

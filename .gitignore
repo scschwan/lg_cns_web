@@ -60,3 +60,28 @@
 
 ### Claude Code ###
 .claude/
+
+### 매뉴얼 산출물 (바이너리/생성물) ###
+# deploy.ps1 의 `git add .` 이 쓸어담지 않도록 차단한다.
+# 스크립트(manual_scripts/*.py)와 캡처 로그(*.md)는 소스이므로 제외하지 않는다.
+/manual/
+/manual_assets/**/*.png
+/manual_output/*.pptx
+/manual_output/*.zip
+
+### 분석 산출물 ###
+# analyze/manuals 는 CLAUDE.md 1번이 작업 전 확인을 지시하는 문서라 예외로 둔다.
+/analyze.zip
+/analyze/*
+!/analyze/manuals/
+
+### 유지보수 증빙 (CLAUDE.md 2.3 - 커밋에 섞지 않는다) ###
+# 증빙 PNG/PDF 는 제외하고 로그 본문만 추적한다.
+/maintanance/*
+!/maintanance/LG_CNS_수정사항_정리.md
+
+### 반입 자료 (바이너리) ###
+*.xlsx
+/*.pdf
+/*.pptx
+/cpu 100% 조치방법.txt

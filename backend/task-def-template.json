@@ -16,6 +16,7 @@
       "image": "PLACEHOLDER_IMAGE",
       "essential": true,
       "cpu": 0,
+      "stopTimeout": 120,
       "portMappings": [
         {
           "containerPort": 8080,
@@ -30,14 +31,14 @@
         "interval": 30,
         "timeout": 10,
         "retries": 3,
-        "startPeriod": 120
+        "startPeriod": 45
       },
       "environment": [
         {"name": "SPRING_PROFILES_ACTIVE", "value": "prod"},
         {"name": "AWS_REGION", "value": "ap-northeast-2"},
         {"name": "AWS_ACCOUNT_ID", "value": "659002796326"},
         {"name": "S3_BUCKET", "value": "finance-excel-uploads"},
-        {"name": "REDIS_HOST", "value": "finance-redis-cluster.1kdayr.0001.apn2.cache.amazonaws.com"},
+        {"name": "REDIS_HOST", "value": "finance-redis-micro.1kdayr.0001.apn2.cache.amazonaws.com"},
         {"name": "REDIS_PORT", "value": "6379"},
         {"name": "MONGODB_URI", "value": "mongodb://dmillion:admin240401!@finance-docdb-cluster.cluster-c1ue6aayyxjn.ap-northeast-2.docdb.amazonaws.com:27017/?replicaSet=rs0&readPreference=secondaryPreferred&retryWrites=false"}
       ],
