@@ -67,11 +67,16 @@ finance-redis-cluster            0      0      0      0      0      0
 넘어갔는데, `GetTypeCmds`/`KeyBasedCmds` 같은 **명령 처리량 지표**를 봤다면
 그 시점에 발견할 수 있었다.
 
-### 남은 작업
+### 7. 구 캐시 삭제 — 조치 3 절감 실현
 
-- 구 캐시 `finance-redis-cluster` 삭제 — 실사용일 하루 관찰 후.
-  `aws elasticache delete-cache-cluster --cache-cluster-id finance-redis-cluster`
-  이걸 해야 월 $17.5 가 실현된다. 그전까지는 두 클러스터 요금을 모두 낸다.
+`v1.1.317` 배포로 백엔드가 micro 로 넘어간 것을 확인한 뒤 같은 날 삭제했다.
+
+삭제 전 확인 — 최근 40분 `KeyBasedCmds` 가 구 클러스터 **0** / micro **63**,
+백엔드(rev 267)·Lambda 2개 모두 `REDIS_HOST` 가 micro.
+삭제 중 ALB 200 / CloudFront 200 / 타겟 healthy 로 **서비스 영향 없음**.
+
+이로써 조치 3의 **월 $17.5 가 실현**됐다. 그전까지는 두 클러스터 요금을 동시에 냈다.
+1·2·3단계 전체 절감은 세전 약 **$141.8/월** 이다.
 
 ### 커밋/푸시
 - Commit: `dd630e8` fix: prod 프로파일의 Redis 엔드포인트 하드코딩 제거 (v1.1.317)
