@@ -5,7 +5,9 @@
 param(
     [string]$Message = "auto deployment",
     # git 단계를 건너뛴다. 이미 직접 커밋했거나 배포만 하려는 경우 사용한다.
-    [switch]$SkipGit
+    [switch]$SkipGit,
+    # 사전 점검에서 뒤처진 저장소로 판정돼도 강행한다.
+    [switch]$Force
 )
 
 $ErrorActionPreference = "Stop"
@@ -20,6 +22,50 @@ $TASK_FAMILY = "finance-backend-task"
 
 # 버전 파일 경로
 $VERSION_FILE = "version.txt"
+
+# ========================================
+# 0. 사전 점검 - 저장소가 최신인지, 배포 설정이 유효한지
+# ========================================
+# 여러 클론에서 배포하다 뒤처진 복사본으로 배포하면, 이미 삭제된 리소스를 가리키는
+# task definition 이 등록돼 서비스가 끊긴다. 실제로 2026-09-08 에 발생했다.
+Write-Host "[0/14] Pre-check..." -ForegroundColor Yellow
+
+# task-def 템플릿이 유효한 JSON 인지 먼저 본다.
+# JSON 은 주석을 허용하지 않는데 // 로 항목을 주석 처리한 사례가 있었다.
+if (Test-Path "task-def-template.json") {
+    try {
+        Get-Content "task-def-template.json" -Raw | ConvertFrom-Json | Out-Null
+        Write-Host "  task-def-template.json : 유효" -ForegroundColor DarkGray
+    }
+    catch {
+        Write-Host "  task-def-template.json 이 유효한 JSON 이 아닙니다." -ForegroundColor Red
+        Write-Host "  $($_.Exception.Message)" -ForegroundColor Red
+        Write-Host "  JSON 은 // 주석을 허용하지 않습니다. 해당 줄을 지우세요." -ForegroundColor Yellow
+        exit 1
+    }
+}
+
+# 원격보다 뒤처진 상태인지 확인한다.
+git fetch origin --quiet 2>$null
+if ($LASTEXITCODE -eq 0) {
+    $branch = git rev-parse --abbrev-ref HEAD
+    $behind = git rev-list --count "HEAD..origin/$branch" 2>$null
+    if ($LASTEXITCODE -eq 0 -and $behind -and [int]$behind -gt 0) {
+        Write-Host ""
+        Write-Host "  이 저장소가 origin/$branch 보다 $behind 커밋 뒤처져 있습니다." -ForegroundColor Red
+        Write-Host "  뒤처진 상태로 배포하면 옛 설정이 운영에 등록됩니다." -ForegroundColor Red
+        Write-Host "  git pull 로 최신화한 뒤 다시 실행하세요." -ForegroundColor Yellow
+        Write-Host "  (의도한 것이라면 -Force 로 진행할 수 있습니다.)" -ForegroundColor Yellow
+        if (-not $Force) { exit 1 }
+        Write-Host "  -Force 지정됨 - 계속 진행합니다." -ForegroundColor Yellow
+    }
+    elseif ($LASTEXITCODE -ne 0) {
+        Write-Host "  원격 추적 브랜치가 없어 최신 여부를 확인하지 못했습니다." -ForegroundColor Yellow
+    }
+    else {
+        Write-Host "  저장소 최신 상태" -ForegroundColor DarkGray
+    }
+}
 
 # ========================================
 # 버전 자동 증가
