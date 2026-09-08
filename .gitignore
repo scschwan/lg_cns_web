@@ -70,15 +70,18 @@
 /manual_output/*.zip
 
 ### 분석 산출물 ###
+# analyze/manuals 는 CLAUDE.md 1번이 작업 전 확인을 지시하는 문서라 예외로 둔다.
 /analyze.zip
+/analyze/*
+!/analyze/manuals/
 
 ### 유지보수 증빙 (CLAUDE.md 2.3 - 커밋에 섞지 않는다) ###
-/maintanance/*.png
-/maintanance/*.pdf
-/maintanance/*.jpg
+# 증빙 PNG/PDF 는 제외하고 로그 본문만 추적한다.
+/maintanance/*
+!/maintanance/LG_CNS_수정사항_정리.md
 
-### 루트 반입 자료 ###
+### 반입 자료 (바이너리) ###
+*.xlsx
 /*.pdf
-/*.xlsx
 /*.pptx
 /cpu 100% 조치방법.txt
