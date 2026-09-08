@@ -125,9 +125,10 @@ spring:
 
     redis:
       # AWS ElastiCache Redis 클러스터
-      #host: finance-redis2-1kdayr.serverless.apn2.cache.amazonaws.com
-      host: finance-redis-cluster.1kdayr.0001.apn2.cache.amazonaws.com
-      port: 6379
+      # 엔드포인트를 여기 하드코딩하면 프로파일 설정이 공통 섹션의 ${REDIS_HOST} 를
+      # 덮어써서 task-def 환경변수 교체가 무효가 된다. 반드시 환경변수를 참조할 것.
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
       ssl:
         enabled: false
       timeout: 5000ms                            # 프로덕션 타임아웃 (5초)
