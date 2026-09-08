@@ -1,9 +1,11 @@
-# ========================================
+﻿# ========================================
 # AWS ECS + Lambda 자동 배포 스크립트
 # ========================================
 
 param(
-    [string]$Message = "auto deployment"
+    [string]$Message = "auto deployment",
+    # git 단계를 건너뛴다. 이미 직접 커밋했거나 배포만 하려는 경우 사용한다.
+    [switch]$SkipGit
 )
 
 $ErrorActionPreference = "Stop"
@@ -52,12 +54,39 @@ Write-Host "massage: $Message" -ForegroundColor Cyan
 Write-Host "========================================`n" -ForegroundColor Cyan
 
 # 1. Git Commit
-Write-Host "[1/14] Git Commit..." -ForegroundColor Yellow
-git add .
-git commit -m "deploy: v$newVersion - $Message"
-git push
-if ($LASTEXITCODE -ne 0) {
-    Write-Host "Git push failed. continue logic..." -ForegroundColor Yellow
+# git add . 는 .gitignore 에 걸리지 않은 무관한 파일(문서, 스크립트, 산출물)까지
+# 배포 커밋에 쓸어담는다. 배포에 직접 관련된 파일만 명시적으로 스테이징한다.
+if ($SkipGit) {
+    Write-Host "[1/14] Git Commit... (SkipGit)" -ForegroundColor DarkGray
+}
+else {
+    Write-Host "[1/14] Git Commit..." -ForegroundColor Yellow
+
+    foreach ($f in @("version.txt", "task-def-template.json")) {
+        if (Test-Path $f) { git add -- $f }
+    }
+
+    # 소스 변경은 이 스크립트가 임의로 담지 않는다. 남아 있으면 알리고 멈춘다.
+    $dirty = git status --porcelain -- src Dockerfile build.gradle lambda
+    if ($dirty) {
+        Write-Host ""
+        Write-Host "커밋되지 않은 소스 변경이 있습니다." -ForegroundColor Red
+        $dirty | ForEach-Object { Write-Host "   $_" -ForegroundColor Red }
+        Write-Host "   먼저 직접 커밋하거나 -SkipGit 으로 실행하세요." -ForegroundColor Yellow
+        exit 1
+    }
+
+    if (git diff --cached --name-only) {
+        git commit -m "deploy: v$newVersion - $Message"
+    }
+    else {
+        Write-Host "커밋할 변경 없음" -ForegroundColor DarkGray
+    }
+
+    git push
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "Git push failed. continue logic..." -ForegroundColor Yellow
+    }
 }
 
 # ========================================
@@ -75,9 +104,22 @@ docker build -t ${IMAGE_NAME}:latest .
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 # 4. ECR 로그인
+# Windows PowerShell 5.1 에서는 --password-stdin 이 400 Bad Request 로 실패한다.
+# 파이프로 넘길 때 인코딩이 깨지기 때문이다. 먼저 시도하고 실패하면 --password 로 넘어간다.
 Write-Host "`n[4/14] ECR Login..." -ForegroundColor Yellow
-aws ecr get-login-password --region $AWS_REGION | docker login --username AWS --password-stdin "${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com"
-if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+$ecrRegistry = "${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com"
+$ecrPassword = aws ecr get-login-password --region $AWS_REGION
+if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($ecrPassword)) {
+    Write-Host "ECR 토큰 발급 실패" -ForegroundColor Red
+    exit 1
+}
+
+$ecrPassword | docker login --username AWS --password-stdin $ecrRegistry
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "--password-stdin 실패. --password 방식으로 재시도합니다." -ForegroundColor Yellow
+    docker login --username AWS --password $ecrPassword $ecrRegistry
+    if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+}
 
 # 5. 이미지 태그
 Write-Host "`n[5/14] Create Docker Image Tag..." -ForegroundColor Yellow
