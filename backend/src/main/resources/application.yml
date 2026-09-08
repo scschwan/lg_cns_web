@@ -119,7 +119,8 @@ spring:
   data:
     mongodb:
       # AWS DocumentDB 클러스터 (secondaryPreferred: 읽기 부하 분산)
-      uri: mongodb://dmillion:admin240401!@finance-docdb-cluster.cluster-c1ue6aayyxjn.ap-northeast-2.docdb.amazonaws.com:27017/?replicaSet=rs0&readPreference=secondaryPreferred&retryWrites=false
+      # 접속 정보를 소스에 두지 않는다. task-def 가 Secrets Manager 에서 주입한다.
+      uri: ${MONGODB_URI}
       database: finance
 
     redis:

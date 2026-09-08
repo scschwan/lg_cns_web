@@ -4,6 +4,105 @@
 
 ---
 
+## 2026-09-08 AWS 비용절감 2·3단계 (브랜치: `fix/aws-cost-step23-2026-09`)
+
+> 출처: `service_diet/AWS_비용절감_개선보고서_20260811.docx`
+> 상세 실행 기록·원복 절차: `service_diet/실행기록_2026-09-08.md`
+> 같은 날 1단계에 이어 수행. 사용자가 "운영계 재기동을 감안하지 말고 전부 진행" 지시.
+
+### 1. 2단계 — 보안 조치
+
+| # | 수정사항 | 상세 | 처리 영역 |
+|---|---------|------|:-:|
+| D-1 | JWT 서명 키가 소스의 기본값 | `application.yml:40` 이 `${JWT_SECRET:기본문자열}` 인데 task-def 에 `JWT_SECRET` 이 없어, 소스에 공개된 문자열로 토큰을 서명 중이었다. 그 값을 아는 사람은 관리자 권한 JWT 위조 가능 | BE/INFRA |
+| D-2 | 평문 자격증명 | `task-def-template.json` 과 `application.yml` prod 프로파일에 DocumentDB 비밀번호가 평문으로 있었다 | BE/INFRA |
+
+**조치**
+- Secrets Manager 신규 2건
+  - `finance/jwt-secret-che0Ei` (48바이트 난수)
+  - `finance/docdb-uri-dI66BL` (교체된 비밀번호 포함 URI)
+- `backend/task-def-template.json`
+  - `environment` 의 평문 `MONGODB_URI` 제거
+  - `secrets` 블록 신규 — `JWT_SECRET`, `MONGODB_URI`
+- `backend/src/main/resources/application.yml`
+  - prod 프로파일 `uri:` 평문 제거 → `${MONGODB_URI}`
+- 실행 역할 `finance-ecs-task-execution-role` 에 `secretsmanager:GetSecretValue` 부여
+- Lambda 2개 `MONGODB_URI` 환경변수 교체 (키 6/7개 보존 확인)
+- DocumentDB 마스터 비밀번호 교체
+
+**실행 순서와 근거** — DocDB 비밀번호는 즉시 적용되어 그 순간부터 운영 백엔드·Lambda 가
+구 자격증명을 들고 있는 상태가 된다. 영향이 없는 작업(JWT 시크릿·IAM·JAR/이미지 빌드)을
+먼저 끝내고 비밀번호 교체 → 배포 → Lambda 갱신을 연속 수행해 중단 구간을 줄였다.
+
+### 2. 3단계 — NAT Gateway 제거
+
+**실행 전 발견한 결함 3건.** 계획서·스크립트대로 실행하면 엑셀 업로드 경로가 끊긴다.
+
+| # | 수정사항 | 상세 | 처리 영역 |
+|---|---------|------|:-:|
+| D-3 | 엔드포인트 SG 인바운드 부재 | 스크립트가 엔드포인트에 붙이는 `finance-lambda-sg` 는 인바운드 규칙이 비어 있다. 인터페이스 엔드포인트는 자기 SG 의 443 인바운드로 받으므로 Lambda 조차 접속 불가 | INFRA |
+| D-4 | 백엔드의 SQS 사용을 계획서가 누락 | `FileSessionService:538/1789/2152`, `SessionDataService:235` 에서 `sendMessage` 호출. `--private-dns-enabled` 는 VPC 전체 DNS 를 바꾸므로 ECS 가 퍼블릭 서브넷에 가도 이 엔드포인트를 탄다 | INFRA |
+| D-5 | `enableDnsHostnames` 미활성 | VPC 속성이 `False` 라 `--private-dns-enabled` 생성이 거부된다 | INFRA |
+
+**조치**
+- 엔드포인트 전용 SG `finance-vpce-sg` (`sg-053116132c7392b56`) 신규 — 인바운드 443 ← Lambda SG, ECS SG
+- VPC `enableDnsHostnames` 활성화
+- `service_diet/scripts/03-step3-nat-removal.ps1` — 사전 검증 2건 추가, SG 참조 교체
+- SQS Interface Endpoint `vpce-027861690c38eca13` 생성 (`private-1a`, private DNS)
+- ECS 를 퍼블릭 서브넷으로 이동 (`assignPublicIp=ENABLED`)
+- NAT Gateway `nat-0b5fb65fc5616331d` 삭제, EIP `eipalloc-0b002860d6ea9077b` 반납
+
+**계획서 전제와 실측 차이** — 프라이빗 서브넷 재배포의 NAT 통과량이 약 0.5MB 에 그쳤다.
+계획서의 "재기동일마다 292~302MB" 는 S3 Gateway Endpoint 생성 이전 측정치이며,
+ECR 레이어는 이미 엔드포인트로 빠져 NAT 로는 API 호출만 남아 있었다.
+NAT 요금의 97% 가 시간당 유휴 요금이므로 절감 결론은 그대로다.
+
+### 3. 배포
+
+- `v1.1.315` → `v1.1.316`, task definition **revision 266**
+- 재배포 3회(2단계 1회, 3-B 1회, 3-D 관련 0회) 모두 무중단
+
+### 4. 검증
+
+엑셀 업로드 E2E 1건으로 세 단계에 걸쳐 미검증이던 항목이 한 번에 해소됐다.
+
+| 대상 | 근거 |
+|---|---|
+| Redis micro 전환 (1단계) | 백엔드가 신규 캐시에 반복 접속, 진행률 폴링 정상 |
+| JWT 키 교체 | 신규 키로 재로그인 성공 / 구 서명키 토큰 401 거부 |
+| DocDB 비밀번호 (백엔드) | `MongoTemplate` 조회 정상, ERROR 0건 |
+| DocDB 비밀번호 (Lambda Worker) | `MongoDB 삽입 완료: 6270건` |
+| 업로드 파이프라인 | 백엔드 → S3 → Coordinator → SQS → Worker → Mongo 완주 (6,270행/22컬럼, 19.3초) |
+| 퍼블릭 서브넷 보안 | 태스크 퍼블릭 IP `:8080` 직접 접근 차단 확인, ALB 경유만 허용 |
+| NAT 삭제 후 | ALB 200 / CloudFront 200 / 타겟 healthy |
+
+### 남은 작업
+
+- **AWS 액세스 키 폐기** (IAM 콘솔) + CloudTrail 오용 점검 + `Finance Tool AWS 인프라 정보.txt` 삭제
+- 구 캐시 `finance-redis-cluster` 삭제 (2026-09-15 이후) — 삭제 전까지 월 $17.5 미실현
+- `deploy.ps1` 수정 — ECR 로그인 `--password-stdin` 400 오류, git 스테이징 범위
+- ALB `idle_timeout` 300 → 400초 검토 (보고서 7장 #1)
+- SQS 엔드포인트 단일 AZ 재검토 — 백엔드까지 의존하게 되어 SPOF 성격이 커졌다
+
+### 절감 현황
+
+| 조치 | 월 절감 | 상태 |
+|---|---:|---|
+| ECS 2대 → 1대 | $84.5 | 발생 중 |
+| NAT Gateway 제거 | $34.7 | 발생 중 |
+| EIP 반납 | $3.6 | 발생 중 |
+| EC2 bastion 삭제 | $10.7 | 기존 완료 |
+| ElastiCache micro | $17.5 | 구 클러스터 삭제 후 |
+| SQS Endpoint 신규 | -$9.2 | 3단계 비용 |
+| **현재 확정 (세전)** | **약 $124.3/월** | 구 캐시 삭제 시 약 $141.8/월 |
+
+### 커밋/푸시
+- Branch: `fix/aws-cost-step23-2026-09` (base: `origin/master` 머지 후)
+- Push: 완료
+- PR: 미생성
+
+---
+
 ## 2026-09-08 AWS 비용절감 1단계 (브랜치: `fix/aws-cost-2026-09`)
 
 > 출처: `service_diet/AWS_비용절감_개선보고서_20260811.docx` (A안 — 유휴 리소스 정리)
